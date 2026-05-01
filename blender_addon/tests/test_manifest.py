@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import sys
+import tempfile
 import unittest
 
 
@@ -43,6 +44,79 @@ class ManifestTests(unittest.TestCase):
         self.assertGreater(len(package.scene.children), 10)
         self.assertIn("palette/argo_mole", package.palettes)
         self.assertIn("palette/default", package.liveries)
+
+    def test_package_bundle_loads_synthetic_socpak_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            export_root = Path(tmp)
+            package_dir = export_root / "Packages" / "socpak orison_ind_lz_int_LOD0_TEX2"
+            package_dir.mkdir(parents=True)
+            scene_path = package_dir / "scene.json"
+            scene_path.write_text(
+                """
+{
+  "version": 1,
+  "export_kind": "Decomposed",
+  "source_kind": "SocpakGraph",
+  "socpak_graph": {
+    "roots": ["Data/ObjectContainers/root.socpak"],
+    "nodes": [{"path": "Data/ObjectContainers/root.socpak", "name": "root"}],
+    "edges": [],
+    "warnings": []
+  },
+  "package_rule": {
+    "root": "caller_selected_export_root",
+    "package_dir": "Packages/socpak orison_ind_lz_int_LOD0_TEX2",
+    "paths_are_relative_to_export_root": true,
+    "shared_asset_root": "Data",
+    "normalized_p4k_relative_paths": true
+  },
+  "root_entity": {
+    "entity_name": "socpak: orison_ind_lz_int",
+    "geometry_path": null,
+    "material_path": null,
+    "mesh_asset": null,
+    "material_sidecar": null,
+    "palette_id": null
+  },
+  "export_options": {
+    "kind": "Decomposed",
+    "format": "Glb",
+    "material_mode": "Textures",
+    "lod_level": 0,
+    "texture_mip": 2,
+    "include_attachments": true,
+    "include_interior": true,
+    "include_lights": true
+  },
+  "children": [],
+  "interiors": [
+    {
+      "name": "root",
+      "source_socpak": "Data/ObjectContainers/root.socpak",
+      "source_soc_files": ["root.soc"],
+      "palette_id": null,
+      "container_transform": [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]],
+      "placements": [],
+      "lights": []
+    }
+  ]
+}
+""",
+                encoding="utf-8",
+            )
+            (package_dir / "palettes.json").write_text('{"version":1,"palettes":[]}', encoding="utf-8")
+            (package_dir / "liveries.json").write_text('{"version":1,"liveries":[]}', encoding="utf-8")
+
+            package = PackageBundle.load(scene_path)
+
+        self.assertEqual(package.export_root, export_root)
+        self.assertEqual(package.scene.source_kind, "SocpakGraph")
+        self.assertEqual(package.scene.root_entity.mesh_asset, None)
+        self.assertEqual(package.scene.root_entity.entity_name, "socpak: orison_ind_lz_int")
+        self.assertEqual(package.scene.socpak_graph["roots"], ["Data/ObjectContainers/root.socpak"])
+        self.assertEqual(package.scene.interiors[0].raw["source_socpak"], "Data/ObjectContainers/root.socpak")
+        self.assertEqual(package.palettes, {})
+        self.assertEqual(package.liveries, {})
 
     @_requires_argo_fixture
     def test_package_bundle_resolves_and_caches_material_sidecars(self) -> None:
@@ -200,6 +274,8 @@ class ManifestTests(unittest.TestCase):
         self.assertEqual(texture.alpha_semantic, "smoothness")
 
     def test_layer_manifest_preserves_texture_slots(self) -> None:
+        if not COMPONENT_MASTER.is_file():
+            self.skipTest(f"component material fixture not present at {COMPONENT_MASTER}")
         component = MaterialSidecar.from_file(COMPONENT_MASTER)
         layered = next(
             submaterial

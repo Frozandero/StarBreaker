@@ -607,6 +607,10 @@ pub struct InteriorMesh {
 #[derive(Debug)]
 pub struct InteriorPayload {
     pub name: String,
+    /// Canonical P4k path for the source socpak, when known.
+    pub source_socpak: Option<String>,
+    /// Inner `.soc` files parsed from this socpak.
+    pub source_soc_files: Vec<String>,
     /// Static geometry placements from IncludedObjects + CryXMLB entities.
     pub meshes: Vec<InteriorMesh>,
     /// Lights from CryXMLB entities.

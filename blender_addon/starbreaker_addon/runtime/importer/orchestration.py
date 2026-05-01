@@ -38,6 +38,7 @@ from ..constants import (
     PROP_PALETTE_SCOPE,
     PROP_SCENE_PATH,
     PROP_SOURCE_NODE_NAME,
+    PROP_SOURCE_KIND,
     PROP_SUBMATERIAL_JSON,
     PROP_TEMPLATE_PATH,
     TEMPLATE_COLLECTION_NAME,
@@ -872,6 +873,8 @@ class OrchestrationMixin:
         package_root[PROP_SCENE_PATH] = str(self.package.scene_path)
         package_root[PROP_EXPORT_ROOT] = str(self.package.export_root)
         package_root[PROP_PACKAGE_NAME] = self.package.package_name
+        if self.package.scene.source_kind:
+            package_root[PROP_SOURCE_KIND] = self.package.scene.source_kind
         package_root[PROP_PALETTE_ID] = palette_id or self.package.scene.root_entity.palette_id or ""
         package_root[PROP_PALETTE_SCOPE] = uuid.uuid4().hex
         self.collection.objects.link(package_root)

@@ -6,6 +6,7 @@ mod commands;
 mod datacore_commands;
 mod error;
 mod state;
+mod socpak_commands;
 mod ui_sink;
 
 #[cfg(target_os = "linux")]
@@ -220,6 +221,8 @@ fn main() {
             commands::scan_categories,
             commands::start_export,
             commands::cancel_export,
+            socpak_commands::scan_socpak_categories,
+            socpak_commands::start_socpak_export,
             datacore_commands::dc_search,
             datacore_commands::dc_list_tree,
             datacore_commands::dc_get_record,

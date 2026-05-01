@@ -626,6 +626,8 @@ class SceneManifest:
     interiors: list[InteriorContainerRecord]
     package_rule: PackageRule
     root_entity: SceneInstanceRecord
+    source_kind: str | None
+    socpak_graph: JsonDict | None
     version: int
     raw: JsonDict
 
@@ -641,6 +643,8 @@ class SceneManifest:
             interiors=[InteriorContainerRecord.from_value(item) for item in data.get("interiors", [])],
             package_rule=PackageRule.from_value(data.get("package_rule")),
             root_entity=SceneInstanceRecord.from_value(data.get("root_entity")),
+            source_kind=_as_str(data.get("source_kind")),
+            socpak_graph=_as_dict(data.get("socpak_graph")) or None,
             version=int(data.get("version", 1)),
             raw=data,
         )

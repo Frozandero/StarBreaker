@@ -16,10 +16,10 @@ pub mod chrparams;
 pub use error::Error;
 pub use pipeline::{
     DecomposedExport, ExportFormat, ExportKind, ExportOptions, ExportResult, ExportedFile,
-    ExportedFileKind, MaterialMode,
+    ExportedFileKind, MaterialMode, SocpakDecomposedResult, SocpakGraphOptions,
     assemble_glb_with_loadout, assemble_glb_with_loadout_with_progress,
     dump_hierarchy, load_invisible_ports, query_animation_controller_source,
-    resolve_loadout_meshes, socpaks_to_glb,
+    resolve_loadout_meshes, socpaks_to_decomposed, socpaks_to_glb,
 };
 pub use types::Mesh;
 

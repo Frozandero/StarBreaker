@@ -2,9 +2,11 @@
 //!
 //! Flow: P4k → socpak (ZIP) → main .soc (CrCh) → IncludedObjects + CryXMLB → InteriorPayload
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::included_objects::IncludedObjects;
+use quick_xml::Reader;
+use quick_xml::events::{BytesStart, Event};
 use starbreaker_chunks::ChunkFile;
 use starbreaker_chunks::known_types::crch;
 use starbreaker_cryxml::CryXml;
@@ -23,6 +25,61 @@ pub struct ObjectContainerRef {
     pub file_name: String,
     pub offset_position: [f32; 3],
     pub offset_rotation: [f32; 3], // Ang3 (degrees)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum SocpakReferenceKind {
+    RootXmlChild,
+    CryXmlObjectContainer,
+    CryXmlSocpakAttribute,
+}
+
+impl SocpakReferenceKind {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::RootXmlChild => "root_xml_child",
+            Self::CryXmlObjectContainer => "cryxml_object_container",
+            Self::CryXmlSocpakAttribute => "cryxml_socpak_attribute",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct SocpakGraphNode {
+    pub canonical_path: String,
+    pub display_name: String,
+    pub container_transform: [[f32; 4]; 4],
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct SocpakGraphEdge {
+    pub from: String,
+    pub to: String,
+    pub source_soc: Option<String>,
+    pub source_kind: SocpakReferenceKind,
+    pub transform: [[f32; 4]; 4],
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct SocpakGraphWarning {
+    pub source: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct SocpakGraph {
+    pub roots: Vec<String>,
+    pub nodes: Vec<SocpakGraphNode>,
+    pub edges: Vec<SocpakGraphEdge>,
+    pub warnings: Vec<SocpakGraphWarning>,
+}
+
+#[derive(Debug, Clone)]
+struct SocpakReference {
+    target_path: String,
+    source_soc: Option<String>,
+    source_kind: SocpakReferenceKind,
+    transform: [[f32; 4]; 4],
 }
 
 /// Query VehicleComponentParams.objectContainers from a ship entity record.
@@ -103,6 +160,334 @@ fn extract_offset(offset_val: Option<&&Value>) -> ([f32; 3], [f32; 3]) {
     (pos, rot)
 }
 
+// ── Connected socpak graph discovery ────────────────────────────────────────
+
+pub(crate) fn discover_socpak_graph(
+    p4k: &MappedP4k,
+    roots: &[String],
+    include_connected: bool,
+) -> Result<SocpakGraph, Error> {
+    let mut graph = SocpakGraph::default();
+    let mut node_by_path: HashMap<String, usize> = HashMap::new();
+    let mut queued = VecDeque::new();
+
+    for root in roots {
+        let canonical = canonical_socpak_path(p4k, root)
+            .ok_or_else(|| Error::MissingSocpak(normalize_socpak_path(root)))?;
+        if node_by_path.contains_key(&canonical.to_ascii_lowercase()) {
+            continue;
+        }
+        add_graph_node(
+            &mut graph,
+            &mut node_by_path,
+            canonical.clone(),
+            identity_transform(),
+        );
+        graph.roots.push(canonical.clone());
+        if include_connected {
+            queued.push_back(canonical);
+        }
+    }
+
+    let mut visited = HashSet::new();
+    while let Some(source_path) = queued.pop_front() {
+        if !visited.insert(source_path.to_ascii_lowercase()) {
+            continue;
+        }
+
+        let references = match discover_references_from_socpak(p4k, &source_path) {
+            Ok(references) => references,
+            Err(error) => {
+                graph.warnings.push(SocpakGraphWarning {
+                    source: source_path,
+                    message: format!("{error}"),
+                });
+                continue;
+            }
+        };
+
+        for reference in references {
+            let requested = reference.target_path.clone();
+            let Some(target_path) = canonical_socpak_path(p4k, &reference.target_path) else {
+                let missing = normalize_socpak_manifest_path(&reference.target_path);
+                graph.edges.push(SocpakGraphEdge {
+                    from: source_path.clone(),
+                    to: missing.clone(),
+                    source_soc: reference.source_soc.clone(),
+                    source_kind: reference.source_kind,
+                    transform: reference.transform,
+                });
+                graph.warnings.push(SocpakGraphWarning {
+                    source: source_path.clone(),
+                    message: format!("referenced socpak not found: {requested}"),
+                });
+                continue;
+            };
+
+            graph.edges.push(SocpakGraphEdge {
+                from: source_path.clone(),
+                to: target_path.clone(),
+                source_soc: reference.source_soc.clone(),
+                source_kind: reference.source_kind,
+                transform: reference.transform,
+            });
+
+            let target_key = target_path.to_ascii_lowercase();
+            if !node_by_path.contains_key(&target_key) {
+                add_graph_node(
+                    &mut graph,
+                    &mut node_by_path,
+                    target_path.clone(),
+                    reference.transform,
+                );
+                queued.push_back(target_path);
+            }
+        }
+    }
+
+    Ok(graph)
+}
+
+fn add_graph_node(
+    graph: &mut SocpakGraph,
+    node_by_path: &mut HashMap<String, usize>,
+    canonical_path: String,
+    container_transform: [[f32; 4]; 4],
+) {
+    let key = canonical_path.to_ascii_lowercase();
+    if node_by_path.contains_key(&key) {
+        return;
+    }
+    let display_name = socpak_display_name(&canonical_path);
+    node_by_path.insert(key, graph.nodes.len());
+    graph.nodes.push(SocpakGraphNode {
+        canonical_path,
+        display_name,
+        container_transform,
+    });
+}
+
+fn discover_references_from_socpak(
+    p4k: &MappedP4k,
+    socpak_path: &str,
+) -> Result<Vec<SocpakReference>, Error> {
+    let p4k_path = normalize_socpak_path(socpak_path);
+    let entry = p4k
+        .entry_case_insensitive(&p4k_path)
+        .ok_or_else(|| Error::MissingSocpak(p4k_path.clone()))?;
+    let socpak_data = p4k
+        .read(entry)
+        .map_err(|e| Error::P4kRead(format!("{p4k_path}: {e}")))?;
+    let inner = P4kArchive::from_bytes(&socpak_data)
+        .map_err(|e| Error::P4kRead(format!("ZIP parse {p4k_path}: {e}")))?;
+
+    let mut root_xml_refs = Vec::new();
+    let mut entxml_refs = Vec::new();
+    for inner_entry in inner.entries() {
+        let name_lower = inner_entry.name.to_ascii_lowercase();
+        if name_lower.ends_with(".xml") && !name_lower.ends_with("_editor.xml") {
+            let Ok(data) = inner.read(inner_entry) else {
+                continue;
+            };
+            if is_plain_xml(&data) {
+                root_xml_refs.extend(extract_plain_xml_socpak_refs(
+                    &String::from_utf8_lossy(&data),
+                    &inner_entry.name,
+                ));
+            }
+        } else if name_lower.ends_with(".entxml") {
+            let Ok(data) = inner.read(inner_entry) else {
+                continue;
+            };
+            if let Ok(xml) = starbreaker_cryxml::from_bytes(&data) {
+                entxml_refs.extend(extract_cryxml_socpak_refs(&xml, &inner_entry.name));
+            }
+        }
+    }
+
+    if !root_xml_refs.is_empty() {
+        Ok(root_xml_refs)
+    } else {
+        Ok(entxml_refs)
+    }
+}
+
+fn is_plain_xml(data: &[u8]) -> bool {
+    data.iter()
+        .find(|byte| !byte.is_ascii_whitespace())
+        .is_some_and(|byte| *byte == b'<')
+}
+
+fn extract_plain_xml_socpak_refs(xml: &str, source_file: &str) -> Vec<SocpakReference> {
+    let mut reader = Reader::from_str(xml);
+    reader.config_mut().trim_text(true);
+    let mut refs = Vec::new();
+    let mut inside_child_object_containers = false;
+
+    loop {
+        match reader.read_event() {
+            Ok(Event::Start(ref e)) => {
+                if e.local_name().as_ref() == b"ChildObjectContainers" {
+                    inside_child_object_containers = true;
+                } else if inside_child_object_containers && e.local_name().as_ref() == b"Child" {
+                    if let Some(reference) = child_xml_reference(e, source_file) {
+                        refs.push(reference);
+                    }
+                }
+            }
+            Ok(Event::Empty(ref e)) => {
+                if inside_child_object_containers && e.local_name().as_ref() == b"Child" {
+                    if let Some(reference) = child_xml_reference(e, source_file) {
+                        refs.push(reference);
+                    }
+                }
+            }
+            Ok(Event::End(ref e)) => {
+                if e.local_name().as_ref() == b"ChildObjectContainers" {
+                    inside_child_object_containers = false;
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(error) => {
+                log::debug!("failed to parse {source_file} child container XML: {error}");
+                break;
+            }
+            _ => {}
+        }
+    }
+
+    refs
+}
+
+fn child_xml_reference(e: &BytesStart<'_>, source_file: &str) -> Option<SocpakReference> {
+    let attrs = xml_attrs(e);
+    let target_path = attrs.get("name")?.to_string();
+    if !path_looks_like_socpak(&target_path) {
+        return None;
+    }
+    let pos = parse_csv_f64(attrs.get("pos").map(String::as_str).unwrap_or("0,0,0"));
+    let rot = parse_csv_f64(attrs.get("rot").map(String::as_str).unwrap_or("0,0,0,1"));
+    Some(SocpakReference {
+        target_path,
+        source_soc: Some(source_file.to_string()),
+        source_kind: SocpakReferenceKind::RootXmlChild,
+        transform: pos_quat_xyzw_scale_to_4x4(&pos, &rot, &[1.0, 1.0, 1.0]),
+    })
+}
+
+fn xml_attrs(e: &BytesStart<'_>) -> HashMap<String, String> {
+    e.attributes()
+        .flatten()
+        .filter_map(|attr| {
+            let key = std::str::from_utf8(attr.key.as_ref()).ok()?.to_string();
+            let value = String::from_utf8(attr.value.to_vec()).ok()?;
+            Some((key, value))
+        })
+        .collect()
+}
+
+fn extract_cryxml_socpak_refs(xml: &CryXml, source_file: &str) -> Vec<SocpakReference> {
+    let mut refs = Vec::new();
+    collect_cryxml_socpak_refs(
+        xml,
+        xml.root(),
+        source_file,
+        identity_transform(),
+        &mut refs,
+    );
+    refs
+}
+
+fn collect_cryxml_socpak_refs(
+    xml: &CryXml,
+    node: &starbreaker_cryxml::CryXmlNode,
+    source_file: &str,
+    inherited_transform: [[f32; 4]; 4],
+    refs: &mut Vec<SocpakReference>,
+) {
+    let tag = xml.node_tag(node);
+    let attrs: HashMap<&str, &str> = xml.node_attributes(node).collect();
+    let node_transform = if tag == "Entity" {
+        let pos = parse_csv_f64(attrs.get("Pos").copied().unwrap_or("0,0,0"));
+        let rot = parse_csv_f64(attrs.get("Rotate").copied().unwrap_or("1,0,0,0"));
+        let scale = parse_csv_f64(attrs.get("Scale").copied().unwrap_or("1,1,1"));
+        pos_quat_wxyz_scale_to_4x4(&pos, &rot, &scale)
+    } else {
+        inherited_transform
+    };
+
+    for (key, value) in attrs {
+        if !path_looks_like_socpak(value) {
+            continue;
+        }
+        let source_kind = if tag == "EntityComponentObjectContainer" && key == "objectContainer" {
+            SocpakReferenceKind::CryXmlObjectContainer
+        } else {
+            SocpakReferenceKind::CryXmlSocpakAttribute
+        };
+        refs.push(SocpakReference {
+            target_path: value.to_string(),
+            source_soc: Some(source_file.to_string()),
+            source_kind,
+            transform: node_transform,
+        });
+    }
+
+    for child in xml.node_children(node) {
+        collect_cryxml_socpak_refs(xml, child, source_file, node_transform, refs);
+    }
+}
+
+fn path_looks_like_socpak(value: &str) -> bool {
+    value.to_ascii_lowercase().contains(".socpak")
+}
+
+fn canonical_socpak_path(p4k: &MappedP4k, path: &str) -> Option<String> {
+    let requested = normalize_socpak_path(path);
+    p4k.entry_case_insensitive(&requested)
+        .map(|entry| entry.name.replace('\\', "/"))
+}
+
+fn normalize_socpak_manifest_path(path: &str) -> String {
+    normalize_socpak_path(path).replace('\\', "/")
+}
+
+fn socpak_display_name(path: &str) -> String {
+    path.rsplit(&['/', '\\'])
+        .next()
+        .unwrap_or(path)
+        .strip_suffix(".socpak")
+        .unwrap_or(path)
+        .to_string()
+}
+
+pub(crate) fn socpak_graph_to_manifest_value(graph: &SocpakGraph) -> serde_json::Value {
+    serde_json::json!({
+        "roots": graph.roots,
+        "nodes": graph.nodes.iter().map(|node| {
+            serde_json::json!({
+                "path": node.canonical_path,
+                "name": node.display_name,
+            })
+        }).collect::<Vec<_>>(),
+        "edges": graph.edges.iter().map(|edge| {
+            serde_json::json!({
+                "from": edge.from,
+                "to": edge.to,
+                "source_soc": edge.source_soc,
+                "source_kind": edge.source_kind.as_str(),
+                "transform": edge.transform,
+            })
+        }).collect::<Vec<_>>(),
+        "warnings": graph.warnings.iter().map(|warning| {
+            serde_json::json!({
+                "source": warning.source,
+                "message": warning.message,
+            })
+        }).collect::<Vec<_>>(),
+    })
+}
+
 // ── Socpak loading ──────────────────────────────────────────────────────────
 
 /// Load a single socpak and extract its interior geometry + lights.
@@ -124,13 +509,11 @@ pub fn load_interior_from_socpak(
     let inner = P4kArchive::from_bytes(&socpak_data)
         .map_err(|e| Error::P4kRead(format!("ZIP parse {p4k_path}: {e}")))?;
 
-    let name = socpak_path
-        .rsplit(&['/', '\\'])
-        .next()
-        .unwrap_or(socpak_path)
-        .strip_suffix(".socpak")
-        .unwrap_or(socpak_path)
-        .to_string();
+    let source_socpak = p4k
+        .entry_case_insensitive(&p4k_path)
+        .map(|entry| entry.name.replace('\\', "/"))
+        .unwrap_or_else(|| p4k_path.replace('\\', "/"));
+    let name = socpak_display_name(&source_socpak);
 
     // Parse ALL .soc files in the socpak (main + children).
     // The main .soc has IncludedObjects geometry; child .socs have lights and VFX entities.
@@ -147,6 +530,10 @@ pub fn load_interior_from_socpak(
     let mut meshes = Vec::new();
     let mut lights = Vec::new();
     let mut tint_palette_names = Vec::new();
+    let source_soc_files = soc_entries
+        .iter()
+        .map(|entry| entry.name.replace('\\', "/"))
+        .collect::<Vec<_>>();
 
     for soc_entry in &soc_entries {
         let soc_data = match inner.read(soc_entry) {
@@ -179,6 +566,8 @@ pub fn load_interior_from_socpak(
 
     Ok(InteriorPayload {
         name,
+        source_socpak: Some(source_socpak),
+        source_soc_files,
         meshes,
         lights,
         container_transform,
@@ -239,13 +628,18 @@ fn parse_soc(
         }
     }
 
-    Ok((InteriorPayload {
-        name: name.to_string(),
-        meshes,
-        lights,
-        container_transform,
-        tint_palette_names: Vec::new(), // Set by caller from palette_names
-    }, palette_names))
+    Ok((
+        InteriorPayload {
+            name: name.to_string(),
+            source_socpak: None,
+            source_soc_files: vec![name.to_string()],
+            meshes,
+            lights,
+            container_transform,
+            tint_palette_names: Vec::new(), // Set by caller from palette_names
+        },
+        palette_names,
+    ))
 }
 
 // ── IncludedObjects → InteriorMesh ──────────────────────────────────────────
@@ -612,10 +1006,8 @@ fn parse_light_group(
 
                 // Each baked-in Light node has a RelativeXForm child with
                 // per-light translation/rotation offsets relative to the group.
-                let (rel_translation, rel_rotation) =
-                    extract_relative_xform(xml, light_node);
-                let rel_translation_world =
-                    quat_rotate_vec(base_rot, &rel_translation);
+                let (rel_translation, rel_rotation) = extract_relative_xform(xml, light_node);
+                let rel_translation_world = quat_rotate_vec(base_rot, &rel_translation);
 
                 // Combine group position with per-light offset
                 let light_pos = [
@@ -983,6 +1375,15 @@ fn parse_csv_f64(s: &str) -> Vec<f64> {
         .collect()
 }
 
+fn identity_transform() -> [[f32; 4]; 4] {
+    [
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ]
+}
+
 /// Build a 4×4 column-major transform from position `[x,y,z]`, quaternion `[w,x,y,z]`, and scale `[x,y,z]`.
 fn pos_rot_scale_to_4x4(pos: &[f64], rot: &[f64], scale: &[f64]) -> [[f32; 4]; 4] {
     let w = rot.first().copied().unwrap_or(1.0) as f32;
@@ -1004,6 +1405,29 @@ fn pos_rot_scale_to_4x4(pos: &[f64], rot: &[f64], scale: &[f64]) -> [[f32; 4]; 4
     m.to_cols_array_2d()
 }
 
+fn pos_quat_wxyz_scale_to_4x4(pos: &[f64], rot: &[f64], scale: &[f64]) -> [[f32; 4]; 4] {
+    pos_rot_scale_to_4x4(pos, rot, scale)
+}
+
+fn pos_quat_xyzw_scale_to_4x4(pos: &[f64], rot: &[f64], scale: &[f64]) -> [[f32; 4]; 4] {
+    let x = rot.first().copied().unwrap_or(0.0) as f32;
+    let y = rot.get(1).copied().unwrap_or(0.0) as f32;
+    let z = rot.get(2).copied().unwrap_or(0.0) as f32;
+    let w = rot.get(3).copied().unwrap_or(1.0) as f32;
+    let tx = pos.first().copied().unwrap_or(0.0) as f32;
+    let ty = pos.get(1).copied().unwrap_or(0.0) as f32;
+    let tz = pos.get(2).copied().unwrap_or(0.0) as f32;
+    let sx = scale.first().copied().unwrap_or(1.0) as f32;
+    let sy = scale.get(1).copied().unwrap_or(1.0) as f32;
+    let sz = scale.get(2).copied().unwrap_or(1.0) as f32;
+
+    glam::Mat4::from_scale_rotation_translation(
+        glam::Vec3::new(sx, sy, sz),
+        glam::Quat::from_xyzw(x, y, z, w),
+        glam::Vec3::new(tx, ty, tz),
+    )
+    .to_cols_array_2d()
+}
 
 /// Build a 4×4 container transform from position offset and Ang3 rotation (degrees).
 pub fn build_container_transform(pos: [f32; 3], rot_deg: [f32; 3]) -> [[f32; 4]; 4] {
@@ -1025,7 +1449,10 @@ pub fn build_container_transform(pos: [f32; 3], rot_deg: [f32; 3]) -> [[f32; 4];
 
 #[cfg(test)]
 mod tests {
-    use super::{quat_mul, quat_rotate_vec, semantic_light_kind_for_light};
+    use super::{
+        SocpakReferenceKind, extract_plain_xml_socpak_refs, quat_mul, quat_rotate_vec,
+        semantic_light_kind_for_light,
+    };
 
     fn approx_eq3(left: [f64; 3], right: [f64; 3]) {
         for index in 0..3 {
@@ -1037,6 +1464,30 @@ mod tests {
                 right[index]
             );
         }
+    }
+
+    #[test]
+    fn root_xml_child_object_containers_extract_socpak_refs_with_xyzw_rotation() {
+        let xml = r#"
+<ObjectContainer>
+  <ChildObjectContainers>
+    <Child external="1" name="Data/objectcontainers/pu/shops/admin/admin_small_orison_a.socpak" pos="1,2,3" rot="0,0,0,1"/>
+    <Child external="1" name="Data/objectcontainers/pu/shops/courier/covalex/covalex_orison_int.socpak" pos="-1,0,4" rot="0.70710677,0,0,0.70710677"/>
+  </ChildObjectContainers>
+</ObjectContainer>
+"#;
+
+        let refs = extract_plain_xml_socpak_refs(xml, "root.xml");
+
+        assert_eq!(refs.len(), 2);
+        assert_eq!(
+            refs[0].target_path,
+            "Data/objectcontainers/pu/shops/admin/admin_small_orison_a.socpak"
+        );
+        assert_eq!(refs[0].source_kind, SocpakReferenceKind::RootXmlChild);
+        assert_eq!(refs[0].transform[3], [1.0, 2.0, 3.0, 1.0]);
+        assert!((refs[1].transform[1][1] - 0.0).abs() < 1e-5);
+        assert!((refs[1].transform[1][2] - 1.0).abs() < 1e-5);
     }
 
     #[test]
@@ -1068,6 +1519,9 @@ mod tests {
 
     #[test]
     fn semantic_light_kind_maps_unknown_angled_light_to_spot() {
-        assert_eq!(semantic_light_kind_for_light("Unknown", Some(1.0), Some(2.0)), "spot");
+        assert_eq!(
+            semantic_light_kind_for_light("Unknown", Some(1.0), Some(2.0)),
+            "spot"
+        );
     }
 }

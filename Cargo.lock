@@ -5367,6 +5367,7 @@ dependencies = [
  "half",
  "image",
  "log",
+ "quick-xml 0.37.5",
  "rayon",
  "serde_json",
  "starbreaker-chunks",

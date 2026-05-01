@@ -19,9 +19,11 @@ use crate::types::{EntityPayload, Mesh};
 
 pub(crate) struct DecomposedInput {
     pub entity_name: String,
+    pub source_kind: Option<String>,
+    pub socpak_graph: Option<serde_json::Value>,
     pub geometry_path: String,
     pub material_path: String,
-    pub root_mesh: Mesh,
+    pub root_mesh: Option<Mesh>,
     pub root_materials: Option<MtlFile>,
     pub root_nmc: Option<NodeMeshCombo>,
     pub root_palette: Option<TintPalette>,
@@ -83,7 +85,7 @@ struct SceneInstanceRecord {
     entity_name: String,
     geometry_path: String,
     material_path: String,
-    mesh_asset: String,
+    mesh_asset: Option<String>,
     material_sidecar: Option<String>,
     palette_id: Option<String>,
     parent_node_name: Option<String>,
@@ -179,8 +181,13 @@ fn resolve_child_instance_transforms(input: &DecomposedInput) -> Vec<ResolvedChi
     };
 
     let scene_nodes = if let Some(root_nmc) = input.root_nmc.as_ref().filter(|nmc| !nmc.nodes.is_empty()) {
+        let root_mesh = input
+            .root_mesh
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(empty_scene_graph_mesh);
         builder
-            .build_nmc_hierarchy(&dummy_packed, root_nmc, &input.root_mesh.submeshes, false)
+            .build_nmc_hierarchy(&dummy_packed, root_nmc, &root_mesh.submeshes, false)
             .into_iter()
             .map(json::Index::new)
             .collect::<Vec<_>>()
@@ -275,6 +282,8 @@ struct InteriorPlacementRecord {
 #[derive(Debug, Clone)]
 struct InteriorContainerRecord {
     name: String,
+    source_socpak: Option<String>,
+    source_soc_files: Vec<String>,
     palette_id: Option<String>,
     container_transform: [[f32; 4]; 4],
     placements: Vec<InteriorPlacementRecord>,
@@ -601,52 +610,57 @@ pub(crate) fn write_decomposed_export(
         register_palette(&mut palette_records, palette);
     }
 
-    let root_material_view = build_decomposed_material_view(
-        &input.root_mesh,
-        input.root_materials.as_ref(),
-        input.root_nmc.as_ref(),
-        opts.include_nodraw,
-        opts.include_shields,
-    );
+    let mut root_mesh_asset = None;
+    let mut root_material_sidecar = None;
+    let mut root_palette_id = None;
+    if let Some(root_mesh) = input.root_mesh.as_ref() {
+        let root_material_view = build_decomposed_material_view(
+            root_mesh,
+            input.root_materials.as_ref(),
+            input.root_nmc.as_ref(),
+            opts.include_nodraw,
+            opts.include_shields,
+        );
 
-    let root_mesh_asset = write_mesh_asset(
-        &mut files,
-        p4k,
-        &input.entity_name,
-        &input.geometry_path,
-        &root_material_view.mesh,
-        root_material_view.glb_materials.as_ref(),
-        root_material_view.glb_nmc.as_ref(),
-        &input.root_bones,
-        opts.lod_level,
-        existing_asset_paths,
-    )?;
-    let root_material_sidecar = root_material_view.sidecar_materials.as_ref().map(|materials| {
-        write_material_sidecar(
+        root_mesh_asset = Some(write_mesh_asset(
             &mut files,
             p4k,
-            &mut png_cache,
-            &mut texture_cache,
-            &palettes_manifest_path,
             &input.entity_name,
             &input.geometry_path,
-            &input.material_path,
-            materials,
-            opts.texture_mip,
+            &root_material_view.mesh,
+            root_material_view.glb_materials.as_ref(),
+            root_material_view.glb_nmc.as_ref(),
+            &input.root_bones,
+            opts.lod_level,
             existing_asset_paths,
-        )
-    });
-    let root_palette_id = input
-        .root_palette
-        .as_ref()
-        .map(|palette| register_palette(&mut palette_records, palette));
-    register_livery_usage(
-        &mut livery_usage,
-        root_palette_id.as_deref(),
-        input.root_palette.as_ref(),
-        &input.entity_name,
-        root_material_sidecar.as_deref(),
-    );
+        )?);
+        root_material_sidecar = root_material_view.sidecar_materials.as_ref().map(|materials| {
+            write_material_sidecar(
+                &mut files,
+                p4k,
+                &mut png_cache,
+                &mut texture_cache,
+                &palettes_manifest_path,
+                &input.entity_name,
+                &input.geometry_path,
+                &input.material_path,
+                materials,
+                opts.texture_mip,
+                existing_asset_paths,
+            )
+        });
+        root_palette_id = input
+            .root_palette
+            .as_ref()
+            .map(|palette| register_palette(&mut palette_records, palette));
+        register_livery_usage(
+            &mut livery_usage,
+            root_palette_id.as_deref(),
+            input.root_palette.as_ref(),
+            &input.entity_name,
+            root_material_sidecar.as_deref(),
+        );
+    }
 
     // Export material sidecars for each paint variant and build the paints.json manifest.
     let mut paint_variant_json: Vec<serde_json::Value> = Vec::new();
@@ -748,7 +762,7 @@ pub(crate) fn write_decomposed_export(
             entity_name: child.entity_name.clone(),
             geometry_path: normalize_source_path(p4k, &child.geometry_path),
             material_path: normalize_source_path(p4k, &child.material_path),
-            mesh_asset,
+            mesh_asset: Some(mesh_asset),
             material_sidecar,
             palette_id,
             parent_node_name: Some(child.parent_node_name.clone()),
@@ -899,6 +913,8 @@ pub(crate) fn write_decomposed_export(
 
         interior_records.push(InteriorContainerRecord {
             name: container.name.clone(),
+            source_socpak: container.source_socpak.clone(),
+            source_soc_files: container.source_soc_files.clone(),
             palette_id,
             container_transform: container.container_transform,
             placements,
@@ -1081,12 +1097,20 @@ pub(crate) fn write_decomposed_export(
         None
     };
 
+    let root_geometry_path = root_mesh_asset
+        .as_ref()
+        .map(|_| normalize_source_path(p4k, &input.geometry_path));
+    let root_material_path = root_mesh_asset
+        .as_ref()
+        .map(|_| normalize_source_path(p4k, &input.material_path));
     let scene_manifest = build_scene_manifest_value(
         &input.entity_name,
+        input.source_kind.as_deref(),
+        input.socpak_graph.as_ref(),
         &package_name,
-        &normalize_source_path(p4k, &input.geometry_path),
-        &normalize_source_path(p4k, &input.material_path),
-        &root_mesh_asset,
+        root_geometry_path.as_deref(),
+        root_material_path.as_deref(),
+        root_mesh_asset.as_deref(),
         root_material_sidecar.as_deref(),
         root_palette_id.as_deref(),
         root_animations.as_ref(),
@@ -1133,7 +1157,7 @@ fn classify_exported_file_kind(relative_path: &str) -> ExportedFileKind {
         ExportedFileKind::MaterialSidecar
     } else if relative_path.ends_with(".glb") {
         ExportedFileKind::MeshAsset
-    } else if relative_path.ends_with(".png") {
+    } else if relative_path.ends_with(".png") || relative_path.ends_with(".dds") {
         ExportedFileKind::TextureAsset
     } else {
         ExportedFileKind::PackageManifest
@@ -1142,10 +1166,12 @@ fn classify_exported_file_kind(relative_path: &str) -> ExportedFileKind {
 
 fn build_scene_manifest_value(
     entity_name: &str,
+    source_kind: Option<&str>,
+    socpak_graph: Option<&serde_json::Value>,
     package_name: &str,
-    geometry_path: &str,
-    material_path: &str,
-    root_mesh_asset: &str,
+    geometry_path: Option<&str>,
+    material_path: Option<&str>,
+    root_mesh_asset: Option<&str>,
     root_material_sidecar: Option<&str>,
     root_palette_id: Option<&str>,
     root_animations: Option<&serde_json::Value>,
@@ -1187,6 +1213,12 @@ fn build_scene_manifest_value(
 
     if let Some(animations) = root_animations {
         manifest["root_entity"]["animations"] = animations.clone();
+    }
+    if let Some(source_kind) = source_kind {
+        manifest["source_kind"] = serde_json::json!(source_kind);
+    }
+    if let Some(socpak_graph) = socpak_graph {
+        manifest["socpak_graph"] = socpak_graph.clone();
     }
 
     manifest
@@ -1321,6 +1353,8 @@ fn scene_instance_json(instance: &SceneInstanceRecord) -> serde_json::Value {
 fn interior_container_json(container: &InteriorContainerRecord) -> serde_json::Value {
     serde_json::json!({
         "name": container.name,
+        "source_socpak": container.source_socpak,
+        "source_soc_files": container.source_soc_files,
         "palette_id": container.palette_id,
         "container_transform": container.container_transform,
         "placements": container.placements.iter().map(|placement| {
@@ -3254,7 +3288,7 @@ mod tests {
             entity_name: "child_a".into(),
             geometry_path: "Data/Objects/Ships/Test/child.skin".into(),
             material_path: "Data/Objects/Ships/Test/child.mtl".into(),
-            mesh_asset: "Data/Objects/Ships/Test/child.glb".into(),
+            mesh_asset: Some("Data/Objects/Ships/Test/child.glb".into()),
             material_sidecar: Some("Data/Objects/Ships/Test/child.materials.json".into()),
             palette_id: Some("palette/test".into()),
             parent_node_name: Some("hardpoint_weapon_left".into()),
@@ -3270,6 +3304,8 @@ mod tests {
         };
         let interior = InteriorContainerRecord {
             name: "interior_main".into(),
+            source_socpak: Some("Data/ObjectContainers/Test/interior.socpak".into()),
+            source_soc_files: vec!["interior.soc".into()],
             palette_id: Some("palette/interior".into()),
             container_transform: [
                 [1.0, 0.0, 0.0, 0.0],
@@ -3296,10 +3332,12 @@ mod tests {
 
         let value = build_scene_manifest_value(
             "root",
+            None,
+            None,
             "ARGO MOLE",
-            "Data/Objects/Ships/Test/root.skin",
-            "Data/Objects/Ships/Test/root.mtl",
-            "Data/Objects/Ships/Test/root.glb",
+            Some("Data/Objects/Ships/Test/root.skin"),
+            Some("Data/Objects/Ships/Test/root.mtl"),
+            Some("Data/Objects/Ships/Test/root.glb"),
             Some("Data/Objects/Ships/Test/root.materials.json"),
             Some("palette/root"),
             None,
@@ -3315,8 +3353,42 @@ mod tests {
         assert!(value["children"][0]["local_transform_sc"].is_array());
         assert_eq!(value["children"][0]["resolved_no_rotation"], serde_json::json!(false));
         assert_eq!(value["interiors"][0]["placements"][0]["mesh_asset"], serde_json::json!("Data/Objects/Ships/Test/interior_panel.glb"));
+        assert_eq!(value["interiors"][0]["source_socpak"], serde_json::json!("Data/ObjectContainers/Test/interior.socpak"));
         assert_eq!(value["package_rule"]["package_dir"], serde_json::json!("Packages/ARGO MOLE"));
         assert_eq!(value["package_rule"]["normalized_p4k_relative_paths"], serde_json::json!(true));
+    }
+
+    #[test]
+    fn scene_manifest_accepts_synthetic_socpak_root() {
+        let value = build_scene_manifest_value(
+            "socpak: orison_ind_lz_int",
+            Some("SocpakGraph"),
+            Some(&serde_json::json!({
+                "roots": ["Data/ObjectContainers/root.socpak"],
+                "nodes": [{"path": "Data/ObjectContainers/root.socpak", "name": "root"}],
+                "edges": [],
+                "warnings": [],
+            })),
+            "socpak orison_ind_lz_int_LOD0_TEX2",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            &[],
+            &[],
+            &ExportOptions {
+                kind: crate::pipeline::ExportKind::Decomposed,
+                ..ExportOptions::default()
+            },
+        );
+
+        assert_eq!(value["source_kind"], serde_json::json!("SocpakGraph"));
+        assert_eq!(value["root_entity"]["entity_name"], serde_json::json!("socpak: orison_ind_lz_int"));
+        assert_eq!(value["root_entity"]["mesh_asset"], serde_json::Value::Null);
+        assert_eq!(value["root_entity"]["geometry_path"], serde_json::Value::Null);
+        assert_eq!(value["socpak_graph"]["roots"][0], serde_json::json!("Data/ObjectContainers/root.socpak"));
     }
 
     #[test]

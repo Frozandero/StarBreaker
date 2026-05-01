@@ -160,6 +160,25 @@ pub struct DecomposedExport {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SocpakGraphOptions {
+    pub connected: bool,
+}
+
+impl Default for SocpakGraphOptions {
+    fn default() -> Self {
+        Self { connected: true }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SocpakDecomposedResult {
+    pub export: DecomposedExport,
+    pub root_count: usize,
+    pub socpak_count: usize,
+    pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExportedFileKind {
     PackageManifest,
     MaterialSidecar,
@@ -904,9 +923,11 @@ pub fn assemble_glb_with_loadout_with_progress(
             p4k,
             crate::decomposed::DecomposedInput {
                 entity_name: resolved.entity_name.clone(),
+                source_kind: None,
+                socpak_graph: None,
                 geometry_path: geometry_path.clone(),
                 material_path: material_path.clone(),
-                root_mesh,
+                root_mesh: Some(root_mesh),
                 root_materials: root_mtl,
                 root_nmc: resolved.nmc,
                 root_palette: root_palette.clone(),
@@ -1698,6 +1719,10 @@ pub struct InteriorCgfEntry {
 /// One interior container's placement data.
 pub struct InteriorContainerData {
     pub name: String,
+    /// Canonical P4k path for the source socpak, when known.
+    pub source_socpak: Option<String>,
+    /// Inner `.soc` files parsed from this socpak.
+    pub source_soc_files: Vec<String>,
     /// 4×4 column-major transform positioning this container relative to the hull.
     pub container_transform: [[f32; 4]; 4],
     /// Each entry: (index into unique_cgfs, per-object local transform,
@@ -1880,6 +1905,8 @@ fn build_interiors_from_payloads(
 
         container_data.push(InteriorContainerData {
             name: payload.name.clone(),
+            source_socpak: payload.source_socpak.clone(),
+            source_soc_files: payload.source_soc_files.clone(),
             container_transform: payload.container_transform,
             placements,
             lights: if include_lights { payload.lights.clone() } else { Vec::new() },
@@ -5336,6 +5363,121 @@ fn load_single_mesh(
 ///
 /// This is for locations (space stations, landing zones) that aren't entities
 /// with geometry but are composed entirely of socpak containers.
+pub fn socpaks_to_decomposed(
+    db: &Database,
+    p4k: &MappedP4k,
+    socpak_paths: &[String],
+    opts: &ExportOptions,
+    graph_options: SocpakGraphOptions,
+    existing_asset_paths: Option<&HashSet<String>>,
+) -> Result<SocpakDecomposedResult, Error> {
+    use crate::socpak;
+    use rayon::prelude::*;
+
+    ensure_supported_export_options(opts)?;
+    if opts.kind != ExportKind::Decomposed {
+        return Err(Error::UnsupportedExportKind(format!("{:?}", opts.kind)));
+    }
+
+    let graph = socpak::discover_socpak_graph(p4k, socpak_paths, graph_options.connected)?;
+    let payloads = graph
+        .nodes
+        .par_iter()
+        .filter_map(|node| {
+            match socpak::load_interior_from_socpak(
+                p4k,
+                &node.canonical_path,
+                node.container_transform,
+            ) {
+                Ok(p) => Some(p),
+                Err(e) => {
+                    log::warn!("failed to load {}: {e}", node.canonical_path);
+                    None
+                }
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let interiors = build_interiors_from_payloads(db, p4k, &payloads, opts.include_lights);
+    let label = graph
+        .roots
+        .first()
+        .map(|path| {
+            path.rsplit(&['/', '\\'])
+                .next()
+                .unwrap_or(path)
+                .strip_suffix(".socpak")
+                .unwrap_or(path)
+                .to_string()
+        })
+        .unwrap_or_else(|| "socpak".to_string());
+
+    let mesh_opts = ExportOptions {
+        material_mode: MaterialMode::Colors,
+        ..opts.clone()
+    };
+    let mut preloaded_interior_meshes = preload_interior_meshes(&interiors, p4k, &mesh_opts);
+    let preloaded_interior_mesh_indices: std::collections::HashMap<String, usize> =
+        interiors
+            .unique_cgfs
+            .iter()
+            .enumerate()
+            .map(|(index, entry)| (entry.cgf_path.clone(), index))
+            .collect();
+    let mut interior_png_cache = PngCache::new();
+    let mut interior_mesh_loader =
+        |entry: &InteriorCgfEntry| -> Option<(crate::Mesh, Option<mtl::MtlFile>, Option<crate::nmc::NodeMeshCombo>)> {
+            if let Some(&index) = preloaded_interior_mesh_indices.get(&entry.cgf_path) {
+                if let Some(asset) = preloaded_interior_meshes
+                    .get_mut(index)
+                    .and_then(Option::take)
+                {
+                    return Some(asset);
+                }
+            }
+
+            load_interior_mesh_asset(p4k, entry, &mesh_opts, &mut interior_png_cache)
+        };
+
+    let export = crate::decomposed::write_decomposed_export(
+        p4k,
+        crate::decomposed::DecomposedInput {
+            entity_name: format!("socpak: {label}"),
+            source_kind: Some("SocpakGraph".to_string()),
+            socpak_graph: Some(socpak::socpak_graph_to_manifest_value(&graph)),
+            geometry_path: String::new(),
+            material_path: String::new(),
+            root_mesh: None,
+            root_materials: None,
+            root_nmc: None,
+            root_palette: None,
+            available_palettes: Vec::new(),
+            root_bones: Vec::new(),
+            root_skeleton_source_path: None,
+            root_animation_controller: None,
+            children: Vec::new(),
+            interiors,
+            paint_variants: Vec::new(),
+        },
+        opts,
+        None,
+        existing_asset_paths,
+        &mut interior_mesh_loader,
+    )?;
+
+    let warnings = graph
+        .warnings
+        .iter()
+        .map(|warning| format!("{}: {}", warning.source, warning.message))
+        .collect();
+    Ok(SocpakDecomposedResult {
+        export,
+        root_count: graph.roots.len(),
+        socpak_count: graph.nodes.len(),
+        warnings,
+    })
+}
+
 /// Export socpak containers directly as a GLB (no root entity mesh).
 pub fn socpaks_to_glb(
     db: &Database,
@@ -5344,6 +5486,7 @@ pub fn socpaks_to_glb(
     opts: &ExportOptions,
 ) -> Result<Vec<u8>, Error> {
     use crate::socpak;
+    use rayon::prelude::*;
 
     ensure_supported_export_options(opts)?;
 
@@ -5354,13 +5497,18 @@ pub fn socpaks_to_glb(
         [0.0, 0.0, 0.0, 1.0],
     ];
 
-    let mut payloads = Vec::new();
-    for socpak_path in socpak_paths {
-        match socpak::load_interior_from_socpak(p4k, socpak_path, identity) {
-            Ok(p) => payloads.push(p),
-            Err(e) => log::warn!("failed to load {socpak_path}: {e}"),
-        }
-    }
+    let payloads = socpak_paths
+        .par_iter()
+        .filter_map(|socpak_path| {
+            match socpak::load_interior_from_socpak(p4k, socpak_path, identity) {
+                Ok(p) => Some(p),
+                Err(e) => {
+                    log::warn!("failed to load {socpak_path}: {e}");
+                    None
+                }
+            }
+        })
+        .collect::<Vec<_>>();
 
     let interiors = build_interiors_from_payloads(db, p4k, &payloads, opts.include_lights);
 

@@ -178,6 +178,82 @@ export function onExportDone(
   });
 }
 
+// ── SOCPAK export types ──
+
+export interface SocpakDto {
+  id: string;
+  name: string;
+  path: string;
+  category: string;
+  size: number;
+}
+
+export interface SocpakCategoryDto {
+  name: string;
+  socpaks: SocpakDto[];
+}
+
+export interface SocpakExportRequest {
+  socpak_paths: string[];
+  output_dir: string;
+  lod: number;
+  mip: number;
+  export_kind: string;
+  material_mode: string;
+  format: string;
+  include_lights: boolean;
+  connected: boolean;
+  overwrite_existing_assets: boolean;
+  include_nodraw: boolean;
+  threads: number;
+}
+
+export interface SocpakExportProgress {
+  current: number;
+  total: number;
+  fraction: number;
+  socpak_name: string;
+  socpak_path: string;
+  stage: string;
+  error: string | null;
+}
+
+export interface SocpakExportDone {
+  success: number;
+  errors: number;
+  succeeded_paths: string[];
+}
+
+// ── SOCPAK export commands ──
+
+/** Scan P4k entries for SOCPAK categories. Requires P4k to be loaded. */
+export async function scanSocpakCategories(): Promise<SocpakCategoryDto[]> {
+  return invoke<SocpakCategoryDto[]>("scan_socpak_categories");
+}
+
+/** Start batch SOCPAK export. Progress reported via events. */
+export async function startSocpakExport(request: SocpakExportRequest): Promise<void> {
+  return invoke<void>("start_socpak_export", { request });
+}
+
+/** Listen for SOCPAK export progress events. */
+export function onSocpakExportProgress(
+  callback: (progress: SocpakExportProgress) => void,
+): Promise<UnlistenFn> {
+  return listen<SocpakExportProgress>("socpak-export-progress", (event) => {
+    callback(event.payload);
+  });
+}
+
+/** Listen for SOCPAK export completion. */
+export function onSocpakExportDone(
+  callback: (result: SocpakExportDone) => void,
+): Promise<UnlistenFn> {
+  return listen<SocpakExportDone>("socpak-export-done", (event) => {
+    callback(event.payload);
+  });
+}
+
 /** Open a folder picker for the export output directory. */
 export async function browseOutputDir(): Promise<string | null> {
   const { open } = await import("@tauri-apps/plugin-dialog");

@@ -373,14 +373,17 @@ pub struct ExportDone {
     pub succeeded_ids: Vec<String>,
 }
 
-fn bundled_extension(format: starbreaker_3d::ExportFormat) -> &'static str {
+pub(crate) fn bundled_extension(format: starbreaker_3d::ExportFormat) -> &'static str {
     match format {
         starbreaker_3d::ExportFormat::Glb => "glb",
         starbreaker_3d::ExportFormat::Stl => "stl",
     }
 }
 
-fn prepare_decomposed_output_root(output_root: &Path, package_name: &str) -> Result<(), AppError> {
+pub(crate) fn prepare_decomposed_output_root(
+    output_root: &Path,
+    package_name: &str,
+) -> Result<(), AppError> {
     if output_root.exists() {
         if output_root.is_file() {
             return Err(AppError::Internal(format!(
@@ -400,7 +403,7 @@ fn prepare_decomposed_output_root(output_root: &Path, package_name: &str) -> Res
     Ok(())
 }
 
-fn decomposed_package_directory_name(
+pub(crate) fn decomposed_package_directory_name(
     files: &[starbreaker_3d::ExportedFile],
     fallback_name: &str,
 ) -> String {
@@ -447,7 +450,7 @@ struct ExportProgressSlot {
 }
 
 #[derive(Clone, Copy)]
-enum DecomposedWriteOutcome {
+pub(crate) enum DecomposedWriteOutcome {
     Written,
     SkippedExisting,
 }
@@ -537,7 +540,7 @@ fn should_skip_existing_decomposed_asset(
     !overwrite_existing_assets && file.kind.is_mesh_or_texture_asset()
 }
 
-fn write_decomposed_file(
+pub(crate) fn write_decomposed_file(
     file: &starbreaker_3d::ExportedFile,
     file_path: &Path,
     overwrite_existing_assets: bool,
@@ -558,7 +561,9 @@ fn write_decomposed_file(
     Ok(DecomposedWriteOutcome::Written)
 }
 
-fn collect_existing_decomposed_assets(output_root: &Path) -> Result<HashSet<String>, AppError> {
+pub(crate) fn collect_existing_decomposed_assets(
+    output_root: &Path,
+) -> Result<HashSet<String>, AppError> {
     let data_root = output_root.join("Data");
     let mut existing = HashSet::new();
     if !data_root.exists() {
@@ -925,7 +930,7 @@ fn export_entity_name(name: &str) -> String {
         .to_string()
 }
 
-fn sanitize_export_name(name: &str) -> String {
+pub(crate) fn sanitize_export_name(name: &str) -> String {
     let mut cleaned = String::new();
     let mut last_was_space = false;
 
@@ -950,7 +955,7 @@ fn sanitize_export_name(name: &str) -> String {
 }
 
 /// Sanitize a filename by replacing invalid characters with underscores.
-fn sanitize_filename(name: &str) -> String {
+pub(crate) fn sanitize_filename(name: &str) -> String {
     name.chars()
         .map(|c| match c {
             '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',

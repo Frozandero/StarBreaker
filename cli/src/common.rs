@@ -1,8 +1,147 @@
-use std::path::Path;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 
 use starbreaker_p4k::MappedP4k;
 
 use crate::error::Result;
+
+pub fn sanitize_export_name(name: &str) -> String {
+    let mut cleaned = String::new();
+    let mut last_was_space = false;
+
+    for ch in name.chars() {
+        if ch.is_alphanumeric() {
+            cleaned.push(ch);
+            last_was_space = false;
+        } else if ch.is_whitespace() || matches!(ch, '_' | '-' | ':' | '/' | '\\') {
+            if !cleaned.is_empty() && !last_was_space {
+                cleaned.push(' ');
+                last_was_space = true;
+            }
+        }
+    }
+
+    let cleaned = cleaned.trim();
+    if cleaned.is_empty() {
+        "Export".to_string()
+    } else {
+        cleaned.to_string()
+    }
+}
+
+pub fn prepare_decomposed_output_root(output_root: &PathBuf, package_name: &str) -> Result<()> {
+    if output_root.exists() {
+        if output_root.is_file() {
+            return Err(crate::error::CliError::InvalidInput(format!(
+                "decomposed output root '{}' already exists as a file",
+                output_root.display(),
+            )));
+        }
+    }
+
+    let packages_root = output_root.join("Packages");
+    let package_root = packages_root.join(package_name);
+    if package_root.exists() {
+        std::fs::remove_dir_all(&package_root).map_err(|e| crate::error::CliError::IoPath {
+            source: e,
+            path: package_root.display().to_string(),
+        })?;
+    }
+
+    std::fs::create_dir_all(&package_root).map_err(|e| crate::error::CliError::IoPath {
+        source: e,
+        path: package_root.display().to_string(),
+    })?;
+    Ok(())
+}
+
+fn should_skip_existing_decomposed_asset(
+    file: &starbreaker_3d::ExportedFile,
+    skip_existing_assets: bool,
+) -> bool {
+    skip_existing_assets && file.kind.is_mesh_or_texture_asset()
+}
+
+pub fn write_decomposed_file(
+    file: &starbreaker_3d::ExportedFile,
+    output_path: &PathBuf,
+    skip_existing_assets: bool,
+) -> Result<()> {
+    if output_path.exists() {
+        if !output_path.is_file() {
+            return Err(crate::error::CliError::InvalidInput(format!(
+                "decomposed output path '{}' already exists as a directory",
+                output_path.display(),
+            )));
+        }
+        if should_skip_existing_decomposed_asset(file, skip_existing_assets) {
+            return Ok(());
+        }
+    }
+
+    std::fs::write(output_path, &file.bytes).map_err(|e| crate::error::CliError::IoPath {
+        source: e,
+        path: output_path.display().to_string(),
+    })?;
+    Ok(())
+}
+
+pub fn collect_existing_decomposed_assets(output_root: &Path) -> Result<HashSet<String>> {
+    let data_root = output_root.join("Data");
+    let mut existing = HashSet::new();
+    if !data_root.exists() {
+        return Ok(existing);
+    }
+
+    let mut pending = vec![data_root];
+    while let Some(dir) = pending.pop() {
+        for entry in std::fs::read_dir(&dir).map_err(|e| crate::error::CliError::IoPath {
+            source: e,
+            path: dir.display().to_string(),
+        })? {
+            let entry = entry.map_err(|e| crate::error::CliError::IoPath {
+                source: e,
+                path: dir.display().to_string(),
+            })?;
+            let path = entry.path();
+            let file_type = entry
+                .file_type()
+                .map_err(|e| crate::error::CliError::IoPath {
+                    source: e,
+                    path: path.display().to_string(),
+                })?;
+            if file_type.is_dir() {
+                pending.push(path);
+                continue;
+            }
+            if !file_type.is_file() {
+                continue;
+            }
+
+            let Some(extension) = path.extension().and_then(|ext| ext.to_str()) else {
+                continue;
+            };
+            if !matches!(extension, "glb" | "png" | "dds") {
+                continue;
+            }
+
+            let relative = path
+                .strip_prefix(output_root)
+                .map_err(|_| {
+                    crate::error::CliError::InvalidInput(format!(
+                        "failed to compute relative decomposed asset path for '{}'",
+                        path.display(),
+                    ))
+                })?
+                .to_string_lossy()
+                .replace('\\', "/")
+                .to_ascii_lowercase();
+            existing.insert(relative);
+        }
+    }
+
+    Ok(existing)
+}
 
 /// Open P4k from explicit path or auto-discover.
 pub fn load_p4k(p4k_path: Option<&Path>) -> Result<MappedP4k> {
@@ -19,8 +158,10 @@ pub fn load_dcb_bytes(
     dcb_path: Option<&Path>,
 ) -> Result<(Option<MappedP4k>, Vec<u8>)> {
     if let Some(dcb) = dcb_path {
-        let bytes = std::fs::read(dcb)
-            .map_err(|e| crate::error::CliError::IoPath { source: e, path: dcb.display().to_string() })?;
+        let bytes = std::fs::read(dcb).map_err(|e| crate::error::CliError::IoPath {
+            source: e,
+            path: dcb.display().to_string(),
+        })?;
         let p4k = load_p4k(p4k_path).ok();
         return Ok((p4k, bytes));
     }
@@ -254,4 +395,3 @@ mod tests {
         assert!(matches_filter(CGF_DEEP, None, None));
     }
 }
-
