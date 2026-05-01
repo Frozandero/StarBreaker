@@ -84,9 +84,18 @@ def _existing_package_roots(scene_path: str | Path) -> list[bpy.types.Object]:
 def _remove_existing_package_instances(scene_path: str | Path) -> int:
     removed = 0
     for package_root in _existing_package_roots(scene_path):
+        instance_collections = [
+            collection
+            for obj in package_root.children_recursive
+            for collection in [getattr(obj, "instance_collection", None)]
+            if collection is not None
+        ]
         for obj in reversed(_iter_package_objects(package_root)):
             bpy.data.objects.remove(obj, do_unlink=True)
             removed += 1
+        for collection in instance_collections:
+            if len(collection.objects) == 0:
+                bpy.data.collections.remove(collection)
     return removed
 
 
@@ -427,7 +436,26 @@ def _scene_instance_from_object(obj: bpy.types.Object) -> SceneInstanceRecord | 
 
 
 def _iter_package_objects(package_root: bpy.types.Object) -> list[bpy.types.Object]:
-    return [package_root, *package_root.children_recursive]
+    objects: list[bpy.types.Object] = []
+    seen: set[int] = set()
+
+    def add(obj: bpy.types.Object) -> None:
+        as_pointer = getattr(obj, "as_pointer", None)
+        pointer = as_pointer() if callable(as_pointer) else id(obj)
+        if pointer in seen:
+            return
+        seen.add(pointer)
+        objects.append(obj)
+
+    add(package_root)
+    for obj in package_root.children_recursive:
+        add(obj)
+        collection = getattr(obj, "instance_collection", None)
+        if collection is None:
+            continue
+        for instanced_obj in getattr(collection, "all_objects", []):
+            add(instanced_obj)
+    return objects
 
 
 def _string_prop(obj: bpy.types.ID, name: str) -> str | None:

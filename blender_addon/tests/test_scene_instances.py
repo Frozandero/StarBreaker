@@ -198,6 +198,86 @@ class InstantiateSceneInstanceTests(unittest.TestCase):
         self.assertEqual(clones, [anchor])
         self.assertEqual(linked, [anchor])
 
+    def test_collection_instance_path_skips_real_template_duplication(self) -> None:
+        linked: list[object] = []
+
+        class _Importer:
+            def __init__(self) -> None:
+                self.collection = SimpleNamespace(objects=SimpleNamespace(link=linked.append))
+                self.rebuild_calls = 0
+
+            def _effective_palette_id(self, palette_id):
+                return palette_id
+
+            def _palette_id_for_instance(self, record):
+                return "palette/default"
+
+            def ensure_template(self, mesh_asset):
+                return SimpleNamespace(mesh_asset=mesh_asset, root_names=["CryEngine_Z_up"])
+
+            def instantiate_template_collection_instance(
+                self,
+                template,
+                anchor,
+                record,
+                effective_palette_id,
+                **kwargs,
+            ):
+                self.collection_instance_args = (template, anchor, record, effective_palette_id, kwargs)
+                instance = SimpleNamespace(name=f"{anchor.name}_geometry", parent=anchor)
+                self.collection_instance = instance
+                return instance
+
+            def _apply_instance_metadata(self, objects, record, effective_palette_id):
+                self.metadata = (objects, record, effective_palette_id)
+
+            def rebuild_object_materials(self, obj, effective_palette_id):
+                self.rebuild_calls += 1
+
+        importer = _Importer()
+        parent = SimpleNamespace(name="root")
+        record = SimpleNamespace(
+            entity_name="leaf",
+            resolved_no_rotation=False,
+            local_transform_sc=None,
+            source_transform_basis=None,
+            offset_position=(0.0, 0.0, 0.0),
+            offset_rotation=(0.0, 0.0, 0.0),
+            no_rotation=False,
+            mesh_asset="leaf.glb",
+        )
+
+        anchor, clones = self.orchestration.OrchestrationMixin.instantiate_scene_instance(
+            importer,
+            record,
+            parent,
+            use_collection_instance=True,
+        )
+
+        self.assertIs(anchor.parent, parent)
+        self.assertEqual(linked, [anchor])
+        self.assertEqual(clones, [anchor, importer.collection_instance])
+        self.assertEqual(importer.metadata[0], [anchor, clones[1]])
+        self.assertEqual(importer.metadata[2], "palette/default")
+        self.assertEqual(importer.rebuild_calls, 0)
+
+    def test_entities_with_attachable_nodes_only_returns_parent_entities(self) -> None:
+        importer = SimpleNamespace(
+            package=SimpleNamespace(
+                scene=SimpleNamespace(
+                    children=[
+                        SimpleNamespace(parent_entity_name="ship"),
+                        SimpleNamespace(parent_entity_name=None),
+                        SimpleNamespace(parent_entity_name="turret"),
+                    ]
+                )
+            )
+        )
+
+        result = self.orchestration.OrchestrationMixin._entities_with_attachable_nodes(importer)
+
+        self.assertEqual(result, {"ship", "turret"})
+
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

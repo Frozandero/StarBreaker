@@ -101,6 +101,7 @@ class OrchestrationMixin:
         self.sidecar_submaterials_by_index: dict[str, dict[int, SubmaterialRecord]] = {}
         self.sidecar_submaterials_by_name: dict[str, dict[str, SubmaterialRecord]] = {}
         self.slot_mapping_cache: dict[int, list[int | None] | None] = {}
+        self.collection_instance_cache: dict[tuple[str, str | None, str | None, bool, bool], bpy.types.Collection] = {}
         self.progress_callback = progress_callback
         self._progress_total_steps = 1
         self._progress_completed_steps = 0
@@ -257,6 +258,7 @@ class OrchestrationMixin:
         if self.import_paint_variant_sidecar is not None:
             package_root[PROP_PAINT_VARIANT_SIDECAR] = self.import_paint_variant_sidecar
 
+        entities_with_attachable_nodes = self._entities_with_attachable_nodes()
         self._advance_progress(f"Importing {self.package.scene.root_entity.entity_name}")
         root_anchor, root_nodes = self.instantiate_scene_instance(self.package.scene.root_entity, parent=package_root)
         self.node_index_by_entity_name[self.package.scene.root_entity.entity_name] = self._index_nodes(root_nodes)
@@ -268,8 +270,15 @@ class OrchestrationMixin:
             parent_node = None
             if child.parent_entity_name:
                 parent_node = self.node_index_by_entity_name.get(child.parent_entity_name, {}).get(child.parent_node_name or "")
-            anchor, child_nodes = self.instantiate_scene_instance(child, parent=scene_root_parent, parent_node=parent_node)
-            self.node_index_by_entity_name.setdefault(child.entity_name, {}).update(self._index_nodes(child_nodes))
+            needs_attachable_nodes = child.entity_name in entities_with_attachable_nodes
+            anchor, child_nodes = self.instantiate_scene_instance(
+                child,
+                parent=scene_root_parent,
+                parent_node=parent_node,
+                use_collection_instance=not needs_attachable_nodes,
+            )
+            if needs_attachable_nodes:
+                self.node_index_by_entity_name.setdefault(child.entity_name, {}).update(self._index_nodes(child_nodes))
 
         for interior in self.package.scene.interiors:
             self._advance_progress(f"Preparing {interior.name}")
@@ -416,6 +425,7 @@ class OrchestrationMixin:
         record: SceneInstanceRecord,
         parent: bpy.types.Object,
         parent_node: bpy.types.Object | None = None,
+        use_collection_instance: bool = False,
     ) -> tuple[bpy.types.Object, list[bpy.types.Object]]:
         effective_palette_id = self._effective_palette_id(self._palette_id_for_instance(record))
         anchor = bpy.data.objects.new(record.entity_name, None)
@@ -473,6 +483,18 @@ class OrchestrationMixin:
             ):
                 force_neutralize = True
         has_authored_offset_rotation = any(abs(value) > 1e-6 for value in record.offset_rotation)
+        if use_collection_instance:
+            instance = self.instantiate_template_collection_instance(
+                template,
+                anchor,
+                record,
+                effective_palette_id,
+                neutralize_axis_root=parent_node is not None and (force_neutralize or not has_authored_offset_rotation),
+                force_neutralize_axis_root=force_neutralize,
+            )
+            self._apply_instance_metadata([anchor, instance], record, effective_palette_id)
+            return anchor, [anchor, instance]
+
         clones = self.instantiate_template(
             template,
             anchor,
@@ -530,16 +552,16 @@ class OrchestrationMixin:
                 self._apply_instance_metadata([placement_anchor], instance, effective_palette_id)
                 continue
 
-            clones = self.instantiate_template(
+            instance_object = self.instantiate_template_collection_instance(
                 template,
                 placement_anchor,
+                instance,
+                effective_palette_id,
                 neutralize_axis_root=True,
                 force_neutralize_axis_root=True,
                 target_collection=interior_collection,
             )
-            self._apply_instance_metadata([placement_anchor, *clones], instance, effective_palette_id)
-            for clone in clones:
-                self.rebuild_object_materials(clone, effective_palette_id)
+            self._apply_instance_metadata([placement_anchor, instance_object], instance, effective_palette_id)
 
         for light in interior.lights:
             self.create_light(light, anchor)
@@ -787,6 +809,79 @@ class OrchestrationMixin:
             self.context.view_layer.update()
         return list(mapping.values()) or clones
 
+    def instantiate_template_collection_instance(
+        self,
+        template: ImportedTemplate,
+        anchor: bpy.types.Object,
+        record: SceneInstanceRecord,
+        effective_palette_id: str | None,
+        neutralize_axis_root: bool = False,
+        force_neutralize_axis_root: bool = False,
+        target_collection: bpy.types.Collection | None = None,
+    ) -> bpy.types.Object:
+        collection = self._materialized_template_collection(
+            template,
+            record,
+            effective_palette_id,
+            neutralize_axis_root=neutralize_axis_root,
+            force_neutralize_axis_root=force_neutralize_axis_root,
+        )
+        instance = bpy.data.objects.new(f"{anchor.name}_geometry", None)
+        instance.empty_display_type = "CUBE"
+        instance.instance_type = "COLLECTION"
+        instance.instance_collection = collection
+        instance.parent = anchor
+        (target_collection or self.collection).objects.link(instance)
+        return instance
+
+    def _materialized_template_collection(
+        self,
+        template: ImportedTemplate,
+        record: SceneInstanceRecord,
+        effective_palette_id: str | None,
+        neutralize_axis_root: bool = False,
+        force_neutralize_axis_root: bool = False,
+    ) -> bpy.types.Collection:
+        effective_sidecar = self._effective_import_material_sidecar(record.material_sidecar)
+        cache_key = (
+            template.mesh_asset,
+            effective_sidecar,
+            effective_palette_id,
+            bool(neutralize_axis_root),
+            bool(force_neutralize_axis_root),
+        )
+        cached = self.collection_instance_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        collection = bpy.data.collections.new(self._collection_instance_cache_name(cache_key))
+        mapping: dict[str, bpy.types.Object] = {}
+        for root_name in template.root_names:
+            source = bpy.data.objects.get(root_name)
+            if source is None:
+                continue
+            neutralize_root = neutralize_axis_root and (
+                force_neutralize_axis_root or _should_neutralize_axis_root(source, template.mesh_asset)
+            )
+            clone = self._duplicate_object_tree(source, template.mesh_asset, mapping, collection)
+            clone.parent = None
+            if neutralize_root:
+                clone.matrix_local = mathutils.Matrix.Identity(4)
+
+        clones = list(mapping.values())
+        self._apply_instance_metadata(clones, record, effective_palette_id)
+        for clone in clones:
+            self.rebuild_object_materials(clone, effective_palette_id)
+
+        self.collection_instance_cache[cache_key] = collection
+        return collection
+
+    def _collection_instance_cache_name(self, cache_key: tuple[str, str | None, str | None, bool, bool]) -> str:
+        mesh_asset = cache_key[0]
+        stem = Path(mesh_asset).stem or "Template"
+        suffix = uuid.uuid5(uuid.NAMESPACE_URL, repr(cache_key)).hex[:8]
+        return f"StarBreaker Instance {stem} {suffix}"
+
     def _duplicate_object_tree(
         self,
         source: bpy.types.Object,
@@ -927,6 +1022,12 @@ class OrchestrationMixin:
         indexed = self._index_nodes(objects)
         return indexed.get("CryEngine_Z_up")
 
+    def _entities_with_attachable_nodes(self) -> set[str]:
+        return {
+            child.parent_entity_name
+            for child in self.package.scene.children
+            if child.parent_entity_name
+        }
 
     def _should_hide_source_node_by_default(self, source_node_name: str) -> bool:
         name = source_node_name.strip().lower()
