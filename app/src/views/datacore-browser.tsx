@@ -59,8 +59,8 @@ function NavPanel({ width, onExtractStart, onExtractEnd }: {
   const hasSearch = searchQuery.trim().length > 0;
 
   return (
-    <div className="flex flex-col border-r border-border overflow-hidden shrink-0" style={{ width }}>
-      <div className={hasSearch ? "hidden" : "flex-1 overflow-hidden"}>
+    <div className="flex flex-col border-r border-border overflow-hidden shrink-0 min-h-0" style={{ width }}>
+      <div className={hasSearch ? "hidden" : "flex-1 min-h-0 overflow-hidden"}>
         <TreePanel onExtractStart={onExtractStart} onExtractEnd={onExtractEnd} />
       </div>
       {hasSearch && <SearchResults onExtractStart={onExtractStart} onExtractEnd={onExtractEnd} />}
@@ -174,11 +174,11 @@ function SearchResults({ onExtractStart, onExtractEnd }: {
   }, [searchQuery, doSearch]);
 
   return (
-    <>
+    <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
       <div className="px-2.5 py-1 text-[11px] text-text-dim">
         {searching ? "Searching..." : `${searchResults.length} results`}
       </div>
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 min-h-0 overflow-y-auto">
         {searchTree.map((node) => (
           <SearchTreeItem
             key={node.kind === "folder" ? `f:${node.path}` : `r:${node.id}`}
@@ -189,7 +189,7 @@ function SearchResults({ onExtractStart, onExtractEnd }: {
           />
         ))}
       </div>
-    </>
+    </div>
   );
 }
 
@@ -246,7 +246,7 @@ function TreePanel({ onExtractStart, onExtractEnd }: {
   onExtractEnd: () => void;
 }) {
   return (
-    <div className="flex-1 overflow-y-auto">
+    <div className="h-full min-h-0 overflow-y-auto">
       <TreeLevel path="" depth={0} onExtractStart={onExtractStart} onExtractEnd={onExtractEnd} />
     </div>
   );
