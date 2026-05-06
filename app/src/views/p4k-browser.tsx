@@ -337,6 +337,7 @@ export function P4kBrowser() {
     const query = searchQuery.trim();
     searchSeqRef.current += 1;
     const seq = searchSeqRef.current;
+    setCollapsedSearchPaths(new Set());
 
     if (!hasData || query.length === 0) {
       setSearchResults([]);
@@ -369,8 +370,30 @@ export function P4kBrowser() {
     () => p4kSearchResultsToNodes(searchResults),
     [searchResults],
   );
+  const [collapsedSearchPaths, setCollapsedSearchPaths] = useState<Set<string>>(new Set());
   const hasSearch = searchQuery.trim().length > 0;
-  const displayedTree = hasSearch ? searchTree : tree;
+  const displayedTree = useMemo(() => {
+    if (!hasSearch) return tree;
+    const applyCollapsed = (nodes: TreeNode[]): TreeNode[] =>
+      nodes.map((node) => ({
+        ...node,
+        expanded: node.isDir ? !collapsedSearchPaths.has(node.path) : node.expanded,
+        ...(node.children ? { children: applyCollapsed(node.children) } : {}),
+      }));
+    return applyCollapsed(searchTree);
+  }, [hasSearch, tree, searchTree, collapsedSearchPaths]);
+
+  const handleSearchToggle = useCallback((path: string) => {
+    setCollapsedSearchPaths((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
+      return next;
+    });
+  }, []);
 
   const handleToggle = useCallback(
     async (path: string) => {
@@ -473,7 +496,7 @@ export function P4kBrowser() {
               key={node.path}
               node={node}
               depth={0}
-              onToggle={hasSearch ? () => undefined : handleToggle}
+              onToggle={hasSearch ? handleSearchToggle : handleToggle}
               selectedPath={selectedPath}
               onSelect={setSelectedPath}
               extractFilter={extractFilter}

@@ -200,6 +200,7 @@ function SearchTreeItem({ node, depth, onExtractStart, onExtractEnd }: {
   onExtractEnd: () => void;
 }) {
   const selectRecord = useSelectRecord();
+  const [expanded, setExpanded] = useState(true);
 
   if (node.kind === "folder") {
     return (
@@ -208,12 +209,12 @@ function SearchTreeItem({ node, depth, onExtractStart, onExtractEnd }: {
           name={node.name}
           path={node.path}
           depth={depth}
-          expanded={true}
-          onToggle={() => undefined}
+          expanded={expanded}
+          onToggle={() => setExpanded((e) => !e)}
           onExtractStart={onExtractStart}
           onExtractEnd={onExtractEnd}
         />
-        {node.children.map((child) => (
+        {expanded && node.children.map((child) => (
           <SearchTreeItem
             key={child.kind === "folder" ? `f:${child.path}` : `r:${child.id}`}
             node={child}
