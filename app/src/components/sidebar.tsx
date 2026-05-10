@@ -1,4 +1,4 @@
-import { Archive, Database, Box, Volume2, type LucideIcon } from "lucide-react";
+import { Archive, Database, Box, Volume2, GitCompare, type LucideIcon } from "lucide-react";
 import { useAppStore, type AppMode } from "../stores/app-store";
 
 interface ModeButton {
@@ -20,6 +20,7 @@ const modes: ModeButton[] = [
   { id: "datacore", label: "DataCore", icon: Database },
   { id: "export", label: "3D Export", icon: Box },
   { id: "audio", label: "Audio", icon: Volume2 },
+  { id: "diff", label: "Diff", icon: GitCompare },
 ];
 
 export function Sidebar() {
@@ -51,7 +52,7 @@ export function Sidebar() {
           <button
             key={m.id}
             onClick={() => setMode(m.id)}
-            disabled={!hasData}
+            disabled={!hasData && m.id !== "diff"}
             className={`
               flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium
               transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed

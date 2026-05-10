@@ -17,6 +17,7 @@ starbreaker-datacore = { path = "../crates/starbreaker-datacore" }
 starbreaker-3d = { path = "../crates/starbreaker-3d" }
 starbreaker-cryxml = { path = "../crates/starbreaker-cryxml" }
 starbreaker-dds = { path = "../crates/starbreaker-dds" }
+starbreaker-diff = { path = "../crates/starbreaker-diff" }
 
 clap = { version = "4", features = ["derive", "env"] }
 thiserror = "2"

@@ -7,6 +7,7 @@ import { P4kBrowser } from "./views/p4k-browser";
 import { DataCoreBrowser } from "./views/datacore-browser";
 import { ExportView } from "./views/export-view";
 import { AudioView } from "./views/audio-view";
+import { DiffView } from "./views/diff-view";
 import { getSystemTheme, onSystemThemeChanged } from "./lib/commands";
 import { applySystemTheme } from "./lib/theme";
 
@@ -21,7 +22,7 @@ function App() {
     return () => { unlisten.then((f) => f()); };
   }, []);
 
-  if (!hasData) {
+  if (!hasData && mode !== "diff") {
     return <StartupScreen />;
   }
 
@@ -35,6 +36,7 @@ function App() {
           {mode === "datacore" && <DataCoreBrowser />}
           {mode === "export" && <ExportView />}
           {mode === "audio" && <AudioView />}
+          {mode === "diff" && <DiffView />}
         </main>
       </div>
     </div>

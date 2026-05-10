@@ -1,0 +1,16 @@
+[package]
+name = "starbreaker-diff"
+version.workspace = true
+edition = "2024"
+
+[dependencies]
+starbreaker-datacore = { path = "../starbreaker-datacore" }
+starbreaker-p4k = { path = "../starbreaker-p4k" }
+
+blake3 = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+
+[dev-dependencies]
+tempfile = "3"

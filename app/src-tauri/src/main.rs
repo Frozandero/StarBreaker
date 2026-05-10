@@ -4,6 +4,7 @@
 mod audio_commands;
 mod commands;
 mod datacore_commands;
+mod diff_commands;
 mod error;
 mod state;
 mod ui_sink;
@@ -227,6 +228,12 @@ fn main() {
             datacore_commands::dc_export_xml,
             datacore_commands::dc_get_backlinks,
             datacore_commands::dc_export_folder,
+            diff_commands::diff_generate_inventory,
+            diff_commands::diff_cancel_inventory,
+            diff_commands::diff_load_inventory_report,
+            diff_commands::diff_save_inventory_report,
+            diff_commands::diff_compare_reports,
+            diff_commands::diff_save_diff_report,
             audio_commands::audio_init,
             audio_commands::audio_search_entities,
             audio_commands::audio_search_triggers,

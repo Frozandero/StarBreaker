@@ -20,6 +20,7 @@ starbreaker-wwise = { path = "../../crates/starbreaker-wwise" }
 starbreaker-wem = { path = "../../crates/starbreaker-wem" }
 starbreaker-cryxml = { path = "../../crates/starbreaker-cryxml" }
 starbreaker-dds = { path = "../../crates/starbreaker-dds" }
+starbreaker-diff = { path = "../../crates/starbreaker-diff" }
 image = { version = "0.25", default-features = false, features = ["png"] }
 tokio = { version = "1", features = ["rt"] }
 rayon = "1"
