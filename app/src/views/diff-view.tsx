@@ -21,35 +21,20 @@ import {
   diffSaveDiffReport,
   diffSaveInventoryReport,
   onDiffInventoryProgress,
-  type DiffInventoryProgress,
-  type DiffFilter,
   type DiffItem,
   type DiffPage,
   type DiffStatus,
   type DiffTier,
-  type DiffInventoryHandle,
 } from "../lib/commands";
-
-type SlotId = "old" | "new";
-
-interface SourceSlot {
-  path: string | null;
-  report: DiffInventoryHandle | null;
-  loading: boolean;
-  error: string | null;
-  progress: DiffInventoryProgress | null;
-}
-
-type StatusFilter = DiffStatus | "all";
-type TierFilter = DiffTier | "all";
-
-const emptySlot: SourceSlot = {
-  path: null,
-  report: null,
-  loading: false,
-  error: null,
-  progress: null,
-};
+import {
+  buildBackendFilter,
+  emptySlot,
+  useDiffStore,
+  type SlotId,
+  type SourceSlot,
+  type StatusFilter,
+  type TierFilter,
+} from "../stores/diff-store";
 
 function isInventoryPath(path: string): boolean {
   return path.toLowerCase().endsWith(".starbreaker-inventory.json");
@@ -88,26 +73,46 @@ function itemType(item: DiffItem): string {
 }
 
 export function DiffView() {
-  const [oldSlot, setOldSlot] = useState<SourceSlot>(emptySlot);
-  const [newSlot, setNewSlot] = useState<SourceSlot>(emptySlot);
-  const [diff, setDiff] = useState<DiffPage | null>(null);
+  const oldSlot = useDiffStore((s) => s.oldSlot);
+  const newSlot = useDiffStore((s) => s.newSlot);
+  const diff = useDiffStore((s) => s.diff);
+  const compareIds = useDiffStore((s) => s.compareIds);
+  const selectedKey = useDiffStore((s) => s.selectedKey);
+  const error = useDiffStore((s) => s.error);
+  const includeUnchanged = useDiffStore((s) => s.includeUnchanged);
+  const search = useDiffStore((s) => s.search);
+  const tier = useDiffStore((s) => s.tier);
+  const status = useDiffStore((s) => s.status);
+  const extension = useDiffStore((s) => s.extension);
+  const recordType = useDiffStore((s) => s.recordType);
+  const pathPrefix = useDiffStore((s) => s.pathPrefix);
+  const storedCurrentOffset = useDiffStore((s) => s.currentOffset);
+  const storedQueryKey = useDiffStore((s) => s.queryKey);
+  const setSlot = useDiffStore((s) => s.setSlot);
+  const updateSlot = useDiffStore((s) => s.updateSlot);
+  const setDiff = useDiffStore((s) => s.setDiff);
+  const setCompareIds = useDiffStore((s) => s.setCompareIds);
+  const setSelectedKey = useDiffStore((s) => s.setSelectedKey);
+  const setError = useDiffStore((s) => s.setError);
+  const setIncludeUnchanged = useDiffStore((s) => s.setIncludeUnchanged);
+  const setSearch = useDiffStore((s) => s.setSearch);
+  const setTier = useDiffStore((s) => s.setTier);
+  const setStatus = useDiffStore((s) => s.setStatus);
+  const setExtension = useDiffStore((s) => s.setExtension);
+  const setRecordType = useDiffStore((s) => s.setRecordType);
+  const setPathPrefix = useDiffStore((s) => s.setPathPrefix);
+  const setScrollTop = useDiffStore((s) => s.setScrollTop);
+  const setCurrentOffset = useDiffStore((s) => s.setCurrentOffset);
+  const setQueryKey = useDiffStore((s) => s.setQueryKey);
+  const resetComparison = useDiffStore((s) => s.resetComparison);
   const [pageCache, setPageCache] = useState<Map<number, DiffPage>>(() => new Map());
-  const [compareIds, setCompareIds] = useState<{ oldId: string; newId: string } | null>(null);
   const [pageLoading, setPageLoading] = useState(false);
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [includeUnchanged, setIncludeUnchanged] = useState(false);
-  const [search, setSearch] = useState("");
-  const [tier, setTier] = useState<TierFilter>("all");
-  const [status, setStatus] = useState<StatusFilter>("all");
-  const [extension, setExtension] = useState("");
-  const [recordType, setRecordType] = useState("");
-  const [pathPrefix, setPathPrefix] = useState("");
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const cacheRef = useRef<Map<number, DiffPage>>(new Map());
   const inFlightRef = useRef<Map<number, Promise<DiffPage>>>(new Map());
-  const queryKeyRef = useRef("");
-  const currentPageOffsetRef = useRef(0);
+  const queryKeyRef = useRef(storedQueryKey);
+  const currentPageOffsetRef = useRef(storedCurrentOffset);
+  const restoredSessionRef = useRef<string | null>(null);
   const scrollDebounceRef = useRef<number | null>(null);
   const lastScrollTopRef = useRef(0);
   const scrollDirectionRef = useRef<"up" | "down">("down");
@@ -122,24 +127,12 @@ export function DiffView() {
   });
   const virtualRows = rowVirtualizer.getVirtualItems();
 
-  const setSlot = (slot: SlotId, next: SourceSlot) => {
-    if (slot === "old") setOldSlot(next);
-    else setNewSlot(next);
-  };
-
-  const updateSlot = (slot: SlotId, update: (current: SourceSlot) => SourceSlot) => {
-    if (slot === "old") setOldSlot(update);
-    else setNewSlot(update);
-  };
-
   const loadSource = async (slot: SlotId) => {
     const path = await browseDiffSource();
     if (!path) return;
     setError(null);
-    setDiff(null);
+    resetComparison();
     clearPageCache();
-    setCompareIds(null);
-    setSelectedKey(null);
 
     if (isInventoryPath(path)) {
       setSlot(slot, { ...emptySlot, path, loading: true });
@@ -174,14 +167,17 @@ export function DiffView() {
     setDiff(null);
     clearPageCache();
     setCompareIds({ oldId: oldSlot.report.id, newId: newSlot.report.id });
+    setCurrentOffset(0);
+    setScrollTop(0);
+    setQueryKey("");
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
   };
 
   function setSelectedFromPage(page: DiffPage) {
-    setSelectedKey((current) => {
-      if (current && page.items.some((item) => item.key === current)) return current;
-      return page.items[0]?.key ?? null;
-    });
+    const current = useDiffStore.getState().selectedKey;
+    setSelectedKey(current && page.items.some((item) => item.key === current)
+      ? current
+      : page.items[0]?.key ?? null);
   }
 
   const backendFilter = useMemo(() => buildBackendFilter({
@@ -268,6 +264,7 @@ export function DiffView() {
     const cached = cacheRef.current.get(pageOffset);
     if (cached) {
       setDiff(cached);
+      setCurrentOffset(cached.offset);
       setSelectedFromPage(cached);
       return;
     }
@@ -290,6 +287,7 @@ export function DiffView() {
         returnedItems: next.items.length,
       });
       setDiff(next);
+      setCurrentOffset(next.offset);
       setSelectedFromPage(next);
     } catch (err) {
       console.error("diff page failed", err);
@@ -297,17 +295,50 @@ export function DiffView() {
     } finally {
       setPageLoading(false);
     }
-  }, [backendFilter, compareIds, fetchPage, normalizePageOffset, pageSize, queryKey]);
+  }, [backendFilter, compareIds, fetchPage, normalizePageOffset, pageSize, queryKey, setCurrentOffset]);
 
   useEffect(() => {
     if (!compareIds) return;
+    if (queryKeyRef.current === queryKey && storedQueryKey === queryKey) {
+      if (diff && restoredSessionRef.current !== queryKey) {
+        const nextCache = new Map([[diff.offset, diff]]);
+        cacheRef.current = nextCache;
+        setPageCache(nextCache);
+        restoredSessionRef.current = queryKey;
+        window.requestAnimationFrame(() => {
+          if (scrollRef.current) scrollRef.current.scrollTop = useDiffStore.getState().scrollTop;
+        });
+      } else if (!diff) {
+        void loadPage(storedCurrentOffset);
+      }
+      return;
+    }
+
     queryKeyRef.current = queryKey;
+    restoredSessionRef.current = queryKey;
     clearPageCache();
     setDiff(null);
     setSelectedKey(null);
+    setCurrentOffset(0);
+    setScrollTop(0);
+    setQueryKey(queryKey);
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
     void loadPage(0);
-  }, [clearPageCache, compareIds, filterKey, loadPage, queryKey]);
+  }, [
+    clearPageCache,
+    compareIds,
+    diff,
+    filterKey,
+    loadPage,
+    queryKey,
+    setCurrentOffset,
+    setDiff,
+    setQueryKey,
+    setScrollTop,
+    setSelectedKey,
+    storedCurrentOffset,
+    storedQueryKey,
+  ]);
 
   useEffect(() => {
     if (!compareIds || !diff || pageLoading) return;
@@ -315,6 +346,7 @@ export function DiffView() {
     const lastRow = virtualRows[virtualRows.length - 1]?.index ?? firstRow;
     const targetOffset = normalizePageOffset(firstRow);
     currentPageOffsetRef.current = targetOffset;
+    setCurrentOffset(targetOffset);
     const visiblePageOffsets = pageOffsetsForRange(firstRow, lastRow, pageSize);
     const missingVisibleOffset = visiblePageOffsets.find((offset) => !cacheRef.current.has(offset));
     if (missingVisibleOffset != null) {
@@ -329,7 +361,7 @@ export function DiffView() {
     return () => {
       if (scrollDebounceRef.current != null) window.clearTimeout(scrollDebounceRef.current);
     };
-  }, [compareIds, diff, loadPage, normalizePageOffset, pageLoading, pageSize, virtualRows]);
+  }, [compareIds, diff, loadPage, normalizePageOffset, pageLoading, pageSize, setCurrentOffset, virtualRows]);
 
   useEffect(() => {
     if (!diff) return;
@@ -421,7 +453,7 @@ export function DiffView() {
           <p className="mt-2 text-xs text-text-dim">
             {diff.total_matching === 0
               ? "No matching rows."
-              : `Showing ${formatCount(diff.offset + 1)}-${formatCount(diff.offset + diff.items.length)} of ${formatCount(diff.total_matching)} matching rows.`}
+              : `${formatCount(diff.total_matching)} matching rows.`}
             {diff.total_matching !== totalChanged && ` ${formatCount(totalChanged)} changed rows before filters.`}
           </p>
         </section>
@@ -471,6 +503,7 @@ export function DiffView() {
               const nextScrollTop = event.currentTarget.scrollTop;
               scrollDirectionRef.current = nextScrollTop >= lastScrollTopRef.current ? "down" : "up";
               lastScrollTopRef.current = nextScrollTop;
+              setScrollTop(nextScrollTop);
             }}
           >
             <div style={{ height: rowVirtualizer.getTotalSize(), position: "relative" }}>
@@ -518,26 +551,6 @@ export function DiffView() {
       </div>
     </div>
   );
-}
-
-function buildBackendFilter(input: {
-  search: string;
-  tier: TierFilter;
-  status: StatusFilter;
-  extension: string;
-  recordType: string;
-  pathPrefix: string;
-  includeUnchanged: boolean;
-}): DiffFilter {
-  return {
-    search: input.search.trim() || null,
-    tiers: input.tier === "all" ? [] : [input.tier],
-    statuses: input.status === "all" ? [] : [input.status],
-    extensions: input.extension.trim() ? [input.extension.trim()] : [],
-    record_types: input.recordType.trim() ? [input.recordType.trim()] : [],
-    path_prefixes: input.pathPrefix.trim() ? [input.pathPrefix.trim()] : [],
-    include_unchanged: input.includeUnchanged,
-  };
 }
 
 function cachedItems(cache: Map<number, DiffPage>): DiffItem[] {

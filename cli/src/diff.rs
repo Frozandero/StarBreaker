@@ -1,3 +1,4 @@
+use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand, ValueEnum};
@@ -108,20 +109,16 @@ fn inventory(args: InventoryArgs) -> Result<()> {
         label: args.label,
         ..Default::default()
     };
-    let mut progress = |event: starbreaker_diff::ProgressEvent| {
-        match (event.current, event.total) {
-            (Some(current), Some(total)) => {
-                eprintln!("{}: {current}/{total}", event.message);
-            }
-            _ => eprintln!("{}", event.message),
-        }
-    };
+    let mut progress_output = CliProgress::new();
+    let mut progress = |event: starbreaker_diff::ProgressEvent| progress_output.report(event);
     let report = generate_inventory_from_p4k_with_progress(
         &args.source,
         &options,
         Some(&mut progress),
         None,
     )?;
+    drop(progress);
+    progress_output.finish();
     write_inventory_report(&args.output, &report)?;
     eprintln!(
         "Wrote inventory: {} ({}, {} P4k entries, {} DataCore records)",
@@ -165,20 +162,17 @@ fn load_source(path: &Path, options: &starbreaker_diff::InventoryOptions) -> Res
     if is_inventory_report(path) {
         return Ok(read_inventory_report(path)?);
     }
-    let mut progress = |event: starbreaker_diff::ProgressEvent| {
-        match (event.current, event.total) {
-            (Some(current), Some(total)) => {
-                eprintln!("{}: {current}/{total}", event.message);
-            }
-            _ => eprintln!("{}", event.message),
-        }
-    };
-    Ok(generate_inventory_from_p4k_with_progress(
+    let mut progress_output = CliProgress::new();
+    let mut progress = |event: starbreaker_diff::ProgressEvent| progress_output.report(event);
+    let report = generate_inventory_from_p4k_with_progress(
         path,
         options,
         Some(&mut progress),
         None,
-    )?)
+    )?;
+    drop(progress);
+    progress_output.finish();
+    Ok(report)
 }
 
 fn is_inventory_report(path: &Path) -> bool {
@@ -276,4 +270,49 @@ fn truncate(value: &str, width: usize) -> String {
     let mut out: String = value.chars().take(width.saturating_sub(3)).collect();
     out.push_str("...");
     out
+}
+
+struct CliProgress {
+    dynamic: bool,
+    line_active: bool,
+}
+
+impl CliProgress {
+    fn new() -> Self {
+        Self {
+            dynamic: io::stderr().is_terminal(),
+            line_active: false,
+        }
+    }
+
+    fn report(&mut self, event: starbreaker_diff::ProgressEvent) {
+        if self.dynamic && event.phase == starbreaker_diff::ProgressPhase::HashingDataCoreRecords {
+            self.write_dynamic(&format_progress(&event));
+            return;
+        }
+
+        self.finish();
+        eprintln!("{}", format_progress(&event));
+    }
+
+    fn write_dynamic(&mut self, text: &str) {
+        let mut stderr = io::stderr().lock();
+        let _ = write!(stderr, "\r\x1b[2K{text}");
+        let _ = stderr.flush();
+        self.line_active = true;
+    }
+
+    fn finish(&mut self) {
+        if self.line_active {
+            eprintln!();
+            self.line_active = false;
+        }
+    }
+}
+
+fn format_progress(event: &starbreaker_diff::ProgressEvent) -> String {
+    match (event.current, event.total) {
+        (Some(current), Some(total)) => format!("{}: {current}/{total}", event.message),
+        _ => event.message.clone(),
+    }
 }
