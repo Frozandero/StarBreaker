@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   Download,
@@ -14,16 +14,16 @@ import {
   browseDiffSource,
   browseInventorySavePath,
   diffCancelInventory,
-  diffCompareReports,
   diffGenerateInventory,
   diffLoadInventoryReport,
+  diffQueryReportPage,
   diffSaveDiffReport,
   diffSaveInventoryReport,
   onDiffInventoryProgress,
   type DiffInventoryProgress,
   type DiffFilter,
   type DiffItem,
-  type DiffReport,
+  type DiffPage,
   type DiffStatus,
   type DiffTier,
   type DiffInventoryHandle,
@@ -89,7 +89,10 @@ function itemType(item: DiffItem): string {
 export function DiffView() {
   const [oldSlot, setOldSlot] = useState<SourceSlot>(emptySlot);
   const [newSlot, setNewSlot] = useState<SourceSlot>(emptySlot);
-  const [diff, setDiff] = useState<DiffReport | null>(null);
+  const [diff, setDiff] = useState<DiffPage | null>(null);
+  const [pageCache, setPageCache] = useState<Map<number, DiffPage>>(() => new Map());
+  const [compareIds, setCompareIds] = useState<{ oldId: string; newId: string } | null>(null);
+  const [pageLoading, setPageLoading] = useState(false);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [includeUnchanged, setIncludeUnchanged] = useState(false);
@@ -101,6 +104,17 @@ export function DiffView() {
   const [pathPrefix, setPathPrefix] = useState("");
   const [scrollTop, setScrollTop] = useState(0);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const cacheRef = useRef<Map<number, DiffPage>>(new Map());
+  const inFlightRef = useRef<Map<number, Promise<DiffPage>>>(new Map());
+  const queryKeyRef = useRef("");
+  const currentPageOffsetRef = useRef(0);
+  const scrollDebounceRef = useRef<number | null>(null);
+  const lastScrollTopRef = useRef(0);
+  const scrollDirectionRef = useRef<"up" | "down">("down");
+  const rowHeight = 34;
+  const viewportHeight = 560;
+  const pageSize = 1000;
+  const pageCacheLimit = 7;
 
   const setSlot = (slot: SlotId, next: SourceSlot) => {
     if (slot === "old") setOldSlot(next);
@@ -117,6 +131,8 @@ export function DiffView() {
     if (!path) return;
     setError(null);
     setDiff(null);
+    clearPageCache();
+    setCompareIds(null);
     setSelectedKey(null);
 
     if (isInventoryPath(path)) {
@@ -149,37 +165,175 @@ export function DiffView() {
   const compare = async () => {
     if (!oldSlot.report || !newSlot.report) return;
     setError(null);
+    setDiff(null);
+    clearPageCache();
+    setCompareIds({ oldId: oldSlot.report.id, newId: newSlot.report.id });
+    setScrollTop(0);
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+  };
+
+  function setSelectedFromPage(page: DiffPage) {
+    setSelectedKey((current) => {
+      if (current && page.items.some((item) => item.key === current)) return current;
+      return page.items[0]?.key ?? null;
+    });
+  }
+
+  const backendFilter = useMemo(() => buildBackendFilter({
+    search,
+    tier,
+    status,
+    extension,
+    recordType,
+    pathPrefix,
+    includeUnchanged,
+  }), [extension, includeUnchanged, pathPrefix, recordType, search, status, tier]);
+  const filterKey = useMemo(() => JSON.stringify(backendFilter), [backendFilter]);
+  const queryKey = useMemo(() => {
+    if (!compareIds) return "";
+    return `${compareIds.oldId}:${compareIds.newId}:${filterKey}`;
+  }, [compareIds, filterKey]);
+
+  const normalizePageOffset = useCallback((offset: number) => {
+    return Math.max(0, Math.floor(offset / pageSize) * pageSize);
+  }, [pageSize]);
+
+  const clearPageCache = useCallback(() => {
+    cacheRef.current = new Map();
+    inFlightRef.current = new Map();
+    setPageCache(new Map());
+  }, []);
+
+  const storePage = useCallback((page: DiffPage) => {
+    const nextCache = new Map(cacheRef.current).set(page.offset, page);
+    while (nextCache.size > pageCacheLimit) {
+      const farthestOffset = Array.from(nextCache.keys()).reduce((farthest, offset) => {
+        return Math.abs(offset - currentPageOffsetRef.current) > Math.abs(farthest - currentPageOffsetRef.current)
+          ? offset
+          : farthest;
+      });
+      nextCache.delete(farthestOffset);
+    }
+    cacheRef.current = nextCache;
+    setPageCache(cacheRef.current);
+  }, [pageCacheLimit]);
+
+  const fetchPage = useCallback(async (offset: number) => {
+    if (!compareIds) return null;
+    const pageOffset = normalizePageOffset(offset);
+    const requestKey = queryKey;
+    const cached = cacheRef.current.get(pageOffset);
+    if (cached) return cached;
+    const existing = inFlightRef.current.get(pageOffset);
+    if (existing) return existing;
+    let request: Promise<DiffPage>;
+    request = diffQueryReportPage(
+      compareIds.oldId,
+      compareIds.newId,
+      backendFilter,
+      pageOffset,
+      pageSize,
+    ).then((page) => {
+      if (queryKeyRef.current === requestKey) {
+        storePage(page);
+      }
+      return page;
+    }).finally(() => {
+      if (inFlightRef.current.get(pageOffset) === request) {
+        inFlightRef.current.delete(pageOffset);
+      }
+    });
+    inFlightRef.current.set(pageOffset, request);
+    return request;
+  }, [backendFilter, compareIds, normalizePageOffset, pageSize, queryKey, storePage]);
+
+  const prefetchPage = useCallback((offset: number) => {
+    if (!compareIds || !diff) return;
+    const pageOffset = normalizePageOffset(offset);
+    if (pageOffset < 0 || pageOffset >= diff.total_matching) return;
+    if (cacheRef.current.has(pageOffset) || inFlightRef.current.has(pageOffset)) return;
+    void fetchPage(pageOffset).catch((err) => {
+      console.warn("diff page prefetch failed", err);
+    });
+  }, [compareIds, diff, fetchPage, normalizePageOffset]);
+
+  const loadPage = useCallback(async (offset: number) => {
+    if (!compareIds) return;
+    const pageOffset = normalizePageOffset(offset);
+    const cached = cacheRef.current.get(pageOffset);
+    if (cached) {
+      setDiff(cached);
+      setSelectedFromPage(cached);
+      return;
+    }
+    setError(null);
+    setPageLoading(true);
     try {
-      const filter = buildBackendFilter({
-        search,
-        tier,
-        status,
-        extension,
-        recordType,
-        pathPrefix,
+      console.info("diff page request", {
+        oldId: compareIds.oldId,
+        newId: compareIds.newId,
+        filter: backendFilter,
+        offset: pageOffset,
+        limit: pageSize,
       });
-      console.info("diff compare request", {
-        oldId: oldSlot.report.id,
-        oldLabel: oldSlot.report.label,
-        newId: newSlot.report.id,
-        newLabel: newSlot.report.label,
-        filter,
-        maxItems: 5000,
-      });
-      const next = await diffCompareReports(oldSlot.report.id, newSlot.report.id, false, filter, 5000);
-      console.info("diff compare response", {
+      const next = await fetchPage(pageOffset);
+      if (!next || queryKeyRef.current !== queryKey) return;
+      console.info("diff page response", {
         summary: next.summary,
+        totalMatching: next.total_matching,
+        offset: next.offset,
         returnedItems: next.items.length,
       });
       setDiff(next);
-      setSelectedKey(next.items[0]?.key ?? null);
-      setScrollTop(0);
-      if (scrollRef.current) scrollRef.current.scrollTop = 0;
+      setSelectedFromPage(next);
     } catch (err) {
-      console.error("diff compare failed", err);
+      console.error("diff page failed", err);
       setError(String(err));
+    } finally {
+      setPageLoading(false);
     }
-  };
+  }, [backendFilter, compareIds, fetchPage, normalizePageOffset, pageSize, queryKey]);
+
+  useEffect(() => {
+    if (!compareIds) return;
+    queryKeyRef.current = queryKey;
+    clearPageCache();
+    setDiff(null);
+    setSelectedKey(null);
+    setScrollTop(0);
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+    void loadPage(0);
+  }, [clearPageCache, compareIds, filterKey, loadPage, queryKey]);
+
+  useEffect(() => {
+    if (!compareIds || !diff || pageLoading) return;
+    const targetOffset = Math.floor(Math.max(0, Math.floor(scrollTop / rowHeight) - 12) / pageSize) * pageSize;
+    currentPageOffsetRef.current = targetOffset;
+    if (cacheRef.current.has(targetOffset)) {
+      const cached = cacheRef.current.get(targetOffset);
+      if (cached && cached.offset !== diff.offset) setDiff(cached);
+    } else {
+      if (scrollDebounceRef.current != null) window.clearTimeout(scrollDebounceRef.current);
+      scrollDebounceRef.current = window.setTimeout(() => {
+        void loadPage(targetOffset);
+      }, 120);
+    }
+    return () => {
+      if (scrollDebounceRef.current != null) window.clearTimeout(scrollDebounceRef.current);
+    };
+  }, [compareIds, diff, loadPage, pageLoading, pageSize, rowHeight, scrollTop]);
+
+  useEffect(() => {
+    if (!diff) return;
+    const direction = scrollDirectionRef.current;
+    const nextOffset = diff.offset + pageSize;
+    const previousOffset = diff.offset - pageSize;
+    if (direction === "down") {
+      prefetchPage(nextOffset);
+    } else {
+      prefetchPage(previousOffset);
+    }
+  }, [diff, pageSize, prefetchPage]);
 
   const saveInventory = async (slot: SourceSlot) => {
     if (!slot.report) return;
@@ -194,45 +348,13 @@ export function DiffView() {
     if (path) await diffSaveDiffReport(path, diff);
   };
 
-  const filteredItems = useMemo(() => {
-    if (!diff) return [];
-    const text = search.trim().toLowerCase();
-    const ext = extension.trim().toLowerCase();
-    const recType = recordType.trim().toLowerCase();
-    const prefix = pathPrefix.trim().replaceAll("\\", "/").toLowerCase();
-    return diff.items.filter((item) => {
-      if (tier !== "all" && item.tier !== tier) return false;
-      if (status !== "all" && item.status !== status) return false;
-      if (ext && (item.tier !== "p4k" || itemType(item) !== (ext.startsWith(".") ? ext : `.${ext}`))) {
-        return false;
-      }
-      if (recType && (item.tier !== "data_core" || !itemType(item).toLowerCase().includes(recType))) {
-        return false;
-      }
-      if (prefix && !itemPath(item).replaceAll("\\", "/").toLowerCase().startsWith(prefix)) {
-        return false;
-      }
-      if (!text) return true;
-      const fields = [
-        item.display,
-        item.key,
-        itemPath(item),
-        itemType(item),
-        item.reasons.join(" "),
-      ].join(" ").toLowerCase();
-      return fields.includes(text);
-    });
-  }, [diff, extension, includeUnchanged, pathPrefix, recordType, search, status, tier]);
-
-  const selected = filteredItems.find((item) => item.key === selectedKey) ?? filteredItems[0] ?? null;
+  const selected = cachedItems(pageCache).find((item) => item.key === selectedKey) ?? diff?.items[0] ?? null;
   const totalChanged = diff
     ? diff.summary.added + diff.summary.removed + diff.summary.modified + diff.summary.metadata_changed
     : 0;
-  const rowHeight = 34;
-  const viewportHeight = 560;
   const start = Math.max(0, Math.floor(scrollTop / rowHeight) - 6);
   const visibleCount = Math.ceil(viewportHeight / rowHeight) + 12;
-  const visibleItems = filteredItems.slice(start, start + visibleCount);
+  const visibleRows = buildVisibleRows(pageCache, start, visibleCount, pageSize);
 
   return (
     <div className="flex flex-col h-full bg-bg overflow-hidden">
@@ -246,10 +368,9 @@ export function DiffView() {
             <input
               type="checkbox"
               checked={includeUnchanged}
-              disabled
               onChange={(event) => setIncludeUnchanged(event.target.checked)}
             />
-            Unchanged counted in summary
+            Include unchanged
           </label>
           <button
             onClick={compare}
@@ -289,11 +410,12 @@ export function DiffView() {
             <SummaryCell label="Metadata" value={diff.summary.metadata_changed} tone="text-info" />
             <SummaryCell label="Unchanged" value={diff.summary.unchanged} tone="text-text-dim" />
           </div>
-          {diff.items.length < totalChanged && (
-            <p className="mt-2 text-xs text-text-dim">
-              Showing {formatCount(diff.items.length)} rows. Narrow filters and compare again for a focused result set.
-            </p>
-          )}
+          <p className="mt-2 text-xs text-text-dim">
+            {diff.total_matching === 0
+              ? "No matching rows."
+              : `Showing ${formatCount(diff.offset + 1)}-${formatCount(diff.offset + diff.items.length)} of ${formatCount(diff.total_matching)} matching rows.`}
+            {diff.total_matching !== totalChanged && ` ${formatCount(totalChanged)} changed rows before filters.`}
+          </p>
         </section>
       )}
 
@@ -336,14 +458,21 @@ export function DiffView() {
           </div>
           <div
             ref={scrollRef}
-            className="flex-1 overflow-auto"
-            onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
+            className="relative flex-1 overflow-auto"
+            onScroll={(event) => {
+              const nextScrollTop = event.currentTarget.scrollTop;
+              scrollDirectionRef.current = nextScrollTop >= lastScrollTopRef.current ? "down" : "up";
+              lastScrollTopRef.current = nextScrollTop;
+              setScrollTop(nextScrollTop);
+            }}
           >
-            <div style={{ height: filteredItems.length * rowHeight, position: "relative" }}>
-              <div style={{ transform: `translateY(${start * rowHeight}px)` }}>
-                {visibleItems.map((item) => (
+            <div style={{ height: (diff?.total_matching ?? 0) * rowHeight, position: "relative" }}>
+              {visibleRows.map(({ item, index }) => (
+                <div
+                  key={`${item.tier}:${item.key}`}
+                  style={{ position: "absolute", top: index * rowHeight, left: 0, right: 0, height: rowHeight }}
+                >
                   <button
-                    key={`${item.tier}:${item.key}`}
                     onClick={() => setSelectedKey(item.key)}
                     className={`grid grid-cols-[80px_76px_minmax(140px,1fr)_130px_minmax(120px,0.8fr)] gap-3 w-full px-3 text-left text-xs border-b border-border/60 hover:bg-surface/60 ${
                       selected?.key === item.key ? "bg-primary/10" : ""
@@ -356,9 +485,15 @@ export function DiffView() {
                     <span className="self-center truncate text-text-sub" title={itemType(item)}>{itemType(item)}</span>
                     <span className="self-center truncate text-text-dim" title={item.reasons.join(", ")}>{item.reasons.join(", ")}</span>
                   </button>
-                ))}
-              </div>
+                </div>
+              ))}
             </div>
+            {pageLoading && (
+              <div className="absolute right-4 bottom-4 flex items-center gap-2 rounded-md border border-border bg-bg-alt px-3 py-2 text-xs text-text-sub shadow">
+                <Loader2 size={14} className="animate-spin" />
+                Loading rows
+              </div>
+            )}
           </div>
         </main>
 
@@ -377,6 +512,7 @@ function buildBackendFilter(input: {
   extension: string;
   recordType: string;
   pathPrefix: string;
+  includeUnchanged: boolean;
 }): DiffFilter {
   return {
     search: input.search.trim() || null,
@@ -385,8 +521,29 @@ function buildBackendFilter(input: {
     extensions: input.extension.trim() ? [input.extension.trim()] : [],
     record_types: input.recordType.trim() ? [input.recordType.trim()] : [],
     path_prefixes: input.pathPrefix.trim() ? [input.pathPrefix.trim()] : [],
-    include_unchanged: false,
+    include_unchanged: input.includeUnchanged,
   };
+}
+
+function cachedItems(cache: Map<number, DiffPage>): DiffItem[] {
+  return Array.from(cache.values()).flatMap((page) => page.items);
+}
+
+function buildVisibleRows(
+  cache: Map<number, DiffPage>,
+  start: number,
+  visibleCount: number,
+  pageSize: number,
+): Array<{ item: DiffItem; index: number }> {
+  const rows: Array<{ item: DiffItem; index: number }> = [];
+  const end = start + visibleCount;
+  for (let index = start; index < end; index += 1) {
+    const pageOffset = Math.floor(index / pageSize) * pageSize;
+    const page = cache.get(pageOffset);
+    const item = page?.items[index - pageOffset];
+    if (item) rows.push({ item, index });
+  }
+  return rows;
 }
 
 function SourcePanel({ slotId, slot, onLoad, onSave }: {

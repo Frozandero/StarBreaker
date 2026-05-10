@@ -233,6 +233,7 @@ fn main() {
             diff_commands::diff_load_inventory_report,
             diff_commands::diff_save_inventory_report,
             diff_commands::diff_compare_reports,
+            diff_commands::diff_query_report_page,
             diff_commands::diff_save_diff_report,
             audio_commands::audio_init,
             audio_commands::audio_search_entities,

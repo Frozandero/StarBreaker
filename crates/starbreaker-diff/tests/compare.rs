@@ -4,7 +4,7 @@ use starbreaker_diff::report::{
     ArchiveEntryInventory, DataCoreInventory, DataCoreRecordInventory, DataCoreStatus,
     HashAlgorithms, InventoryMode, InventoryReport, SourceInfo, Tier, INVENTORY_SCHEMA_VERSION,
 };
-use starbreaker_diff::{compare_reports, DiffFilter};
+use starbreaker_diff::{compare_report_page, compare_reports, DiffFilter};
 
 fn report(
     label: &str,
@@ -139,4 +139,44 @@ fn summary_counts_unchanged_even_when_rows_are_omitted() {
 
     assert_eq!(diff.summary.unchanged, 1);
     assert!(diff.items.is_empty());
+}
+
+#[test]
+fn paged_compare_counts_all_matches_but_returns_requested_window() {
+    let old = report(
+        "old",
+        vec![
+            archive("Data\\a.dds", 1, 10),
+            archive("Data\\b.dds", 2, 20),
+            archive("Data\\c.txt", 3, 30),
+        ],
+        Vec::new(),
+    );
+    let new = report(
+        "new",
+        vec![
+            archive("Data\\a.dds", 9, 10),
+            archive("Data\\b.dds", 8, 20),
+            archive("Data\\c.txt", 7, 30),
+        ],
+        Vec::new(),
+    );
+
+    let page = compare_report_page(
+        &old,
+        &new,
+        &DiffFilter {
+            extensions: vec![".dds".to_string()],
+            statuses: vec![DiffStatus::Modified],
+            include_unchanged: false,
+            ..DiffFilter::default()
+        },
+        1,
+        1,
+    );
+
+    assert_eq!(page.summary.modified, 3);
+    assert_eq!(page.total_matching, 2);
+    assert_eq!(page.items.len(), 1);
+    assert_eq!(page.items[0].key, "data\\b.dds");
 }

@@ -175,6 +175,48 @@ pub fn diff_compare_reports(
 }
 
 #[tauri::command]
+pub fn diff_query_report_page(
+    state: State<'_, AppState>,
+    old_id: String,
+    new_id: String,
+    filter: starbreaker_diff::DiffFilter,
+    offset: usize,
+    limit: usize,
+) -> Result<starbreaker_diff::DiffPage, AppError> {
+    let inventories = state.diff_inventories.lock();
+    let old = inventories
+        .get(&old_id)
+        .ok_or_else(|| AppError::Internal(format!("old inventory not found: {old_id}")))?;
+    let new = inventories
+        .get(&new_id)
+        .ok_or_else(|| AppError::Internal(format!("new inventory not found: {new_id}")))?;
+    log::info!(
+        "diff page query started: old_id={} old_label={} new_id={} new_label={} filter={:?} offset={} limit={}",
+        old_id,
+        old.source.label,
+        new_id,
+        new.source.label,
+        filter,
+        offset,
+        limit
+    );
+    let page = starbreaker_diff::compare_report_page(old, new, &filter, offset, limit);
+    log::info!(
+        "diff page query finished: old_id={} new_id={} total_matching={} returned_items={} summary_added={} summary_removed={} summary_modified={} summary_metadata={} summary_unchanged={}",
+        old_id,
+        new_id,
+        page.total_matching,
+        page.items.len(),
+        page.summary.added,
+        page.summary.removed,
+        page.summary.modified,
+        page.summary.metadata_changed,
+        page.summary.unchanged
+    );
+    Ok(page)
+}
+
+#[tauri::command]
 pub fn diff_save_diff_report(
     path: String,
     report: starbreaker_diff::DiffReport,

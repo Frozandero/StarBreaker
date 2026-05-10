@@ -47,7 +47,7 @@ pub struct DiffSummary {
 }
 
 impl DiffSummary {
-    fn add(&mut self, item: &DiffItem) {
+    pub(crate) fn add(&mut self, item: &DiffItem) {
         match item.status {
             DiffStatus::Added => self.added += 1,
             DiffStatus::Removed => self.removed += 1,
@@ -179,6 +179,70 @@ fn compare_archive(
     items
 }
 
+pub(crate) fn archive_item_for_key(
+    key: String,
+    old_map: &BTreeMap<String, &ArchiveEntryInventory>,
+    new_map: &BTreeMap<String, &ArchiveEntryInventory>,
+) -> DiffItem {
+    match (old_map.get(&key), new_map.get(&key)) {
+        (None, Some(new_entry)) => archive_item(
+            DiffStatus::Added,
+            key,
+            None,
+            Some((*new_entry).clone()),
+            Vec::new(),
+        ),
+        (Some(old_entry), None) => archive_item(
+            DiffStatus::Removed,
+            key,
+            Some((*old_entry).clone()),
+            None,
+            Vec::new(),
+        ),
+        (Some(old_entry), Some(new_entry)) => {
+            let mut reasons = Vec::new();
+            if old_entry.crc32 != new_entry.crc32 {
+                reasons.push("crc32_changed".to_string());
+            }
+            if old_entry.uncompressed_size != new_entry.uncompressed_size {
+                reasons.push("uncompressed_size_changed".to_string());
+            }
+            let content_changed = !reasons.is_empty();
+
+            if old_entry.compressed_size != new_entry.compressed_size {
+                reasons.push("compressed_size_changed".to_string());
+            }
+            if old_entry.compression_method != new_entry.compression_method {
+                reasons.push("compression_method_changed".to_string());
+            }
+            if old_entry.encrypted != new_entry.encrypted {
+                reasons.push("encrypted_changed".to_string());
+            }
+            if old_entry.last_modified != new_entry.last_modified {
+                reasons.push("last_modified_changed".to_string());
+            }
+            add_path_reasons(&mut reasons, &old_entry.path, &new_entry.path);
+
+            let status = if content_changed {
+                DiffStatus::Modified
+            } else if reasons.is_empty() {
+                DiffStatus::Unchanged
+            } else {
+                DiffStatus::MetadataChanged
+            };
+
+            archive_item(
+                status,
+                key,
+                Some((*old_entry).clone()),
+                Some((*new_entry).clone()),
+                reasons,
+            )
+        }
+        (None, None) => archive_item(DiffStatus::Unchanged, key, None, None, Vec::new()),
+    }
+}
+
 fn compare_datacore(
     old: &InventoryReport,
     new: &InventoryReport,
@@ -258,6 +322,65 @@ fn compare_datacore(
         }
     }
     items
+}
+
+pub(crate) fn datacore_item_for_key(
+    key: String,
+    old_map: &BTreeMap<String, &DataCoreRecordInventory>,
+    new_map: &BTreeMap<String, &DataCoreRecordInventory>,
+) -> DiffItem {
+    match (old_map.get(&key), new_map.get(&key)) {
+        (None, Some(new_record)) => datacore_item(
+            DiffStatus::Added,
+            key,
+            None,
+            Some((*new_record).clone()),
+            Vec::new(),
+        ),
+        (Some(old_record), None) => datacore_item(
+            DiffStatus::Removed,
+            key,
+            Some((*old_record).clone()),
+            None,
+            Vec::new(),
+        ),
+        (Some(old_record), Some(new_record)) => {
+            let mut reasons = Vec::new();
+            if old_record.record_type != new_record.record_type {
+                reasons.push("type_changed".to_string());
+            }
+            if old_record.content_hash != new_record.content_hash {
+                reasons.push("content_hash_changed".to_string());
+            }
+            let content_changed = reasons
+                .iter()
+                .any(|reason| reason == "type_changed" || reason == "content_hash_changed");
+
+            if old_record.name != new_record.name {
+                reasons.push("name_changed".to_string());
+            }
+            if old_record.path != new_record.path {
+                reasons.push("path_changed".to_string());
+            }
+
+            let status = if content_changed {
+                DiffStatus::Modified
+            } else if reasons.is_empty() {
+                DiffStatus::Unchanged
+            } else {
+                DiffStatus::MetadataChanged
+            };
+
+            datacore_item(
+                status,
+                key,
+                Some((*old_record).clone()),
+                Some((*new_record).clone()),
+                reasons,
+            )
+        }
+        (None, None) => datacore_item(DiffStatus::Unchanged, key, None, None, Vec::new()),
+    }
 }
 
 fn archive_item(

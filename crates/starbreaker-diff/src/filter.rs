@@ -18,11 +18,11 @@ pub fn filter_diff_items<'a>(
 ) -> Vec<&'a DiffItem> {
     items
         .iter()
-        .filter(|item| matches_filter(item, filter))
+        .filter(|item| diff_item_matches_filter(item, filter))
         .collect()
 }
 
-fn matches_filter(item: &DiffItem, filter: &DiffFilter) -> bool {
+pub fn diff_item_matches_filter(item: &DiffItem, filter: &DiffFilter) -> bool {
     if !filter.tiers.is_empty() && !filter.tiers.contains(&item.tier) {
         return false;
     }

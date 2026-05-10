@@ -537,6 +537,12 @@ export interface DiffReport {
   items: DiffItem[];
 }
 
+export interface DiffPage extends DiffReport {
+  total_matching: number;
+  offset: number;
+  limit: number;
+}
+
 export interface DiffFilter {
   search?: string | null;
   tiers: DiffTier[];
@@ -640,6 +646,22 @@ export async function diffCompareReports(
     includeUnchanged,
     filter: filter ?? null,
     maxItems,
+  });
+}
+
+export async function diffQueryReportPage(
+  oldId: string,
+  newId: string,
+  filter: DiffFilter,
+  offset: number,
+  limit: number,
+): Promise<DiffPage> {
+  return invoke<DiffPage>("diff_query_report_page", {
+    oldId,
+    newId,
+    filter,
+    offset,
+    limit,
   });
 }
 
