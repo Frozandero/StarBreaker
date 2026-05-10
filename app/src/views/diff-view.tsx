@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import {
   AlertTriangle,
   Download,
@@ -102,7 +103,6 @@ export function DiffView() {
   const [extension, setExtension] = useState("");
   const [recordType, setRecordType] = useState("");
   const [pathPrefix, setPathPrefix] = useState("");
-  const [scrollTop, setScrollTop] = useState(0);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const cacheRef = useRef<Map<number, DiffPage>>(new Map());
   const inFlightRef = useRef<Map<number, Promise<DiffPage>>>(new Map());
@@ -112,9 +112,15 @@ export function DiffView() {
   const lastScrollTopRef = useRef(0);
   const scrollDirectionRef = useRef<"up" | "down">("down");
   const rowHeight = 34;
-  const viewportHeight = 560;
   const pageSize = 1000;
   const pageCacheLimit = 7;
+  const rowVirtualizer = useVirtualizer({
+    count: diff?.total_matching ?? 0,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => rowHeight,
+    overscan: 30,
+  });
+  const virtualRows = rowVirtualizer.getVirtualItems();
 
   const setSlot = (slot: SlotId, next: SourceSlot) => {
     if (slot === "old") setOldSlot(next);
@@ -168,7 +174,6 @@ export function DiffView() {
     setDiff(null);
     clearPageCache();
     setCompareIds({ oldId: oldSlot.report.id, newId: newSlot.report.id });
-    setScrollTop(0);
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
   };
 
@@ -300,40 +305,45 @@ export function DiffView() {
     clearPageCache();
     setDiff(null);
     setSelectedKey(null);
-    setScrollTop(0);
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
     void loadPage(0);
   }, [clearPageCache, compareIds, filterKey, loadPage, queryKey]);
 
   useEffect(() => {
     if (!compareIds || !diff || pageLoading) return;
-    const targetOffset = Math.floor(Math.max(0, Math.floor(scrollTop / rowHeight) - 12) / pageSize) * pageSize;
+    const firstRow = virtualRows[0]?.index ?? 0;
+    const lastRow = virtualRows[virtualRows.length - 1]?.index ?? firstRow;
+    const targetOffset = normalizePageOffset(firstRow);
     currentPageOffsetRef.current = targetOffset;
-    if (cacheRef.current.has(targetOffset)) {
-      const cached = cacheRef.current.get(targetOffset);
-      if (cached && cached.offset !== diff.offset) setDiff(cached);
-    } else {
+    const visiblePageOffsets = pageOffsetsForRange(firstRow, lastRow, pageSize);
+    const missingVisibleOffset = visiblePageOffsets.find((offset) => !cacheRef.current.has(offset));
+    if (missingVisibleOffset != null) {
       if (scrollDebounceRef.current != null) window.clearTimeout(scrollDebounceRef.current);
       scrollDebounceRef.current = window.setTimeout(() => {
-        void loadPage(targetOffset);
-      }, 120);
+        void loadPage(missingVisibleOffset);
+      }, 80);
+    } else if (cacheRef.current.has(targetOffset)) {
+      const cached = cacheRef.current.get(targetOffset);
+      if (cached && cached.offset !== diff.offset) setDiff(cached);
     }
     return () => {
       if (scrollDebounceRef.current != null) window.clearTimeout(scrollDebounceRef.current);
     };
-  }, [compareIds, diff, loadPage, pageLoading, pageSize, rowHeight, scrollTop]);
+  }, [compareIds, diff, loadPage, normalizePageOffset, pageLoading, pageSize, virtualRows]);
 
   useEffect(() => {
     if (!diff) return;
     const direction = scrollDirectionRef.current;
-    const nextOffset = diff.offset + pageSize;
-    const previousOffset = diff.offset - pageSize;
+    const firstRow = virtualRows[0]?.index ?? diff.offset;
+    const lastRow = virtualRows[virtualRows.length - 1]?.index ?? firstRow;
+    const nextOffset = normalizePageOffset(lastRow) + pageSize;
+    const previousOffset = normalizePageOffset(firstRow) - pageSize;
     if (direction === "down") {
       prefetchPage(nextOffset);
     } else {
       prefetchPage(previousOffset);
     }
-  }, [diff, pageSize, prefetchPage]);
+  }, [diff, normalizePageOffset, pageSize, prefetchPage, virtualRows]);
 
   const saveInventory = async (slot: SourceSlot) => {
     if (!slot.report) return;
@@ -352,9 +362,7 @@ export function DiffView() {
   const totalChanged = diff
     ? diff.summary.added + diff.summary.removed + diff.summary.modified + diff.summary.metadata_changed
     : 0;
-  const start = Math.max(0, Math.floor(scrollTop / rowHeight) - 6);
-  const visibleCount = Math.ceil(viewportHeight / rowHeight) + 12;
-  const visibleRows = buildVisibleRows(pageCache, start, visibleCount, pageSize);
+  const visibleRows = buildVisibleRows(pageCache, virtualRows, pageSize);
 
   return (
     <div className="flex flex-col h-full bg-bg overflow-hidden">
@@ -463,28 +471,35 @@ export function DiffView() {
               const nextScrollTop = event.currentTarget.scrollTop;
               scrollDirectionRef.current = nextScrollTop >= lastScrollTopRef.current ? "down" : "up";
               lastScrollTopRef.current = nextScrollTop;
-              setScrollTop(nextScrollTop);
             }}
           >
-            <div style={{ height: (diff?.total_matching ?? 0) * rowHeight, position: "relative" }}>
-              {visibleRows.map(({ item, index }) => (
+            <div style={{ height: rowVirtualizer.getTotalSize(), position: "relative" }}>
+              {visibleRows.map(({ item, index, start }) => (
                 <div
-                  key={`${item.tier}:${item.key}`}
-                  style={{ position: "absolute", top: index * rowHeight, left: 0, right: 0, height: rowHeight }}
+                  key={`${item?.tier ?? "loading"}:${item?.key ?? index}`}
+                  style={{ position: "absolute", top: start, left: 0, right: 0, height: rowHeight }}
                 >
-                  <button
-                    onClick={() => setSelectedKey(item.key)}
-                    className={`grid grid-cols-[80px_76px_minmax(140px,1fr)_130px_minmax(120px,0.8fr)] gap-3 w-full px-3 text-left text-xs border-b border-border/60 hover:bg-surface/60 ${
-                      selected?.key === item.key ? "bg-primary/10" : ""
-                    }`}
-                    style={{ height: rowHeight }}
-                  >
-                    <span className={`self-center ${statusTone(item.status)}`}>{statusLabel(item.status)}</span>
-                    <span className="self-center text-text-sub">{tierLabel(item.tier)}</span>
-                    <span className="self-center truncate" title={item.display}>{item.display}</span>
-                    <span className="self-center truncate text-text-sub" title={itemType(item)}>{itemType(item)}</span>
-                    <span className="self-center truncate text-text-dim" title={item.reasons.join(", ")}>{item.reasons.join(", ")}</span>
-                  </button>
+                  {item ? (
+                    <button
+                      onClick={() => setSelectedKey(item.key)}
+                      className={`grid grid-cols-[80px_76px_minmax(140px,1fr)_130px_minmax(120px,0.8fr)] gap-3 w-full px-3 text-left text-xs border-b border-border/60 hover:bg-surface/60 ${
+                        selected?.key === item.key ? "bg-primary/10" : ""
+                      }`}
+                      style={{ height: rowHeight }}
+                    >
+                      <span className={`self-center ${statusTone(item.status)}`}>{statusLabel(item.status)}</span>
+                      <span className="self-center text-text-sub">{tierLabel(item.tier)}</span>
+                      <span className="self-center truncate" title={item.display}>{item.display}</span>
+                      <span className="self-center truncate text-text-sub" title={itemType(item)}>{itemType(item)}</span>
+                      <span className="self-center truncate text-text-dim" title={item.reasons.join(", ")}>{item.reasons.join(", ")}</span>
+                    </button>
+                  ) : (
+                    <div className="grid grid-cols-[80px_76px_minmax(140px,1fr)_130px_minmax(120px,0.8fr)] gap-3 w-full px-3 text-left text-xs border-b border-border/60 text-text-dim" style={{ height: rowHeight }}>
+                      <span className="self-center">...</span>
+                      <span className="self-center">...</span>
+                      <span className="self-center">Loading row {formatCount(index + 1)}</span>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -531,19 +546,26 @@ function cachedItems(cache: Map<number, DiffPage>): DiffItem[] {
 
 function buildVisibleRows(
   cache: Map<number, DiffPage>,
-  start: number,
-  visibleCount: number,
+  virtualRows: VirtualItem[],
   pageSize: number,
-): Array<{ item: DiffItem; index: number }> {
-  const rows: Array<{ item: DiffItem; index: number }> = [];
-  const end = start + visibleCount;
-  for (let index = start; index < end; index += 1) {
+): Array<{ item: DiffItem | null; index: number; start: number }> {
+  return virtualRows.map((row) => {
+    const index = row.index;
     const pageOffset = Math.floor(index / pageSize) * pageSize;
     const page = cache.get(pageOffset);
     const item = page?.items[index - pageOffset];
-    if (item) rows.push({ item, index });
+    return { item: item ?? null, index, start: row.start };
+  });
+}
+
+function pageOffsetsForRange(start: number, end: number, pageSize: number): number[] {
+  const offsets = [];
+  const firstOffset = Math.floor(start / pageSize) * pageSize;
+  const lastOffset = Math.floor(end / pageSize) * pageSize;
+  for (let offset = firstOffset; offset <= lastOffset; offset += pageSize) {
+    offsets.push(offset);
   }
-  return rows;
+  return offsets;
 }
 
 function SourcePanel({ slotId, slot, onLoad, onSave }: {

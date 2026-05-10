@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 
@@ -5,7 +6,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
 use crate::error::AppError;
-use crate::state::AppState;
+use crate::state::{AppState, DiffSession};
 
 #[derive(Clone, Serialize)]
 pub struct DiffInventoryProgress {
@@ -183,26 +184,70 @@ pub fn diff_query_report_page(
     offset: usize,
     limit: usize,
 ) -> Result<starbreaker_diff::DiffPage, AppError> {
-    let inventories = state.diff_inventories.lock();
-    let old = inventories
-        .get(&old_id)
-        .ok_or_else(|| AppError::Internal(format!("old inventory not found: {old_id}")))?;
-    let new = inventories
-        .get(&new_id)
-        .ok_or_else(|| AppError::Internal(format!("new inventory not found: {new_id}")))?;
+    let session_id = diff_session_id(&old_id, &new_id, filter.include_unchanged);
+    ensure_diff_session(&state, &session_id, &old_id, &new_id, filter.include_unchanged)?;
     log::info!(
-        "diff page query started: old_id={} old_label={} new_id={} new_label={} filter={:?} offset={} limit={}",
+        "diff page query started: session_id={} old_id={} new_id={} filter={:?} offset={} limit={}",
+        session_id,
         old_id,
-        old.source.label,
         new_id,
-        new.source.label,
         filter,
         offset,
         limit
     );
-    let page = starbreaker_diff::compare_report_page(old, new, &filter, offset, limit);
+    let mut sessions = state.diff_sessions.lock();
+    let session = sessions
+        .get_mut(&session_id)
+        .ok_or_else(|| AppError::Internal(format!("diff session not found: {session_id}")))?;
+    let filter_key = serde_json::to_string(&filter)
+        .map_err(|e| AppError::Internal(format!("filter serialization failed: {e}")))?;
+    if !session.filter_indexes.contains_key(&filter_key) {
+        let indexes: Vec<_> = session
+            .report
+            .items
+            .iter()
+            .enumerate()
+            .filter_map(|(index, item)| {
+                if starbreaker_diff::diff_item_matches_filter(item, &filter) {
+                    Some(index)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        if session.filter_indexes.len() >= 8
+            && let Some(remove_key) = session.filter_indexes.keys().next().cloned()
+        {
+            session.filter_indexes.remove(&remove_key);
+        }
+        session.filter_indexes.insert(filter_key.clone(), indexes);
+    }
+    let indexes = session
+        .filter_indexes
+        .get(&filter_key)
+        .ok_or_else(|| AppError::Internal("diff filter index missing".to_string()))?;
+    let limit = limit.max(1);
+    let items = indexes
+        .iter()
+        .skip(offset)
+        .take(limit)
+        .map(|index| session.report.items[*index].clone())
+        .collect();
+    let page = starbreaker_diff::DiffPage {
+        schema_version: session.report.schema_version,
+        old_label: session.report.old_label.clone(),
+        new_label: session.report.new_label.clone(),
+        old_inventory_hash: session.report.old_inventory_hash.clone(),
+        new_inventory_hash: session.report.new_inventory_hash.clone(),
+        summary: session.report.summary.clone(),
+        total_matching: indexes.len(),
+        offset,
+        limit,
+        items,
+    };
     log::info!(
-        "diff page query finished: old_id={} new_id={} total_matching={} returned_items={} summary_added={} summary_removed={} summary_modified={} summary_metadata={} summary_unchanged={}",
+        "diff page query finished: session_id={} old_id={} new_id={} total_matching={} returned_items={} summary_added={} summary_removed={} summary_modified={} summary_metadata={} summary_unchanged={}",
+        session_id,
         old_id,
         new_id,
         page.total_matching,
@@ -231,6 +276,53 @@ fn new_inventory_id() -> String {
         .map(|duration| duration.as_nanos())
         .unwrap_or_default();
     format!("inv-{nanos}")
+}
+
+fn diff_session_id(old_id: &str, new_id: &str, include_unchanged: bool) -> String {
+    format!("{old_id}:{new_id}:{include_unchanged}")
+}
+
+fn ensure_diff_session(
+    state: &State<'_, AppState>,
+    session_id: &str,
+    old_id: &str,
+    new_id: &str,
+    include_unchanged: bool,
+) -> Result<(), AppError> {
+    if state.diff_sessions.lock().contains_key(session_id) {
+        return Ok(());
+    }
+    let inventories = state.diff_inventories.lock();
+    let old = inventories
+        .get(old_id)
+        .ok_or_else(|| AppError::Internal(format!("old inventory not found: {old_id}")))?;
+    let new = inventories
+        .get(new_id)
+        .ok_or_else(|| AppError::Internal(format!("new inventory not found: {new_id}")))?;
+    log::info!(
+        "diff session build started: session_id={} old_label={} new_label={} include_unchanged={}",
+        session_id,
+        old.source.label,
+        new.source.label,
+        include_unchanged
+    );
+    let report = starbreaker_diff::compare_reports(old, new, include_unchanged);
+    drop(inventories);
+    let mut sessions = state.diff_sessions.lock();
+    if sessions.len() >= 4
+        && let Some(remove_key) = sessions.keys().next().cloned()
+    {
+        sessions.remove(&remove_key);
+    }
+    sessions.insert(
+        session_id.to_string(),
+        DiffSession {
+            report,
+            filter_indexes: HashMap::new(),
+        },
+    );
+    log::info!("diff session build finished: session_id={}", session_id);
+    Ok(())
 }
 
 fn inventory_handle(id: &str, report: &starbreaker_diff::InventoryReport) -> DiffInventoryHandle {
