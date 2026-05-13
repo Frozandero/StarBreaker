@@ -197,7 +197,7 @@ export interface SocpakExportRequest {
 
 export interface SocpakExportDone {
   file_count: number;
-  package_name: string;
+  package_names: string[];
 }
 
 // ── Export commands ──

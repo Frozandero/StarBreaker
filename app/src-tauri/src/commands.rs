@@ -1084,7 +1084,7 @@ pub struct SocpakExportRequest {
 #[derive(Clone, Serialize)]
 pub struct SocpakExportDone {
     pub file_count: usize,
-    pub package_name: String,
+    pub package_names: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -1520,7 +1520,6 @@ pub async fn export_socpaks(
 
     tokio::task::spawn_blocking(move || -> Result<SocpakExportDone, AppError> {
         let db = starbreaker_datacore::database::Database::from_bytes(&dcb_bytes)?;
-        let export_name = socpak_export_name(&request.socpak_paths);
         let material_mode = match request.material_mode.to_lowercase().as_str() {
             "none" => starbreaker_3d::MaterialMode::None,
             "colors" => starbreaker_3d::MaterialMode::Colors,
@@ -1544,33 +1543,41 @@ pub async fn export_socpaks(
             default_animation_tags: vec!["landing_gear_extend".to_string()],
             decomposed_package_subdir: None,
         };
-        let decomposed = starbreaker_3d::socpaks_to_decomposed_blend(
-            &db,
-            &p4k,
-            &request.socpak_paths,
-            &export_name,
-            &opts,
-        )?;
-        let package_name = decomposed_package_directory_name(&decomposed.files, &export_name);
         let output_root = PathBuf::from(&request.output_dir);
-        prepare_decomposed_output_root(&output_root, &package_name)?;
-        for file in &decomposed.files {
-            let file_path = output_root.join(&file.relative_path);
-            if let Some(parent) = file_path.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-            write_decomposed_file(
-                file,
-                &file_path,
-                request.overwrite_existing_assets,
-                None,
+        let mut file_count = 0usize;
+        let mut package_names = Vec::new();
+
+        for socpak_path in &request.socpak_paths {
+            let export_name = socpak_export_name(socpak_path);
+            let decomposed = starbreaker_3d::socpaks_to_decomposed_blend(
+                &db,
                 &p4k,
+                std::slice::from_ref(socpak_path),
+                &export_name,
+                &opts,
             )?;
+            let package_name = decomposed_package_directory_name(&decomposed.files, &export_name);
+            prepare_decomposed_output_root(&output_root, &package_name)?;
+            for file in &decomposed.files {
+                let file_path = output_root.join(&file.relative_path);
+                if let Some(parent) = file_path.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                write_decomposed_file(
+                    file,
+                    &file_path,
+                    request.overwrite_existing_assets,
+                    None,
+                    &p4k,
+                )?;
+            }
+            file_count += decomposed.files.len();
+            package_names.push(package_name);
         }
 
         Ok(SocpakExportDone {
-            file_count: decomposed.files.len(),
-            package_name,
+            file_count,
+            package_names,
         })
     })
     .await
@@ -1969,14 +1976,11 @@ fn output_object_type_directory_for_record(
     }
 }
 
-fn socpak_export_name(paths: &[String]) -> String {
-    if paths.len() != 1 {
-        return "Socpak Export".to_string();
-    }
-    let file_name = paths[0]
+fn socpak_export_name(path: &str) -> String {
+    let file_name = path
         .rsplit(&['/', '\\'])
         .next()
-        .unwrap_or(paths[0].as_str());
+        .unwrap_or(path);
     let stem = file_name.strip_suffix(".socpak").unwrap_or(file_name);
     sanitize_export_name(stem)
 }

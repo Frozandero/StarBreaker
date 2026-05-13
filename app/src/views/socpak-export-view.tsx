@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { ResizeHandle } from "../components/resize-handle";
+import { useSocpakExportStore } from "../stores/socpak-export-store";
 import {
   browseOutputDir,
   exportSocpaks,
@@ -10,18 +11,28 @@ import {
 } from "../lib/commands";
 
 export function SocpakExportView() {
-  const [optionsWidth, setOptionsWidth] = useState(280);
-  const [search, setSearch] = useState("");
+  const optionsWidth = useSocpakExportStore((s) => s.optionsWidth);
+  const search = useSocpakExportStore((s) => s.search);
+  const lod = useSocpakExportStore((s) => s.lod);
+  const mip = useSocpakExportStore((s) => s.mip);
+  const materialMode = useSocpakExportStore((s) => s.materialMode);
+  const includeLights = useSocpakExportStore((s) => s.includeLights);
+  const overwriteExistingAssets = useSocpakExportStore((s) => s.overwriteExistingAssets);
+  const includeNodraw = useSocpakExportStore((s) => s.includeNodraw);
+  const outputDir = useSocpakExportStore((s) => s.outputDir);
+  const setOptionsWidth = useSocpakExportStore((s) => s.setOptionsWidth);
+  const setSearch = useSocpakExportStore((s) => s.setSearch);
+  const setLod = useSocpakExportStore((s) => s.setLod);
+  const setMip = useSocpakExportStore((s) => s.setMip);
+  const setMaterialMode = useSocpakExportStore((s) => s.setMaterialMode);
+  const setIncludeLights = useSocpakExportStore((s) => s.setIncludeLights);
+  const setOverwriteExistingAssets = useSocpakExportStore((s) => s.setOverwriteExistingAssets);
+  const setIncludeNodraw = useSocpakExportStore((s) => s.setIncludeNodraw);
+  const setOutputDir = useSocpakExportStore((s) => s.setOutputDir);
+
   const [socpaks, setSocpaks] = useState<SocpakDto[]>([]);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [outputDir, setOutputDir] = useState<string | null>(null);
-  const [lod, setLod] = useState(1);
-  const [mip, setMip] = useState(2);
-  const [materialMode, setMaterialMode] = useState("textures");
-  const [includeLights, setIncludeLights] = useState(true);
-  const [overwriteExistingAssets, setOverwriteExistingAssets] = useState(true);
-  const [includeNodraw, setIncludeNodraw] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [result, setResult] = useState<SocpakExportDone | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -295,7 +306,7 @@ export function SocpakExportView() {
         <div className="p-4 border-t border-border flex flex-col gap-3">
           {result && (
             <p className="text-[11px] text-success leading-relaxed">
-              Wrote {result.file_count} files into package {result.package_name}.
+              Wrote {result.file_count} files into {result.package_names.length} package{result.package_names.length === 1 ? "" : "s"}.
             </p>
           )}
           {error && (
