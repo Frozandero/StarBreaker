@@ -345,7 +345,7 @@ fn write_p4k_dir_xml(path: &Path, name: &str, files: &[P4kEntry]) -> Result<()> 
 }
 
 fn extract_report_contents(p4k: &MappedP4k, output: &Path) -> Result<()> {
-    let patterns = ["english\\global.ini", "TagDatabase.TagDatabase.xml"];
+    let patterns = ["english\\global.ini", "tagdatabase.tagdatabase.xml"];
     let entries: Vec<&P4kEntry> = p4k
         .entries()
         .iter()
