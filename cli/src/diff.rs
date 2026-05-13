@@ -8,7 +8,7 @@ use clap::{Args, ValueEnum};
 use rayon::prelude::*;
 use starbreaker_datacore::database::Database;
 use starbreaker_datacore::enums::{ConversionType, DataType};
-use starbreaker_p4k::{MappedP4k, P4kEntry};
+use starbreaker_p4k::{MappedP4k, P4kArchive, P4kEntry};
 
 use crate::common::load_p4k;
 use crate::error::{CliError, Result};
@@ -180,11 +180,10 @@ fn write_zstd_reader(mut input: impl Read, output_path: &Path) -> Result<()> {
 }
 
 fn dump_p4k_listing(p4k: &MappedP4k, output: &Path, format: &DiffFormat) -> Result<()> {
-    let mut dirs: BTreeMap<String, Vec<&P4kEntry>> = BTreeMap::new();
+    let mut dirs: BTreeMap<String, Vec<P4kEntry>> = BTreeMap::new();
 
-    for entry in p4k.entries().iter().filter(|e| e.uncompressed_size > 0) {
-        let (dir, _) = split_entry_path(&entry.name);
-        dirs.entry(dir).or_default().push(entry);
+    for entry in p4k.entries() {
+        insert_p4k_report_entry(p4k, &mut dirs, entry, "")?;
     }
 
     for files in dirs.values_mut() {
@@ -196,7 +195,69 @@ fn dump_p4k_listing(p4k: &MappedP4k, output: &Path, format: &DiffFormat) -> Resu
     Ok(())
 }
 
-fn sort_p4k_files(files: &mut [&P4kEntry]) {
+fn insert_p4k_report_entry(
+    p4k: &MappedP4k,
+    dirs: &mut BTreeMap<String, Vec<P4kEntry>>,
+    entry: &P4kEntry,
+    prefix: &str,
+) -> Result<()> {
+    let report_name = report_entry_name(prefix, &entry.name);
+
+    if should_expand_socpak(&report_name) {
+        let data = p4k.read(entry)?;
+        let archive = P4kArchive::from_bytes(&data)?;
+        for inner_entry in archive.entries() {
+            insert_nested_p4k_report_entry(&archive, dirs, inner_entry, &report_name)?;
+        }
+        return Ok(());
+    }
+
+    let (dir, _) = split_entry_path(&report_name);
+    let mut report_entry = entry.clone();
+    report_entry.name = report_name;
+    dirs.entry(dir).or_default().push(report_entry);
+    Ok(())
+}
+
+fn insert_nested_p4k_report_entry(
+    archive: &P4kArchive<'_>,
+    dirs: &mut BTreeMap<String, Vec<P4kEntry>>,
+    entry: &P4kEntry,
+    prefix: &str,
+) -> Result<()> {
+    let report_name = report_entry_name(prefix, &entry.name);
+
+    if should_expand_socpak(&report_name) {
+        let data = archive.read(entry)?;
+        let nested = P4kArchive::from_bytes(&data)?;
+        for inner_entry in nested.entries() {
+            insert_nested_p4k_report_entry(&nested, dirs, inner_entry, &report_name)?;
+        }
+        return Ok(());
+    }
+
+    let (dir, _) = split_entry_path(&report_name);
+    let mut report_entry = entry.clone();
+    report_entry.name = report_name;
+    dirs.entry(dir).or_default().push(report_entry);
+    Ok(())
+}
+
+fn report_entry_name(prefix: &str, name: &str) -> String {
+    if prefix.is_empty() {
+        name.to_string()
+    } else {
+        format!("{prefix}\\{name}")
+    }
+}
+
+fn should_expand_socpak(path: &str) -> bool {
+    let file_name = path.rsplit('\\').next().unwrap_or(path);
+    let lower = file_name.to_ascii_lowercase();
+    lower.ends_with(".socpak") && !lower.starts_with("shadercache_")
+}
+
+fn sort_p4k_files(files: &mut [P4kEntry]) {
     files.sort_by(|a, b| legacy_p4k_name_compare(split_entry_path(&a.name).1, split_entry_path(&b.name).1));
 }
 
@@ -206,14 +267,27 @@ fn legacy_p4k_name_compare(a: &str, b: &str) -> Ordering {
         .then_with(|| a.cmp(b))
 }
 
-fn legacy_p4k_sort_key(value: &str) -> String {
-    value.chars().map(|ch| if ch == '.' { '\u{10ffff}' } else { ch }).collect()
+fn legacy_p4k_sort_key(value: &str) -> Vec<u8> {
+    let mut key = Vec::with_capacity(value.len());
+    for byte in value.bytes().map(|byte| byte.to_ascii_lowercase()) {
+        match byte {
+            b' ' => key.extend_from_slice(&[0, byte]),
+            b'_' => key.extend_from_slice(&[1, byte]),
+            b'-' => key.extend_from_slice(&[2, byte]),
+            b'.' => key.extend_from_slice(&[3, byte]),
+            b'0'..=b'9' => key.extend_from_slice(&[5, byte]),
+            b'a'..=b'z' => key.extend_from_slice(&[6, byte]),
+            b'\'' | b'(' | b')' | b'&' => key.extend_from_slice(&[4, byte]),
+            _ => key.extend_from_slice(&[5, byte]),
+        }
+    }
+    key
 }
 
 fn write_p4k_dir_report(
     output: &Path,
     dir: &str,
-    files: &[&P4kEntry],
+    files: &[P4kEntry],
     format: &DiffFormat,
 ) -> Result<()> {
     let name = dir.rsplit('\\').next().unwrap_or("Data");
@@ -228,7 +302,7 @@ fn write_p4k_dir_report(
     }
 }
 
-fn write_p4k_dir_json(path: &Path, name: &str, files: &[&P4kEntry]) -> Result<()> {
+fn write_p4k_dir_json(path: &Path, name: &str, files: &[P4kEntry]) -> Result<()> {
     let file = File::create(path)?;
     let mut writer = BufWriter::new(file);
     let files = files.iter().map(|entry| {
@@ -250,7 +324,7 @@ fn write_p4k_dir_json(path: &Path, name: &str, files: &[&P4kEntry]) -> Result<()
     Ok(())
 }
 
-fn write_p4k_dir_xml(path: &Path, name: &str, files: &[&P4kEntry]) -> Result<()> {
+fn write_p4k_dir_xml(path: &Path, name: &str, files: &[P4kEntry]) -> Result<()> {
     let mut writer = Vec::new();
     writeln!(writer, "<Directory Name=\"{}\">", xml_escape(name))?;
     for entry in files {
@@ -541,7 +615,6 @@ fn xml_escape(value: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
-        .replace('\'', "&apos;")
 }
 
 fn legacy_bool(value: bool) -> &'static str {
@@ -596,7 +669,7 @@ mod tests {
             entry("Animations\\pu_dialog_events_female.xml"),
             entry("Animations\\Animations.img"),
         ];
-        let mut files = entries.iter().collect::<Vec<_>>();
+        let mut files = entries.to_vec();
 
         sort_p4k_files(&mut files);
 
@@ -626,7 +699,7 @@ mod tests {
             entry("Data\\bspace\\1D-BSpace_AI_Quazigrazer_Stand_Relaxed_Idle2Walk_Left.bspace"),
             entry("Data\\bspace\\1D-BSpace_AI_Quazigrazer_Stand_Relaxed_Idle2Walk_Right.bspace"),
         ];
-        let mut files = entries.iter().collect::<Vec<_>>();
+        let mut files = entries.to_vec();
 
         sort_p4k_files(&mut files);
 
@@ -657,7 +730,7 @@ mod tests {
             entry("Data\\cockpit\\cockpit_scythe_gloc_passout_idle_rightbank_add.caf"),
             entry("Data\\cockpit\\cockpit_scythe_gloc_passout_idle_uppitch_add.caf"),
         ];
-        let mut files = entries.iter().collect::<Vec<_>>();
+        let mut files = entries.to_vec();
 
         sort_p4k_files(&mut files);
 
@@ -679,6 +752,151 @@ mod tests {
     }
 
     #[test]
+    fn p4k_diff_files_sort_extension_before_numeric_suffix() {
+        let entries = [
+            entry("Data\\bspace\\1D-BSpace_AI_Vlk_Alerted_Stand_TurnOnSpot.comb"),
+            entry("Data\\bspace\\1D-BSpace_AI_Vlk_Alerted_Stand_TurnOnSpot090.bspace"),
+            entry("Data\\bspace\\1D-BSpace_AI_Vlk_Alerted_Stand_TurnOnSpot180.bspace"),
+        ];
+        let mut files = entries.to_vec();
+
+        sort_p4k_files(&mut files);
+
+        let names = files
+            .iter()
+            .map(|entry| entry.name.rsplit('\\').next().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            names,
+            [
+                "1D-BSpace_AI_Vlk_Alerted_Stand_TurnOnSpot.comb",
+                "1D-BSpace_AI_Vlk_Alerted_Stand_TurnOnSpot090.bspace",
+                "1D-BSpace_AI_Vlk_Alerted_Stand_TurnOnSpot180.bspace",
+            ]
+        );
+    }
+
+    #[test]
+    fn p4k_diff_files_sort_case_insensitively_like_legacy_dump() {
+        let entries = [
+            entry("Data\\Materials\\CloudsSwirl_1.mtl"),
+            entry("Data\\Materials\\Datapad_GreenGlow.mtl"),
+            entry("Data\\Materials\\NoFriction.mtl"),
+            entry("Data\\Materials\\TESTflat.mtl"),
+            entry("Data\\Materials\\alpha_white.mtl"),
+            entry("Data\\Materials\\alpha.mtl"),
+            entry("Data\\Materials\\beam_test.mtl"),
+            entry("Data\\Materials\\chrome_sphere.mtl"),
+            entry("Data\\Materials\\chrome_sphere1.mtl"),
+        ];
+        let mut files = entries.to_vec();
+
+        sort_p4k_files(&mut files);
+
+        let names = files
+            .iter()
+            .map(|entry| entry.name.rsplit('\\').next().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            names,
+            [
+                "alpha_white.mtl",
+                "alpha.mtl",
+                "beam_test.mtl",
+                "chrome_sphere.mtl",
+                "chrome_sphere1.mtl",
+                "CloudsSwirl_1.mtl",
+                "Datapad_GreenGlow.mtl",
+                "NoFriction.mtl",
+                "TESTflat.mtl",
+            ]
+        );
+    }
+
+    #[test]
+    fn p4k_diff_files_sort_uppercase_by_text_position_not_ascii_position() {
+        let entries = [
+            entry("Data\\Materials\\terra_atrium_canopy.mtl"),
+            entry("Data\\Materials\\terra_atrium_ext.mtl"),
+            entry("Data\\Materials\\Terra_Backdrop_ext.mtl"),
+            entry("Data\\Materials\\terra_turings_facade_waterfall.mtl"),
+            entry("Data\\Materials\\terra_turings_facade.mtl"),
+        ];
+        let mut files = entries.to_vec();
+
+        sort_p4k_files(&mut files);
+
+        let names = files
+            .iter()
+            .map(|entry| entry.name.rsplit('\\').next().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            names,
+            [
+                "terra_atrium_canopy.mtl",
+                "terra_atrium_ext.mtl",
+                "Terra_Backdrop_ext.mtl",
+                "terra_turings_facade_waterfall.mtl",
+                "terra_turings_facade.mtl",
+            ]
+        );
+    }
+
+    #[test]
+    fn p4k_diff_files_sort_space_before_underscore_continuation() {
+        let entries = [
+            entry("Data\\Objects\\console_info_banu_2_a_lod1.cgf"),
+            entry("Data\\Objects\\console_info_banu_2_a_lod1.cgfm"),
+            entry("Data\\Objects\\console_info_banu_2_a.cgf"),
+            entry("Data\\Objects\\console_info_banu_2_a.cgfm"),
+            entry("Data\\Objects\\console_info_banu_2_a.meshsetup"),
+            entry("Data\\Objects\\console_info_banu_2_a .mtl"),
+        ];
+        let mut files = entries.to_vec();
+
+        sort_p4k_files(&mut files);
+
+        let names = files
+            .iter()
+            .map(|entry| entry.name.rsplit('\\').next().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            names,
+            [
+                "console_info_banu_2_a .mtl",
+                "console_info_banu_2_a_lod1.cgf",
+                "console_info_banu_2_a_lod1.cgfm",
+                "console_info_banu_2_a.cgf",
+                "console_info_banu_2_a.cgfm",
+                "console_info_banu_2_a.meshsetup",
+            ]
+        );
+    }
+
+    #[test]
+    fn p4k_diff_files_sort_parenthesis_before_digits() {
+        let entries = [
+            entry("Data\\Objects\\area_18_sign_01_01.cgf"),
+            entry("Data\\Objects\\area_18_sign_(_screen_01.cgf"),
+        ];
+        let mut files = entries.to_vec();
+
+        sort_p4k_files(&mut files);
+
+        let names = files
+            .iter()
+            .map(|entry| entry.name.rsplit('\\').next().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            names,
+            [
+                "area_18_sign_(_screen_01.cgf",
+                "area_18_sign_01_01.cgf",
+            ]
+        );
+    }
+
+    #[test]
     fn p4k_diff_xml_uses_legacy_bool_casing() {
         assert_eq!(legacy_bool(true), "True");
         assert_eq!(legacy_bool(false), "False");
@@ -689,12 +907,28 @@ mod tests {
         ));
         let entries = [entry("Data\\foo.bin")];
 
-        write_p4k_dir_xml(&temp, "Data", &[&entries[0]]).unwrap();
+        write_p4k_dir_xml(&temp, "Data", &[entries[0].clone()]).unwrap();
         let text = std::fs::read_to_string(&temp).unwrap();
         let _ = std::fs::remove_file(temp);
 
         assert!(text.contains("Encrypted=\"False\""));
         assert!(!text.contains("Encrypted=\"false\""));
+    }
+
+    #[test]
+    fn p4k_diff_xml_leaves_apostrophes_unescaped_like_legacy_dump() {
+        let temp = std::env::temp_dir().join(format!(
+            "starbreaker-p4k-apostrophe-{}.xml",
+            std::process::id()
+        ));
+        let entries = [entry("Data\\levski_mural_'_01_diff.dds")];
+
+        write_p4k_dir_xml(&temp, "Data", &[entries[0].clone()]).unwrap();
+        let text = std::fs::read_to_string(&temp).unwrap();
+        let _ = std::fs::remove_file(temp);
+
+        assert!(text.contains("Name=\"levski_mural_'_01_diff.dds\""));
+        assert!(!text.contains("&apos;"));
     }
 
     fn entry(name: &str) -> P4kEntry {
