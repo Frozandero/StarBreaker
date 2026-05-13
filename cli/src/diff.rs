@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::cmp::Ordering;
 use std::fs::File;
 use std::io::{BufWriter, Cursor, Read, Write};
 use std::path::{Path, PathBuf};
@@ -284,13 +283,10 @@ fn should_expand_socpak(path: &str) -> bool {
 }
 
 fn sort_p4k_files(files: &mut [P4kEntry]) {
-    files.sort_by(|a, b| legacy_p4k_name_compare(split_entry_path(&a.name).1, split_entry_path(&b.name).1));
-}
-
-fn legacy_p4k_name_compare(a: &str, b: &str) -> Ordering {
-    legacy_p4k_sort_key(a)
-        .cmp(&legacy_p4k_sort_key(b))
-        .then_with(|| a.cmp(b))
+    files.sort_by_cached_key(|entry| {
+        let file_name = split_entry_file_name(&entry.name);
+        (legacy_p4k_sort_key(file_name), file_name.to_string())
+    });
 }
 
 fn legacy_p4k_sort_key(value: &str) -> Vec<u8> {
@@ -352,17 +348,20 @@ fn write_p4k_dir_json(path: &Path, name: &str, files: &[P4kEntry]) -> Result<()>
 
 fn write_p4k_dir_xml(path: &Path, name: &str, files: &[P4kEntry]) -> Result<()> {
     let mut writer = Vec::new();
-    writeln!(writer, "<Directory Name=\"{}\">", xml_escape(name))?;
+    write!(writer, "<Directory Name=\"")?;
+    write_xml_escaped(&mut writer, name)?;
+    writeln!(writer, "\">")?;
     for entry in files {
         let (_, file_name) = split_entry_path(&entry.name);
+        write!(
+            writer,
+            "  <File Name=\""
+        )?;
+        write_xml_escaped(&mut writer, file_name)?;
         writeln!(
             writer,
-            "  <File Name=\"{}\" CRC32=\"0x{:08X}\" Size=\"{}\" CompressionType=\"{}\" Encrypted=\"{}\" />",
-            xml_escape(file_name),
-            entry.crc32,
-            entry.uncompressed_size,
-            entry.compression_method,
-            legacy_bool(entry.is_encrypted)
+            "\" CRC32=\"0x{:08X}\" Size=\"{}\" CompressionType=\"{}\" Encrypted=\"{}\" />",
+            entry.crc32, entry.uncompressed_size, entry.compression_method, legacy_bool(entry.is_encrypted)
         )?;
     }
     write!(writer, "</Directory>")?;
@@ -407,13 +406,16 @@ fn export_datacore_records(db: &Database<'_>, output: &Path, format: &DiffFormat
         if let Some(parent) = out_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let data = match format {
-            DiffFormat::Json => starbreaker_datacore::export::to_json(db, record)?,
-            DiffFormat::Xml => {
-                legacy_xml_bytes(starbreaker_datacore::export::to_classic_xml(db, record)?)
+        match format {
+            DiffFormat::Json => {
+                let data = starbreaker_datacore::export::to_json(db, record)?;
+                std::fs::write(out_path, data)?;
             }
-        };
-        std::fs::write(out_path, data)?;
+            DiffFormat::Xml => {
+                let data = starbreaker_datacore::export::to_classic_xml(db, record)?;
+                std::fs::write(out_path, legacy_xml_bytes(data))?;
+            }
+        }
         Ok::<_, CliError>(())
     })?;
     Ok(())
@@ -487,10 +489,14 @@ fn write_type_report(db: &Database<'_>, index: usize, path: &Path, format: &Diff
         DiffFormat::Xml => {
             let def = &db.struct_defs()[index];
             let mut writer = Vec::new();
-            write!(writer, "<Struct Name=\"{}\"", xml_escape(db.resolve_string2(def.name_offset)))?;
+            write!(writer, "<Struct Name=\"")?;
+            write_xml_escaped(&mut writer, db.resolve_string2(def.name_offset))?;
+            write!(writer, "\"")?;
             if def.parent_type_index != -1 {
                 let parent = &db.struct_defs()[def.parent_type_index as usize];
-                write!(writer, " Parent=\"{}\"", xml_escape(db.resolve_string2(parent.name_offset)))?;
+                write!(writer, " Parent=\"")?;
+                write_xml_escaped(&mut writer, db.resolve_string2(parent.name_offset))?;
+                write!(writer, "\"")?;
             }
             let properties = properties_for_type(db, index);
             if properties.is_empty() {
@@ -498,12 +504,11 @@ fn write_type_report(db: &Database<'_>, index: usize, path: &Path, format: &Diff
             } else {
                 writeln!(writer, ">")?;
                 for (name, type_name) in properties {
-                    writeln!(
-                        writer,
-                        "  <Property Name=\"{}\" Type=\"{}\" />",
-                        xml_escape(&name),
-                        xml_escape(&type_name)
-                    )?;
+                    write!(writer, "  <Property Name=\"")?;
+                    write_xml_escaped(&mut writer, &name)?;
+                    write!(writer, "\" Type=\"")?;
+                    write_xml_escaped(&mut writer, &type_name)?;
+                    writeln!(writer, "\" />")?;
                 }
                 write!(writer, "</Struct>")?;
             }
@@ -534,9 +539,13 @@ fn export_datacore_enums(db: &Database<'_>, output: &Path, format: &DiffFormat) 
             }
             DiffFormat::Xml => {
                 let mut writer = Vec::new();
-                writeln!(writer, "<Enum Name=\"{}\">", xml_escape(name))?;
+                write!(writer, "<Enum Name=\"")?;
+                write_xml_escaped(&mut writer, name)?;
+                writeln!(writer, "\">")?;
                 for value in values {
-                    writeln!(writer, "  <Value>{}</Value>", xml_escape(value))?;
+                    write!(writer, "  <Value>")?;
+                    write_xml_escaped(&mut writer, value)?;
+                    writeln!(writer, "</Value>")?;
                 }
                 write!(writer, "</Enum>")?;
                 std::fs::write(path, legacy_xml_bytes(writer))?;
@@ -618,6 +627,12 @@ fn split_entry_path(name: &str) -> (String, &str) {
     }
 }
 
+fn split_entry_file_name(name: &str) -> &str {
+    name.rsplit_once('\\')
+        .map(|(_, file)| file)
+        .unwrap_or(name)
+}
+
 fn change_extension(path: &str, ext: &str) -> String {
     match path.rfind('.') {
         Some(dot) => format!("{}.{ext}", &path[..dot]),
@@ -635,12 +650,17 @@ fn copy_build_manifest(game_dir: &Path, output: &Path) -> Result<()> {
     Ok(())
 }
 
-fn xml_escape(value: &str) -> String {
-    value
-        .replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
+fn write_xml_escaped(writer: &mut impl Write, value: &str) -> Result<()> {
+    for ch in value.chars() {
+        match ch {
+            '&' => writer.write_all(b"&amp;")?,
+            '<' => writer.write_all(b"&lt;")?,
+            '>' => writer.write_all(b"&gt;")?,
+            '"' => writer.write_all(b"&quot;")?,
+            _ => write!(writer, "{ch}")?,
+        }
+    }
+    Ok(())
 }
 
 fn legacy_bool(value: bool) -> &'static str {
@@ -648,28 +668,71 @@ fn legacy_bool(value: bool) -> &'static str {
 }
 
 fn legacy_xml_bytes(bytes: Vec<u8>) -> Vec<u8> {
-    const BOM: &[u8] = &[0xEF, 0xBB, 0xBF];
-    const DECL: &str = "<?xml version=\"1.0\" encoding=\"utf-8\"?>";
+    let text = legacy_xml_body(bytes.as_slice());
+    let mut output = Vec::with_capacity(3 + 38 + 2 + text.len());
+    write_legacy_xml(&mut output, text).expect("writing to Vec cannot fail");
+    output
+}
 
-    let mut text = String::from_utf8(bytes).expect("diff XML output must be UTF-8");
-    if let Some(stripped) = text.strip_prefix('\u{feff}') {
-        text = stripped.to_string();
+fn legacy_xml_body(mut text: &[u8]) -> &[u8] {
+    const BOM: &[u8] = &[0xEF, 0xBB, 0xBF];
+    const DECL: &[u8] = b"<?xml version=\"1.0\" encoding=\"utf-8\"?>";
+
+    if let Some(stripped) = text.strip_prefix(BOM) {
+        text = stripped;
     }
     if let Some(stripped) = text.strip_prefix(DECL) {
-        text = stripped.trim_start_matches(['\r', '\n']).to_string();
+        text = stripped;
+        while matches!(text.first(), Some(b'\r' | b'\n')) {
+            text = &text[1..];
+        }
     }
 
-    text = text.replace("\r\n", "\n").replace('\r', "\n");
-    while text.ends_with('\n') {
-        text.pop();
+    while matches!(text.last(), Some(b'\r' | b'\n')) {
+        text = &text[..text.len() - 1];
     }
 
-    let mut output = Vec::with_capacity(BOM.len() + DECL.len() + 2 + text.len());
-    output.extend_from_slice(BOM);
-    output.extend_from_slice(DECL.as_bytes());
-    output.extend_from_slice(b"\r\n");
-    output.extend_from_slice(text.replace('\n', "\r\n").as_bytes());
-    output
+    text
+}
+
+fn write_legacy_xml(mut writer: impl Write, text: &[u8]) -> Result<()> {
+    const BOM: &[u8] = &[0xEF, 0xBB, 0xBF];
+    const DECL: &[u8] = b"<?xml version=\"1.0\" encoding=\"utf-8\"?>";
+
+    writer.write_all(BOM)?;
+    writer.write_all(DECL)?;
+    writer.write_all(b"\r\n")?;
+
+    let mut index = 0;
+    let mut chunk_start = 0;
+    while index < text.len() {
+        match text[index] {
+            b'\r' => {
+                if chunk_start < index {
+                    writer.write_all(&text[chunk_start..index])?;
+                }
+                writer.write_all(b"\r\n")?;
+                index += 1;
+                if matches!(text.get(index), Some(b'\n')) {
+                    index += 1;
+                }
+                chunk_start = index;
+            }
+            b'\n' => {
+                if chunk_start < index {
+                    writer.write_all(&text[chunk_start..index])?;
+                }
+                writer.write_all(b"\r\n")?;
+                index += 1;
+                chunk_start = index;
+            }
+            _ => index += 1,
+        }
+    }
+    if chunk_start < text.len() {
+        writer.write_all(&text[chunk_start..])?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]

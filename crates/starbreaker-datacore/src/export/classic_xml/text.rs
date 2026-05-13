@@ -40,13 +40,6 @@ pub(super) fn format_bool(value: bool) -> &'static str {
     }
 }
 
-pub(super) fn attrs_to_owned(attrs: &[(&str, &str)]) -> Vec<(String, String)> {
-    attrs
-        .iter()
-        .map(|(name, value)| ((*name).to_string(), (*value).to_string()))
-        .collect()
-}
-
 pub(super) fn format_single(value: f32) -> String {
     if value.is_nan() {
         return "NaN".to_string();

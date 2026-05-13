@@ -6,6 +6,7 @@
 //! sink XML shape because the diff command needs byte-stable reports compatible
 //! with older StarBreaker exports.
 
+use std::fmt::Display;
 use std::io::Write;
 
 use rustc_hash::FxHashMap;
@@ -20,8 +21,7 @@ mod prescan;
 mod text;
 use prescan::{prescan_weak_pointers, reference_is_null};
 use text::{
-    attrs_to_owned, data_type_element_name, encode_xml_name, format_bool, format_double,
-    format_single,
+    data_type_element_name, encode_xml_name, format_bool, format_double, format_single,
     write_escaped_attr, write_escaped_text,
 };
 
@@ -99,16 +99,12 @@ impl<'a, W: Write> ClassicXmlContext<'a, W> {
         struct_index: i32,
         instance_index: i32,
     ) -> Result<(), ExportError> {
-        let mut attrs = attrs_to_owned(base_attrs);
-        if let Some(pointer) = self.pointer_label(struct_index, instance_index) {
-            attrs.push(("Pointer".to_string(), pointer));
-        }
         let struct_name = self.db.resolve_string2(self.db.struct_def(struct_index).name_offset);
-        attrs.push(("Type".to_string(), struct_name.to_string()));
+        let pointer = self.pointer_label(struct_index, instance_index);
         if self.db.all_property_indices(struct_index).is_empty() {
-            return self.empty_element_owned(name, &attrs);
+            return self.empty_instance_element(name, base_attrs, pointer.as_deref(), struct_name);
         }
-        self.start_element_owned(name, &attrs)?;
+        self.start_instance_element(name, base_attrs, pointer.as_deref(), struct_name)?;
 
         let instance_bytes = self.db.get_instance(struct_index, instance_index);
         let mut reader = SpanReader::new(instance_bytes);
@@ -123,13 +119,11 @@ impl<'a, W: Write> ClassicXmlContext<'a, W> {
         struct_index: i32,
         reader: &mut SpanReader,
     ) -> Result<(), ExportError> {
-        let mut attrs = attrs_to_owned(base_attrs);
         let struct_name = self.db.resolve_string2(self.db.struct_def(struct_index).name_offset);
-        attrs.push(("Type".to_string(), struct_name.to_string()));
         if self.db.all_property_indices(struct_index).is_empty() {
-            return self.empty_element_owned(name, &attrs);
+            return self.empty_instance_element(name, base_attrs, None, struct_name);
         }
-        self.start_element_owned(name, &attrs)?;
+        self.start_instance_element(name, base_attrs, None, struct_name)?;
         self.write_struct_fields(struct_index, reader)?;
         self.end_element(name)
     }
@@ -173,14 +167,14 @@ impl<'a, W: Write> ClassicXmlContext<'a, W> {
     ) -> Result<(), ExportError> {
         match data_type {
             DataType::Boolean => self.text_element(name, &format_bool(reader.read_bool()?))?,
-            DataType::SByte => self.text_element(name, &reader.read_i8()?.to_string())?,
-            DataType::Int16 => self.text_element(name, &reader.read_i16()?.to_string())?,
-            DataType::Int32 => self.text_element(name, &reader.read_i32()?.to_string())?,
-            DataType::Int64 => self.text_element(name, &reader.read_i64()?.to_string())?,
-            DataType::Byte => self.text_element(name, &reader.read_u8()?.to_string())?,
-            DataType::UInt16 => self.text_element(name, &reader.read_u16()?.to_string())?,
-            DataType::UInt32 => self.text_element(name, &reader.read_u32()?.to_string())?,
-            DataType::UInt64 => self.text_element(name, &reader.read_u64()?.to_string())?,
+            DataType::SByte => self.text_element_display(name, reader.read_i8()?)?,
+            DataType::Int16 => self.text_element_display(name, reader.read_i16()?)?,
+            DataType::Int32 => self.text_element_display(name, reader.read_i32()?)?,
+            DataType::Int64 => self.text_element_display(name, reader.read_i64()?)?,
+            DataType::Byte => self.text_element_display(name, reader.read_u8()?)?,
+            DataType::UInt16 => self.text_element_display(name, reader.read_u16()?)?,
+            DataType::UInt32 => self.text_element_display(name, reader.read_u32()?)?,
+            DataType::UInt64 => self.text_element_display(name, reader.read_u64()?)?,
             DataType::Single => self.text_element(name, &format_single(reader.read_f32()?))?,
             DataType::Double => self.text_element(name, &format_double(reader.read_f64()?))?,
             DataType::String | DataType::Locale | DataType::EnumChoice => {
@@ -188,8 +182,7 @@ impl<'a, W: Write> ClassicXmlContext<'a, W> {
                 self.text_element(name, self.db.resolve_string(id))?;
             }
             DataType::Guid => {
-                let value = reader.read_type::<crate::types::CigGuid>()?.to_string();
-                self.text_element(name, &value)?;
+                self.text_element_display(name, reader.read_type::<crate::types::CigGuid>()?)?;
             }
             DataType::Reference => {
                 let reference = *reader.read_type::<Reference>()?;
@@ -250,28 +243,28 @@ impl<'a, W: Write> ClassicXmlContext<'a, W> {
                 self.text_element(data_type_element_name(data_type), &format_bool(self.db.get_bool(idx)?))?
             }
             DataType::SByte => {
-                self.text_element(data_type_element_name(data_type), &self.db.get_int8(idx)?.to_string())?
+                self.text_element_display(data_type_element_name(data_type), self.db.get_int8(idx)?)?
             }
             DataType::Int16 => {
-                self.text_element(data_type_element_name(data_type), &self.db.get_int16(idx)?.to_string())?
+                self.text_element_display(data_type_element_name(data_type), self.db.get_int16(idx)?)?
             }
             DataType::Int32 => {
-                self.text_element(data_type_element_name(data_type), &self.db.get_int32(idx)?.to_string())?
+                self.text_element_display(data_type_element_name(data_type), self.db.get_int32(idx)?)?
             }
             DataType::Int64 => {
-                self.text_element(data_type_element_name(data_type), &self.db.get_int64(idx)?.to_string())?
+                self.text_element_display(data_type_element_name(data_type), self.db.get_int64(idx)?)?
             }
             DataType::Byte => {
-                self.text_element(data_type_element_name(data_type), &self.db.get_uint8(idx)?.to_string())?
+                self.text_element_display(data_type_element_name(data_type), self.db.get_uint8(idx)?)?
             }
             DataType::UInt16 => {
-                self.text_element(data_type_element_name(data_type), &self.db.get_uint16(idx)?.to_string())?
+                self.text_element_display(data_type_element_name(data_type), self.db.get_uint16(idx)?)?
             }
             DataType::UInt32 => {
-                self.text_element(data_type_element_name(data_type), &self.db.get_uint32(idx)?.to_string())?
+                self.text_element_display(data_type_element_name(data_type), self.db.get_uint32(idx)?)?
             }
             DataType::UInt64 => {
-                self.text_element(data_type_element_name(data_type), &self.db.get_uint64(idx)?.to_string())?
+                self.text_element_display(data_type_element_name(data_type), self.db.get_uint64(idx)?)?
             }
             DataType::Single => {
                 self.text_element(data_type_element_name(data_type), &format_single(self.db.get_single(idx)?))?
@@ -292,7 +285,7 @@ impl<'a, W: Write> ClassicXmlContext<'a, W> {
                 self.text_element(data_type_element_name(data_type), value)?
             }
             DataType::Guid => {
-                self.text_element(data_type_element_name(data_type), &self.db.guid_values[idx].to_string())?
+                self.text_element_display(data_type_element_name(data_type), &self.db.guid_values[idx])?
             }
             DataType::Reference => {
                 let reference = self.db.reference_values[idx];
@@ -443,18 +436,24 @@ impl<'a, W: Write> ClassicXmlContext<'a, W> {
         Ok(())
     }
 
-    fn start_element_owned(
+    fn start_instance_element(
         &mut self,
         name: &str,
-        attrs: &[(String, String)],
+        base_attrs: &[(&str, &str)],
+        pointer: Option<&str>,
+        type_name: &str,
     ) -> Result<(), ExportError> {
         self.write_indent()?;
         write!(self.writer, "<{name}")?;
-        for (attr_name, value) in attrs {
-            write!(self.writer, " {attr_name}=\"")?;
-            write_escaped_attr(&mut self.writer, value)?;
+        self.write_attrs_inline(base_attrs)?;
+        if let Some(pointer) = pointer {
+            write!(self.writer, " Pointer=\"")?;
+            write_escaped_attr(&mut self.writer, pointer)?;
             write!(self.writer, "\"")?;
         }
+        write!(self.writer, " Type=\"")?;
+        write_escaped_attr(&mut self.writer, type_name)?;
+        write!(self.writer, "\"")?;
         writeln!(self.writer, ">")?;
         self.indent += 1;
         Ok(())
@@ -475,18 +474,24 @@ impl<'a, W: Write> ClassicXmlContext<'a, W> {
         Ok(())
     }
 
-    fn empty_element_owned(
+    fn empty_instance_element(
         &mut self,
         name: &str,
-        attrs: &[(String, String)],
+        base_attrs: &[(&str, &str)],
+        pointer: Option<&str>,
+        type_name: &str,
     ) -> Result<(), ExportError> {
         self.write_indent()?;
         write!(self.writer, "<{name}")?;
-        for (attr_name, value) in attrs {
-            write!(self.writer, " {attr_name}=\"")?;
-            write_escaped_attr(&mut self.writer, value)?;
+        self.write_attrs_inline(base_attrs)?;
+        if let Some(pointer) = pointer {
+            write!(self.writer, " Pointer=\"")?;
+            write_escaped_attr(&mut self.writer, pointer)?;
             write!(self.writer, "\"")?;
         }
+        write!(self.writer, " Type=\"")?;
+        write_escaped_attr(&mut self.writer, type_name)?;
+        write!(self.writer, "\"")?;
         writeln!(self.writer, " />")?;
         Ok(())
     }
@@ -499,6 +504,17 @@ impl<'a, W: Write> ClassicXmlContext<'a, W> {
         write!(self.writer, "<{name}>")?;
         write_escaped_text(&mut self.writer, text)?;
         writeln!(self.writer, "</{name}>")?;
+        Ok(())
+    }
+
+    fn text_element_display(
+        &mut self,
+        name: &str,
+        value: impl Display,
+    ) -> Result<(), ExportError> {
+        self.write_indent()?;
+        write!(self.writer, "<{name}>{value}</{name}>")?;
+        writeln!(self.writer)?;
         Ok(())
     }
 
