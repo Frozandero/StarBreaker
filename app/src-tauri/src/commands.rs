@@ -1063,6 +1063,30 @@ pub struct ExportRequest {
     pub include_object_type_directory: bool,
 }
 
+#[derive(Clone, Serialize)]
+pub struct SocpakDto {
+    pub path: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct SocpakExportRequest {
+    pub socpak_paths: Vec<String>,
+    pub output_dir: String,
+    pub lod: u32,
+    pub mip: u32,
+    /// "none", "colors", "textures", "all"
+    pub material_mode: String,
+    pub include_lights: bool,
+    pub overwrite_existing_assets: bool,
+    pub include_nodraw: bool,
+}
+
+#[derive(Clone, Serialize)]
+pub struct SocpakExportDone {
+    pub file_count: usize,
+    pub package_name: String,
+}
+
 #[derive(Clone)]
 struct ExportProgressSlot {
     entity_name: String,
@@ -1439,6 +1463,118 @@ fn read_reusable_decomposed_asset(
         return None;
     }
     std::fs::read(output_root.join(relative_path)).ok()
+}
+
+#[tauri::command]
+pub async fn scan_socpaks(
+    state: State<'_, AppState>,
+    query: Option<String>,
+) -> Result<Vec<SocpakDto>, AppError> {
+    let query = query.unwrap_or_default().to_ascii_lowercase();
+    let p4k = state.p4k.lock();
+    let p4k = p4k
+        .as_ref()
+        .ok_or_else(|| AppError::Internal("P4k not loaded".into()))?;
+    let mut matches = p4k
+        .entries()
+        .iter()
+        .filter_map(|entry| {
+            let path = entry.name.clone();
+            let normalized = path.to_ascii_lowercase();
+            if !normalized.ends_with(".socpak") {
+                return None;
+            }
+            if !query.is_empty() && !normalized.contains(&query) {
+                return None;
+            }
+            Some(SocpakDto { path })
+        })
+        .collect::<Vec<_>>();
+    matches.sort_by(|left, right| left.path.cmp(&right.path));
+    Ok(matches)
+}
+
+#[tauri::command]
+pub async fn export_socpaks(
+    state: State<'_, AppState>,
+    request: SocpakExportRequest,
+) -> Result<SocpakExportDone, AppError> {
+    if request.socpak_paths.is_empty() {
+        return Err(AppError::Internal("Select at least one socpak to export".into()));
+    }
+
+    let p4k = {
+        let guard = state.p4k.lock();
+        guard
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("P4k not loaded".into()))?
+            .clone()
+    };
+    let dcb_bytes = {
+        let guard = state.dcb_bytes.lock();
+        guard
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("DataCore not loaded".into()))?
+            .clone()
+    };
+
+    tokio::task::spawn_blocking(move || -> Result<SocpakExportDone, AppError> {
+        let db = starbreaker_datacore::database::Database::from_bytes(&dcb_bytes)?;
+        let export_name = socpak_export_name(&request.socpak_paths);
+        let material_mode = match request.material_mode.to_lowercase().as_str() {
+            "none" => starbreaker_3d::MaterialMode::None,
+            "colors" => starbreaker_3d::MaterialMode::Colors,
+            "all" => starbreaker_3d::MaterialMode::All,
+            _ => starbreaker_3d::MaterialMode::Textures,
+        };
+        let opts = starbreaker_3d::ExportOptions {
+            kind: starbreaker_3d::ExportKind::Decomposed,
+            format: starbreaker_3d::ExportFormat::Blend,
+            material_mode,
+            include_attachments: false,
+            include_interior: true,
+            include_lights: request.include_lights,
+            include_nodraw: request.include_nodraw,
+            include_shields: false,
+            texture_mip: request.mip,
+            lod_level: request.lod,
+            threads: 0,
+            include_animations: false,
+            apply_default_animation_pose: false,
+            default_animation_tags: vec!["landing_gear_extend".to_string()],
+            decomposed_package_subdir: None,
+        };
+        let decomposed = starbreaker_3d::socpaks_to_decomposed_blend(
+            &db,
+            &p4k,
+            &request.socpak_paths,
+            &export_name,
+            &opts,
+        )?;
+        let package_name = decomposed_package_directory_name(&decomposed.files, &export_name);
+        let output_root = PathBuf::from(&request.output_dir);
+        prepare_decomposed_output_root(&output_root, &package_name)?;
+        for file in &decomposed.files {
+            let file_path = output_root.join(&file.relative_path);
+            if let Some(parent) = file_path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            write_decomposed_file(
+                file,
+                &file_path,
+                request.overwrite_existing_assets,
+                None,
+                &p4k,
+            )?;
+        }
+
+        Ok(SocpakExportDone {
+            file_count: decomposed.files.len(),
+            package_name,
+        })
+    })
+    .await
+    .map_err(|error| AppError::Internal(format!("socpak export task failed: {error}")))?
 }
 
 /// Start exporting selected entities to bundled files.
@@ -1831,6 +1967,18 @@ fn output_object_type_directory_for_record(
     } else {
         Some("other")
     }
+}
+
+fn socpak_export_name(paths: &[String]) -> String {
+    if paths.len() != 1 {
+        return "Socpak Export".to_string();
+    }
+    let file_name = paths[0]
+        .rsplit(&['/', '\\'])
+        .next()
+        .unwrap_or(paths[0].as_str());
+    let stem = file_name.strip_suffix(".socpak").unwrap_or(file_name);
+    sanitize_export_name(stem)
 }
 
 fn sanitize_export_name(name: &str) -> String {

@@ -180,6 +180,26 @@ export interface ExportDone {
   succeeded_ids: string[];
 }
 
+export interface SocpakDto {
+  path: string;
+}
+
+export interface SocpakExportRequest {
+  socpak_paths: string[];
+  output_dir: string;
+  lod: number;
+  mip: number;
+  material_mode: string;
+  include_lights: boolean;
+  overwrite_existing_assets: boolean;
+  include_nodraw: boolean;
+}
+
+export interface SocpakExportDone {
+  file_count: number;
+  package_name: string;
+}
+
 // ── Export commands ──
 
 /** Scan DataCore for entity categories. Requires P4k to be loaded. */
@@ -195,6 +215,18 @@ export async function startExport(request: ExportRequest): Promise<void> {
 /** Cancel an in-progress export. */
 export async function cancelExport(): Promise<void> {
   return invoke<void>("cancel_export");
+}
+
+/** List socpak archive paths, optionally filtered by substring. */
+export async function scanSocpaks(query = ""): Promise<SocpakDto[]> {
+  return invoke<SocpakDto[]>("scan_socpaks", { query: query || null });
+}
+
+/** Export selected socpaks as a decomposed Blender package. */
+export async function exportSocpaks(
+  request: SocpakExportRequest,
+): Promise<SocpakExportDone> {
+  return invoke<SocpakExportDone>("export_socpaks", { request });
 }
 
 /** Listen for export progress events. */

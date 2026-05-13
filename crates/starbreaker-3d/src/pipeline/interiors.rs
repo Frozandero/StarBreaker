@@ -135,22 +135,24 @@ pub(crate) fn load_interiors(
             .get(&container.file_name.to_ascii_lowercase())
             .map(Vec::as_slice)
             .unwrap_or(&[]);
-        match socpak::load_interior_from_socpak(
+        match socpak::load_interior_tree_from_socpak(
             p4k,
             &container.file_name,
             *container_transform,
             glam::Mat4::IDENTITY.to_cols_array_2d(),
             reference_candidates,
         ) {
-            Ok(mut payload) => {
-                payload.container_transform = normalize_root_light_only_container_transform(
-                    payload.container_transform,
-                    parent_entity_name.is_some(),
-                    &payload,
-                );
-                payload.parent_entity_name = parent_entity_name.clone();
-                payload.parent_node_name = parent_node_name.clone();
-                payloads.push(payload);
+            Ok(mut tree_payloads) => {
+                for payload in &mut tree_payloads {
+                    payload.container_transform = normalize_root_light_only_container_transform(
+                        payload.container_transform,
+                        parent_entity_name.is_some(),
+                        payload,
+                    );
+                    payload.parent_entity_name = parent_entity_name.clone();
+                    payload.parent_node_name = parent_node_name.clone();
+                }
+                payloads.append(&mut tree_payloads);
             }
             Err(e) => log::warn!("failed to load {}: {e}", container.file_name),
         }
@@ -403,23 +405,25 @@ pub(crate) fn load_child_interiors(
                 }
                 let container_transform =
                     socpak::build_container_transform(container.offset_position, container.offset_rotation);
-                match socpak::load_interior_from_socpak(
+                match socpak::load_interior_tree_from_socpak(
                     p4k,
                     &container.file_name,
                     container_transform,
                     glam::Mat4::IDENTITY.to_cols_array_2d(),
                     std::slice::from_ref(&container_transform),
                 ) {
-                    Ok(mut payload) => {
+                    Ok(mut tree_payloads) => {
                         let (parent_entity_name, parent_node_name) = child_interior_parent_target(
                             child,
                             scene_parent_entity_name,
                             override_attachment,
                             container.bone_name.as_deref(),
                         );
-                        payload.parent_entity_name = parent_entity_name;
-                        payload.parent_node_name = parent_node_name;
-                        payloads.push(payload);
+                        for payload in &mut tree_payloads {
+                            payload.parent_entity_name = parent_entity_name.clone();
+                            payload.parent_node_name = parent_node_name.clone();
+                        }
+                        payloads.append(&mut tree_payloads);
                     }
                     Err(e) => log::warn!("failed to load {}: {e}", container.file_name),
                 }
