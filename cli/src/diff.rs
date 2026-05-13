@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::cmp::Ordering;
 use std::fs::File;
 use std::io::{BufWriter, Cursor, Read, Write};
 use std::path::{Path, PathBuf};
@@ -186,9 +187,27 @@ fn dump_p4k_listing(p4k: &MappedP4k, output: &Path, format: &DiffFormat) -> Resu
         dirs.entry(dir).or_default().push(entry);
     }
 
+    for files in dirs.values_mut() {
+        sort_p4k_files(files);
+    }
+
     dirs.par_iter()
         .try_for_each(|(dir, files)| write_p4k_dir_report(output, dir, files, format))?;
     Ok(())
+}
+
+fn sort_p4k_files(files: &mut [&P4kEntry]) {
+    files.sort_by(|a, b| legacy_p4k_name_compare(split_entry_path(&a.name).1, split_entry_path(&b.name).1));
+}
+
+fn legacy_p4k_name_compare(a: &str, b: &str) -> Ordering {
+    legacy_p4k_sort_key(a)
+        .cmp(&legacy_p4k_sort_key(b))
+        .then_with(|| a.cmp(b))
+}
+
+fn legacy_p4k_sort_key(value: &str) -> String {
+    value.chars().map(|ch| if ch == '.' { '\u{10ffff}' } else { ch }).collect()
 }
 
 fn write_p4k_dir_report(
@@ -219,7 +238,7 @@ fn write_p4k_dir_json(path: &Path, name: &str, files: &[&P4kEntry]) -> Result<()
             "CRC32": format!("0x{:08X}", entry.crc32),
             "Size": entry.uncompressed_size.to_string(),
             "CompressionType": entry.compression_method.to_string(),
-            "Encrypted": entry.is_encrypted.to_string(),
+            "Encrypted": legacy_bool(entry.is_encrypted),
         })
     });
     let report = serde_json::json!({
@@ -243,7 +262,7 @@ fn write_p4k_dir_xml(path: &Path, name: &str, files: &[&P4kEntry]) -> Result<()>
             entry.crc32,
             entry.uncompressed_size,
             entry.compression_method,
-            entry.is_encrypted
+            legacy_bool(entry.is_encrypted)
         )?;
     }
     write!(writer, "</Directory>")?;
@@ -290,7 +309,9 @@ fn export_datacore_records(db: &Database<'_>, output: &Path, format: &DiffFormat
         }
         let data = match format {
             DiffFormat::Json => starbreaker_datacore::export::to_json(db, record)?,
-            DiffFormat::Xml => legacy_xml_bytes(starbreaker_datacore::export::to_xml(db, record)?),
+            DiffFormat::Xml => {
+                legacy_xml_bytes(starbreaker_datacore::export::to_classic_xml(db, record)?)
+            }
         };
         std::fs::write(out_path, data)?;
         Ok::<_, CliError>(())
@@ -371,16 +392,21 @@ fn write_type_report(db: &Database<'_>, index: usize, path: &Path, format: &Diff
                 let parent = &db.struct_defs()[def.parent_type_index as usize];
                 write!(writer, " Parent=\"{}\"", xml_escape(db.resolve_string2(parent.name_offset)))?;
             }
-            writeln!(writer, ">")?;
-            for (name, type_name) in properties_for_type(db, index) {
-                writeln!(
-                    writer,
-                    "  <Property Name=\"{}\" Type=\"{}\" />",
-                    xml_escape(&name),
-                    xml_escape(&type_name)
-                )?;
+            let properties = properties_for_type(db, index);
+            if properties.is_empty() {
+                write!(writer, " />")?;
+            } else {
+                writeln!(writer, ">")?;
+                for (name, type_name) in properties {
+                    writeln!(
+                        writer,
+                        "  <Property Name=\"{}\" Type=\"{}\" />",
+                        xml_escape(&name),
+                        xml_escape(&type_name)
+                    )?;
+                }
+                write!(writer, "</Struct>")?;
             }
-            write!(writer, "</Struct>")?;
             std::fs::write(path, legacy_xml_bytes(writer))?;
         }
     }
@@ -518,6 +544,10 @@ fn xml_escape(value: &str) -> String {
         .replace('\'', "&apos;")
 }
 
+fn legacy_bool(value: bool) -> &'static str {
+    if value { "True" } else { "False" }
+}
+
 fn legacy_xml_bytes(bytes: Vec<u8>) -> Vec<u8> {
     const BOM: &[u8] = &[0xEF, 0xBB, 0xBF];
     const DECL: &str = "<?xml version=\"1.0\" encoding=\"utf-8\"?>";
@@ -545,7 +575,8 @@ fn legacy_xml_bytes(bytes: Vec<u8>) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
-    use super::legacy_xml_bytes;
+    use super::{legacy_bool, legacy_xml_bytes, sort_p4k_files, write_p4k_dir_xml};
+    use starbreaker_p4k::P4kEntry;
 
     #[test]
     fn legacy_xml_bytes_adds_bom_crlf_declaration_and_no_terminal_newline() {
@@ -554,5 +585,128 @@ mod tests {
         assert!(output.windows(2).any(|pair| pair == b"\r\n"));
         assert!(!output.ends_with(b"\r\n"));
         assert!(!output.windows(2).any(|pair| pair == b"\n\n"));
+    }
+
+    #[test]
+    fn p4k_diff_files_are_sorted_by_file_name() {
+        let entries = [
+            entry("Animations\\pu_dialog_events_vanduul.xml"),
+            entry("Animations\\DirectionalBlends.img"),
+            entry("Animations\\pu_dialog_events_male.xml"),
+            entry("Animations\\pu_dialog_events_female.xml"),
+            entry("Animations\\Animations.img"),
+        ];
+        let mut files = entries.iter().collect::<Vec<_>>();
+
+        sort_p4k_files(&mut files);
+
+        let names = files
+            .iter()
+            .map(|entry| entry.name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            names,
+            [
+                "Animations\\Animations.img",
+                "Animations\\DirectionalBlends.img",
+                "Animations\\pu_dialog_events_female.xml",
+                "Animations\\pu_dialog_events_male.xml",
+                "Animations\\pu_dialog_events_vanduul.xml",
+            ]
+        );
+    }
+
+    #[test]
+    fn p4k_diff_files_use_legacy_culture_ordering() {
+        let entries = [
+            entry("Data\\bspace\\1D-BSpace_AI_Quazigrazer_Stand_Relaxed_Idle2Run.comb"),
+            entry("Data\\bspace\\1D-BSpace_AI_Quazigrazer_Stand_Relaxed_Idle2Run_Left.bspace"),
+            entry("Data\\bspace\\1D-BSpace_AI_Quazigrazer_Stand_Relaxed_Idle2Run_Right.bspace"),
+            entry("Data\\bspace\\1D-BSpace_AI_Quazigrazer_Stand_Relaxed_Idle2Walk.comb"),
+            entry("Data\\bspace\\1D-BSpace_AI_Quazigrazer_Stand_Relaxed_Idle2Walk_Left.bspace"),
+            entry("Data\\bspace\\1D-BSpace_AI_Quazigrazer_Stand_Relaxed_Idle2Walk_Right.bspace"),
+        ];
+        let mut files = entries.iter().collect::<Vec<_>>();
+
+        sort_p4k_files(&mut files);
+
+        let names = files
+            .iter()
+            .map(|entry| entry.name.rsplit('\\').next().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            names,
+            [
+                "1D-BSpace_AI_Quazigrazer_Stand_Relaxed_Idle2Run_Left.bspace",
+                "1D-BSpace_AI_Quazigrazer_Stand_Relaxed_Idle2Run_Right.bspace",
+                "1D-BSpace_AI_Quazigrazer_Stand_Relaxed_Idle2Run.comb",
+                "1D-BSpace_AI_Quazigrazer_Stand_Relaxed_Idle2Walk_Left.bspace",
+                "1D-BSpace_AI_Quazigrazer_Stand_Relaxed_Idle2Walk_Right.bspace",
+                "1D-BSpace_AI_Quazigrazer_Stand_Relaxed_Idle2Walk.comb",
+            ]
+        );
+    }
+
+    #[test]
+    fn p4k_diff_files_sort_suffixes_like_old_csharp_dump() {
+        let entries = [
+            entry("Data\\cockpit\\cockpit_scythe_gloc_passout.caf"),
+            entry("Data\\cockpit\\cockpit_scythe_gloc_passout_idle.caf"),
+            entry("Data\\cockpit\\cockpit_scythe_gloc_passout_idle_downpitch_add.caf"),
+            entry("Data\\cockpit\\cockpit_scythe_gloc_passout_idle_leftbank_add.caf"),
+            entry("Data\\cockpit\\cockpit_scythe_gloc_passout_idle_rightbank_add.caf"),
+            entry("Data\\cockpit\\cockpit_scythe_gloc_passout_idle_uppitch_add.caf"),
+        ];
+        let mut files = entries.iter().collect::<Vec<_>>();
+
+        sort_p4k_files(&mut files);
+
+        let names = files
+            .iter()
+            .map(|entry| entry.name.rsplit('\\').next().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            names,
+            [
+                "cockpit_scythe_gloc_passout_idle_downpitch_add.caf",
+                "cockpit_scythe_gloc_passout_idle_leftbank_add.caf",
+                "cockpit_scythe_gloc_passout_idle_rightbank_add.caf",
+                "cockpit_scythe_gloc_passout_idle_uppitch_add.caf",
+                "cockpit_scythe_gloc_passout_idle.caf",
+                "cockpit_scythe_gloc_passout.caf",
+            ]
+        );
+    }
+
+    #[test]
+    fn p4k_diff_xml_uses_legacy_bool_casing() {
+        assert_eq!(legacy_bool(true), "True");
+        assert_eq!(legacy_bool(false), "False");
+
+        let temp = std::env::temp_dir().join(format!(
+            "starbreaker-p4k-bool-{}.xml",
+            std::process::id()
+        ));
+        let entries = [entry("Data\\foo.bin")];
+
+        write_p4k_dir_xml(&temp, "Data", &[&entries[0]]).unwrap();
+        let text = std::fs::read_to_string(&temp).unwrap();
+        let _ = std::fs::remove_file(temp);
+
+        assert!(text.contains("Encrypted=\"False\""));
+        assert!(!text.contains("Encrypted=\"false\""));
+    }
+
+    fn entry(name: &str) -> P4kEntry {
+        P4kEntry {
+            name: name.to_string(),
+            compressed_size: 0,
+            uncompressed_size: 1,
+            compression_method: 0,
+            is_encrypted: false,
+            offset: 0,
+            crc32: 0,
+            last_modified: 0,
+        }
     }
 }
