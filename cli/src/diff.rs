@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::fs::File;
-use std::io::{BufWriter, Write};
+use std::io::{BufWriter, Cursor, Read, Write};
 use std::path::{Path, PathBuf};
 
 use clap::{Args, ValueEnum};
@@ -30,10 +30,7 @@ impl DiffFormat {
 /// Generate diffable reports from a Star Citizen install
 #[derive(Args)]
 pub struct DiffCommand {
-    /// Path to the game channel folder containing Data.p4k
-    #[arg(short, long, env = "GAME_FOLDER")]
-    game: Option<PathBuf>,
-    /// Path to Data.p4k. Overrides --game/Data.p4k
+    /// Path to Data.p4k
     #[arg(long, env = "SC_DATA_P4K")]
     p4k: Option<PathBuf>,
     /// Output directory for the report tree
@@ -45,14 +42,14 @@ pub struct DiffCommand {
     /// Output format for text reports
     #[arg(short, long, value_enum, default_value = "xml", env = "TEXT_FORMAT")]
     format: DiffFormat,
+    /// Include compressed DataCore.dcb and StarCitizen.exe snapshots
+    #[arg(short = 'b', long, env = "INCLUDE_BINARIES")]
+    include_binaries: bool,
 }
 
-pub fn report_root(p4k_path: Option<PathBuf>, game: Option<PathBuf>) -> Result<PathBuf> {
+pub fn report_root(p4k_path: Option<PathBuf>) -> Result<PathBuf> {
     if let Some(path) = p4k_path {
         return Ok(path);
-    }
-    if let Some(game) = game {
-        return Ok(game.join("Data.p4k"));
     }
     Ok(load_p4k(None)?.path().to_path_buf())
 }
@@ -60,13 +57,20 @@ pub fn report_root(p4k_path: Option<PathBuf>, game: Option<PathBuf>) -> Result<P
 impl DiffCommand {
     pub fn run(self) -> Result<()> {
         let started = std::time::Instant::now();
-        let p4k_path = report_root(self.p4k, self.game.clone())?;
-        let game_dir = self
-            .game
-            .or_else(|| p4k_path.parent().map(Path::to_path_buf));
+        let binary_sources = if self.include_binaries {
+            Some(resolve_binary_sources()?)
+        } else {
+            None
+        };
+        let p4k_path = report_root(self.p4k)?;
+        let game_dir = p4k_path.parent().map(Path::to_path_buf);
 
         if !self.keep {
-            clean_output(&self.output, matches!(self.format, DiffFormat::Json))?;
+            clean_output(
+                &self.output,
+                matches!(self.format, DiffFormat::Json),
+                self.include_binaries,
+            )?;
         }
 
         let p4k = MappedP4k::open(&p4k_path)?;
@@ -90,6 +94,12 @@ impl DiffCommand {
         export_datacore_enums(&db, &self.output.join("DataCoreEnums"), &self.format)?;
         eprintln!("DataCore reports exported in {:?}", sw.elapsed());
 
+        if let Some(binary_sources) = binary_sources {
+            sw = std::time::Instant::now();
+            write_binary_snapshots(&self.output, &dcb_bytes, &binary_sources.exe_path)?;
+            eprintln!("Binary snapshots exported in {:?}", sw.elapsed());
+        }
+
         if let Some(game_dir) = game_dir {
             copy_build_manifest(&game_dir, &self.output)?;
         }
@@ -99,7 +109,7 @@ impl DiffCommand {
     }
 }
 
-fn clean_output(output: &Path, json: bool) -> Result<()> {
+fn clean_output(output: &Path, json: bool, include_binaries: bool) -> Result<()> {
     for dir in [
         "DataCore",
         "DataCoreTypes",
@@ -119,10 +129,52 @@ fn clean_output(output: &Path, json: bool) -> Result<()> {
         std::fs::remove_file(manifest)?;
     }
 
+    if include_binaries {
+        for file in ["DataCore.dcb.zst", "StarCitizen.exe.zst"] {
+            let path = output.join(file);
+            if path.exists() {
+                std::fs::remove_file(path)?;
+            }
+        }
+    }
+
     let root_listing = output.join("P4k").join(format!("Data.{}", if json { "json" } else { "xml" }));
     if root_listing.exists() {
         std::fs::remove_file(root_listing)?;
     }
+    Ok(())
+}
+
+struct BinarySources {
+    exe_path: PathBuf,
+}
+
+fn resolve_binary_sources() -> Result<BinarySources> {
+    let exe_path = starbreaker_common::discover::find_exe()
+        .map_err(|e| {
+            CliError::MissingRequirement(format!(
+                "--include-binaries requires StarCitizen.exe discovery: {e}; set SC_EXE if needed"
+            ))
+        })?
+        .path;
+    Ok(BinarySources { exe_path })
+}
+
+fn write_binary_snapshots(output: &Path, dcb_bytes: &[u8], exe_path: &Path) -> Result<()> {
+    std::fs::create_dir_all(output)?;
+    write_zstd_reader(
+        Cursor::new(dcb_bytes),
+        &output.join("DataCore.dcb.zst"),
+    )?;
+    write_zstd_reader(File::open(exe_path)?, &output.join("StarCitizen.exe.zst"))?;
+    Ok(())
+}
+
+fn write_zstd_reader(mut input: impl Read, output_path: &Path) -> Result<()> {
+    let output = File::create(output_path)?;
+    let mut encoder = zstd::stream::write::Encoder::new(output, 0)?;
+    std::io::copy(&mut input, &mut encoder)?;
+    encoder.finish()?;
     Ok(())
 }
 
@@ -180,9 +232,7 @@ fn write_p4k_dir_json(path: &Path, name: &str, files: &[&P4kEntry]) -> Result<()
 }
 
 fn write_p4k_dir_xml(path: &Path, name: &str, files: &[&P4kEntry]) -> Result<()> {
-    let file = File::create(path)?;
-    let mut writer = BufWriter::new(file);
-    writeln!(writer, "<?xml version=\"1.0\" encoding=\"utf-8\"?>")?;
+    let mut writer = Vec::new();
     writeln!(writer, "<Directory Name=\"{}\">", xml_escape(name))?;
     for entry in files {
         let (_, file_name) = split_entry_path(&entry.name);
@@ -196,7 +246,8 @@ fn write_p4k_dir_xml(path: &Path, name: &str, files: &[&P4kEntry]) -> Result<()>
             entry.is_encrypted
         )?;
     }
-    writeln!(writer, "</Directory>")?;
+    write!(writer, "</Directory>")?;
+    std::fs::write(path, legacy_xml_bytes(writer))?;
     Ok(())
 }
 
@@ -239,7 +290,7 @@ fn export_datacore_records(db: &Database<'_>, output: &Path, format: &DiffFormat
         }
         let data = match format {
             DiffFormat::Json => starbreaker_datacore::export::to_json(db, record)?,
-            DiffFormat::Xml => starbreaker_datacore::export::to_xml(db, record)?,
+            DiffFormat::Xml => legacy_xml_bytes(starbreaker_datacore::export::to_xml(db, record)?),
         };
         std::fs::write(out_path, data)?;
         Ok::<_, CliError>(())
@@ -314,9 +365,7 @@ fn write_type_report(db: &Database<'_>, index: usize, path: &Path, format: &Diff
         }
         DiffFormat::Xml => {
             let def = &db.struct_defs()[index];
-            let file = File::create(path)?;
-            let mut writer = BufWriter::new(file);
-            writeln!(writer, "<?xml version=\"1.0\" encoding=\"utf-8\"?>")?;
+            let mut writer = Vec::new();
             write!(writer, "<Struct Name=\"{}\"", xml_escape(db.resolve_string2(def.name_offset)))?;
             if def.parent_type_index != -1 {
                 let parent = &db.struct_defs()[def.parent_type_index as usize];
@@ -331,7 +380,8 @@ fn write_type_report(db: &Database<'_>, index: usize, path: &Path, format: &Diff
                     xml_escape(&type_name)
                 )?;
             }
-            writeln!(writer, "</Struct>")?;
+            write!(writer, "</Struct>")?;
+            std::fs::write(path, legacy_xml_bytes(writer))?;
         }
     }
     Ok(())
@@ -357,14 +407,13 @@ fn export_datacore_enums(db: &Database<'_>, output: &Path, format: &DiffFormat) 
                 writer.write_all(b"\n")?;
             }
             DiffFormat::Xml => {
-                let file = File::create(path)?;
-                let mut writer = BufWriter::new(file);
-                writeln!(writer, "<?xml version=\"1.0\" encoding=\"utf-8\"?>")?;
+                let mut writer = Vec::new();
                 writeln!(writer, "<Enum Name=\"{}\">", xml_escape(name))?;
                 for value in values {
                     writeln!(writer, "  <Value>{}</Value>", xml_escape(value))?;
                 }
-                writeln!(writer, "</Enum>")?;
+                write!(writer, "</Enum>")?;
+                std::fs::write(path, legacy_xml_bytes(writer))?;
             }
         }
         Ok::<_, CliError>(())
@@ -467,4 +516,43 @@ fn xml_escape(value: &str) -> String {
         .replace('>', "&gt;")
         .replace('"', "&quot;")
         .replace('\'', "&apos;")
+}
+
+fn legacy_xml_bytes(bytes: Vec<u8>) -> Vec<u8> {
+    const BOM: &[u8] = &[0xEF, 0xBB, 0xBF];
+    const DECL: &str = "<?xml version=\"1.0\" encoding=\"utf-8\"?>";
+
+    let mut text = String::from_utf8(bytes).expect("diff XML output must be UTF-8");
+    if let Some(stripped) = text.strip_prefix('\u{feff}') {
+        text = stripped.to_string();
+    }
+    if let Some(stripped) = text.strip_prefix(DECL) {
+        text = stripped.trim_start_matches(['\r', '\n']).to_string();
+    }
+
+    text = text.replace("\r\n", "\n").replace('\r', "\n");
+    while text.ends_with('\n') {
+        text.pop();
+    }
+
+    let mut output = Vec::with_capacity(BOM.len() + DECL.len() + 2 + text.len());
+    output.extend_from_slice(BOM);
+    output.extend_from_slice(DECL.as_bytes());
+    output.extend_from_slice(b"\r\n");
+    output.extend_from_slice(text.replace('\n', "\r\n").as_bytes());
+    output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::legacy_xml_bytes;
+
+    #[test]
+    fn legacy_xml_bytes_adds_bom_crlf_declaration_and_no_terminal_newline() {
+        let output = legacy_xml_bytes(b"<Root>\n  <Value />\n</Root>\n".to_vec());
+        assert!(output.starts_with(b"\xEF\xBB\xBF<?xml version=\"1.0\" encoding=\"utf-8\"?>\r\n"));
+        assert!(output.windows(2).any(|pair| pair == b"\r\n"));
+        assert!(!output.ends_with(b"\r\n"));
+        assert!(!output.windows(2).any(|pair| pair == b"\n\n"));
+    }
 }
