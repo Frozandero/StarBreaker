@@ -162,26 +162,34 @@ fn is_valid_xml_name_char(ch: char, first: bool) -> bool {
 }
 
 pub(super) fn write_escaped_text(w: &mut impl Write, value: &str) -> Result<(), ExportError> {
-    for ch in value.chars() {
-        match ch {
-            '&' => w.write_all(b"&amp;")?,
-            '<' => w.write_all(b"&lt;")?,
-            '>' => w.write_all(b"&gt;")?,
-            _ => write!(w, "{ch}")?,
-        }
-    }
-    Ok(())
+    write_escaped(w, value, false)
 }
 
 pub(super) fn write_escaped_attr(w: &mut impl Write, value: &str) -> Result<(), ExportError> {
-    for ch in value.chars() {
-        match ch {
-            '&' => w.write_all(b"&amp;")?,
-            '<' => w.write_all(b"&lt;")?,
-            '>' => w.write_all(b"&gt;")?,
-            '"' => w.write_all(b"&quot;")?,
-            _ => write!(w, "{ch}")?,
+    write_escaped(w, value, true)
+}
+
+fn write_escaped(w: &mut impl Write, value: &str, attr: bool) -> Result<(), ExportError> {
+    let bytes = value.as_bytes();
+    let mut start = 0;
+    for (index, byte) in bytes.iter().enumerate() {
+        let escaped = match *byte {
+            b'&' => Some(b"&amp;".as_slice()),
+            b'<' => Some(b"&lt;".as_slice()),
+            b'>' => Some(b"&gt;".as_slice()),
+            b'"' if attr => Some(b"&quot;".as_slice()),
+            _ => None,
+        };
+        if let Some(escaped) = escaped {
+            if start < index {
+                w.write_all(&bytes[start..index])?;
+            }
+            w.write_all(escaped)?;
+            start = index + 1;
         }
+    }
+    if start < bytes.len() {
+        w.write_all(&bytes[start..])?;
     }
     Ok(())
 }

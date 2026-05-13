@@ -519,8 +519,14 @@ impl<'a, W: Write> ClassicXmlContext<'a, W> {
     }
 
     fn write_indent(&mut self) -> Result<(), ExportError> {
-        for _ in 0..self.indent {
-            self.writer.write_all(b"  ")?;
+        const SPACES: &[u8] = b"                                ";
+        let mut remaining = self.indent * 2;
+        while remaining >= SPACES.len() {
+            self.writer.write_all(SPACES)?;
+            remaining -= SPACES.len();
+        }
+        if remaining > 0 {
+            self.writer.write_all(&SPACES[..remaining])?;
         }
         Ok(())
     }

@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufWriter, Cursor, Read, Write};
 use std::path::{Path, PathBuf};
@@ -12,7 +12,7 @@ use starbreaker_p4k::{MappedP4k, P4kArchive, P4kEntry};
 use crate::common::load_p4k;
 use crate::error::{CliError, Result};
 
-#[derive(Clone, ValueEnum)]
+#[derive(Clone, Copy, ValueEnum)]
 pub enum DiffFormat {
     Json,
     Xml,
@@ -205,7 +205,7 @@ fn write_zstd_reader(mut input: impl Read, output_path: &Path) -> Result<()> {
 }
 
 fn dump_p4k_listing(p4k: &MappedP4k, output: &Path, format: &DiffFormat) -> Result<()> {
-    let mut dirs: BTreeMap<String, Vec<P4kEntry>> = BTreeMap::new();
+    let mut dirs: HashMap<String, Vec<P4kEntry>> = HashMap::new();
 
     for entry in p4k.entries() {
         insert_p4k_report_entry(p4k, &mut dirs, entry, "")?;
@@ -222,7 +222,7 @@ fn dump_p4k_listing(p4k: &MappedP4k, output: &Path, format: &DiffFormat) -> Resu
 
 fn insert_p4k_report_entry(
     p4k: &MappedP4k,
-    dirs: &mut BTreeMap<String, Vec<P4kEntry>>,
+    dirs: &mut HashMap<String, Vec<P4kEntry>>,
     entry: &P4kEntry,
     prefix: &str,
 ) -> Result<()> {
@@ -237,16 +237,16 @@ fn insert_p4k_report_entry(
         return Ok(());
     }
 
-    let (dir, _) = split_entry_path(&report_name);
     let mut report_entry = entry.clone();
     report_entry.name = report_name;
+    let dir = split_entry_dir(&report_entry.name).to_string();
     dirs.entry(dir).or_default().push(report_entry);
     Ok(())
 }
 
 fn insert_nested_p4k_report_entry(
     archive: &P4kArchive<'_>,
-    dirs: &mut BTreeMap<String, Vec<P4kEntry>>,
+    dirs: &mut HashMap<String, Vec<P4kEntry>>,
     entry: &P4kEntry,
     prefix: &str,
 ) -> Result<()> {
@@ -261,9 +261,9 @@ fn insert_nested_p4k_report_entry(
         return Ok(());
     }
 
-    let (dir, _) = split_entry_path(&report_name);
     let mut report_entry = entry.clone();
     report_entry.name = report_name;
+    let dir = split_entry_dir(&report_entry.name).to_string();
     dirs.entry(dir).or_default().push(report_entry);
     Ok(())
 }
@@ -278,8 +278,22 @@ fn report_entry_name(prefix: &str, name: &str) -> String {
 
 fn should_expand_socpak(path: &str) -> bool {
     let file_name = path.rsplit('\\').next().unwrap_or(path);
-    let lower = file_name.to_ascii_lowercase();
-    lower.ends_with(".socpak") && !lower.starts_with("shadercache_")
+    ascii_ends_with_ignore_case(file_name, ".socpak")
+        && !ascii_starts_with_ignore_case(file_name, "shadercache_")
+}
+
+fn ascii_starts_with_ignore_case(value: &str, prefix: &str) -> bool {
+    value
+        .as_bytes()
+        .get(..prefix.len())
+        .is_some_and(|head| head.eq_ignore_ascii_case(prefix.as_bytes()))
+}
+
+fn ascii_ends_with_ignore_case(value: &str, suffix: &str) -> bool {
+    value
+        .as_bytes()
+        .get(value.len().saturating_sub(suffix.len())..)
+        .is_some_and(|tail| tail.eq_ignore_ascii_case(suffix.as_bytes()))
 }
 
 fn sort_p4k_files(files: &mut [P4kEntry]) {
@@ -328,7 +342,7 @@ fn write_p4k_dir_json(path: &Path, name: &str, files: &[P4kEntry]) -> Result<()>
     let file = File::create(path)?;
     let mut writer = BufWriter::new(file);
     let files = files.iter().map(|entry| {
-        let (_, file_name) = split_entry_path(&entry.name);
+        let file_name = split_entry_file_name(&entry.name);
         serde_json::json!({
             "Name": file_name,
             "CRC32": format!("0x{:08X}", entry.crc32),
@@ -352,7 +366,7 @@ fn write_p4k_dir_xml(path: &Path, name: &str, files: &[P4kEntry]) -> Result<()> 
     write_xml_escaped(&mut writer, name)?;
     writeln!(writer, "\">")?;
     for entry in files {
-        let (_, file_name) = split_entry_path(&entry.name);
+        let file_name = split_entry_file_name(&entry.name);
         write!(
             writer,
             "  <File Name=\""
@@ -375,8 +389,9 @@ fn extract_report_contents(p4k: &MappedP4k, output: &Path) -> Result<()> {
         .entries()
         .iter()
         .filter(|entry| {
-            let lower = entry.name.to_ascii_lowercase();
-            patterns.iter().any(|suffix| lower.ends_with(suffix))
+            patterns
+                .iter()
+                .any(|suffix| ascii_ends_with_ignore_case(&entry.name, suffix))
         })
         .collect();
 
@@ -400,20 +415,28 @@ fn export_datacore_records(db: &Database<'_>, output: &Path, format: &DiffFormat
         .filter(|record| db.is_main_record(record))
         .collect();
 
-    records.par_iter().try_for_each(|record| {
+    records.par_iter().try_for_each_init(
+        || (Vec::new(), Vec::new()),
+        |(body, legacy), record| {
         let file_name = db.resolve_string(record.file_name_offset);
         let out_path = output.join(change_extension(file_name, ext));
         if let Some(parent) = out_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
+        if body.capacity() > 8 * 1024 * 1024 {
+            *body = Vec::new();
+        } else {
+            body.clear();
+        }
         match format {
             DiffFormat::Json => {
-                let data = starbreaker_datacore::export::to_json(db, record)?;
-                std::fs::write(out_path, data)?;
+                starbreaker_datacore::export::write_json(db, record, &mut *body)?;
+                std::fs::write(out_path, &*body)?;
             }
             DiffFormat::Xml => {
-                let data = starbreaker_datacore::export::to_classic_xml(db, record)?;
-                std::fs::write(out_path, legacy_xml_bytes(data))?;
+                starbreaker_datacore::export::write_classic_xml(db, record, &mut *body)?;
+                legacy_xml_bytes_into(body, legacy);
+                std::fs::write(out_path, &*legacy)?;
             }
         }
         Ok::<_, CliError>(())
@@ -620,11 +643,10 @@ fn property_type_name(
     }
 }
 
-fn split_entry_path(name: &str) -> (String, &str) {
-    match name.rsplit_once('\\') {
-        Some((dir, file)) => (dir.to_string(), file),
-        None => ("Data".to_string(), name),
-    }
+fn split_entry_dir(name: &str) -> &str {
+    name.rsplit_once('\\')
+        .map(|(dir, _)| dir)
+        .unwrap_or("Data")
 }
 
 fn split_entry_file_name(name: &str) -> &str {
@@ -668,10 +690,16 @@ fn legacy_bool(value: bool) -> &'static str {
 }
 
 fn legacy_xml_bytes(bytes: Vec<u8>) -> Vec<u8> {
-    let text = legacy_xml_body(bytes.as_slice());
-    let mut output = Vec::with_capacity(3 + 38 + 2 + text.len());
-    write_legacy_xml(&mut output, text).expect("writing to Vec cannot fail");
+    let mut output = Vec::new();
+    legacy_xml_bytes_into(&bytes, &mut output);
     output
+}
+
+fn legacy_xml_bytes_into(bytes: &[u8], output: &mut Vec<u8>) {
+    let text = legacy_xml_body(bytes);
+    output.clear();
+    output.reserve(3 + 38 + 2 + text.len());
+    write_legacy_xml(output, text).expect("writing to Vec cannot fail");
 }
 
 fn legacy_xml_body(mut text: &[u8]) -> &[u8] {
