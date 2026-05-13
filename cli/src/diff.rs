@@ -58,13 +58,13 @@ pub fn report_root(p4k_path: Option<PathBuf>) -> Result<PathBuf> {
 impl DiffCommand {
     pub fn run(self) -> Result<()> {
         let started = std::time::Instant::now();
+        let p4k_path = report_root(self.p4k)?;
+        let game_dir = p4k_path.parent().map(Path::to_path_buf);
         let binary_sources = if self.include_binaries {
-            Some(resolve_binary_sources()?)
+            Some(resolve_binary_sources(game_dir.as_deref())?)
         } else {
             None
         };
-        let p4k_path = report_root(self.p4k)?;
-        let game_dir = p4k_path.parent().map(Path::to_path_buf);
 
         if !self.keep {
             clean_output(
@@ -150,11 +150,37 @@ struct BinarySources {
     exe_path: PathBuf,
 }
 
-fn resolve_binary_sources() -> Result<BinarySources> {
+fn resolve_binary_sources(game_dir: Option<&Path>) -> Result<BinarySources> {
+    if let Ok(path) = std::env::var(starbreaker_common::discover::ENV_EXE) {
+        let exe_path = PathBuf::from(&path);
+        if exe_path.is_file() {
+            return Ok(BinarySources { exe_path });
+        }
+        return Err(CliError::MissingRequirement(format!(
+            "--include-binaries requires StarCitizen.exe, but SC_EXE points to missing file '{}'",
+            exe_path.display()
+        )));
+    }
+
+    if let Some(game_dir) = game_dir {
+        let exe_path = game_dir.join("Bin64").join("StarCitizen.exe");
+        if exe_path.is_file() {
+            return Ok(BinarySources { exe_path });
+        }
+    }
+
     let exe_path = starbreaker_common::discover::find_exe()
         .map_err(|e| {
+            let p4k_hint = game_dir
+                .map(|dir| {
+                    format!(
+                        "; also checked '{}'",
+                        dir.join("Bin64").join("StarCitizen.exe").display()
+                    )
+                })
+                .unwrap_or_default();
             CliError::MissingRequirement(format!(
-                "--include-binaries requires StarCitizen.exe discovery: {e}; set SC_EXE if needed"
+                "--include-binaries requires StarCitizen.exe discovery: {e}{p4k_hint}; set SC_EXE if needed"
             ))
         })?
         .path;
