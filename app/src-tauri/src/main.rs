@@ -216,6 +216,7 @@ fn main() {
             commands::discover_p4k,
             commands::open_p4k,
             commands::list_dir,
+            commands::p4k_search,
             commands::list_subdirs,
             commands::scan_categories,
             commands::start_export,
@@ -236,6 +237,8 @@ fn main() {
             audio_commands::audio_entity_triggers,
             audio_commands::audio_resolve_trigger,
             audio_commands::audio_decode_wem,
+            audio_commands::audio_export_info,
+            audio_commands::audio_export_media,
             commands::preview_geometry,
             commands::preview_xml,
             commands::preview_dds,
@@ -243,6 +246,9 @@ fn main() {
             commands::extract_p4k_file,
             commands::read_p4k_file,
             commands::extract_p4k_folder,
+            commands::get_blender_addon_status,
+            commands::install_blender_addon,
+            commands::reload_blender_addon,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| {
