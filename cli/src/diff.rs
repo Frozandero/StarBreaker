@@ -205,15 +205,21 @@ fn write_zstd_reader(mut input: impl Read, output_path: &Path) -> Result<()> {
 }
 
 fn dump_p4k_listing(p4k: &MappedP4k, output: &Path, format: &DiffFormat) -> Result<()> {
-    let mut dirs: HashMap<String, Vec<P4kEntry>> = HashMap::new();
+    let mut dirs = p4k
+        .entries()
+        .par_iter()
+        .try_fold(HashMap::new, |mut dirs, entry| {
+            insert_p4k_report_entry(p4k, &mut dirs, entry, "")?;
+            Ok::<_, CliError>(dirs)
+        })
+        .try_reduce(HashMap::new, |mut left, right| {
+            merge_p4k_dirs(&mut left, right);
+            Ok::<_, CliError>(left)
+        })?;
 
-    for entry in p4k.entries() {
-        insert_p4k_report_entry(p4k, &mut dirs, entry, "")?;
-    }
-
-    for files in dirs.values_mut() {
+    dirs.par_iter_mut().for_each(|(_, files)| {
         sort_p4k_files(files);
-    }
+    });
 
     dirs.par_iter()
         .try_for_each(|(dir, files)| write_p4k_dir_report(output, dir, files, format))?;
@@ -327,8 +333,7 @@ fn write_p4k_dir_report(
     format: &DiffFormat,
 ) -> Result<()> {
     let name = dir.rsplit('\\').next().unwrap_or("Data");
-    let relative_dir = dir.replace('\\', "/");
-    let out_dir = output.join(relative_dir);
+    let out_dir = join_p4k_dir(output, dir);
     std::fs::create_dir_all(&out_dir)?;
     let out_path = out_dir.join(format!("{name}.{}", format.extension()));
 
@@ -361,10 +366,12 @@ fn write_p4k_dir_json(path: &Path, name: &str, files: &[P4kEntry]) -> Result<()>
 }
 
 fn write_p4k_dir_xml(path: &Path, name: &str, files: &[P4kEntry]) -> Result<()> {
-    let mut writer = Vec::new();
+    let file = File::create(path)?;
+    let mut writer = BufWriter::new(file);
+    writer.write_all(b"\xEF\xBB\xBF<?xml version=\"1.0\" encoding=\"utf-8\"?>\r\n")?;
     write!(writer, "<Directory Name=\"")?;
     write_xml_escaped(&mut writer, name)?;
-    writeln!(writer, "\">")?;
+    write!(writer, "\">\r\n")?;
     for entry in files {
         let file_name = split_entry_file_name(&entry.name);
         write!(
@@ -372,14 +379,13 @@ fn write_p4k_dir_xml(path: &Path, name: &str, files: &[P4kEntry]) -> Result<()> 
             "  <File Name=\""
         )?;
         write_xml_escaped(&mut writer, file_name)?;
-        writeln!(
+        write!(
             writer,
-            "\" CRC32=\"0x{:08X}\" Size=\"{}\" CompressionType=\"{}\" Encrypted=\"{}\" />",
+            "\" CRC32=\"0x{:08X}\" Size=\"{}\" CompressionType=\"{}\" Encrypted=\"{}\" />\r\n",
             entry.crc32, entry.uncompressed_size, entry.compression_method, legacy_bool(entry.is_encrypted)
         )?;
     }
     write!(writer, "</Directory>")?;
-    std::fs::write(path, legacy_xml_bytes(writer))?;
     Ok(())
 }
 
@@ -442,6 +448,20 @@ fn export_datacore_records(db: &Database<'_>, output: &Path, format: &DiffFormat
         Ok::<_, CliError>(())
     })?;
     Ok(())
+}
+
+fn join_p4k_dir(output: &Path, dir: &str) -> PathBuf {
+    let mut path = output.to_path_buf();
+    for component in dir.split('\\') {
+        path.push(component);
+    }
+    path
+}
+
+fn merge_p4k_dirs(left: &mut HashMap<String, Vec<P4kEntry>>, right: HashMap<String, Vec<P4kEntry>>) {
+    for (dir, mut files) in right {
+        left.entry(dir).or_default().append(&mut files);
+    }
 }
 
 fn export_datacore_types(db: &Database<'_>, output: &Path, format: &DiffFormat) -> Result<()> {
@@ -673,14 +693,26 @@ fn copy_build_manifest(game_dir: &Path, output: &Path) -> Result<()> {
 }
 
 fn write_xml_escaped(writer: &mut impl Write, value: &str) -> Result<()> {
-    for ch in value.chars() {
-        match ch {
-            '&' => writer.write_all(b"&amp;")?,
-            '<' => writer.write_all(b"&lt;")?,
-            '>' => writer.write_all(b"&gt;")?,
-            '"' => writer.write_all(b"&quot;")?,
-            _ => write!(writer, "{ch}")?,
+    let bytes = value.as_bytes();
+    let mut start = 0;
+    for (index, byte) in bytes.iter().enumerate() {
+        let escaped = match *byte {
+            b'&' => Some(b"&amp;".as_slice()),
+            b'<' => Some(b"&lt;".as_slice()),
+            b'>' => Some(b"&gt;".as_slice()),
+            b'"' => Some(b"&quot;".as_slice()),
+            _ => None,
+        };
+        if let Some(escaped) = escaped {
+            if start < index {
+                writer.write_all(&bytes[start..index])?;
+            }
+            writer.write_all(escaped)?;
+            start = index + 1;
         }
+    }
+    if start < bytes.len() {
+        writer.write_all(&bytes[start..])?;
     }
     Ok(())
 }
