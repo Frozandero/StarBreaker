@@ -413,6 +413,41 @@ pub fn socpaks_to_decomposed_blend(
     export_name: &str,
     opts: &ExportOptions,
 ) -> Result<DecomposedExport, Error> {
+    let mut ignore_progress = |_progress: SocpakExportProgress| {};
+    socpaks_to_decomposed_blend_with_progress(
+        db,
+        p4k,
+        socpak_paths,
+        export_name,
+        opts,
+        &mut ignore_progress,
+    )
+}
+
+#[derive(Debug, Clone)]
+pub struct SocpakExportProgress {
+    pub socpak_path: String,
+    pub depth: usize,
+    pub containers_loaded: usize,
+    pub child_count: usize,
+    pub mesh_count: usize,
+    pub light_count: usize,
+    pub stage: String,
+}
+
+/// Export explicit socpak roots as a decomposed native Blender package, reporting
+/// cheap progress from the recursive socpak tree walk.
+pub fn socpaks_to_decomposed_blend_with_progress<F>(
+    db: &Database,
+    p4k: &MappedP4k,
+    socpak_paths: &[String],
+    export_name: &str,
+    opts: &ExportOptions,
+    progress: &mut F,
+) -> Result<DecomposedExport, Error>
+where
+    F: FnMut(SocpakExportProgress),
+{
     use crate::decomposed::DecomposedInput;
     use crate::socpak;
 
@@ -426,12 +461,23 @@ pub fn socpaks_to_decomposed_blend(
     let identity = glam::Mat4::IDENTITY.to_cols_array_2d();
     let mut payloads = Vec::new();
     for socpak_path in socpak_paths {
-        match socpak::load_interior_tree_from_socpak(
+        match socpak::load_interior_tree_from_socpak_with_progress(
             p4k,
             socpak_path,
             identity,
             identity,
             std::slice::from_ref(&identity),
+            &mut |tree_progress| {
+                progress(SocpakExportProgress {
+                    socpak_path: tree_progress.socpak_path,
+                    depth: tree_progress.depth,
+                    containers_loaded: tree_progress.containers_loaded,
+                    child_count: tree_progress.child_count,
+                    mesh_count: tree_progress.mesh_count,
+                    light_count: tree_progress.light_count,
+                    stage: tree_progress.stage,
+                });
+            },
         ) {
             Ok(mut tree_payloads) => payloads.append(&mut tree_payloads),
             Err(e) => log::warn!("failed to load {socpak_path}: {e}"),

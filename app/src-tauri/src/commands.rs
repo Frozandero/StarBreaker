@@ -1087,6 +1087,19 @@ pub struct SocpakExportDone {
     pub package_names: Vec<String>,
 }
 
+#[derive(Clone, Serialize)]
+pub struct SocpakExportProgress {
+    pub current: usize,
+    pub total: usize,
+    pub fraction: f32,
+    pub socpak_path: String,
+    pub package_name: String,
+    pub stage: String,
+    pub files_written: usize,
+    pub files_total: usize,
+    pub error: Option<String>,
+}
+
 #[derive(Clone)]
 struct ExportProgressSlot {
     entity_name: String,
@@ -1465,6 +1478,39 @@ fn read_reusable_decomposed_asset(
     std::fs::read(output_root.join(relative_path)).ok()
 }
 
+struct SocpakProgressDetails<'a> {
+    current_index: usize,
+    total: usize,
+    package_fraction: f32,
+    socpak_path: &'a str,
+    package_name: &'a str,
+    stage: &'a str,
+    files_written: usize,
+    files_total: usize,
+    error: Option<String>,
+}
+
+fn emit_socpak_progress(app: &AppHandle, details: SocpakProgressDetails<'_>) {
+    let total = details.total.max(1);
+    let fraction = ((details.current_index as f32 + details.package_fraction) / total as f32)
+        .clamp(0.0, 1.0);
+    let current = details.current_index.min(total);
+    let _ = app.emit(
+        "socpak-export-progress",
+        SocpakExportProgress {
+            current,
+            total,
+            fraction,
+            socpak_path: details.socpak_path.to_string(),
+            package_name: details.package_name.to_string(),
+            stage: details.stage.to_string(),
+            files_written: details.files_written,
+            files_total: details.files_total,
+            error: details.error,
+        },
+    );
+}
+
 #[tauri::command]
 pub async fn scan_socpaks(
     state: State<'_, AppState>,
@@ -1496,6 +1542,7 @@ pub async fn scan_socpaks(
 
 #[tauri::command]
 pub async fn export_socpaks(
+    app: AppHandle,
     state: State<'_, AppState>,
     request: SocpakExportRequest,
 ) -> Result<SocpakExportDone, AppError> {
@@ -1546,33 +1593,169 @@ pub async fn export_socpaks(
         let output_root = PathBuf::from(&request.output_dir);
         let mut file_count = 0usize;
         let mut package_names = Vec::new();
+        let total = request.socpak_paths.len();
 
-        for socpak_path in &request.socpak_paths {
+        for (index, socpak_path) in request.socpak_paths.iter().enumerate() {
             let export_name = socpak_export_name(socpak_path);
-            let decomposed = starbreaker_3d::socpaks_to_decomposed_blend(
-                &db,
-                &p4k,
-                std::slice::from_ref(socpak_path),
-                &export_name,
-                &opts,
-            )?;
-            let package_name = decomposed_package_directory_name(&decomposed.files, &export_name);
-            prepare_decomposed_output_root(&output_root, &package_name)?;
-            for file in &decomposed.files {
-                let file_path = output_root.join(&file.relative_path);
-                if let Some(parent) = file_path.parent() {
-                    std::fs::create_dir_all(parent)?;
-                }
-                write_decomposed_file(
-                    file,
-                    &file_path,
-                    request.overwrite_existing_assets,
-                    None,
+            let package_result = (|| -> Result<(usize, String), AppError> {
+                emit_socpak_progress(
+                    &app,
+                    SocpakProgressDetails {
+                        current_index: index,
+                        total,
+                        package_fraction: 0.02,
+                        socpak_path,
+                        package_name: &export_name,
+                        stage: "Resolving recursive container tree",
+                        files_written: 0,
+                        files_total: 0,
+                        error: None,
+                    },
+                );
+                let mut max_tree_fraction = 0.02f32;
+                let decomposed = starbreaker_3d::socpaks_to_decomposed_blend_with_progress(
+                    &db,
                     &p4k,
+                    std::slice::from_ref(socpak_path),
+                    &export_name,
+                    &opts,
+                    &mut |tree_progress| {
+                        let tree_fraction =
+                            (0.04 + (tree_progress.containers_loaded as f32 * 0.025)).min(0.74);
+                        max_tree_fraction = max_tree_fraction.max(tree_fraction);
+                        let indent = if tree_progress.depth == 0 {
+                            String::new()
+                        } else {
+                            format!("depth {} - ", tree_progress.depth)
+                        };
+                        let stage = if tree_progress.child_count > 0 {
+                            format!(
+                                "{}{}: {} child container(s), {} mesh refs, {} lights",
+                                indent,
+                                tree_progress.stage,
+                                tree_progress.child_count,
+                                tree_progress.mesh_count,
+                                tree_progress.light_count
+                            )
+                        } else if tree_progress.mesh_count > 0 || tree_progress.light_count > 0 {
+                            format!(
+                                "{}{}: {} mesh refs, {} lights",
+                                indent,
+                                tree_progress.stage,
+                                tree_progress.mesh_count,
+                                tree_progress.light_count
+                            )
+                        } else {
+                            format!("{}{}", indent, tree_progress.stage)
+                        };
+                        emit_socpak_progress(
+                            &app,
+                            SocpakProgressDetails {
+                                current_index: index,
+                                total,
+                                package_fraction: max_tree_fraction,
+                                socpak_path: &tree_progress.socpak_path,
+                                package_name: &export_name,
+                                stage: &stage,
+                                files_written: tree_progress.containers_loaded,
+                                files_total: 0,
+                                error: None,
+                            },
+                        );
+                    },
                 )?;
+                let package_name = decomposed_package_directory_name(&decomposed.files, &export_name);
+                let files_total = decomposed.files.len().max(1);
+                emit_socpak_progress(
+                    &app,
+                    SocpakProgressDetails {
+                        current_index: index,
+                        total,
+                        package_fraction: 0.86,
+                        socpak_path,
+                        package_name: &package_name,
+                        stage: "Prepared Blender package files",
+                        files_written: 0,
+                        files_total,
+                        error: None,
+                    },
+                );
+                prepare_decomposed_output_root(&output_root, &package_name)?;
+                for (file_index, file) in decomposed.files.iter().enumerate() {
+                    let file_path = output_root.join(&file.relative_path);
+                    if let Some(parent) = file_path.parent() {
+                        std::fs::create_dir_all(parent)?;
+                    }
+                    let outcome = write_decomposed_file(
+                        file,
+                        &file_path,
+                        request.overwrite_existing_assets,
+                        None,
+                        &p4k,
+                    )?;
+                    let written = file_index + 1;
+                    let write_fraction = written as f32 / files_total as f32;
+                    let stage = match outcome {
+                        DecomposedWriteOutcome::Written => "Writing package files",
+                        DecomposedWriteOutcome::SkippedExisting => "Skipping existing reusable assets",
+                    };
+                    emit_socpak_progress(
+                        &app,
+                        SocpakProgressDetails {
+                            current_index: index,
+                            total,
+                            package_fraction: 0.86 + 0.13 * write_fraction,
+                            socpak_path,
+                            package_name: &package_name,
+                            stage,
+                            files_written: written,
+                            files_total,
+                            error: None,
+                        },
+                    );
+                }
+                let files_len = decomposed.files.len();
+                let done_package_name = package_name.clone();
+                emit_socpak_progress(
+                    &app,
+                    SocpakProgressDetails {
+                        current_index: index + 1,
+                        total,
+                        package_fraction: 0.0,
+                        socpak_path,
+                        package_name: &done_package_name,
+                        stage: "Done",
+                        files_written: files_total,
+                        files_total,
+                        error: None,
+                    },
+                );
+                Ok((files_len, done_package_name))
+            })();
+
+            match package_result {
+                Ok((files_len, package_name)) => {
+                    file_count += files_len;
+                    package_names.push(package_name);
+                }
+                Err(error) => {
+                    emit_socpak_progress(
+                        &app,
+                        SocpakProgressDetails {
+                            current_index: index,
+                            total,
+                            package_fraction: 0.0,
+                            socpak_path,
+                            package_name: &export_name,
+                            stage: "Failed",
+                            files_written: 0,
+                            files_total: 0,
+                            error: Some(error.to_string()),
+                        },
+                    );
+                    return Err(error);
+                }
             }
-            file_count += decomposed.files.len();
-            package_names.push(package_name);
         }
 
         Ok(SocpakExportDone {

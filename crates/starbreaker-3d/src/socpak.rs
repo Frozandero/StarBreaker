@@ -270,34 +270,76 @@ pub(crate) fn load_interior_tree_from_socpak(
     non_item_port_transform_delta: [[f32; 4]; 4],
     root_item_port_reference_candidates: &[[[f32; 4]; 4]],
 ) -> Result<Vec<InteriorPayload>, Error> {
+    let mut ignore_progress = |_progress: SocpakTreeProgress| {};
+    load_interior_tree_from_socpak_with_progress(
+        p4k,
+        socpak_path,
+        container_transform,
+        non_item_port_transform_delta,
+        root_item_port_reference_candidates,
+        &mut ignore_progress,
+    )
+}
+
+pub(crate) fn load_interior_tree_from_socpak_with_progress<F>(
+    p4k: &MappedP4k,
+    socpak_path: &str,
+    container_transform: [[f32; 4]; 4],
+    non_item_port_transform_delta: [[f32; 4]; 4],
+    root_item_port_reference_candidates: &[[[f32; 4]; 4]],
+    progress: &mut F,
+) -> Result<Vec<InteriorPayload>, Error>
+where
+    F: FnMut(SocpakTreeProgress),
+{
     let mut payloads = Vec::new();
     let mut ancestors = HashSet::new();
+    let mut containers_loaded = 0usize;
     collect_interior_tree_from_socpak(
         p4k,
         socpak_path,
         container_transform,
         non_item_port_transform_delta,
         root_item_port_reference_candidates,
+        0,
         &mut ancestors,
         &mut payloads,
+        &mut containers_loaded,
+        progress,
     )?;
     Ok(payloads)
 }
 
-fn collect_interior_tree_from_socpak(
+fn collect_interior_tree_from_socpak<F>(
     p4k: &MappedP4k,
     socpak_path: &str,
     container_transform: [[f32; 4]; 4],
     non_item_port_transform_delta: [[f32; 4]; 4],
     root_item_port_reference_candidates: &[[[f32; 4]; 4]],
+    depth: usize,
     ancestors: &mut HashSet<String>,
     payloads: &mut Vec<InteriorPayload>,
-) -> Result<(), Error> {
+    containers_loaded: &mut usize,
+    progress: &mut F,
+) -> Result<(), Error>
+where
+    F: FnMut(SocpakTreeProgress),
+{
     let normalized_path = normalize_socpak_path(socpak_path).to_ascii_lowercase();
     if !ancestors.insert(normalized_path.clone()) {
         log::warn!("skipping cyclic socpak child reference: {socpak_path}");
         return Ok(());
     }
+
+    progress(SocpakTreeProgress {
+        socpak_path: socpak_path.to_string(),
+        depth,
+        containers_loaded: *containers_loaded,
+        child_count: 0,
+        mesh_count: 0,
+        light_count: 0,
+        stage: "Opening socpak archive".to_string(),
+    });
 
     let payload = load_interior_from_socpak(
         p4k,
@@ -306,9 +348,27 @@ fn collect_interior_tree_from_socpak(
         non_item_port_transform_delta,
         root_item_port_reference_candidates,
     )?;
+    *containers_loaded += 1;
+    let mesh_count = payload.meshes.len();
+    let light_count = payload.lights.len();
     payloads.push(payload);
 
-    for child in read_child_socpak_refs(p4k, socpak_path)? {
+    let child_refs = read_child_socpak_refs(p4k, socpak_path)?;
+    progress(SocpakTreeProgress {
+        socpak_path: socpak_path.to_string(),
+        depth,
+        containers_loaded: *containers_loaded,
+        child_count: child_refs.len(),
+        mesh_count,
+        light_count,
+        stage: if child_refs.is_empty() {
+            "Loaded container payload".to_string()
+        } else {
+            format!("Discovered {} child container(s)", child_refs.len())
+        },
+    });
+
+    for child in child_refs {
         log::debug!(
             "descending socpak child '{}' ({}) -> {}",
             child.entity_name,
@@ -324,8 +384,11 @@ fn collect_interior_tree_from_socpak(
             child_transform,
             non_item_port_transform_delta,
             std::slice::from_ref(&child_transform),
+            depth + 1,
             ancestors,
             payloads,
+            containers_loaded,
+            progress,
         )?;
     }
 
@@ -2031,4 +2094,15 @@ pub(crate) struct ChildSocpakRef {
     pub entity_name: String,
     pub class_name: String,
     pub local_transform: [[f32; 4]; 4],
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct SocpakTreeProgress {
+    pub socpak_path: String,
+    pub depth: usize,
+    pub containers_loaded: usize,
+    pub child_count: usize,
+    pub mesh_count: usize,
+    pub light_count: usize,
+    pub stage: String,
 }

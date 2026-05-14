@@ -4,9 +4,11 @@ import { useSocpakExportStore } from "../stores/socpak-export-store";
 import {
   browseOutputDir,
   exportSocpaks,
+  onSocpakExportProgress,
   scanSocpaks,
   type SocpakDto,
   type SocpakExportDone,
+  type SocpakExportProgress,
   type SocpakExportRequest,
 } from "../lib/commands";
 
@@ -35,6 +37,7 @@ export function SocpakExportView() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [exporting, setExporting] = useState(false);
   const [result, setResult] = useState<SocpakExportDone | null>(null);
+  const [progress, setProgress] = useState<SocpakExportProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -61,9 +64,33 @@ export function SocpakExportView() {
     };
   }, [search]);
 
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: (() => void) | null = null;
+    onSocpakExportProgress((next) => {
+      if (!cancelled) {
+        setProgress(next);
+        if (next.error) {
+          setError(next.error);
+        }
+      }
+    }).then((fn) => {
+      if (cancelled) fn();
+      else unlisten = fn;
+    });
+    return () => {
+      cancelled = true;
+      if (unlisten) unlisten();
+    };
+  }, []);
+
   const visiblePaths = useMemo(() => socpaks.map((entry) => entry.path), [socpaks]);
   const selectedVisibleCount = visiblePaths.filter((path) => selected.has(path)).length;
   const canExport = selected.size > 0 && outputDir !== null && !exporting;
+  const allDone = progress !== null && progress.total > 0 && progress.current >= progress.total;
+  const progressPercent = allDone ? 100 : Math.min(Math.round((progress?.fraction ?? 0) * 100), 99);
+  const progressBarFraction = allDone ? 1 : Math.min(progress?.fraction ?? 0, 0.99);
+  const activeSocpakName = progress?.socpak_path.split(/[\\/]/).pop() ?? "";
 
   const toggleSocpak = (path: string) => {
     setSelected((current) => {
@@ -109,6 +136,17 @@ export function SocpakExportView() {
     };
     setExporting(true);
     setResult(null);
+    setProgress({
+      current: 0,
+      total: selected.size,
+      fraction: 0,
+      socpak_path: "",
+      package_name: "",
+      stage: "Preparing export",
+      files_written: 0,
+      files_total: 0,
+      error: null,
+    });
     setError(null);
     exportSocpaks(request)
       .then((done) => setResult(done))
@@ -120,14 +158,65 @@ export function SocpakExportView() {
     <div className="flex-1 flex overflow-hidden relative">
       {exporting && (
         <div className="absolute inset-0 z-10 bg-bg/80 backdrop-blur-sm flex items-center justify-center">
-          <div className="w-[360px] bg-bg-alt border border-border rounded-lg p-6 flex flex-col gap-3 shadow-lg">
-            <h3 className="text-sm font-semibold text-text">Exporting socpak package...</h3>
-            <p className="text-[11px] text-text-dim leading-relaxed">
-              Building recursive container payloads, Blender assets, and scene manifests.
-            </p>
-            <div className="w-full bg-surface rounded-full h-2 overflow-hidden">
-              <div className="bg-accent h-full w-2/3 rounded-full animate-pulse" />
+          <div className="w-[420px] bg-bg-alt border border-border rounded-lg p-6 flex flex-col gap-4 shadow-lg">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h3 className="text-sm font-semibold text-text">Exporting socpak packages</h3>
+                <p className="text-[11px] text-text-dim truncate mt-1">
+                  {activeSocpakName || "Preparing export"}
+                </p>
+              </div>
+              <div className="text-right shrink-0">
+                <p className="text-xs text-text tabular-nums">{progressPercent}%</p>
+                <p className="text-[10px] text-text-faint tabular-nums mt-0.5">
+                  {progress?.current ?? 0}/{progress?.total ?? selected.size}
+                </p>
+              </div>
             </div>
+
+            <div className="flex flex-col gap-1.5">
+              <div className="w-full bg-surface rounded-full h-2 overflow-hidden">
+                <div
+                  className="bg-accent h-full rounded-full transition-all duration-300"
+                  style={{ width: `${progressBarFraction * 100}%` }}
+                />
+              </div>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-[11px] text-text-dim truncate">
+                    {progress?.stage ?? "Preparing export"}
+                  </p>
+                  {progress?.package_name && (
+                    <p className="text-[10px] text-text-faint truncate mt-0.5">
+                      Package: {progress.package_name}
+                    </p>
+                  )}
+                </div>
+                {progress && progress.files_total > 0 && (
+                  <p className="text-[10px] text-text-faint tabular-nums shrink-0">
+                    {progress.files_written}/{progress.files_total} files
+                  </p>
+                )}
+                {progress && progress.files_total === 0 && progress.files_written > 0 && (
+                  <p className="text-[10px] text-text-faint tabular-nums shrink-0">
+                    {progress.files_written} container{progress.files_written === 1 ? "" : "s"}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {progress?.socpak_path && (
+              <p className="text-[10px] text-text-faint leading-relaxed break-all">
+                {progress.socpak_path}
+              </p>
+            )}
+            {error && (
+              <div className="max-h-24 overflow-y-auto rounded bg-danger/5 border border-danger/20 px-3 py-2">
+                <p className="text-[11px] text-danger/80 leading-relaxed break-words">
+                  {error}
+                </p>
+              </div>
+            )}
           </div>
         </div>
       )}

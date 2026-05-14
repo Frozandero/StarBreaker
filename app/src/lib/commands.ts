@@ -200,6 +200,18 @@ export interface SocpakExportDone {
   package_names: string[];
 }
 
+export interface SocpakExportProgress {
+  current: number;
+  total: number;
+  fraction: number;
+  socpak_path: string;
+  package_name: string;
+  stage: string;
+  files_written: number;
+  files_total: number;
+  error: string | null;
+}
+
 // ── Export commands ──
 
 /** Scan DataCore for entity categories. Requires P4k to be loaded. */
@@ -227,6 +239,15 @@ export async function exportSocpaks(
   request: SocpakExportRequest,
 ): Promise<SocpakExportDone> {
   return invoke<SocpakExportDone>("export_socpaks", { request });
+}
+
+/** Listen for socpak export progress. */
+export function onSocpakExportProgress(
+  callback: (progress: SocpakExportProgress) => void,
+): Promise<UnlistenFn> {
+  return listen<SocpakExportProgress>("socpak-export-progress", (event) => {
+    callback(event.payload);
+  });
 }
 
 /** Listen for export progress events. */
