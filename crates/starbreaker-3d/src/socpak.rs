@@ -263,30 +263,13 @@ pub fn load_interior_from_socpak(
 /// Child manifests carry local quaternion transforms. Those transforms are
 /// composed into world/container space here so downstream interior export can
 /// flatten the recursive tree without losing repeated instances.
-pub(crate) fn load_interior_tree_from_socpak(
+pub(crate) fn load_interior_tree_from_socpak_filtered_with_progress<F>(
     p4k: &MappedP4k,
     socpak_path: &str,
     container_transform: [[f32; 4]; 4],
     non_item_port_transform_delta: [[f32; 4]; 4],
     root_item_port_reference_candidates: &[[[f32; 4]; 4]],
-) -> Result<Vec<InteriorPayload>, Error> {
-    let mut ignore_progress = |_progress: SocpakTreeProgress| {};
-    load_interior_tree_from_socpak_with_progress(
-        p4k,
-        socpak_path,
-        container_transform,
-        non_item_port_transform_delta,
-        root_item_port_reference_candidates,
-        &mut ignore_progress,
-    )
-}
-
-pub(crate) fn load_interior_tree_from_socpak_with_progress<F>(
-    p4k: &MappedP4k,
-    socpak_path: &str,
-    container_transform: [[f32; 4]; 4],
-    non_item_port_transform_delta: [[f32; 4]; 4],
-    root_item_port_reference_candidates: &[[[f32; 4]; 4]],
+    path_filter: Option<&HashSet<String>>,
     progress: &mut F,
 ) -> Result<Vec<InteriorPayload>, Error>
 where
@@ -305,9 +288,96 @@ where
         &mut ancestors,
         &mut payloads,
         &mut containers_loaded,
+        path_filter,
         progress,
     )?;
     Ok(payloads)
+}
+
+#[derive(Debug, Clone)]
+pub struct SocpakHierarchyNode {
+    pub path: String,
+    pub name: String,
+    pub entity_name: Option<String>,
+    pub class_name: Option<String>,
+    pub depth: usize,
+    pub mesh_count: usize,
+    pub light_count: usize,
+    pub children: Vec<SocpakHierarchyNode>,
+}
+
+pub(crate) fn inspect_interior_tree_from_socpak(
+    p4k: &MappedP4k,
+    socpak_path: &str,
+) -> Result<SocpakHierarchyNode, Error> {
+    let mut ancestors = HashSet::new();
+    inspect_interior_tree_from_socpak_inner(p4k, socpak_path, None, None, 0, &mut ancestors)
+}
+
+fn inspect_interior_tree_from_socpak_inner(
+    p4k: &MappedP4k,
+    socpak_path: &str,
+    entity_name: Option<String>,
+    class_name: Option<String>,
+    depth: usize,
+    ancestors: &mut HashSet<String>,
+) -> Result<SocpakHierarchyNode, Error> {
+    let normalized_path = normalize_socpak_filter_key(socpak_path);
+    if !ancestors.insert(normalized_path) {
+        log::warn!("skipping cyclic socpak child reference: {socpak_path}");
+        return Ok(SocpakHierarchyNode {
+            path: normalize_socpak_path(socpak_path),
+            name: socpak_display_name(socpak_path),
+            entity_name,
+            class_name,
+            depth,
+            mesh_count: 0,
+            light_count: 0,
+            children: Vec::new(),
+        });
+    }
+
+    let identity = glam::Mat4::IDENTITY.to_cols_array_2d();
+    let payload = load_interior_from_socpak(
+        p4k,
+        socpak_path,
+        identity,
+        identity,
+        std::slice::from_ref(&identity),
+    )?;
+    let child_refs = read_child_socpak_refs(p4k, socpak_path)?;
+    let mut children = Vec::with_capacity(child_refs.len());
+    for child in child_refs {
+        children.push(inspect_interior_tree_from_socpak_inner(
+            p4k,
+            &child.socpak_path,
+            Some(child.entity_name),
+            Some(child.class_name),
+            depth + 1,
+            ancestors,
+        )?);
+    }
+    ancestors.remove(&normalize_socpak_filter_key(socpak_path));
+
+    Ok(SocpakHierarchyNode {
+        path: normalize_socpak_path(socpak_path),
+        name: socpak_display_name(socpak_path),
+        entity_name,
+        class_name,
+        depth,
+        mesh_count: payload.meshes.len(),
+        light_count: payload.lights.len(),
+        children,
+    })
+}
+
+fn socpak_display_name(path: &str) -> String {
+    path.rsplit(&['/', '\\'])
+        .next()
+        .unwrap_or(path)
+        .strip_suffix(".socpak")
+        .unwrap_or(path)
+        .to_string()
 }
 
 fn collect_interior_tree_from_socpak<F>(
@@ -320,6 +390,7 @@ fn collect_interior_tree_from_socpak<F>(
     ancestors: &mut HashSet<String>,
     payloads: &mut Vec<InteriorPayload>,
     containers_loaded: &mut usize,
+    path_filter: Option<&HashSet<String>>,
     progress: &mut F,
 ) -> Result<(), Error>
 where
@@ -369,6 +440,11 @@ where
     });
 
     for child in child_refs {
+        if path_filter
+            .is_some_and(|filter| !filter.contains(&normalize_socpak_filter_key(&child.socpak_path)))
+        {
+            continue;
+        }
         log::debug!(
             "descending socpak child '{}' ({}) -> {}",
             child.entity_name,
@@ -388,6 +464,7 @@ where
             ancestors,
             payloads,
             containers_loaded,
+            path_filter,
             progress,
         )?;
     }
@@ -396,13 +473,17 @@ where
     Ok(())
 }
 
-fn normalize_socpak_path(path: &str) -> String {
+pub(crate) fn normalize_socpak_path(path: &str) -> String {
     let normalized = path.replace('/', "\\");
     if normalized.to_lowercase().starts_with("data\\") {
         normalized
     } else {
         format!("Data\\{normalized}")
     }
+}
+
+pub(crate) fn normalize_socpak_filter_key(path: &str) -> String {
+    normalize_socpak_path(path).to_ascii_lowercase()
 }
 
 /// Parse a .soc file's CrCh chunks. Returns meshes/lights + tint palette names.

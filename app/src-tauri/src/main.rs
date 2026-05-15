@@ -221,6 +221,7 @@ fn main() {
             commands::list_subdirs,
             commands::scan_categories,
             commands::scan_socpaks,
+            commands::inspect_socpak_hierarchy,
             commands::start_export,
             commands::export_socpaks,
             commands::cancel_export,

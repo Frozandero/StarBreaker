@@ -1069,6 +1069,23 @@ pub struct SocpakDto {
 }
 
 #[derive(Debug, serde::Deserialize)]
+pub struct SocpakHierarchyRequest {
+    pub socpak_paths: Vec<String>,
+}
+
+#[derive(Clone, Serialize)]
+pub struct SocpakHierarchyNodeDto {
+    pub path: String,
+    pub name: String,
+    pub entity_name: Option<String>,
+    pub class_name: Option<String>,
+    pub depth: usize,
+    pub mesh_count: usize,
+    pub light_count: usize,
+    pub children: Vec<SocpakHierarchyNodeDto>,
+}
+
+#[derive(Debug, serde::Deserialize)]
 pub struct SocpakExportRequest {
     pub socpak_paths: Vec<String>,
     pub output_dir: String,
@@ -1079,6 +1096,8 @@ pub struct SocpakExportRequest {
     pub include_lights: bool,
     pub overwrite_existing_assets: bool,
     pub include_nodraw: bool,
+    #[serde(default)]
+    pub socpak_path_filter: Option<Vec<String>>,
 }
 
 #[derive(Clone, Serialize)]
@@ -1541,6 +1560,62 @@ pub async fn scan_socpaks(
 }
 
 #[tauri::command]
+pub async fn inspect_socpak_hierarchy(
+    state: State<'_, AppState>,
+    request: SocpakHierarchyRequest,
+) -> Result<Vec<SocpakHierarchyNodeDto>, AppError> {
+    if request.socpak_paths.is_empty() {
+        return Ok(Vec::new());
+    }
+    let p4k = {
+        let guard = state.p4k.lock();
+        guard
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("P4k not loaded".into()))?
+            .clone()
+    };
+    tokio::task::spawn_blocking(move || -> Result<Vec<SocpakHierarchyNodeDto>, AppError> {
+        let mut nodes = Vec::new();
+        for socpak_path in request.socpak_paths {
+            match starbreaker_3d::inspect_socpak_hierarchy(&p4k, &socpak_path) {
+                Ok(node) => nodes.push(socpak_hierarchy_node_dto(node)),
+                Err(error) => log::warn!("failed to inspect {socpak_path}: {error}"),
+            }
+        }
+        Ok(nodes)
+    })
+    .await
+    .map_err(|error| AppError::Internal(format!("socpak hierarchy inspection failed: {error}")))?
+}
+
+fn socpak_hierarchy_node_dto(node: starbreaker_3d::SocpakHierarchyNode) -> SocpakHierarchyNodeDto {
+    SocpakHierarchyNodeDto {
+        path: node.path,
+        name: node.name,
+        entity_name: node.entity_name,
+        class_name: node.class_name,
+        depth: node.depth,
+        mesh_count: node.mesh_count,
+        light_count: node.light_count,
+        children: node.children.into_iter().map(socpak_hierarchy_node_dto).collect(),
+    }
+}
+
+fn normalize_socpak_path_filter(paths: &Vec<String>) -> HashSet<String> {
+    paths
+        .iter()
+        .map(|path| {
+            let normalized = path.replace('/', "\\");
+            if normalized.to_ascii_lowercase().starts_with("data\\") {
+                normalized.to_ascii_lowercase()
+            } else {
+                format!("data\\{}", normalized.to_ascii_lowercase())
+            }
+        })
+        .collect()
+}
+
+#[tauri::command]
 pub async fn export_socpaks(
     app: AppHandle,
     state: State<'_, AppState>,
@@ -1589,6 +1664,7 @@ pub async fn export_socpaks(
             apply_default_animation_pose: false,
             default_animation_tags: vec!["landing_gear_extend".to_string()],
             decomposed_package_subdir: None,
+            socpak_path_filter: request.socpak_path_filter.as_ref().map(normalize_socpak_path_filter),
         };
         let output_root = PathBuf::from(&request.output_dir);
         let mut file_count = 0usize;
@@ -1869,6 +1945,7 @@ pub async fn start_export(
         apply_default_animation_pose: !request.include_animations,
         default_animation_tags: vec!["landing_gear_extend".to_string()],
         decomposed_package_subdir: None,
+        socpak_path_filter: None,
     };
 
     log::info!(

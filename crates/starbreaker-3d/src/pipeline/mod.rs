@@ -24,6 +24,7 @@ pub(crate) use self::textures::{cached_load, load_diffuse_texture, load_normal_t
 use self::textures::*;
 mod interiors;
 pub(crate) use self::interiors::*;
+pub use crate::socpak::SocpakHierarchyNode;
 mod nmc_bridge;
 pub(crate) use self::nmc_bridge::*;
 mod child_payload;
@@ -44,7 +45,12 @@ pub(crate) use self::glb_assembly::path_is_shield_related;
 mod blend_assembly;
 pub use self::blend_assembly::write_decomposed_export_blend;
 
-
+pub fn inspect_socpak_hierarchy(
+    p4k: &MappedP4k,
+    socpak_path: &str,
+) -> Result<crate::socpak::SocpakHierarchyNode, Error> {
+    crate::socpak::inspect_interior_tree_from_socpak(p4k, socpak_path)
+}
 
 type InteriorMeshAsset = (
     crate::Mesh,
@@ -134,6 +140,9 @@ pub struct ExportOptions {
     /// Example: `ship` writes manifests to `Packages/ship/<package>/...` while
     /// still keeping shared assets under `Data/...`.
     pub decomposed_package_subdir: Option<String>,
+    /// Optional normalized lowercase socpak paths to include during inherited
+    /// interior discovery. `None` exports every discovered container.
+    pub socpak_path_filter: Option<HashSet<String>>,
 }
 
 impl Default for ExportOptions {
@@ -154,6 +163,7 @@ impl Default for ExportOptions {
             apply_default_animation_pose: true,
             default_animation_tags: vec!["landing_gear_extend".to_string()],
             decomposed_package_subdir: None,
+            socpak_path_filter: None,
         }
     }
 }
@@ -312,12 +322,21 @@ pub fn socpaks_to_glb(
 
     let mut payloads = Vec::new();
     for socpak_path in socpak_paths {
-        match socpak::load_interior_tree_from_socpak(
+        if opts
+            .socpak_path_filter
+            .as_ref()
+            .is_some_and(|filter| !filter.contains(&socpak::normalize_socpak_filter_key(socpak_path)))
+        {
+            continue;
+        }
+        match socpak::load_interior_tree_from_socpak_filtered_with_progress(
             p4k,
             socpak_path,
             identity,
             identity,
             std::slice::from_ref(&identity),
+            opts.socpak_path_filter.as_ref(),
+            &mut |_| {},
         ) {
             Ok(mut tree_payloads) => payloads.append(&mut tree_payloads),
             Err(e) => log::warn!("failed to load {socpak_path}: {e}"),
@@ -461,12 +480,20 @@ where
     let identity = glam::Mat4::IDENTITY.to_cols_array_2d();
     let mut payloads = Vec::new();
     for socpak_path in socpak_paths {
-        match socpak::load_interior_tree_from_socpak_with_progress(
+        if opts
+            .socpak_path_filter
+            .as_ref()
+            .is_some_and(|filter| !filter.contains(&socpak::normalize_socpak_filter_key(socpak_path)))
+        {
+            continue;
+        }
+        match socpak::load_interior_tree_from_socpak_filtered_with_progress(
             p4k,
             socpak_path,
             identity,
             identity,
             std::slice::from_ref(&identity),
+            opts.socpak_path_filter.as_ref(),
             &mut |tree_progress| {
                 progress(SocpakExportProgress {
                     socpak_path: tree_progress.socpak_path,

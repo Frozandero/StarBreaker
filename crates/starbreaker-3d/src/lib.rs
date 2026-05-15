@@ -20,9 +20,10 @@ pub use pipeline::{
     DecomposedExport, ExportFormat, ExportKind, ExportOptions, ExportResult, ExportedFile,
     ExportedFileKind, MaterialMode,
     assemble_glb_with_loadout, assemble_glb_with_loadout_with_progress,
-    dump_hierarchy, load_invisible_ports, query_animation_controller_source,
+    dump_hierarchy, inspect_socpak_hierarchy, load_invisible_ports, query_animation_controller_source,
     resolve_loadout_meshes, socpaks_to_decomposed_blend,
     socpaks_to_decomposed_blend_with_progress, socpaks_to_glb, SocpakExportProgress,
+    SocpakHierarchyNode,
 };
 pub use types::Mesh;
 pub use validation::{ValidationReport, validate_decomposed_export};

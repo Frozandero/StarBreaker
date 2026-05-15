@@ -1,15 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { ResizeHandle } from "../components/resize-handle";
+import { SocpakSelectionDialog } from "../components/socpak-selection-dialog";
 import { useSocpakExportStore } from "../stores/socpak-export-store";
 import {
   browseOutputDir,
   exportSocpaks,
+  inspectSocpakHierarchy,
   onSocpakExportProgress,
   scanSocpaks,
   type SocpakDto,
   type SocpakExportDone,
   type SocpakExportProgress,
   type SocpakExportRequest,
+  type SocpakHierarchyNode,
 } from "../lib/commands";
 
 export function SocpakExportView() {
@@ -39,6 +42,10 @@ export function SocpakExportView() {
   const [result, setResult] = useState<SocpakExportDone | null>(null);
   const [progress, setProgress] = useState<SocpakExportProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [inspecting, setInspecting] = useState(false);
+  const [hierarchyOpen, setHierarchyOpen] = useState(false);
+  const [hierarchyNodes, setHierarchyNodes] = useState<SocpakHierarchyNode[]>([]);
+  const [selectedHierarchyPaths, setSelectedHierarchyPaths] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     let cancelled = false;
@@ -86,11 +93,36 @@ export function SocpakExportView() {
 
   const visiblePaths = useMemo(() => socpaks.map((entry) => entry.path), [socpaks]);
   const selectedVisibleCount = visiblePaths.filter((path) => selected.has(path)).length;
-  const canExport = selected.size > 0 && outputDir !== null && !exporting;
+  const canExport = selected.size > 0 && outputDir !== null && !exporting && !inspecting;
   const allDone = progress !== null && progress.total > 0 && progress.current >= progress.total;
   const progressPercent = allDone ? 100 : Math.min(Math.round((progress?.fraction ?? 0) * 100), 99);
   const progressBarFraction = allDone ? 1 : Math.min(progress?.fraction ?? 0, 0.99);
   const activeSocpakName = progress?.socpak_path.split(/[\\/]/).pop() ?? "";
+
+  const collectSocpakPaths = (nodes: SocpakHierarchyNode[], out: string[] = []) => {
+    for (const node of nodes) {
+      out.push(node.path);
+      collectSocpakPaths(node.children, out);
+    }
+    return out;
+  };
+
+  const findAncestorPaths = (
+    targetPath: string,
+    nodes: SocpakHierarchyNode[],
+    ancestors: string[] = [],
+  ): string[] | null => {
+    for (const node of nodes) {
+      const nextAncestors = [...ancestors, node.path];
+      if (node.path === targetPath) return nextAncestors;
+      const found = findAncestorPaths(targetPath, node.children, nextAncestors);
+      if (found) return found;
+    }
+    return null;
+  };
+
+  const hierarchyAncestorsFor = (path: string) =>
+    findAncestorPaths(path, hierarchyNodes) ?? [path];
 
   const toggleSocpak = (path: string) => {
     setSelected((current) => {
@@ -123,17 +155,7 @@ export function SocpakExportView() {
     });
   };
 
-  const runExport = () => {
-    const request: SocpakExportRequest = {
-      socpak_paths: Array.from(selected),
-      output_dir: outputDir!,
-      lod,
-      mip,
-      material_mode: materialMode,
-      include_lights: includeLights,
-      overwrite_existing_assets: overwriteExistingAssets,
-      include_nodraw: includeNodraw,
-    };
+  const startSocpakExport = (request: SocpakExportRequest) => {
     setExporting(true);
     setResult(null);
     setProgress({
@@ -152,6 +174,59 @@ export function SocpakExportView() {
       .then((done) => setResult(done))
       .catch((err) => setError(String(err)))
       .finally(() => setExporting(false));
+  };
+
+  const buildExportRequest = (pathFilter: string[] | null = null): SocpakExportRequest => ({
+    socpak_paths: Array.from(selected),
+    output_dir: outputDir!,
+    lod,
+    mip,
+    material_mode: materialMode,
+    include_lights: includeLights,
+    overwrite_existing_assets: overwriteExistingAssets,
+    include_nodraw: includeNodraw,
+    socpak_path_filter: pathFilter,
+  });
+
+  const runExport = () => {
+    const rootPaths = Array.from(selected);
+    setInspecting(true);
+    setError(null);
+    inspectSocpakHierarchy({ socpak_paths: rootPaths })
+      .then((nodes) => {
+        if (nodes.length === 0) {
+          startSocpakExport(buildExportRequest());
+          return;
+        }
+        setHierarchyNodes(nodes);
+        setSelectedHierarchyPaths(new Set(collectSocpakPaths(nodes)));
+        setHierarchyOpen(true);
+      })
+      .catch((err) => setError(String(err)))
+      .finally(() => setInspecting(false));
+  };
+
+  const toggleHierarchyNode = (node: SocpakHierarchyNode, checked: boolean) => {
+    const paths = collectSocpakPaths([node]);
+    setSelectedHierarchyPaths((current) => {
+      const next = new Set(current);
+      for (const path of paths) {
+        if (checked) {
+          for (const ancestorPath of hierarchyAncestorsFor(path)) {
+            next.add(ancestorPath);
+          }
+          next.add(path);
+        } else {
+          next.delete(path);
+        }
+      }
+      return next;
+    });
+  };
+
+  const confirmHierarchySelection = () => {
+    setHierarchyOpen(false);
+    startSocpakExport(buildExportRequest(Array.from(selectedHierarchyPaths)));
   };
 
   return (
@@ -414,10 +489,25 @@ export function SocpakExportView() {
               ? "Select socpaks to export"
               : outputDir === null
                 ? "Choose output directory"
+                : inspecting
+                  ? "Crawling hierarchy..."
                 : `Export ${selected.size} socpak${selected.size === 1 ? "" : "s"}`}
           </button>
         </div>
       </div>
+
+      {hierarchyOpen && (
+        <SocpakSelectionDialog
+          nodes={hierarchyNodes}
+          selectedPaths={selectedHierarchyPaths}
+          busy={exporting}
+          onToggle={toggleHierarchyNode}
+          onSelectAll={() => setSelectedHierarchyPaths(new Set(collectSocpakPaths(hierarchyNodes)))}
+          onClearAll={() => setSelectedHierarchyPaths(new Set())}
+          onConfirm={confirmHierarchySelection}
+          onCancel={() => setHierarchyOpen(false)}
+        />
+      )}
     </div>
   );
 }

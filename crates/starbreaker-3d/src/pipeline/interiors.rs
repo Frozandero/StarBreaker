@@ -95,6 +95,7 @@ pub(crate) fn load_interiors(
         .flatten();
     let container_instances: Vec<_> = containers
         .iter()
+        .filter(|container| socpak_included(opts, &container.file_name))
         .map(|container| {
             let helper_transform =
                 resolve_nmc_helper_transform(root_nmc.as_ref(), container.bone_name.as_deref());
@@ -135,12 +136,14 @@ pub(crate) fn load_interiors(
             .get(&container.file_name.to_ascii_lowercase())
             .map(Vec::as_slice)
             .unwrap_or(&[]);
-        match socpak::load_interior_tree_from_socpak(
+        match socpak::load_interior_tree_from_socpak_filtered_with_progress(
             p4k,
             &container.file_name,
             *container_transform,
             glam::Mat4::IDENTITY.to_cols_array_2d(),
             reference_candidates,
+            opts.socpak_path_filter.as_ref(),
+            &mut |_| {},
         ) {
             Ok(mut tree_payloads) => {
                 for payload in &mut tree_payloads {
@@ -380,6 +383,7 @@ pub(crate) fn load_child_interiors(
         scene_parent_entity_name: &str,
         override_attachment: Option<&str>,
         root_container_names: &std::collections::HashSet<String>,
+        path_filter: Option<&std::collections::HashSet<String>>,
         payloads: &mut Vec<crate::types::InteriorPayload>,
     ) {
         let containers = if child.allows_child_object_containers {
@@ -394,6 +398,11 @@ pub(crate) fn load_child_interiors(
                 child.entity_name
             );
             for container in &containers {
+                if path_filter
+                    .is_some_and(|filter| !filter.contains(&socpak::normalize_socpak_filter_key(&container.file_name)))
+                {
+                    continue;
+                }
                 let container_name = interior_container_name_key(&container.file_name);
                 if root_container_names.contains(&container_name) {
                     log::debug!(
@@ -405,12 +414,14 @@ pub(crate) fn load_child_interiors(
                 }
                 let container_transform =
                     socpak::build_container_transform(container.offset_position, container.offset_rotation);
-                match socpak::load_interior_tree_from_socpak(
+                match socpak::load_interior_tree_from_socpak_filtered_with_progress(
                     p4k,
                     &container.file_name,
                     container_transform,
                     glam::Mat4::IDENTITY.to_cols_array_2d(),
                     std::slice::from_ref(&container_transform),
+                    path_filter,
+                    &mut |_| {},
                 ) {
                     Ok(mut tree_payloads) => {
                         let (parent_entity_name, parent_node_name) = child_interior_parent_target(
@@ -449,6 +460,7 @@ pub(crate) fn load_child_interiors(
                     Some(inherited_attachment)
                 },
                 root_container_names,
+                path_filter,
                 payloads,
             );
         }
@@ -462,11 +474,18 @@ pub(crate) fn load_child_interiors(
             root_entity_name,
             None,
             root_container_names,
+            opts.socpak_path_filter.as_ref(),
             &mut payloads,
         );
     }
 
     build_interiors_from_payloads(db, p4k, &payloads, opts.include_lights, opts.lod_level)
+}
+
+fn socpak_included(opts: &ExportOptions, path: &str) -> bool {
+    opts.socpak_path_filter
+        .as_ref()
+        .map_or(true, |filter| filter.contains(&crate::socpak::normalize_socpak_filter_key(path)))
 }
 
 pub(crate) fn merge_interiors(target: &mut LoadedInteriors, source: LoadedInteriors) {

@@ -184,6 +184,21 @@ export interface SocpakDto {
   path: string;
 }
 
+export interface SocpakHierarchyRequest {
+  socpak_paths: string[];
+}
+
+export interface SocpakHierarchyNode {
+  path: string;
+  name: string;
+  entity_name: string | null;
+  class_name: string | null;
+  depth: number;
+  mesh_count: number;
+  light_count: number;
+  children: SocpakHierarchyNode[];
+}
+
 export interface SocpakExportRequest {
   socpak_paths: string[];
   output_dir: string;
@@ -193,6 +208,7 @@ export interface SocpakExportRequest {
   include_lights: boolean;
   overwrite_existing_assets: boolean;
   include_nodraw: boolean;
+  socpak_path_filter?: string[] | null;
 }
 
 export interface SocpakExportDone {
@@ -232,6 +248,13 @@ export async function cancelExport(): Promise<void> {
 /** List socpak archive paths, optionally filtered by substring. */
 export async function scanSocpaks(query = ""): Promise<SocpakDto[]> {
   return invoke<SocpakDto[]>("scan_socpaks", { query: query || null });
+}
+
+/** Crawl selected socpaks and their inherited child containers. */
+export async function inspectSocpakHierarchy(
+  request: SocpakHierarchyRequest,
+): Promise<SocpakHierarchyNode[]> {
+  return invoke<SocpakHierarchyNode[]>("inspect_socpak_hierarchy", { request });
 }
 
 /** Export selected socpaks as a decomposed Blender package. */
