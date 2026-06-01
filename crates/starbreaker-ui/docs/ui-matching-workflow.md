@@ -40,6 +40,70 @@ re-read this file before touching code.
 - Use StarBreaker MCP tools to inspect DataCore records, P4k assets, and related source structures.
 - Use Blender MCP tools with the connected Blender instance for scene/material/transform/render validation.
 
+### MCP Fallback (when tools are unavailable)
+
+**CRITICAL**: If the MCP server does not expose `ui_canvas_style_inventory`,
+`ui_scene_style_probe`, or `ui_ir_query` tools, use these CLI equivalents
+immediately. Do not waste iterations trying to call missing MCP tools.
+
+#### IR Compilation (replaces `ui_ir_query`)
+```bash
+cd StarBreaker
+SC_DATA_P4K="$HOME/Games/star-citizen/drive_c/Program Files/Roberts Space Industries/StarCitizen/LIVE/Data.p4k" \
+  cargo run -p starbreaker --release -- ui debug <canvas_source_path>
+```
+Compiles the canvas to canonical IR and prints the result for analysis.
+
+#### Canvas Style Inventory (replaces `ui_canvas_style_inventory`)
+```bash
+SC_DATA_P4K="..." \
+  cargo run -p starbreaker --release -- ui styles <canvas_source_path>
+```
+Lists authored style containers, embeddedStyles, defaultStyles, and brandStyles.
+
+#### Direct File Inspection
+If the canvas source is a JSON file in the decomposed export, inspect it directly:
+- Canvas JSON: `ships/Data/UI/Generated/ship/<manufacturer>/<ship>/<canvas>.json`
+- SWF assets: `ships/Data/UI/BuildingBlocks/assets/SWF/`
+- P4k search: Use `p4k_list` and `p4k_read` MCP tools to browse Data.p4k
+
+#### SWF/Canvas Source Location
+BuildingBlocks canvases are typically found at:
+- P4k: `Data/UI/BuildingBlocks/assets/SWF/Canvas.swf`
+- P4k: `Data/UI/BuildingBlocks/` (canvas JSON records)
+- Decomposed export: `ships/Data/UI/Generated/ship/<manufacturer>/<ship>/`
+- Entity DataCore: Check `UICanvasDecalDescriptorEntityComponentParams.canvas` field
+
+#### Expected Canvas Structure by Screen Type
+
+For **target/status screens** (mc_s_target), expect:
+- State-bound text widgets (NO TARGET / TARGET_NAME / LOCKED)
+- Dashed separator lines (top/bottom)
+- Navigation footer bar (<< TARGET_STATUS >>)
+- Corner bracket decorations
+- State-driven visibility (elements appear/disappear based on state tags)
+
+For **annunciator screens** (h_eng_annunciator), expect:
+- State-tagged items (StateModerate, StateCritical, StateFlashing)
+- Accent color mapping (Accent2=warning, Accent3=critical)
+- Grid layout of indicator items
+
+For **MFD screens** (mfd_screen), expect:
+- Complex multi-widget layouts
+- Asset/image references
+- Dynamic binding to ship state
+
+#### Known Pain Points to Watch For
+
+- **State-bound visibility**: Many BuildingBlocks elements use state tags to
+  control visibility. If elements are missing, check if the default state matches.
+- **Widget tree resolution**: Custom widget types may not be resolved by the parser.
+- **Layout engine limitations**: Elements may be parsed but not laid out correctly.
+- **Style-tag drift**: Style tags alone should NOT change draw-time behavior.
+  Check IR fields for explicit color/tint values.
+- **Alpha suppression**: Elements with zero alpha may be invisible even if parsed.
+- **Text metric drift**: Font resolution and text bounds must match game rendering.
+
 MCP-first policy for UI matching:
 
 - Prefer StarBreaker MCP query tools first when investigating assets, style records, DataCore values, and chunk/material semantics.

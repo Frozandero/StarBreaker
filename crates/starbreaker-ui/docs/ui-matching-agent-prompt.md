@@ -39,14 +39,78 @@ Operating rules:
 	 - `ui_canvas_style_inventory` to locate authored style containers and entries.
 	 - `ui_scene_style_probe` to confirm scene nodes, tags, raw colour fields, and
 		 matched applied style entries.
-	 - `ui_ir_query` to confirm canonical IR tokens, draw rects, text bounds, and
-		 renderer inputs.
-4. Keep IR as styling authority. Do not invent style semantics in renderer code.
-5. No hard-coded per-screen or per-name branches in production logic.
-6. If a change has no measurable effect, remove it immediately.
-7. Keep code lean: no dead helpers, no stale fallback paths, no layered
+	 - `ui_ir_query` to compile the canvas to canonical IR and return matching nodes.
+4. **CRITICAL: If MCP tools are unavailable, use CLI fallback commands immediately.**
+	 Do not waste iterations trying to call missing MCP tools. See "MCP Fallback" section.
+5. Keep IR as styling authority. Do not invent style semantics in renderer code.
+6. No hard-coded per-screen or per-name branches in production logic.
+7. If a change has no measurable effect, remove it immediately.
+8. Keep code lean: no dead helpers, no stale fallback paths, no layered
 	 speculative logic left behind.
-8. Run regular regression checks to prevent frozen-image regressions.
+9. Run regular regression checks to prevent frozen-image regressions.
+
+## MCP Fallback (when tools are unavailable)
+
+If the MCP server does not expose `ui_canvas_style_inventory`, `ui_scene_style_probe`,
+or `ui_ir_query` tools, use these CLI equivalents instead:
+
+### IR Compilation (replaces `ui_ir_query`)
+```bash
+cd StarBreaker
+SC_DATA_P4K="$HOME/Games/star-citizen/drive_c/Program Files/Roberts Space Industries/StarCitizen/LIVE/Data.p4k" \
+  cargo run -p starbreaker --release -- ui debug <canvas_source_path>
+```
+This compiles the canvas to canonical IR and prints the result for analysis.
+
+### Canvas Style Inventory (replaces `ui_canvas_style_inventory`)
+```bash
+SC_DATA_P4K="..." \
+  cargo run -p starbreaker --release -- ui styles <canvas_source_path>
+```
+Lists authored style containers, embeddedStyles, defaultStyles, and brandStyles.
+
+### Direct File Inspection
+If the canvas source is a JSON file in the decomposed export, inspect it directly:
+- Canvas JSON: `ships/Data/UI/Generated/ship/<manufacturer>/<ship>/<canvas>.json`
+- SWF assets: `ships/Data/UI/BuildingBlocks/assets/SWF/`
+- P4k search: Use `p4k_list` and `p4k_read` MCP tools to browse Data.p4k
+
+### SWF/Canvas Source Location
+BuildingBlocks canvases are typically found at:
+- P4k: `Data/UI/BuildingBlocks/assets/SWF/Canvas.swf`
+- P4k: `Data/UI/BuildingBlocks/` (canvas JSON records)
+- Decomposed export: `ships/Data/UI/Generated/ship/<manufacturer>/<ship>/`
+- Entity DataCore: Check `UICanvasDecalDescriptorEntityComponentParams.canvas` field
+
+## Expected Canvas Structure by Screen Type
+
+For **target/status screens** (mc_s_target), expect:
+- State-bound text widgets (NO TARGET / TARGET_NAME / LOCKED)
+- Dashed separator lines (top/bottom)
+- Navigation footer bar (<< TARGET_STATUS >>)
+- Corner bracket decorations
+- State-driven visibility (elements appear/disappear based on state tags)
+
+For **annunciator screens** (h_eng_annunciator), expect:
+- State-tagged items (StateModerate, StateCritical, StateFlashing)
+- Accent color mapping (Accent2=warning, Accent3=critical)
+- Grid layout of indicator items
+
+For **MFD screens** (mfd_screen), expect:
+- Complex multi-widget layouts
+- Asset/image references
+- Dynamic binding to ship state
+
+## Known Pain Points to Watch For
+
+- **State-bound visibility**: Many BuildingBlocks elements use state tags to control
+  visibility. If elements are missing, check if the default state matches.
+- **Widget tree resolution**: Custom widget types may not be resolved by the parser.
+- **Layout engine limitations**: Elements may be parsed but not laid out correctly.
+- **Style-tag drift**: Style tags alone should NOT change draw-time behavior.
+  Check IR fields for explicit color/tint values.
+- **Alpha suppression**: Elements with zero alpha may be invisible even if parsed.
+- **Text metric drift**: Font resolution and text bounds must match game rendering.
 
 Required workflow:
 
@@ -64,11 +128,10 @@ Phase A - Baseline and decomposition
 	- bb_layout
 	- ui_ir compile/normalization
 	- ir_compose draw-time behavior
-- For each style/color/alpha/text-bound issue, capture MCP evidence before
-	editing:
-	- authored style entries from `ui_canvas_style_inventory`
-	- resolved scene node applied entries from `ui_scene_style_probe`
-	- canonical renderer inputs from `ui_ir_query`
+- For each style/color/alpha/text-bound issue, capture evidence BEFORE editing:
+	- MCP tools: `ui_canvas_style_inventory`, `ui_scene_style_probe`, `ui_ir_query`
+	- CLI fallback: `cargo run -p starbreaker -- ui debug <canvas_path>`
+	- Direct inspection: Read canvas JSON/SWF source files
 
 Phase B - Plan
 - Produce a concrete execution plan from the catalog.
@@ -119,6 +182,24 @@ Output requirements from you:
 
 - Provide the agent with both image paths explicitly.
 - Include the canvas GUID, target name, and render command currently used.
+- **Always specify whether MCP tools are available** - if not, the agent should
+  immediately use CLI fallback commands instead of wasting iterations.
 - If you already know recurring pain points, append a short "watch for" list,
 	such as style-tag drift, alpha suppression drift, or text metric drift.
 - Keep added context concise; rely on referenced docs for detailed policy.
+
+## Lessons Learned (from Drak Clipper Target Screen)
+
+### What Went Wrong
+1. **MCP tools not available**: Prompt assumed `ui_canvas_style_inventory`, `ui_scene_style_probe`,
+   and `ui_ir_query` existed. They returned "tool not found" and the agent wasted iterations.
+2. **No fallback documented**: No CLI equivalents were provided in the prompt.
+3. **Canvas source location unclear**: Agent didn't know where to find `mc_s_target` source data.
+4. **No expected structure guidance**: Agent didn't know what elements to expect on a target screen.
+
+### What Would Have Helped
+1. **MCP availability check**: A note at the top saying "MCP tools X, Y, Z are available" or not.
+2. **CLI fallback commands**: Documented equivalents for when MCP tools are missing.
+3. **Canvas source path**: Direct path to the canvas JSON/SWF in P4k or decomposed export.
+4. **Expected element list**: What widgets/elements should appear on this screen type.
+5. **State tag awareness**: Knowledge that many elements use state-bound visibility.
