@@ -14,6 +14,10 @@ Before you plan or edit anything, read these files in order:
 3. StarBreaker/crates/starbreaker-ui/AGENTS.md
 4. StarBreaker/crates/starbreaker-ui/docs/ui-matching-workflow.md
 
+Generated image: @/ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_mc_s_target_master.png 
+Reference image: @/reference/in-game/Clipper/Screen_Right_Upper_RTT.png 
+To export the updated image after making changes: cd ~/projects/scorg_tools/StarBreaker && cargo run -p starbreaker --release -- entity export "drak_clipper" "~/projects/scorg_tools/ships" --kind decomposed --lod 0 --mip 0 --materials all
+
 Goal:
 Match the generated UI image to the provided reference image end-to-end, and do
 not stop until all cataloged differences are resolved or a concrete blocker is
