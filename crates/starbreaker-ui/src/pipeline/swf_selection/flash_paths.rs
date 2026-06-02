@@ -157,10 +157,40 @@ fn support_screen_candidates_for_brand(brand: &str, stem: &str) -> Vec<String> {
         format!(r"Data\UI\ShipInterface\assets\SWF\{brand}\SupportScreenBespoke2\"),
         format!(r"Data\UI\ShipInterface\assets\SWF\{brand}\Support_Bespoke_2\"),
     ];
-    bases
+    let mut candidates: Vec<String> = bases
         .into_iter()
         .flat_map(|base| [format!("{base}{stem}Status.swf"), format!("{base}{stem}.swf")])
-        .collect()
+        .collect();
+
+    // DRA brand uses ship-specific subdirectories (e.g. DRAK_Dragonfly, DRAK_Buccaneer)
+    // instead of generic SupportScreen directories. Add ship-specific fallbacks.
+    if brand == "DRA" {
+        let ship_dirs: &[&str] = &[
+            "DRAK_Buccaneer",
+            "DRAK_Dragonfly",
+            "DRAK_Caterpillar",
+        ];
+        let sub_dirs: &[&str] = &[
+            "SupportScreen16-9",
+            "SupportScreen1-1",
+            "SupportScreenBespoke2",
+            "SupportScreenBespoke3",
+            "Support_Bespoke_1",
+            "Support_Bespoke_2",
+        ];
+        for ship in ship_dirs {
+            for sub in sub_dirs {
+                candidates.push(format!(
+                    r"Data\UI\ShipInterface\assets\SWF\{brand}\{ship}\{sub}\{stem}Status.swf"
+                ));
+                candidates.push(format!(
+                    r"Data\UI\ShipInterface\assets\SWF\{brand}\{ship}\{sub}\{stem}.swf"
+                ));
+            }
+        }
+    }
+
+    candidates
 }
 
 fn annunciator_swf_candidates(canvas_name: &str, brand: &str) -> Vec<String> {

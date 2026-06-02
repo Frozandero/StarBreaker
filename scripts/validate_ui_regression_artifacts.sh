@@ -160,6 +160,15 @@ if [[ "${VALIDATION_MODE}" == "full" ]]; then
     errors=$((errors + 1))
   fi
 
+  # Compare source PNG hash against artifact PNG hash to catch visual drift.
+  # This catches background-image / texture changes that dimension checks miss.
+  source_hash="$(sha256sum "${source_path}" | awk '{print $1}')"
+  artifact_hash="$(sha256sum "${artifact_path}" | awk '{print $1}')"
+  if [[ "${source_hash}" != "${artifact_hash}" ]]; then
+    echo "error: visual drift for ${target_id}: source hash=${source_hash} artifact hash=${artifact_hash}" >&2
+    errors=$((errors + 1))
+  fi
+
     echo "ok: ${target_id} (${tier})"
   done < <(jq -r '.targets[] | [.id, .source_generated_png, .tier] | @tsv' "${MANIFEST_PATH}")
 

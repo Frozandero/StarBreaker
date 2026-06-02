@@ -203,3 +203,12 @@ Output requirements from you:
 3. **Canvas source path**: Direct path to the canvas JSON/SWF in P4k or decomposed export.
 4. **Expected element list**: What widgets/elements should appear on this screen type.
 5. **State tag awareness**: Knowledge that many elements use state-bound visibility.
+
+## Per-Task Findings
+
+For each matching task, record Phase A findings in a separate file at:
+`docs/ui-matching-tasks/<canvas-name>-findings.md`
+
+Example: `docs/ui-matching-tasks/target-master-findings.md`
+
+This keeps the template generic while capturing task-specific investigation data.

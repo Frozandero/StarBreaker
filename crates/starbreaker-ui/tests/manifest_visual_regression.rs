@@ -233,6 +233,27 @@ fn cyan_text_coverage(img: &image::RgbaImage, x0: u32, y0: u32, x1: u32, y1: u32
     }
 }
 
+/// Background coverage ratio: fraction of pixels that are "dark" (R<60 && G<60 && B<60).
+/// This catches background image changes (e.g. solid black → brown/gray scanline pattern).
+fn background_dark_coverage(img: &image::RgbaImage, x0: u32, y0: u32, x1: u32, y1: u32) -> f32 {
+    let mut hits = 0u64;
+    let mut total = 0u64;
+    for y in y0..y1 {
+        for x in x0..x1 {
+            let px = img.get_pixel(x, y);
+            total += 1;
+            if px[0] < 60 && px[1] < 60 && px[2] < 60 {
+                hits += 1;
+            }
+        }
+    }
+    if total == 0 {
+        0.0
+    } else {
+        hits as f32 / total as f32
+    }
+}
+
 fn foreground_mask_from_border_delta(
     img: &image::RgbaImage,
     x: f32,
@@ -427,8 +448,29 @@ fn assert_roi_coverage_ratio(
     let reference_coverage = cyan_text_coverage(reference, x0, y0, x1, y1);
     let current_coverage = cyan_text_coverage(&current, x0, y0, x1, y1);
     if reference_coverage <= 1e-6 && current_coverage <= 1e-6 {
-        // This ROI has no cyan typography signal in either image, so this
-        // metric cannot classify a regression here.
+        // This ROI has no cyan typography signal in either image.
+        // Fall back to background dark coverage check to catch
+        // background image changes (e.g. solid black → brown/gray).
+        let reference_bg = background_dark_coverage(reference, x0, y0, x1, y1);
+        let current_bg = background_dark_coverage(&current, x0, y0, x1, y1);
+        let bg_ratio = current_bg / reference_bg.max(1e-6);
+        // Allow up to 15% relative drift in background dark coverage.
+        assert!(
+            bg_ratio >= 0.85,
+            "{name} background regression detected: dark pixel coverage too low in {roi_name} (ratio {bg_ratio:.3} < 0.85).\nreference={}\ncurrent={}\nreference_bg_coverage={}\ncurrent_bg_coverage={}\nACTION: fix the UI/rendering root cause first. Do not update tests, thresholds, or reference artifacts as a first response.",
+            reference_path.display(),
+            current_path.display(),
+            reference_bg,
+            current_bg,
+        );
+        assert!(
+            bg_ratio <= 1.15,
+            "{name} background regression detected: dark pixel coverage too high in {roi_name} (ratio {bg_ratio:.3} > 1.15).\nreference={}\ncurrent={}\nreference_bg_coverage={}\ncurrent_bg_coverage={}\nACTION: fix the UI/rendering root cause first. Do not update tests, thresholds, or reference artifacts as a first response.",
+            reference_path.display(),
+            current_path.display(),
+            reference_bg,
+            current_bg,
+        );
         return;
     }
     let coverage_ratio = current_coverage / reference_coverage.max(1e-6);
