@@ -328,6 +328,7 @@ fn remap_ptr_with_key(
 
 fn find_host_parent(parent_scene: &BbScene, match_to: &str) -> Option<BbNodeId> {
     if !match_to.is_empty() {
+        // Explicit matchTo: find by name among root children.
         for root_id in &parent_scene.roots {
             let Some(root) = parent_scene.nodes.get(root_id) else {
                 continue;
@@ -338,6 +339,45 @@ fn find_host_parent(parent_scene: &BbScene, match_to: &str) -> Option<BbNodeId> 
                 };
                 if child.name.eq_ignore_ascii_case(match_to) {
                     return Some(*child_id);
+                }
+            }
+        }
+    }
+
+    // When match_to is empty (no explicit host specified), look for a scene
+    // node that carries exactly two style tags — this is the pattern for
+    // canvas content slots like `canvas_TargetStatus` which carries both a
+    // content-type tag (e.g. TargetStatus) and a UI-generic flag tag
+    // (e.g. UI_Generic_Flag_01).  These two-tag nodes are the primary content
+    // slots that should receive merged child canvas content.
+    //
+    // The node is a direct child of the root (parent points to a root ID),
+    // not a root itself.  If multiple two-tag candidates exist, prefer the
+    // one whose name starts with `canvas_` (the primary content canvas slot).
+    let root_ids: std::collections::HashSet<BbNodeId> =
+        parent_scene.roots.iter().copied().collect();
+    let mut two_tag_candidates: Vec<BbNodeId> = Vec::new();
+    for (id, node) in &parent_scene.nodes {
+        if node.style_tag_uuids.len() == 2 {
+            // Direct child of root: parent is Some and points to a root ID.
+            let is_root_child = node.parent
+                .map(|p| root_ids.contains(&p))
+                .unwrap_or(false);
+            if is_root_child {
+                two_tag_candidates.push(*id);
+            }
+        }
+    }
+    if two_tag_candidates.len() == 1 {
+        return two_tag_candidates.into_iter().next();
+    }
+    // Multiple two-tag candidates: prefer the one whose name starts with
+    // `canvas_` — these are the primary content canvas slots.
+    if two_tag_candidates.len() > 1 {
+        for &id in &two_tag_candidates {
+            if let Some(node) = parent_scene.nodes.get(&id) {
+                if node.name.starts_with("canvas_") {
+                    return Some(id);
                 }
             }
         }
