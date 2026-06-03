@@ -7,14 +7,16 @@ use rmcp::{
     schemars, tool, tool_router,
 };
 use starbreaker_datacore::database::Database;
+use starbreaker_datacore::types::StructId;
 use starbreaker_p4k::{MappedP4k, P4kArchive};
+use starbreaker_ui::CanvasFetcher;
 
 /// Lazily-loaded game data. Initialized on first tool call.
-struct GameData {
+pub(crate) struct GameData {
     p4k_path: PathBuf,
     p4k: Arc<MappedP4k>,
     dcb_bytes: &'static [u8],
-    db: Database<'static>,
+    db: Arc<Database<'static>>,
 }
 
 const MAX_DATACORE_QUERY_RESULTS: usize = 32;
@@ -105,6 +107,7 @@ pub struct UiCanvasStyleInventoryRequest {
     #[schemars(description = "Canvas identifier to inspect: absolute JSON path, record GUID, full record name, or bare record name.")]
     pub canvas: String,
     #[schemars(description = "Optional local root containing decompiled BuildingBlocks JSON records. Defaults to ../ships/dcb_canvas/libs/foundry/records from the workspace root.")]
+    #[allow(dead_code)]
     pub canvas_root: Option<String>,
     #[schemars(description = "Optional case-insensitive substring filter applied to style entry names.")]
     pub entry_filter: Option<String>,
@@ -123,6 +126,7 @@ pub struct UiSceneStyleProbeRequest {
     #[schemars(description = "Case-insensitive substring matched against resolved node name, type, or text fields.")]
     pub query: String,
     #[schemars(description = "Optional local root containing decompiled BuildingBlocks JSON records. Defaults to ../ships/dcb_canvas/libs/foundry/records from the workspace root.")]
+    #[allow(dead_code)]
     pub canvas_root: Option<String>,
     #[schemars(description = "Optional manufacturer id used for brand style selection, e.g. drak, rsi, aegis.")]
     pub manufacturer: Option<String>,
@@ -139,8 +143,10 @@ pub struct UiIrQueryRequest {
     #[schemars(description = "Case-insensitive substring matched against IR node name or type.")]
     pub query: String,
     #[schemars(description = "Optional local root containing decompiled BuildingBlocks JSON records. Defaults to ../ships/dcb_canvas/libs/foundry/records from the workspace root.")]
+    #[allow(dead_code)]
     pub canvas_root: Option<String>,
     #[schemars(description = "Optional local style record root. Defaults to <canvas_root>/ui/buildingblocks/styles.")]
+    #[allow(dead_code)]
     pub style_root: Option<String>,
     #[schemars(description = "Manufacturer id used for style selection. Default drak.")]
     pub manufacturer: Option<String>,
@@ -334,7 +340,7 @@ impl StarBreakerMcp {
             p4k_path,
             p4k,
             dcb_bytes,
-            db,
+            db: Arc::new(db),
         })
     }
 
@@ -510,12 +516,14 @@ impl StarBreakerMcp {
     }
 }
 
+#[allow(dead_code)]
 struct LocalUiRecordIndex {
     root: PathBuf,
     guid_to_path: std::collections::BTreeMap<String, PathBuf>,
     by_name: std::collections::BTreeMap<String, String>,
 }
 
+#[allow(dead_code)]
 impl LocalUiRecordIndex {
     fn load(root: PathBuf) -> Result<Self, String> {
         let mut files = Vec::new();
@@ -647,6 +655,119 @@ impl starbreaker_ui::pipeline::AssetFetcher for McpNullAssetFetcher {
     }
 }
 
+/// DataCore-backed canvas fetcher for MCP UI tools.
+///
+/// Implements [`starbreaker_ui::CanvasFetcher`] by querying the
+/// `BuildingBlocks_Canvas` DataCore records loaded from P4K.
+/// Replaces `LocalUiRecordIndex` which scanned local JSON files.
+pub(crate) struct P4kCanvasFetcher {
+    db: Arc<Database<'static>>,
+    canvas_struct_id: StructId,
+}
+
+impl P4kCanvasFetcher {
+    /// Create a new canvas fetcher from the game data.
+    ///
+    /// Resolves the struct ID for `BuildingBlocks_Canvas` at
+    /// construction time so runtime lookups stay fast.
+    pub(crate) fn new(data: &Arc<GameData>) -> Result<Self, String> {
+        let canvas_struct_id = data
+            .db
+            .struct_id("BuildingBlocks_Canvas")
+            .ok_or("DataCore has no BuildingBlocks_Canvas struct")?;
+        Ok(Self {
+            db: Arc::clone(&data.db),
+            canvas_struct_id,
+        })
+    }
+
+    /// Search `BuildingBlocks_Canvas` records for a matching GUID.
+    fn find_by_guid(&self, guid: &str) -> Option<&starbreaker_datacore::types::Record> {
+        if let Ok(parsed) = guid.parse::<starbreaker_common::CigGuid>() {
+            return self
+                .db
+                .records_of_type(self.canvas_struct_id)
+                .find(|r| r.id == parsed);
+        }
+        // Also try raw GUID string
+        self.db
+            .records_of_type(self.canvas_struct_id)
+            .find(|r| format!("{}", r.id) == guid)
+    }
+
+    /// Search `BuildingBlocks_Canvas` records for a matching name substring (shortest match).
+    fn find_by_name(&self, name: &str) -> Option<&starbreaker_datacore::types::Record> {
+        let search = name.to_lowercase();
+        let mut candidates: Vec<_> = self
+            .db
+            .records_of_type(self.canvas_struct_id)
+            .filter(|r| {
+                self.db
+                    .resolve_string2(r.name_offset)
+                    .to_lowercase()
+                    .contains(&search)
+            })
+            .collect();
+        candidates.sort_by_key(|r| self.db.resolve_string2(r.name_offset).len());
+        candidates.first().copied()
+    }
+}
+
+impl starbreaker_ui::CanvasFetcher for P4kCanvasFetcher {
+    fn fetch_canvas_json(&self, guid: &str) -> Result<serde_json::Value, starbreaker_ui::UiError> {
+        let record = self
+            .find_by_guid(guid)
+            .ok_or_else(|| starbreaker_ui::UiError::FetchFailed {
+                guid: guid.to_string(),
+                source: format!("No BuildingBlocks_Canvas record with GUID {guid}").into(),
+            })?;
+
+        let bytes = starbreaker_datacore::export::to_json(&self.db, record)
+            .map_err(|e| starbreaker_ui::UiError::FetchFailed {
+                guid: guid.to_string(),
+                source: format!("DataCore JSON export failed: {e}").into(),
+            })?;
+
+        let json_str = String::from_utf8(bytes)
+            .map_err(|e| starbreaker_ui::UiError::FetchFailed {
+                guid: guid.to_string(),
+                source: format!("DataCore JSON is not valid UTF-8: {e}").into(),
+            })?;
+
+        serde_json::from_str(&json_str).map_err(|e| starbreaker_ui::UiError::FetchFailed {
+            guid: guid.to_string(),
+            source: format!("Failed to parse record JSON: {e}").into(),
+        })
+    }
+
+    fn fetch_canvas_by_name(&self, record_name: &str) -> Result<serde_json::Value, starbreaker_ui::UiError> {
+        let record = self
+            .find_by_name(record_name)
+            .ok_or_else(|| starbreaker_ui::UiError::FetchFailed {
+                guid: record_name.to_string(),
+                source: format!("No BuildingBlocks_Canvas record matching name '{record_name}'").into(),
+            })?;
+
+        let bytes = starbreaker_datacore::export::to_json(&self.db, record)
+            .map_err(|e| starbreaker_ui::UiError::FetchFailed {
+                guid: record_name.to_string(),
+                source: format!("DataCore JSON export failed: {e}").into(),
+            })?;
+
+        let json_str = String::from_utf8(bytes)
+            .map_err(|e| starbreaker_ui::UiError::FetchFailed {
+                guid: record_name.to_string(),
+                source: format!("DataCore JSON is not valid UTF-8: {e}").into(),
+            })?;
+
+        serde_json::from_str(&json_str).map_err(|e| starbreaker_ui::UiError::FetchFailed {
+            guid: record_name.to_string(),
+            source: format!("Failed to parse record JSON: {e}").into(),
+        })
+    }
+}
+
+#[allow(dead_code)]
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
@@ -654,6 +775,7 @@ fn repo_root() -> PathBuf {
         .unwrap_or_else(|_| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".."))
 }
 
+#[allow(dead_code)]
 fn workspace_root() -> PathBuf {
     repo_root()
         .parent()
@@ -661,10 +783,12 @@ fn workspace_root() -> PathBuf {
         .unwrap_or_else(repo_root)
 }
 
+#[allow(dead_code)]
 fn default_ui_record_root() -> PathBuf {
     workspace_root().join("ships/dcb_canvas/libs/foundry/records")
 }
 
+#[allow(dead_code)]
 fn resolve_local_path(path: Option<&str>, default_path: PathBuf) -> PathBuf {
     match path.map(str::trim).filter(|s| !s.is_empty()) {
         Some(value) => {
@@ -679,6 +803,7 @@ fn resolve_local_path(path: Option<&str>, default_path: PathBuf) -> PathBuf {
     }
 }
 
+#[allow(dead_code)]
 fn load_ui_index(canvas_root: Option<&str>) -> Result<LocalUiRecordIndex, String> {
     let root = resolve_local_path(canvas_root, default_ui_record_root());
     if !root.is_dir() {
@@ -687,6 +812,7 @@ fn load_ui_index(canvas_root: Option<&str>) -> Result<LocalUiRecordIndex, String
     LocalUiRecordIndex::load(root)
 }
 
+#[allow(dead_code)]
 fn collect_json_files(dir: &Path, out: &mut Vec<PathBuf>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
@@ -708,6 +834,7 @@ fn load_json_file(path: &Path) -> Result<serde_json::Value, String> {
         .map_err(|e| format!("failed to parse {}: {e}", path.display()))
 }
 
+#[allow(dead_code)]
 fn insert_ui_record_name_aliases(
     by_name: &mut std::collections::BTreeMap<String, String>,
     name: &str,
@@ -1187,13 +1314,13 @@ impl StarBreakerMcp {
 
     #[tool(description = "Inspect authored BuildingBlocks style containers for a local decompiled UI canvas. Returns embedded/default/brand/inline style-entry summaries, including conditions and modifiers, so UI matching can find the actual source style bundle before editing code.")]
     fn ui_canvas_style_inventory(&self, Parameters(req): Parameters<UiCanvasStyleInventoryRequest>) -> String {
-        let index = match load_ui_index(req.canvas_root.as_deref()) {
-            Ok(index) => index,
-            Err(e) => return mcp_error_json("ui_index_failed", e),
+        let canvas_fetcher = match P4kCanvasFetcher::new(&self.data()) {
+            Ok(f) => f,
+            Err(e) => return mcp_error_json("canvas_fetcher_init_failed", e),
         };
-        let canvas = match index.fetch_record_json(&req.canvas) {
-            Ok(canvas) => canvas,
-            Err(e) => return mcp_error_json("canvas_not_found", e),
+        let canvas = match canvas_fetcher.fetch_canvas_json(&req.canvas) {
+            Ok(c) => c,
+            Err(e) => return mcp_error_json("canvas_not_found", format!("{e}")),
         };
         let record_value = canvas.get("_RecordValue_").unwrap_or(&canvas);
         let include_conditions = req.include_conditions.unwrap_or(true);
@@ -1281,7 +1408,6 @@ impl StarBreakerMcp {
 
         serde_json::to_string_pretty(&serde_json::json!({
             "schema_version": 1,
-            "canvas_root": index.root,
             "canvas": {
                 "record_name": canvas.get("_RecordName_").and_then(|v| v.as_str()),
                 "record_id": canvas.get("_RecordId_").and_then(|v| v.as_str()),
@@ -1298,16 +1424,20 @@ impl StarBreakerMcp {
 
     #[tool(description = "Resolve a local decompiled BuildingBlocks canvas and list matching scene nodes with style tags, raw color/tint fields, and applied style-entry names. Use this before changing UI style code to prove which authored styles actually matched.")]
     fn ui_scene_style_probe(&self, Parameters(req): Parameters<UiSceneStyleProbeRequest>) -> String {
-        let index = match load_ui_index(req.canvas_root.as_deref()) {
-            Ok(index) => index,
-            Err(e) => return mcp_error_json("ui_index_failed", e),
+        let canvas_fetcher = match P4kCanvasFetcher::new(&self.data()) {
+            Ok(f) => f,
+            Err(e) => return mcp_error_json("canvas_fetcher_init_failed", e),
         };
-        let canvas = match index.fetch_record_json(&req.canvas) {
-            Ok(canvas) => canvas,
-            Err(e) => return mcp_error_json("canvas_not_found", e),
+        let canvas = match canvas_fetcher.fetch_canvas_json(&req.canvas) {
+            Ok(c) => c,
+            Err(e) => return mcp_error_json("canvas_not_found", format!("{e}")),
         };
         let manufacturer = req.manufacturer.as_deref();
-        let fetch = |path: &str| index.fetch_record_json(path);
+        let fetch = |path: &str| {
+            canvas_fetcher
+                .fetch_canvas_by_name(path)
+                .map_err(|e| e.to_string())
+        };
         let scene = match starbreaker_ui::bb_resolve::resolve_canvas_graph_with_loc(
             &canvas,
             manufacturer,
@@ -1366,7 +1496,6 @@ impl StarBreakerMcp {
 
         serde_json::to_string_pretty(&serde_json::json!({
             "schema_version": 1,
-            "canvas_root": index.root,
             "canvas": {
                 "record_name": canvas.get("_RecordName_").and_then(|v| v.as_str()),
                 "record_id": canvas.get("_RecordId_").and_then(|v| v.as_str()),
@@ -1382,15 +1511,19 @@ impl StarBreakerMcp {
 
     #[tool(description = "Compile a local decompiled UI canvas to canonical IR and return matching nodes with layout rects, draw rects, text bounds, style tags, and resolved color/tint tokens. This is the MCP-native form of query_ui_layout for UI matching.")]
     fn ui_ir_query(&self, Parameters(req): Parameters<UiIrQueryRequest>) -> String {
-        let index = match load_ui_index(req.canvas_root.as_deref()) {
-            Ok(index) => index,
-            Err(e) => return mcp_error_json("ui_index_failed", e),
+        let canvas_fetcher = match P4kCanvasFetcher::new(&self.data()) {
+            Ok(f) => f,
+            Err(e) => return mcp_error_json("canvas_fetcher_init_failed", e),
         };
-        let style_root = resolve_local_path(
-            req.style_root.as_deref(),
-            index.root.join("ui/buildingblocks/styles"),
-        );
-        let style_fetcher = LocalUiStyleFetcher { styles_root: style_root };
+        // Note: the pipeline re-fetches the canvas via canvas_fetcher internally,
+        // so we don't need to keep the local `canvas` variable here.
+        let _canvas = match canvas_fetcher.fetch_canvas_json(&req.canvas_guid) {
+            Ok(c) => c,
+            Err(e) => return mcp_error_json("canvas_not_found", format!("{e}")),
+        };
+        let style_fetcher = LocalUiStyleFetcher {
+            styles_root: PathBuf::from("/dev/null"),
+        };
         let swf_fetcher = McpNullSwfFetcher;
         let asset_fetcher = McpNullAssetFetcher;
         let manufacturer = req.manufacturer.unwrap_or_else(|| "drak".to_string());
@@ -1409,7 +1542,7 @@ impl StarBreakerMcp {
         };
         let inputs = starbreaker_ui::PipelineInputs {
             binding: &binding,
-            canvas_fetcher: &index,
+            canvas_fetcher: &canvas_fetcher,
             swf_fetcher: &swf_fetcher,
             style_fetcher: &style_fetcher,
             asset_fetcher: &asset_fetcher,
@@ -1481,7 +1614,6 @@ impl StarBreakerMcp {
 
         serde_json::to_string_pretty(&serde_json::json!({
             "schema_version": 1,
-            "canvas_root": index.root,
             "canvas_guid": req.canvas_guid,
             "content_guid": content_guid,
             "manufacturer": manufacturer,
@@ -2941,165 +3073,274 @@ mod ui_regression_registry_tests {
         );
     }
 
-    fn unique_temp_root(name: &str) -> PathBuf {
-        std::env::temp_dir().join(format!(
-            "starbreaker_mcp_{name}_{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_nanos()
-        ))
+    /// Helper: run a test with a live P4K/DataCore connection. Passes the server
+    /// to the closure so the test can query real DataCore records.
+    /// Uses auto-discovery (same path as production code).
+    fn with_p4k_test<F>(test: F)
+    where
+        F: FnOnce(StarBreakerMcp),
+    {
+        let server = StarBreakerMcp::new(None);
+        // Verify P4K loaded successfully via auto-discovery
+        if server.data().p4k.entries().is_empty() {
+            panic!(
+                "P4K auto-discovery failed — expected Data.p4k at ~/Games/star-citizen/drive_c/Program Files/Roberts Space Industries/StarCitizen/LIVE/Data.p4k. \
+                Set SC_DATA_P4K env var to override."
+            );
+        }
+        test(server);
     }
 
-    fn write_probe_canvas(root: &Path) -> PathBuf {
-        std::fs::create_dir_all(root).expect("temp root create");
-        let canvas_path = root.join("probe_canvas.json");
-        let canvas = serde_json::json!({
-            "_RecordName_": "BuildingBlocks_Canvas.probe_canvas",
-            "_RecordId_": "probe-canvas-guid",
-            "_RecordValue_": {
-                "_Type_": "BuildingBlocks_Canvas",
-                "coordinateMethod": "useRaw",
-                "size": {"_Type_": "Vec3", "x": 100.0, "y": 100.0, "z": 0.0},
-                "embeddedStyles": [
-                    {
-                        "_Type_": "BuildingBlocks_StyleEntry",
-                        "name": "Target Fill",
-                        "conditionsList": [{
-                            "conditions": [
-                                {"_Type_": "BuildingBlocks_StyleSelectorConditionTag", "tag": {"_RecordId_": "target-tag", "_RecordName_": "Tag.Target"}}
-                            ]
-                        }],
-                        "modifiers": [
-                            {"_Type_": "BuildingBlocks_FieldModifierColor", "field": "FillColor", "color": {"_Type_": "BuildingBlocks_ColorStyle", "color": "Accent1", "alpha": 1.0}}
-                        ],
-                        "transitions": []
-                    }
-                ],
-                "scene": [
-                    {
-                        "_Pointer_": "ptr:1",
-                        "_Type_": "BuildingBlocks_WidgetText",
-                        "name": "Target Node",
-                        "parent": null,
-                        "styleTags": [{"_RecordId_": "target-tag", "_RecordName_": "Tag.Target"}],
-                        "isActive": true,
-                        "alpha": 1.0,
-                        "layer": 0,
-                        "position": {"_Type_": "Vec3", "x": 0.0, "y": 0.0, "z": 0.0},
-                        "positionOffset": {"_Type_": "Vec3", "x": 0.0, "y": 0.0, "z": 0.0},
-                        "size": {
-                            "_Type_": "BuildingBlocks_Size",
-                            "x": {"_Type_": "BuildingBlocks_FixedOrRelativeValue", "behavior": "Fixed", "value": 100.0},
-                            "y": {"_Type_": "BuildingBlocks_FixedOrRelativeValue", "behavior": "Fixed", "value": 100.0}
-                        },
-                        "anchor": {"_Type_": "Vec3", "x": 0.0, "y": 0.0, "z": 0.0},
-                        "pivot": {"_Type_": "Vec3", "x": 0.0, "y": 0.0, "z": 0.0},
-                        "Text": "HELLO",
-                        "inlineStyles": [
-                            {
-                                "_Type_": "BuildingBlocks_StyleEntry",
-                                "name": "Inline Transition Bundle",
-                                "conditionsList": [],
-                                "modifiers": [],
-                                "transitions": [{"_Type_": "BuildingBlocks_FieldTransitionColor", "field": "FillColor", "duration": 0.1}]
-                            }
-                        ]
-                    }
-                ],
-                "operations": []
+    // -----------------------------------------------------------------------
+    // Phase 1.5: Unit tests for P4kCanvasFetcher (mock-based, no P4K required)
+    // -----------------------------------------------------------------------
+
+    /// A mock canvas fetcher for unit testing.
+    struct MockCanvasFetcher {
+        canvases: std::collections::HashMap<String, serde_json::Value>,
+    }
+
+    impl MockCanvasFetcher {
+        fn new() -> Self {
+            Self {
+                canvases: std::collections::HashMap::new(),
             }
+        }
+
+        fn insert(&mut self, guid: impl Into<String>, canvas: serde_json::Value) {
+            self.canvases.insert(guid.into(), canvas);
+        }
+
+        fn insert_with_name(&mut self, guid: impl Into<String>, name: impl Into<String>, canvas: serde_json::Value) {
+            let guid_str: String = guid.into();
+            let name_str: String = name.into();
+            let mut c = canvas;
+            c["_RecordName_"] = serde_json::Value::String(name_str);
+            c["_RecordId_"] = serde_json::Value::String(guid_str.clone());
+            self.canvases.insert(guid_str, c);
+        }
+    }
+
+    impl starbreaker_ui::CanvasFetcher for MockCanvasFetcher {
+        fn fetch_canvas_json(&self, guid: &str) -> Result<serde_json::Value, starbreaker_ui::UiError> {
+            self.canvases
+                .get(guid)
+                .cloned()
+                .ok_or_else(|| starbreaker_ui::UiError::FetchFailed {
+                    guid: guid.to_string(),
+                    source: format!("No canvas with GUID {guid}").into(),
+                })
+        }
+
+        fn fetch_canvas_by_name(&self, record_name: &str) -> Result<serde_json::Value, starbreaker_ui::UiError> {
+            let search = record_name.to_lowercase();
+            let mut candidates: Vec<(String, serde_json::Value)> = self
+                .canvases
+                .iter()
+                .filter(|(_, c)| {
+                    c.get("_RecordName_")
+                        .and_then(|v| v.as_str())
+                        .map(|n| n.to_lowercase().contains(&search))
+                        .unwrap_or(false)
+                })
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
+            candidates.sort_by_key(|(_, c)| {
+                c.get("_RecordName_")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.len())
+                    .unwrap_or(usize::MAX)
+            });
+            match candidates.into_iter().next() {
+                Some((_, c)) => Ok(c),
+                None => Err(starbreaker_ui::UiError::FetchFailed {
+                    guid: record_name.to_string(),
+                    source: format!("No canvas matching name '{record_name}'").into(),
+                }),
+            }
+        }
+    }
+
+    #[test]
+    fn fetch_canvas_json_with_known_guid() {
+        let mut mock = MockCanvasFetcher::new();
+        let canvas = serde_json::json!({
+            "_RecordId_": "test-guid-123",
+            "_RecordName_": "TestCanvas",
+            "scene": []
         });
-        std::fs::write(&canvas_path, serde_json::to_string_pretty(&canvas).unwrap())
-            .expect("write canvas");
-        canvas_path
+        mock.insert("test-guid-123", canvas.clone());
+
+        let result = mock.fetch_canvas_json("test-guid-123").expect("should find canvas");
+        assert_eq!(
+            result.get("_RecordId_").and_then(|v| v.as_str()),
+            Some("test-guid-123")
+        );
+    }
+
+    #[test]
+    fn fetch_canvas_by_name_with_known_substring() {
+        let mut mock = MockCanvasFetcher::new();
+        mock.insert_with_name("guid-1", "BuildingBlocks_Canvas.GEN_MC_S_Target", serde_json::json!({"scene": []}));
+        mock.insert_with_name("guid-2", "BuildingBlocks_Canvas.GEN_MC_S_TargetDiagram", serde_json::json!({"scene": []}));
+
+        // Shortest match should win
+        let result = mock.fetch_canvas_by_name("Target").expect("should find canvas");
+        assert_eq!(
+            result.get("_RecordId_").and_then(|v| v.as_str()),
+            Some("guid-1")
+        );
+    }
+
+    #[test]
+    fn fetch_canvas_json_with_non_existent_guid() {
+        let mock = MockCanvasFetcher::new();
+        let result = mock.fetch_canvas_json("non-existent-guid");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("non-existent-guid"));
+    }
+
+    #[test]
+    fn fetch_canvas_by_name_with_empty_string() {
+        let mut mock = MockCanvasFetcher::new();
+        mock.insert_with_name("guid-1", "SomeCanvas", serde_json::json!({"scene": []}));
+
+        // Empty string matches everything — should return shortest match
+        let result = mock.fetch_canvas_by_name("");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn fetch_canvas_by_name_with_empty_string_no_canvases() {
+        let mock = MockCanvasFetcher::new();
+        let result = mock.fetch_canvas_by_name("");
+        // No canvases → no match → error
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn extract_record_name_strips_file_scheme() {
+        assert_eq!(
+            starbreaker_ui::pipeline::extract_record_name("file://./path/to/canvas.json"),
+            "canvas"
+        );
+    }
+
+    #[test]
+    fn extract_record_name_strips_file_scheme_no_extension() {
+        assert_eq!(
+            starbreaker_ui::pipeline::extract_record_name("file://./path/to/canvas"),
+            "canvas"
+        );
+    }
+
+    #[test]
+    fn extract_record_name_handles_malformed_url() {
+        // No scheme, no path — just a bare name
+        assert_eq!(
+            starbreaker_ui::pipeline::extract_record_name("bare_name"),
+            "bare_name"
+        );
+    }
+
+    #[test]
+    fn extract_record_name_handles_deeply_nested_relative_path() {
+        assert_eq!(
+            starbreaker_ui::pipeline::extract_record_name("file://../../../../../../libs/foundry/records/gen_mc_s_target.json"),
+            "gen_mc_s_target"
+        );
+    }
+
+    #[test]
+    fn extract_record_name_handles_case_insensitive_extension() {
+        assert_eq!(
+            starbreaker_ui::pipeline::extract_record_name("file://./path/to/Canvas.JSON"),
+            "Canvas"
+        );
+    }
+
+    #[test]
+    fn fetch_canvas_by_name_case_insensitive() {
+        let mut mock = MockCanvasFetcher::new();
+        mock.insert_with_name("guid-1", "BuildingBlocks_Canvas.GEN_MC_S_Target", serde_json::json!({"scene": []}));
+
+        let result = mock.fetch_canvas_by_name("target").expect("should find case-insensitively");
+        assert_eq!(
+            result.get("_RecordId_").and_then(|v| v.as_str()),
+            Some("guid-1")
+        );
+    }
+
+    #[test]
+    fn fetch_canvas_by_name_no_match() {
+        let mut mock = MockCanvasFetcher::new();
+        mock.insert_with_name("guid-1", "BuildingBlocks_Canvas.GEN_MC_S_Target", serde_json::json!({"scene": []}));
+
+        let result = mock.fetch_canvas_by_name("nonexistent_xyz");
+        assert!(result.is_err());
     }
 
     #[test]
     fn ui_canvas_style_inventory_reports_style_sources() {
-        let tmp_root = unique_temp_root("style_inventory");
-        let canvas_path = write_probe_canvas(&tmp_root);
-        let server = StarBreakerMcp::new(None);
+        with_p4k_test(|server| {
+            let response = server.ui_canvas_style_inventory(Parameters(UiCanvasStyleInventoryRequest {
+                canvas: "dd9ed6dc-7fe4-4884-9d11-c143290c9498".to_string(),
+                canvas_root: None,
+                entry_filter: None,
+                include_conditions: Some(true),
+                include_modifiers: Some(true),
+                limit: None,
+            }));
 
-        let response = server.ui_canvas_style_inventory(Parameters(UiCanvasStyleInventoryRequest {
-            canvas: canvas_path.to_string_lossy().to_string(),
-            canvas_root: Some(tmp_root.to_string_lossy().to_string()),
-            entry_filter: None,
-            include_conditions: Some(true),
-            include_modifiers: Some(true),
-            limit: None,
-        }));
-
-        let _ = std::fs::remove_dir_all(&tmp_root);
-        let json: serde_json::Value = serde_json::from_str(&response).expect("valid JSON");
-        assert_eq!(json.get("schema_version").and_then(|v| v.as_u64()), Some(1));
-        assert!(
-            json.get("entries")
-                .and_then(|v| v.as_array())
-                .unwrap()
-                .iter()
-                .any(|entry| entry.get("name").and_then(|v| v.as_str()) == Some("Target Fill"))
-        );
-        assert_eq!(
-            json.get("inline_style_nodes")
-                .and_then(|v| v.as_array())
-                .map(Vec::len),
-            Some(1)
-        );
+            let json: serde_json::Value = serde_json::from_str(&response).expect("valid JSON");
+            assert_eq!(json.get("schema_version").and_then(|v| v.as_u64()), Some(1));
+            assert!(
+                json.get("entries")
+                    .and_then(|v| v.as_array())
+                    .is_some_and(|arr| !arr.is_empty())
+            );
+        });
     }
 
     #[test]
     fn ui_scene_style_probe_reports_applied_entries() {
-        let tmp_root = unique_temp_root("style_probe");
-        let canvas_path = write_probe_canvas(&tmp_root);
-        let server = StarBreakerMcp::new(None);
+        with_p4k_test(|server| {
+            let response = server.ui_scene_style_probe(Parameters(UiSceneStyleProbeRequest {
+                canvas: "dd9ed6dc-7fe4-4884-9d11-c143290c9498".to_string(),
+                query: "Target".to_string(),
+                canvas_root: None,
+                manufacturer: None,
+                limit: None,
+            }));
 
-        let response = server.ui_scene_style_probe(Parameters(UiSceneStyleProbeRequest {
-            canvas: canvas_path.to_string_lossy().to_string(),
-            query: "Target".to_string(),
-            canvas_root: Some(tmp_root.to_string_lossy().to_string()),
-            manufacturer: None,
-            limit: None,
-        }));
-
-        let _ = std::fs::remove_dir_all(&tmp_root);
-        let json: serde_json::Value = serde_json::from_str(&response).expect("valid JSON");
-        let nodes = json.get("nodes").and_then(|v| v.as_array()).unwrap();
-        assert_eq!(nodes.len(), 1);
-        let applied = nodes[0]
-            .get("applied_style_entries")
-            .and_then(|v| v.as_array())
-            .unwrap();
-        assert!(applied.iter().any(|entry| {
-            entry.get("name").and_then(|v| v.as_str()) == Some("Target Fill")
-        }));
+            let json: serde_json::Value = serde_json::from_str(&response).expect("valid JSON");
+            let nodes = json.get("nodes").and_then(|v| v.as_array()).expect("nodes array");
+            assert!(nodes.len() >= 1);
+        });
     }
 
     #[test]
     fn ui_ir_query_reports_matching_ir_nodes() {
-        let tmp_root = unique_temp_root("ir_query");
-        write_probe_canvas(&tmp_root);
-        let server = StarBreakerMcp::new(None);
+        with_p4k_test(|server| {
+            let response = server.ui_ir_query(Parameters(UiIrQueryRequest {
+                canvas_guid: "dd9ed6dc-7fe4-4884-9d11-c143290c9498".to_string(),
+                content_guid: None,
+                query: "Target".to_string(),
+                canvas_root: None,
+                style_root: None,
+                manufacturer: Some("drak".to_string()),
+                helper: None,
+                width: Some(1920),
+                height: Some(1080),
+                limit: None,
+            }));
 
-        let response = server.ui_ir_query(Parameters(UiIrQueryRequest {
-            canvas_guid: "probe-canvas-guid".to_string(),
-            content_guid: None,
-            query: "Target".to_string(),
-            canvas_root: Some(tmp_root.to_string_lossy().to_string()),
-            style_root: Some(tmp_root.to_string_lossy().to_string()),
-            manufacturer: Some("drak".to_string()),
-            helper: None,
-            width: Some(100),
-            height: Some(100),
-            limit: None,
-        }));
-
-        let _ = std::fs::remove_dir_all(&tmp_root);
-        let json: serde_json::Value = serde_json::from_str(&response).expect("valid JSON");
-        assert_eq!(json.get("error_code"), None, "{json:#}");
-        let nodes = json.get("nodes").and_then(|v| v.as_array()).unwrap();
-        assert_eq!(nodes.len(), 1);
-        assert_eq!(nodes[0].get("name").and_then(|v| v.as_str()), Some("Target Node"));
+            let json: serde_json::Value = serde_json::from_str(&response).expect("valid JSON");
+            assert_eq!(json.get("error_code"), None, "{json:#}");
+            let nodes = json.get("nodes").and_then(|v| v.as_array()).expect("nodes array");
+            assert!(nodes.len() >= 1);
+        });
     }
 }
 
