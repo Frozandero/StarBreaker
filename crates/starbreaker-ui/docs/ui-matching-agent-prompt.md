@@ -6,6 +6,8 @@ reference screenshot.
 ## Copy/Paste Prompt
 
 ```text
+
+
 You are working in StarBreaker, in crate starbreaker-ui.
 
 Before you plan or edit anything, read these files in order:
@@ -14,8 +16,8 @@ Before you plan or edit anything, read these files in order:
 3. StarBreaker/crates/starbreaker-ui/AGENTS.md
 4. StarBreaker/crates/starbreaker-ui/docs/ui-matching-workflow.md
 
-Generated image: @/ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_mc_s_target_master.png 
-Reference image: @/reference/in-game/Clipper/Screen_Right_Upper_RTT.png 
+Generated image: /ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_mc_s_target_master.png 
+Reference image: /reference/in-game/Clipper/Screen_Right_Upper_RTT.png 
 To export the updated image after making changes: cd ~/projects/scorg_tools/StarBreaker && cargo run -p starbreaker --release -- entity export "drak_clipper" "~/projects/scorg_tools/ships" --kind decomposed --lod 0 --mip 0 --materials all
 
 Goal:
@@ -32,8 +34,13 @@ Important context:
 
 Operating rules:
 1. Follow `crates/starbreaker-ui/docs/ui-matching-workflow.md`.
-2. Use StarBreaker MCP tools first for investigation whenever possible; use CLI
-	 export primarily for rendering and regression artifact generation.
+2. Use the correct tool for the file location:
+	 - **Local workspace files** (generated PNGs, canvas JSON from decomposed export,
+	   reference screenshots): read directly with `read_file`. MCP tools do NOT work
+	   on these — they only access P4k contents.
+	 - **P4k-native assets** (DDS textures, DataCore records, SWF files, chunk data):
+	   use StarBreaker MCP tools.
+	 - **Rendering and regression artifacts**: use CLI export commands.
 3. For UI style/layout questions, run the dedicated MCP diagnostics before
 	 ad-hoc shell probes or code edits:
 	 - `ui_canvas_style_inventory` to locate authored style containers and entries.
@@ -70,10 +77,12 @@ SC_DATA_P4K="..." \
 Lists authored style containers, embeddedStyles, defaultStyles, and brandStyles.
 
 ### Direct File Inspection
-If the canvas source is a JSON file in the decomposed export, inspect it directly:
-- Canvas JSON: `ships/Data/UI/Generated/ship/<manufacturer>/<ship>/<canvas>.json`
-- SWF assets: `ships/Data/UI/BuildingBlocks/assets/SWF/`
-- P4k search: Use `p4k_list` and `p4k_read` MCP tools to browse Data.p4k
+If the canvas source is a JSON file in the decomposed export, read it directly
+with `read_file` — it is a local workspace file, NOT a P4k asset:
+- Canvas JSON (local): `ships/Data/UI/Generated/ship/<manufacturer>/<ship>/<canvas>.json`
+- Generated PNG (local): `ships/Data/UI/Generated/ship/<manufacturer>/<ship>/<canvas>.png`
+- Reference screenshot (local): `reference/in-game/<ship>/<screenshot>.png`
+- SWF assets (P4k): Use `p4k_list` and `p4k_read` MCP tools to browse Data.p4k
 
 ### SWF/Canvas Source Location
 BuildingBlocks canvases are typically found at:
@@ -176,6 +185,9 @@ Output requirements from you:
 2. Ordered fix plan.
 3. Per-iteration delta log (what changed, what improved, what regressed).
 4. Final parity assessment tied to the original catalog.
+
+
+
 ```
 
 ## Usage Notes
@@ -196,6 +208,10 @@ Output requirements from you:
 2. **No fallback documented**: No CLI equivalents were provided in the prompt.
 3. **Canvas source location unclear**: Agent didn't know where to find `mc_s_target` source data.
 4. **No expected structure guidance**: Agent didn't know what elements to expect on a target screen.
+5. **Wrong tool for local files**: Agent used MCP `image_preview` and `p4k_read` on local workspace
+   files (generated PNG, canvas JSON). These files exist in the decomposed export at
+   `ships/Data/UI/Generated/...` and must be read with `read_file`, NOT MCP tools which only
+   access P4k contents.
 
 ### What Would Have Helped
 1. **MCP availability check**: A note at the top saying "MCP tools X, Y, Z are available" or not.
@@ -203,6 +219,9 @@ Output requirements from you:
 3. **Canvas source path**: Direct path to the canvas JSON/SWF in P4k or decomposed export.
 4. **Expected element list**: What widgets/elements should appear on this screen type.
 5. **State tag awareness**: Knowledge that many elements use state-bound visibility.
+6. **Local vs P4k file distinction**: Explicitly state which files are local workspace files
+   (read with `read_file`) vs P4k-native assets (use MCP tools). The generated PNG, reference
+   screenshot, and decomposed canvas JSON are ALL local files — MCP tools will fail on them.
 
 ## Per-Task Findings
 
