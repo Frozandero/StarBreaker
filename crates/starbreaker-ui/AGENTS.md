@@ -66,6 +66,7 @@ These replace the old file-system-based fetchers (`LocalUiRecordIndex`, `LocalUi
 
 Canvas records are queried by GUID or name substring. Brand styles are resolved from
 `BuildingBlocks_Style` records via manufacturer identifier (e.g. "drak", "banu", "aegis").
+The canvas JSON references `.tif` extensions but the actual files in P4K are `.dds`, whever you see `.tif` expect a `.dds` entry in the P4K.
 
 ### CLI query tool (fallback)
 
