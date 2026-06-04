@@ -45,6 +45,30 @@ Do not chain multiple speculative layout changes before remeasuring.
 
 ## Query and debug tools
 
+### MCP Tools (preferred for UI diagnostics)
+
+The StarBreaker MCP server provides three diagnostic tools that query **live DataCore
+records** and **P4K archive** directly — no local JSON files or decomposed exports needed.
+These replace the old file-system-based fetchers (`LocalUiRecordIndex`, `LocalUiStyleFetcher`).
+
+| Tool | Purpose | Key return fields |
+|------|---------|-------------------|
+| `ui_ir_query` | Compile canvas to canonical IR | `computed_rect`, `draw_rect`, `style_tag_uuids`, `resolved_style_tags`, `text_payload`, `asset_ref`, `background_fill_colour`, `stroke_colour` |
+| `ui_canvas_style_inventory` | List authored style containers | `containers[]` (embeddedStyles, defaultStyles, brandStyles), `entries[]` with conditions/modifiers |
+| `ui_scene_style_probe` | Match scene nodes to styles | `nodes[]` with `style_tag_uuids`, `colour_fields`, `applied_style_entries[]` |
+| `p4k_data_status` | Confirm P4K/DataCore loaded | `p4k_path`, `entries` count, `datacore_bytes` |
+
+**Data source architecture:**
+- `P4kCanvasFetcher` → DataCore `BuildingBlocks_Canvas` records (replaces `LocalUiRecordIndex`)
+- `P4kStyleFetcher` → DataCore `BuildingBlocks_Style` records (replaces `LocalUiStyleFetcher`)
+- `P4kSwfFetcher` → P4K read for SWF files (replaces `McpNullSwfFetcher`)
+- `P4kAssetFetcher` → P4K read for DDS/SVG/PNG textures (replaces `McpNullAssetFetcher`)
+
+Canvas records are queried by GUID or name substring. Brand styles are resolved from
+`BuildingBlocks_Style` records via manufacturer identifier (e.g. "drak", "banu", "aegis").
+
+### CLI query tool (fallback)
+
 Prefer the generic query example over ad-hoc logging:
 
 ```bash
