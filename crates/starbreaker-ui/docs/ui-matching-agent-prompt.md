@@ -35,8 +35,15 @@ Important context:
 Operating rules:
 1. Follow `crates/starbreaker-ui/docs/ui-matching-workflow.md`.
 2. Use the correct tool for the file location:
-	 - **Local workspace files** (generated PNGs, canvas JSON from decomposed export,
-	   reference screenshots): read directly with `read_file`.
+	 - **Generated PNGs and reference screenshots**: read directly with `read_file`
+	   to display the image visually. Use your vision capabilities to inspect both
+	   the reference screenshot and generated output images. This is the primary
+	   method for visual comparison — never use MCP `image_preview` or `p4k_read`
+	   on local workspace files.
+	 - **Canvas JSON from decomposed export**: read directly with `read_file`.
+	 - **Reference screenshots**: read directly with `read_file`. These are local
+	   files in the workspace (e.g. `reference/in-game/Clipper/Screen_Right_Upper_RTT.png`).
+	   Use vision to inspect them — they are NOT in P4K.
 	 - **P4k-native assets** (DDS textures, DataCore records, SWF files, chunk data):
 	   use StarBreaker MCP tools.
 	 - **Rendering and regression artifacts**: use CLI export commands.
