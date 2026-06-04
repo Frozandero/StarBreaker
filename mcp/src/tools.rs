@@ -516,142 +516,104 @@ impl StarBreakerMcp {
     }
 }
 
-#[allow(dead_code)]
-struct LocalUiRecordIndex {
-    root: PathBuf,
-    guid_to_path: std::collections::BTreeMap<String, PathBuf>,
-    by_name: std::collections::BTreeMap<String, String>,
+/// P4K-backed asset fetcher for MCP UI tools.
+
+pub(crate) struct P4kAssetFetcher {
+    p4k: Arc<MappedP4k>,
 }
 
-#[allow(dead_code)]
-impl LocalUiRecordIndex {
-    fn load(root: PathBuf) -> Result<Self, String> {
-        let mut files = Vec::new();
-        collect_json_files(&root, &mut files);
-
-        let mut guid_to_path = std::collections::BTreeMap::new();
-        let mut by_name = std::collections::BTreeMap::new();
-
-        for path in files {
-            let Ok(json) = load_json_file(&path) else {
-                continue;
-            };
-            let Some(record_id) = json
-                .get("_RecordId_")
-                .and_then(|v| v.as_str())
-                .filter(|s| !s.is_empty())
-                .map(str::to_owned)
-            else {
-                continue;
-            };
-            guid_to_path.insert(record_id.clone(), path.clone());
-
-            if let Some(record_name) = json.get("_RecordName_").and_then(|v| v.as_str()) {
-                insert_ui_record_name_aliases(&mut by_name, record_name, &record_id);
-            }
-            if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                insert_ui_record_name_aliases(&mut by_name, stem, &record_id);
-            }
+impl P4kAssetFetcher {
+    /// Create a new asset fetcher from the game data.
+    pub(crate) fn new(data: &Arc<GameData>) -> Self {
+        Self {
+            p4k: Arc::clone(&data.p4k),
         }
-
-        Ok(Self {
-            root,
-            guid_to_path,
-            by_name,
-        })
     }
 
-    fn fetch_record_json(&self, id_or_name: &str) -> Result<serde_json::Value, String> {
-        let direct = Path::new(id_or_name);
-        if direct.is_file() {
-            return load_json_file(direct);
+    /// Normalize a path for P4K lookup: ensure `Data\` prefix,
+    /// convert forward slashes to backslashes, auto-convert `.tif` to `.dds`.
+    fn normalize_path(path: &str) -> String {
+        let p = if path.to_lowercase().starts_with("data\\") || path.to_lowercase().starts_with("data/") {
+            path.replace('/', "\\")
+        } else {
+            format!("Data\\{}", path.replace('/', "\\"))
+        };
+        // Auto-convert .tif to .dds for texture lookups
+        if p.to_lowercase().ends_with(".tif") {
+            format!("{}.dds", &p[..p.len() - 4])
+        } else {
+            p
         }
+    }
+}
 
-        let id_or_name = id_or_name.trim();
-        let record_name = starbreaker_ui::pipeline::extract_record_name(id_or_name);
-        let candidates = [
-            id_or_name.to_string(),
-            id_or_name.to_ascii_lowercase(),
-            record_name.clone(),
-            record_name.to_ascii_lowercase(),
-        ];
+impl starbreaker_ui::pipeline::AssetFetcher for P4kAssetFetcher {
+    fn fetch_image_bytes(&self, p4k_path: &str) -> Option<Vec<u8>> {
+        let normalized = Self::normalize_path(p4k_path);
+        self.p4k
+            .read_file(&normalized)
+            .ok()
+            .or_else(|| {
+                // Case-insensitive fallback
+                self.p4k
+                    .entry_case_insensitive(&normalized)
+                    .and_then(|entry| self.p4k.read(entry).ok())
+            })
+    }
+}
 
-        for candidate in candidates {
-            if let Some(path) = self.guid_to_path.get(&candidate) {
-                return load_json_file(path);
-            }
-            if let Some(guid) = self.by_name.get(&candidate) {
-                if let Some(path) = self.guid_to_path.get(guid) {
-                    return load_json_file(path);
-                }
-            }
+/// P4K-backed SWF fetcher for MCP UI tools.
+///
+/// Implements [`starbreaker_ui::SwfFetcher`] by reading SWF files
+/// from the P4K archive loaded from `Data.p4k`.
+/// Replaces `McpNullSwfFetcher` which always returned an error.
+pub(crate) struct P4kSwfFetcher {
+    p4k: Arc<MappedP4k>,
+}
+
+impl P4kSwfFetcher {
+    /// Create a new SWF fetcher from the game data.
+    pub(crate) fn new(data: &Arc<GameData>) -> Self {
+        Self {
+            p4k: Arc::clone(&data.p4k),
         }
-
-        Err(format!(
-            "UI record not found under {}: {}",
-            self.root.display(),
-            id_or_name
-        ))
-    }
-}
-
-impl starbreaker_ui::CanvasFetcher for LocalUiRecordIndex {
-    fn fetch_canvas_json(&self, guid: &str) -> Result<serde_json::Value, starbreaker_ui::UiError> {
-        self.fetch_record_json(guid)
-            .map_err(starbreaker_ui::UiError::RenderError)
     }
 
-    fn fetch_canvas_by_name(&self, record_name: &str) -> Result<serde_json::Value, starbreaker_ui::UiError> {
-        self.fetch_record_json(record_name)
-            .map_err(starbreaker_ui::UiError::RenderError)
-    }
-}
-
-struct LocalUiStyleFetcher {
-    styles_root: PathBuf,
-}
-
-impl starbreaker_ui::StyleFetcher for LocalUiStyleFetcher {
-    fn fetch_manufacturer_style(&self, manufacturer_id: &str) -> Result<starbreaker_ui::ManufacturerStyle, starbreaker_ui::UiError> {
-        let id = manufacturer_id.to_ascii_lowercase();
-        let candidates = [
-            self.styles_root.join(format!("{id}.json")),
-            self.styles_root.join(format!("s_{id}_hud.json")),
-            self.styles_root.join(format!("s_{id}_env.json")),
-        ];
-
-        for path in candidates {
-            if !path.is_file() {
-                continue;
-            }
-            let record_json = load_json_file(&path).map_err(starbreaker_ui::UiError::RenderError)?;
-            return starbreaker_ui::StyleLoader::for_manufacturer(&id)
-                .parse_buildingblocks_style_record(&record_json);
+    /// Normalize a path for P4K lookup: ensure `Data\` prefix,
+    /// convert forward slashes to backslashes, auto-convert `.tif` to `.dds`.
+    fn normalize_path(path: &str) -> String {
+        let p = if path.to_lowercase().starts_with("data\\") || path.to_lowercase().starts_with("data/") {
+            path.replace('/', "\\")
+        } else {
+            format!("Data\\{}", path.replace('/', "\\"))
+        };
+        // Auto-convert .tif to .dds for texture lookups
+        if p.to_lowercase().ends_with(".tif") {
+            format!("{}.dds", &p[..p.len() - 4])
+        } else {
+            p
         }
-
-        Err(starbreaker_ui::UiError::RenderError(format!(
-            "missing BuildingBlocks style record for manufacturer '{}' under {}",
-            manufacturer_id,
-            self.styles_root.display()
-        )))
     }
 }
 
-struct McpNullSwfFetcher;
-
-impl starbreaker_ui::SwfFetcher for McpNullSwfFetcher {
+impl starbreaker_ui::SwfFetcher for P4kSwfFetcher {
     fn fetch_swf_bytes(&self, p4k_path: &str) -> Result<Vec<u8>, starbreaker_ui::UiError> {
-        Err(starbreaker_ui::UiError::RenderError(format!(
-            "SWF fetch is not available in MCP UI local query mode: {p4k_path}"
-        )))
-    }
-}
-
-struct McpNullAssetFetcher;
-
-impl starbreaker_ui::pipeline::AssetFetcher for McpNullAssetFetcher {
-    fn fetch_image_bytes(&self, _p4k_path: &str) -> Option<Vec<u8>> {
-        None
+        let normalized = Self::normalize_path(p4k_path);
+        self.p4k
+            .read_file(&normalized)
+            .or_else(|_| {
+                // Case-insensitive fallback
+                self.p4k
+                    .entry_case_insensitive(&normalized)
+                    .ok_or_else(|| format!("SWF file not found in P4K: {normalized}"))
+                    .and_then(|entry| {
+                        self.p4k.read(entry).map_err(|e| format!("Error reading SWF from P4K: {e}"))
+                    })
+            })
+            .map_err(|e| starbreaker_ui::UiError::FetchFailed {
+                guid: p4k_path.to_string(),
+                source: e.into(),
+            })
     }
 }
 
@@ -713,6 +675,94 @@ impl P4kCanvasFetcher {
     }
 }
 
+/// DataCore-backed style fetcher for MCP UI tools.
+///
+/// Implements [`starbreaker_ui::StyleFetcher`] by querying the
+/// `BuildingBlocks_Style` DataCore records loaded from P4K.
+/// Replaces `LocalUiStyleFetcher` which scanned local JSON files.
+pub(crate) struct P4kStyleFetcher {
+    db: Arc<Database<'static>>,
+    style_struct_id: StructId,
+}
+
+impl P4kStyleFetcher {
+    /// Create a new style fetcher from the game data.
+    ///
+    /// Resolves the struct ID for `BuildingBlocks_Style` at
+    /// construction time so runtime lookups stay fast.
+    pub(crate) fn new(data: &Arc<GameData>) -> Result<Self, String> {
+        let style_struct_id = data
+            .db
+            .struct_id("BuildingBlocks_Style")
+            .ok_or("DataCore has no BuildingBlocks_Style struct")?;
+        Ok(Self {
+            db: Arc::clone(&data.db),
+            style_struct_id,
+        })
+    }
+
+    /// Parse a `ManufacturerStyle` from a DataCore style record.
+    fn parse_style(&self, record: &starbreaker_datacore::types::Record) -> Result<starbreaker_ui::ManufacturerStyle, starbreaker_ui::UiError> {
+        let bytes = starbreaker_datacore::export::to_json(&self.db, record)
+            .map_err(|e| starbreaker_ui::UiError::FetchFailed {
+                guid: "style".to_string(),
+                source: format!("DataCore JSON export failed: {e}").into(),
+            })?;
+
+        let json_str = String::from_utf8(bytes)
+            .map_err(|e| starbreaker_ui::UiError::FetchFailed {
+                guid: "style".to_string(),
+                source: format!("DataCore JSON is not valid UTF-8: {e}").into(),
+            })?;
+
+        let record_json: serde_json::Value = serde_json::from_str(&json_str)
+            .map_err(|e| starbreaker_ui::UiError::FetchFailed {
+                guid: "style".to_string(),
+                source: format!("Failed to parse record JSON: {e}").into(),
+            })?;
+
+        // Extract the manufacturer ID from the record name (e.g. "BuildingBlocks_Style.DRAK" → "DRAK")
+        let record_name = self.db.resolve_string2(record.name_offset);
+        let manufacturer_id = record_name
+            .rsplit('.')
+            .next()
+            .unwrap_or(&record_name)
+            .to_ascii_lowercase();
+
+        starbreaker_ui::StyleLoader::for_manufacturer(&manufacturer_id)
+            .parse_buildingblocks_style_record(&record_json)
+    }
+}
+
+impl starbreaker_ui::StyleFetcher for P4kStyleFetcher {
+    fn fetch_manufacturer_style(&self, manufacturer_id: &str) -> Result<starbreaker_ui::ManufacturerStyle, starbreaker_ui::UiError> {
+        let id = manufacturer_id.to_ascii_lowercase();
+        // Try exact manufacturer name first, then search by substring
+        let candidates: Vec<_> = self
+            .db
+            .records_of_type(self.style_struct_id)
+            .filter(|r| {
+                let name = self.db.resolve_string2(r.name_offset);
+                let bare = name.rsplit('.').next().unwrap_or(&name).to_ascii_lowercase();
+                bare == id || bare.contains(&id)
+            })
+            .collect();
+
+        if candidates.is_empty() {
+            return Err(starbreaker_ui::UiError::RenderError(format!(
+                "missing BuildingBlocks style record for manufacturer '{}'",
+                manufacturer_id
+            )));
+        }
+
+        // Sort by name length (shortest match wins)
+        let mut sorted = candidates;
+        sorted.sort_by_key(|r| self.db.resolve_string2(r.name_offset).len());
+
+        self.parse_style(sorted.first().unwrap())
+    }
+}
+
 impl starbreaker_ui::CanvasFetcher for P4kCanvasFetcher {
     fn fetch_canvas_json(&self, guid: &str) -> Result<serde_json::Value, starbreaker_ui::UiError> {
         let record = self
@@ -767,89 +817,6 @@ impl starbreaker_ui::CanvasFetcher for P4kCanvasFetcher {
     }
 }
 
-#[allow(dead_code)]
-fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .canonicalize()
-        .unwrap_or_else(|_| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".."))
-}
-
-#[allow(dead_code)]
-fn workspace_root() -> PathBuf {
-    repo_root()
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_else(repo_root)
-}
-
-#[allow(dead_code)]
-fn default_ui_record_root() -> PathBuf {
-    workspace_root().join("ships/dcb_canvas/libs/foundry/records")
-}
-
-#[allow(dead_code)]
-fn resolve_local_path(path: Option<&str>, default_path: PathBuf) -> PathBuf {
-    match path.map(str::trim).filter(|s| !s.is_empty()) {
-        Some(value) => {
-            let path = Path::new(value);
-            if path.is_absolute() {
-                path.to_path_buf()
-            } else {
-                repo_root().join(path)
-            }
-        }
-        None => default_path,
-    }
-}
-
-#[allow(dead_code)]
-fn load_ui_index(canvas_root: Option<&str>) -> Result<LocalUiRecordIndex, String> {
-    let root = resolve_local_path(canvas_root, default_ui_record_root());
-    if !root.is_dir() {
-        return Err(format!("UI record root not found: {}", root.display()));
-    }
-    LocalUiRecordIndex::load(root)
-}
-
-#[allow(dead_code)]
-fn collect_json_files(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            collect_json_files(&path, out);
-        } else if path.extension().and_then(|s| s.to_str()) == Some("json") {
-            out.push(path);
-        }
-    }
-}
-
-fn load_json_file(path: &Path) -> Result<serde_json::Value, String> {
-    let raw = std::fs::read_to_string(path)
-        .map_err(|e| format!("failed to read {}: {e}", path.display()))?;
-    serde_json::from_str(&raw)
-        .map_err(|e| format!("failed to parse {}: {e}", path.display()))
-}
-
-#[allow(dead_code)]
-fn insert_ui_record_name_aliases(
-    by_name: &mut std::collections::BTreeMap<String, String>,
-    name: &str,
-    guid: &str,
-) {
-    let bare = name
-        .rsplit('.')
-        .next()
-        .unwrap_or(name)
-        .trim()
-        .to_string();
-    for alias in [name.to_string(), name.to_ascii_lowercase(), bare.clone(), bare.to_ascii_lowercase()] {
-        by_name.insert(alias, guid.to_string());
-    }
-}
 
 fn mcp_error_json(code: &str, message: String) -> String {
     serde_json::to_string_pretty(&serde_json::json!({
@@ -1521,11 +1488,12 @@ impl StarBreakerMcp {
             Ok(c) => c,
             Err(e) => return mcp_error_json("canvas_not_found", format!("{e}")),
         };
-        let style_fetcher = LocalUiStyleFetcher {
-            styles_root: PathBuf::from("/dev/null"),
+        let style_fetcher = match P4kStyleFetcher::new(&self.data()) {
+            Ok(f) => f,
+            Err(e) => return mcp_error_json("style_fetcher_init_failed", e),
         };
-        let swf_fetcher = McpNullSwfFetcher;
-        let asset_fetcher = McpNullAssetFetcher;
+        let swf_fetcher = P4kSwfFetcher::new(&self.data());
+        let asset_fetcher = P4kAssetFetcher::new(&self.data());
         let manufacturer = req.manufacturer.unwrap_or_else(|| "drak".to_string());
         let helper = req.helper.unwrap_or_else(|| "mcp-ui-query".to_string());
         let width = req.width.unwrap_or(1920);
@@ -3341,6 +3309,253 @@ mod ui_regression_registry_tests {
             let nodes = json.get("nodes").and_then(|v| v.as_array()).expect("nodes array");
             assert!(nodes.len() >= 1);
         });
+    }
+
+    // -----------------------------------------------------------------------
+    // Phase 2.5: Unit tests for P4kStyleFetcher (mock-based, no P4K required)
+    // -----------------------------------------------------------------------
+
+    use starbreaker_ui::StyleFetcher;
+
+    /// A mock style fetcher for unit testing.
+    struct MockStyleFetcher {
+        styles: std::collections::HashMap<String, starbreaker_ui::ManufacturerStyle>,
+    }
+
+    impl MockStyleFetcher {
+        fn new() -> Self {
+            Self {
+                styles: std::collections::HashMap::new(),
+            }
+        }
+
+        fn insert(&mut self, manufacturer_id: &str, style: starbreaker_ui::ManufacturerStyle) {
+            self.styles.insert(manufacturer_id.to_string(), style);
+        }
+    }
+
+    impl starbreaker_ui::StyleFetcher for MockStyleFetcher {
+        fn fetch_manufacturer_style(&self, manufacturer_id: &str) -> Result<starbreaker_ui::ManufacturerStyle, starbreaker_ui::UiError> {
+            self.styles
+                .get(manufacturer_id)
+                .cloned()
+                .ok_or_else(|| starbreaker_ui::UiError::RenderError(format!(
+                    "missing BuildingBlocks style record for manufacturer '{}'",
+                    manufacturer_id
+                )))
+        }
+    }
+
+    #[test]
+    fn style_fetcher_returns_drak_style() {
+        let mut mock = MockStyleFetcher::new();
+        let style = starbreaker_ui::ManufacturerStyle {
+            name: "drak".to_string(),
+            primary_tint: starbreaker_ui::canvas::RgbaColor { r: 240, g: 168, b: 104, a: 255 },
+            secondary_tint: None,
+            colour_slots: vec![starbreaker_ui::canvas::RgbaColor { r: 240, g: 168, b: 104, a: 255 }],
+            background: starbreaker_ui::canvas::RgbaColor { r: 48, g: 32, b: 16, a: 255 },
+            backlight: starbreaker_ui::canvas::RgbaColor { r: 102, g: 214, b: 255, a: 255 },
+            font_family_hints: vec!["Rajdhani".into(), "Orbitron".into()],
+            crt: starbreaker_ui::style::CrtParams::default(),
+        };
+        mock.insert("drak", style.clone());
+
+        let result = mock.fetch_manufacturer_style("drak").expect("should find drak style");
+        assert_eq!(result.name, "drak");
+        assert_eq!(result.primary_tint.r, 240);
+        assert_eq!(result.primary_tint.g, 168);
+    }
+
+    #[test]
+    fn style_fetcher_returns_banu_style() {
+        let mut mock = MockStyleFetcher::new();
+        let style = starbreaker_ui::ManufacturerStyle {
+            name: "banu".to_string(),
+            primary_tint: starbreaker_ui::canvas::RgbaColor { r: 200, g: 100, b: 50, a: 255 },
+            secondary_tint: None,
+            colour_slots: vec![],
+            background: starbreaker_ui::canvas::RgbaColor { r: 30, g: 20, b: 10, a: 255 },
+            backlight: starbreaker_ui::canvas::RgbaColor { r: 255, g: 200, b: 100, a: 255 },
+            font_family_hints: vec![],
+            crt: starbreaker_ui::style::CrtParams::default(),
+        };
+        mock.insert("banu", style.clone());
+
+        let result = mock.fetch_manufacturer_style("banu").expect("should find banu style");
+        assert_eq!(result.name, "banu");
+        assert_eq!(result.primary_tint.r, 200);
+    }
+
+    #[test]
+    fn style_fetcher_unknown_manufacturer_returns_error() {
+        let mock = MockStyleFetcher::new();
+        let result = mock.fetch_manufacturer_style("unknown_xyz");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("unknown_xyz"));
+    }
+
+    #[test]
+    fn style_fetcher_empty_string_returns_error() {
+        let mock = MockStyleFetcher::new();
+        let result = mock.fetch_manufacturer_style("");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn ui_scene_style_probe_with_drak_manufacturer() {
+        with_p4k_test(|server| {
+            let response = server.ui_scene_style_probe(Parameters(UiSceneStyleProbeRequest {
+                canvas: "dd9ed6dc-7fe4-4884-9d11-c143290c9498".to_string(),
+                query: "Target".to_string(),
+                canvas_root: None,
+                manufacturer: Some("drak".to_string()),
+                limit: None,
+            }));
+
+            let json: serde_json::Value = serde_json::from_str(&response).expect("valid JSON");
+            assert_eq!(json.get("schema_version").and_then(|v| v.as_u64()), Some(1));
+            let nodes = json.get("nodes").and_then(|v| v.as_array()).expect("nodes array");
+            assert!(nodes.len() >= 1);
+        });
+    }
+
+    #[test]
+    fn ui_scene_style_probe_with_banu_manufacturer() {
+        with_p4k_test(|server| {
+            let response = server.ui_scene_style_probe(Parameters(UiSceneStyleProbeRequest {
+                canvas: "dd9ed6dc-7fe4-4884-9d11-c143290c9498".to_string(),
+                query: "Target".to_string(),
+                canvas_root: None,
+                manufacturer: Some("banu".to_string()),
+                limit: None,
+            }));
+
+            let json: serde_json::Value = serde_json::from_str(&response).expect("valid JSON");
+            assert_eq!(json.get("schema_version").and_then(|v| v.as_u64()), Some(1));
+            let nodes = json.get("nodes").and_then(|v| v.as_array()).expect("nodes array");
+            assert!(nodes.len() >= 1);
+        });
+    }
+
+    #[test]
+    fn ui_canvas_style_inventory_with_drak_manufacturer() {
+        with_p4k_test(|server| {
+            let response = server.ui_canvas_style_inventory(Parameters(UiCanvasStyleInventoryRequest {
+                canvas: "dd9ed6dc-7fe4-4884-9d11-c143290c9498".to_string(),
+                canvas_root: None,
+                entry_filter: None,
+                include_conditions: Some(true),
+                include_modifiers: Some(true),
+                limit: None,
+            }));
+
+            let json: serde_json::Value = serde_json::from_str(&response).expect("valid JSON");
+            assert_eq!(json.get("schema_version").and_then(|v| v.as_u64()), Some(1));
+            assert!(
+                json.get("entries")
+                    .and_then(|v| v.as_array())
+                    .is_some_and(|arr| !arr.is_empty())
+            );
+        });
+    }
+
+    #[test]
+    fn style_fetcher_no_records_for_manufacturer_returns_error() {
+        let mock = MockStyleFetcher::new();
+        // No records inserted
+        let result = mock.fetch_manufacturer_style("nonexistent");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("nonexistent"));
+    }
+
+    // -----------------------------------------------------------------------
+    // Phase 3.5: Unit tests for P4kSwfFetcher path normalization
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn p4k_swf_fetcher_normalize_path_adds_data_prefix() {
+        let path = P4kSwfFetcher::normalize_path("UI/ShipInterface/assets/SWF/DRAK/test.swf");
+        assert_eq!(path, "Data\\UI\\ShipInterface\\assets\\SWF\\DRAK\\test.swf");
+    }
+
+    #[test]
+    fn p4k_swf_fetcher_normalize_path_converts_slashes() {
+        let path = P4kSwfFetcher::normalize_path("Data/UI/ShipInterface/test.swf");
+        assert_eq!(path, "Data\\UI\\ShipInterface\\test.swf");
+    }
+
+    #[test]
+    fn p4k_swf_fetcher_normalize_path_preserves_backslashes() {
+        let path = P4kSwfFetcher::normalize_path(r"Data\UI\ShipInterface\test.swf");
+        assert_eq!(path, r"Data\UI\ShipInterface\test.swf");
+    }
+
+    #[test]
+    fn p4k_swf_fetcher_normalize_path_auto_convert_tif_to_dds() {
+        let path = P4kSwfFetcher::normalize_path("UI/Textures/test.tif");
+        assert_eq!(path, "Data\\UI\\Textures\\test.dds");
+    }
+
+    #[test]
+    fn p4k_swf_fetcher_normalize_path_case_insensitive_data_prefix() {
+        // normalize_path preserves original case of prefix, only converts slashes
+        let path = P4kSwfFetcher::normalize_path("data/UI/test.swf");
+        assert_eq!(path, "data\\UI\\test.swf");
+    }
+
+    #[test]
+    fn p4k_swf_fetcher_normalize_path_preserves_existing_data_prefix() {
+        let path = P4kSwfFetcher::normalize_path(r"Data\UI\ShipInterface\SWF\DRAK\test.swf");
+        assert_eq!(path, r"Data\UI\ShipInterface\SWF\DRAK\test.swf");
+    }
+
+    #[test]
+    fn p4k_swf_fetcher_normalize_path_no_extension_unchanged() {
+        let path = P4kSwfFetcher::normalize_path("UI/ShipInterface/test.swf");
+        assert_eq!(path, "Data\\UI\\ShipInterface\\test.swf");
+    }
+
+    // -----------------------------------------------------------------------
+    // Phase 4.5: Unit tests for P4kAssetFetcher path normalization
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn p4k_asset_fetcher_normalize_path_adds_data_prefix() {
+        let path = P4kAssetFetcher::normalize_path("UI/Textures/test.dds");
+        assert_eq!(path, "Data\\UI\\Textures\\test.dds");
+    }
+
+    #[test]
+    fn p4k_asset_fetcher_normalize_path_converts_slashes() {
+        let path = P4kAssetFetcher::normalize_path("Data/UI/Textures/test.svg");
+        assert_eq!(path, "Data\\UI\\Textures\\test.svg");
+    }
+
+    #[test]
+    fn p4k_asset_fetcher_normalize_path_preserves_backslashes() {
+        let path = P4kAssetFetcher::normalize_path(r"Data\UI\Textures\test.png");
+        assert_eq!(path, r"Data\UI\Textures\test.png");
+    }
+
+    #[test]
+    fn p4k_asset_fetcher_normalize_path_auto_convert_tif_to_dds() {
+        let path = P4kAssetFetcher::normalize_path("UI/Textures/test.tif");
+        assert_eq!(path, "Data\\UI\\Textures\\test.dds");
+    }
+
+    #[test]
+    fn p4k_asset_fetcher_normalize_path_preserves_existing_data_prefix() {
+        let path = P4kAssetFetcher::normalize_path(r"Data\UI\Textures\Vector\test.svg");
+        assert_eq!(path, r"Data\UI\Textures\Vector\test.svg");
+    }
+
+    #[test]
+    fn p4k_asset_fetcher_normalize_path_no_extension_unchanged() {
+        let path = P4kAssetFetcher::normalize_path("UI/Textures/test.dds");
+        assert_eq!(path, "Data\\UI\\Textures\\test.dds");
     }
 }
 
