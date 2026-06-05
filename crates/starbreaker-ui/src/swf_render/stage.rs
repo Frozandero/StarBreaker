@@ -96,16 +96,13 @@ pub fn draw_swf_visual_exports(
     let mut drew_any = false;
     let mut seen: std::collections::HashSet<swf::CharacterId> = std::collections::HashSet::new();
 
-    let stage_places = assets.stage_frame(0);
-    for place in &stage_places {
-        if !seen.insert(place.character_id) {
-            continue;
-        }
-        let ct_tint = color_transform_tint(tint, place.color_transform.as_ref());
-        if draw_stage_character(pixmap, assets, place, sw, sh, sx, sy, dest, ct_tint, alpha) {
-            drew_any = true;
-        }
-    }
+    // Stage frame 0 shapes are ActionScript-controlled at runtime. The game
+    // dynamically shows or hides them based on state (e.g. target acquired vs
+    // no target). In static renders we do not know the runtime state, so we
+    // skip stage shapes entirely and rely on the BB IR layer for structural
+    // content. We only draw explicitly exported visual symbols below.
+    // Do NOT add stage IDs to `seen` — some stage characters are also exported
+    // symbols that we DO want to draw at their canonical (identity) position.
 
     let char_ids: Vec<swf::CharacterId> = assets.visual_exports().collect();
     for char_id in char_ids {

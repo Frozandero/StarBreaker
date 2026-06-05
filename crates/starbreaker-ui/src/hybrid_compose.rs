@@ -1,42 +1,30 @@
-//! Hybrid UI IR renderer that composes IR-backed BB content with SWF overlays.
+//! Hybrid UI IR renderer that composes IR-backed BB content.
 //!
-//! Phase 2 uses this as the deterministic bridge for `swf` and `hybrid`
-//! renderer hints: the IR renderer owns the BB/content pass, then SWF exports
-//! are composited from the IR-selected SWF source.
+//! Provides `render_ui_ir_with_swf_overlay`, which renders the IR document.
+//! SWF visual-exports overlays are intentionally not applied; per-node symbol
+//! drawing handles named SWF symbols at their correct canvas positions.
 
 use image::RgbaImage;
-use tiny_skia::Color;
 
 use crate::bb_atlas::AtlasLibrary;
 use crate::compose::ComposeContext;
 use crate::error::UiError;
 use crate::ir_compose::render_ui_ir_document;
-use crate::swf_assets::SwfAssetLibrary;
-use crate::swf_render;
-use crate::ui_ir::{UiIrDocument, UiRendererHint};
+use crate::ui_ir::UiIrDocument;
 
-/// Render a UI IR document and apply a SWF visual-exports overlay when required.
+/// Render a UI IR document, compositing any required SWF content.
+///
+/// SWF visual-exports overlays are intentionally NOT applied here. Per-node
+/// symbol drawing (for WidgetCustomShape) already handles named SWF symbols
+/// at their correct positions. The full-stage visual-exports overlay only
+/// adds ActionScript-controlled state-driven content (e.g. targeting brackets,
+/// lock indicators) that must not appear in static "default state" renders.
 pub fn render_ui_ir_with_swf_overlay(
     document: &UiIrDocument,
     ctx: &ComposeContext<'_>,
     atlas: &AtlasLibrary<'_>,
-    swf_assets: Option<&SwfAssetLibrary>,
 ) -> Result<RgbaImage, UiError> {
-    let mut img = render_ui_ir_document(document, ctx, atlas)?;
-
-    if matches!(document.renderer_hint, UiRendererHint::Swf | UiRendererHint::Hybrid) {
-        let assets = swf_assets.ok_or_else(|| {
-            UiError::RenderError(
-                "IR requested SWF/hybrid rendering but no selected SWF source was provided"
-                    .to_string(),
-            )
-        })?;
-        let pt = &ctx.style.primary_tint;
-        let tint = Color::from_rgba8(pt.r, pt.g, pt.b, pt.a);
-        let _ = swf_render::draw_swf_visual_exports_rgba(&mut img, assets, tint, 1.0);
-    }
-
-    Ok(img)
+    render_ui_ir_document(document, ctx, atlas)
 }
 
 #[cfg(test)]
@@ -48,7 +36,7 @@ mod tests {
     use crate::defaults::DefaultValueRegistry;
     use crate::style::{CrtParams, ManufacturerStyle};
     use crate::swf_assets::SwfAssetLibrary;
-    use crate::ui_ir::{UI_IR_SCHEMA_VERSION, UiIrDocument};
+    use crate::ui_ir::{UI_IR_SCHEMA_VERSION, UiIrDocument, UiRendererHint};
     use crate::canvas::RgbaColor;
 
     struct EmptyFetcher;
@@ -73,7 +61,10 @@ mod tests {
     }
 
     #[test]
-    fn hybrid_renderer_requires_swf_source_for_hybrid_hint() {
+    fn hybrid_rendering_does_not_require_separate_swf_assets_parameter() {
+        // After the D5 fix, render_ui_ir_with_swf_overlay no longer calls
+        // draw_swf_visual_exports_rgba. Per-node symbol drawing uses ctx.assets.
+        // The function no longer requires a separate swf_assets argument.
         let document = UiIrDocument {
             schema_version: UI_IR_SCHEMA_VERSION,
             canvas_guid: "hybrid-guid".to_string(),
@@ -107,8 +98,7 @@ mod tests {
             assets: &assets,
         };
 
-        let err = render_ui_ir_with_swf_overlay(&document, &ctx, &atlas, None)
-            .expect_err("hybrid IR without SWF assets should fail loudly");
-        assert!(err.to_string().contains("no selected SWF source"));
+        render_ui_ir_with_swf_overlay(&document, &ctx, &atlas)
+            .expect("hybrid IR should render without requiring separate swf_assets");
     }
 }

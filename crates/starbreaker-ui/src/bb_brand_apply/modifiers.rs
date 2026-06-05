@@ -134,6 +134,9 @@ fn modifier_parts(modifier: &serde_json::Value) -> Option<(&str, &str, Option<&s
                 .and_then(|v| v.as_str())
                 .or_else(|| match type_str {
                     "BuildingBlocks_FieldModifierRecordRefTypeFontStyleRecord" => Some("FontStyleRecord"),
+                    "BuildingBlocks_FieldModifierEnumeratedTypeWidthBehavior" => Some("WidthBehavior"),
+                    "BuildingBlocks_FieldModifierEnumeratedTypeHeightBehavior" => Some("HeightBehavior"),
+                    "BuildingBlocks_FieldModifierEnumeratedTypeImageScalingBehavior" => Some("ImageScalingBehavior"),
                     _ => None,
                 })
                 .unwrap_or("");
@@ -194,8 +197,14 @@ fn apply_string_field(field_name: &str, value: &str, node: &mut BbNode, loc_fetc
 /// Apply a number-typed modifier field.
 fn apply_number_field(field_name: &str, value: f64, node: &mut BbNode) {
     match field_name {
-        "SizeX" => node.sizing.width = BbValue::Fixed(value as f32),
-        "SizeY" => node.sizing.height = BbValue::Fixed(value as f32),
+        "SizeX" => {
+            let v = value as f32;
+            node.sizing.width = bb_value_with_raw_behavior(v, node.raw.get("WidthBehavior"));
+        }
+        "SizeY" => {
+            let v = value as f32;
+            node.sizing.height = bb_value_with_raw_behavior(v, node.raw.get("HeightBehavior"));
+        }
         "AnchorX" => node.anchor.x = value as f32,
         "AnchorY" => node.anchor.y = value as f32,
         "PivotX" => node.pivot.x = value as f32,
@@ -354,10 +363,43 @@ fn apply_boolean_field(field_name: &str, value: bool, node: &mut BbNode) {
     }
 }
 
+/// Convert a raw `WidthBehavior` / `HeightBehavior` JSON value into the correct
+/// `BbValue` for the given numeric size `v`.  Falls back to `Fixed` when the
+/// behavior field is absent or unrecognised.
+fn bb_value_with_raw_behavior(v: f32, raw_behavior: Option<&serde_json::Value>) -> BbValue {
+    match raw_behavior.and_then(|b| b.as_str()) {
+        Some("Percent") => BbValue::Percent(v),
+        Some("Fixed") | None => BbValue::Fixed(v),
+        Some(other) => BbValue::Other { value: v, behavior: other.to_string() },
+    }
+}
+
 /// Apply an enumerated-typed modifier field.
 fn apply_enum_field(field_name: &str, value: &str, node: &mut BbNode) {
     match field_name {
-        "ImageScalingBehavior" | "WidthBehavior" | "HeightBehavior" => {
+        "WidthBehavior" => {
+            node.raw.as_object_mut().and_then(|obj| {
+                obj.insert(field_name.to_string(), serde_json::Value::String(value.to_string()))
+            });
+            // Also retro-apply to the typed sizing field so ordering of
+            // WidthBehavior vs SizeX modifiers doesn't matter.
+            let current = match node.sizing.width {
+                BbValue::Fixed(v) | BbValue::Percent(v) => v,
+                BbValue::Other { value, .. } => value,
+            };
+            node.sizing.width = bb_value_with_raw_behavior(current, Some(&serde_json::Value::String(value.to_string())));
+        }
+        "HeightBehavior" => {
+            node.raw.as_object_mut().and_then(|obj| {
+                obj.insert(field_name.to_string(), serde_json::Value::String(value.to_string()))
+            });
+            let current = match node.sizing.height {
+                BbValue::Fixed(v) | BbValue::Percent(v) => v,
+                BbValue::Other { value, .. } => value,
+            };
+            node.sizing.height = bb_value_with_raw_behavior(current, Some(&serde_json::Value::String(value.to_string())));
+        }
+        "ImageScalingBehavior" => {
             // Write to raw for renderer.
             node.raw.as_object_mut().and_then(|obj| {
                 obj.insert(

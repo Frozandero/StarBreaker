@@ -336,6 +336,7 @@ fn node_type_matches(type_str: &str, ty: &BbNodeType) -> bool {
         "Icon" => matches!(ty, BbNodeType::WidgetIcon),
         "Card" => matches!(ty, BbNodeType::WidgetCard),
         "DisplayWidget" => matches!(ty, BbNodeType::DisplayWidget),
+        "CustomShape" => matches!(ty, BbNodeType::WidgetCustomShape),
         _ => false,
     }
 }

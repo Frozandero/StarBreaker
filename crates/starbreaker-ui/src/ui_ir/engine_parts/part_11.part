@@ -462,5 +462,6 @@ mod tests {
     }
 
     include!("semantic_colour_mapping_tests.part");
+    include!("semantic_colour_mapping_tests_b.part");
 
 }

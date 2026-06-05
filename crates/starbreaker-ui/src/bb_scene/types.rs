@@ -303,6 +303,10 @@ pub struct BbText {
     pub alignment: String,
     /// Text colour [r, g, b, a] in 0–1 range, if parseable.
     pub colour: Option<[f32; 4]>,
+    /// Horizontal anchor-to-parent from `labelProperties.anchorToParentX`.
+    /// When ≈ 0.5 the game engine centres text horizontally regardless of
+    /// the alignment string.
+    pub anchor_to_parent_x: Option<f32>,
 }
 
 /// Icon properties for `BuildingBlocks_WidgetIcon`.

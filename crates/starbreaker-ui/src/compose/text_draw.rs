@@ -42,7 +42,23 @@ pub(crate) fn draw_text_node(
     let nominal_px = explicit_size.or(style_size).unwrap_or(22.0);
     let size_px = nominal_px * canvas_scale;
 
+    // When the node's text-style anchor is centred (anchorToParentX ≈ 0.5),
+    // the game engine centres the text block horizontally regardless of the
+    // authored alignment string.  Treat anchorToParentX == 0.5 as an
+    // implicit Centre override.  Read from the parsed BbText.anchor_to_parent_x.
+    let anchor_centred = node
+        .text
+        .as_ref()
+        .and_then(|t| t.anchor_to_parent_x);
+    log::debug!(
+        "text node '{}' anchor_to_parent_x={:?}",
+        node.name,
+        anchor_centred,
+    );
+    let anchor_centred = anchor_centred.is_some_and(|a| a > 0.49 && a < 0.51);
     let align = if resolved.is_name_derived {
+        TextAlign::Centre
+    } else if anchor_centred {
         TextAlign::Centre
     } else {
         node.raw

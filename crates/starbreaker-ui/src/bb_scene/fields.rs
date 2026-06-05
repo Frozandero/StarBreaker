@@ -212,7 +212,21 @@ pub(super) fn parse_text(node: &serde_json::Value) -> BbText {
         .or_else(|| node.get("textColour"))
         .and_then(|c| parse_colour(Some(c)));
 
-    BbText { string, font_record, font_size, alignment, colour }
+    // Horizontal anchor-to-parent from labelProperties.anchorToParentX.
+    let anchor_to_parent_x = node
+        .get("labelProperties")
+        .and_then(|lp| lp.get("anchorToParentX"))
+        .and_then(|v| v.as_f64())
+        .map(|v| v as f32);
+
+    BbText {
+        string,
+        font_record,
+        font_size,
+        alignment,
+        colour,
+        anchor_to_parent_x,
+    }
 }
 
 pub(super) fn parse_icon(node: &serde_json::Value) -> BbIcon {

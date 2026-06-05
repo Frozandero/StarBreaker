@@ -191,7 +191,27 @@ pub fn compile_ir_for_binding(inputs: &PipelineInputs<'_>) -> Result<UiIrDocumen
         .map(|candidate| candidate.path.clone());
 
     let mut effective_target_size = inputs.target_size;
-    if let Some(swf_source) = selected_swf_source.as_deref()
+    // An MFD binding wraps a content canvas (target/self/power, often authored
+    // 16:9) inside a distinct screen frame canvas that scales the content into
+    // the physical screen. For these the physical screen proportions are
+    // defined by the frame, not the content canvas or a SWF stage, so derive
+    // the render aspect from the frame canvas and let relatively-laid-out
+    // content reflow to the real screen shape. Other binding kinds (e.g.
+    // `physical` annunciators) render their content at its native aspect and
+    // must keep SWF/stage-driven sizing, so this is scoped to the `mfd` kind —
+    // the same structural classification used to pick the MFD target size.
+    let frame_aspect = if b.binding_kind == Some("mfd") {
+        frame_canvas_aspect(b.canvas_guid, b.content_canvas_guid, inputs.canvas_fetcher)
+    } else {
+        None
+    };
+    if let Some(aspect) = frame_aspect {
+        let width = inputs.target_size.0.max(1);
+        let height = ((width as f32) * aspect).round().max(1.0) as u32;
+        if width <= 8192 && height <= 8192 {
+            effective_target_size = (width, height);
+        }
+    } else if let Some(swf_source) = selected_swf_source.as_deref()
         && let Ok(swf_bytes) = inputs.swf_fetcher.fetch_swf_bytes(swf_source)
         && let Ok(swf_library) = crate::swf_assets::SwfAssetLibrary::new(swf_bytes)
     {
@@ -247,6 +267,38 @@ pub fn compile_ir_for_binding(inputs: &PipelineInputs<'_>) -> Result<UiIrDocumen
             .map(|(key, value): (&String, &u32)| (key.as_str(), *value)),
     ));
     Ok(ir)
+}
+
+/// Aspect (height / width) of the frame canvas referenced by `frame_guid`.
+///
+/// Used to size render targets to the physical screen proportions when a
+/// binding wraps a content canvas inside a distinct frame canvas (e.g. an MFD
+/// screen frame). Returns `None` when there is no distinct frame canvas (frame
+/// absent, or identical to the content canvas) or the frame has no usable
+/// authored size, so callers fall back to SWF/stage-driven sizing.
+fn frame_canvas_aspect(
+    frame_guid: Option<&str>,
+    content_guid: Option<&str>,
+    fetcher: &dyn CanvasFetcher,
+) -> Option<f32> {
+    let frame = frame_guid.filter(|g| !g.is_empty())?;
+    // Only a frame that differs from the rendered content canvas defines a
+    // separate screen shape; a single-canvas binding has no wrapping frame.
+    if content_guid.filter(|g| !g.is_empty()) == Some(frame) {
+        return None;
+    }
+    let json = fetcher.fetch_canvas_json(frame).ok()?;
+    let size = json
+        .get("_RecordValue_")
+        .and_then(|rv| rv.get("size"))
+        .or_else(|| json.get("size"))?;
+    let w = size.get("x").and_then(|v| v.as_f64())? as f32;
+    let h = size.get("y").and_then(|v| v.as_f64())? as f32;
+    if w.is_finite() && h.is_finite() && w > 0.0 && h > 0.0 {
+        Some(h / w)
+    } else {
+        None
+    }
 }
 
 fn project_canvas_style_entries(
@@ -321,7 +373,6 @@ pub fn render_for_binding_ir(inputs: &PipelineInputs<'_>) -> Result<Vec<u8>, UiE
             &ir,
             &ctx,
             &atlas,
-            ir.selected_swf_source.as_ref().map(|_| &assets),
         )?,
     };
     encode_png(&image)

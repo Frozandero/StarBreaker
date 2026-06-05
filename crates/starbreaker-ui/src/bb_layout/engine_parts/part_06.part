@@ -159,6 +159,19 @@ fn resolve_value(v: &BbValue, primary_dim: f32, cross_dim: f32, canvas_scale: f3
     }
 }
 
+/// Return true when the value represents a "tiny" fixed dimension that should
+/// be expanded to fill the parent for image/icon nodes.  Values below 2 canvas
+/// units are almost certainly authoring artefacts (e.g. placeholder 0.7×0.4
+/// rects) rather than intentional sizing, and should be treated as fill.
+fn is_tiny_fixed_value(v: &BbValue, primary_dim: f32, canvas_scale: f32) -> bool {
+    if let BbValue::Fixed(px) = v {
+        let canvas_units = px / canvas_scale;
+        canvas_units > 0.0 && canvas_units < 2.0 && canvas_units < primary_dim * 0.1
+    } else {
+        false
+    }
+}
+
 fn resolve_value_for_node(
     node: &crate::bb_scene::BbNode,
     v: &BbValue,
@@ -183,6 +196,14 @@ fn resolve_value_for_node(
         // hint (for example 64). Treat that hint as size instead of filling
         // the parent, which causes header/label overlap in medical canvases.
         *value * canvas_scale
+    } else if matches!(node.ty, BbNodeType::WidgetImage | BbNodeType::WidgetIcon)
+        && is_tiny_fixed_value(v, primary_dim, canvas_scale)
+    {
+        // Image/icon nodes with tiny fixed dimensions (e.g. 0.7×0.4 canvas
+        // units) are almost certainly authoring artefacts — placeholder rects
+        // that should expand to fill the parent container.  Treat them as
+        // fill rather than rendering a 1-pixel sliver.
+        primary_dim
     } else {
         resolve_value(v, primary_dim, cross_dim, canvas_scale, is_width)
     }

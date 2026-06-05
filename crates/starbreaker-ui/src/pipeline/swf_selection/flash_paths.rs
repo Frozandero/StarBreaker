@@ -147,20 +147,63 @@ fn flash_swf_candidates_from_stem(stem: &str, manufacturer_id: &str) -> Vec<Stri
     support_screen_candidates_for_brand(&brand, stem)
 }
 
+fn brand_ship_subdirs(brand: &str) -> &'static [&'static str] {
+    match brand {
+        "DRA" => &["DRAK_Dragonfly", "DRAK_Buccaneer", "DRAK_Caterpillar"],
+        "ORI" => &["ORIG_85X"],
+        "MIS" => &["MISC_Freelancer_Base"],
+        _ => &[],
+    }
+}
+
 fn support_screen_candidates_for_brand(brand: &str, stem: &str) -> Vec<String> {
     if brand.is_empty() || stem.is_empty() {
         return Vec::new();
     }
-    let bases = [
+    let direct_dirs = [
         format!(r"Data\UI\ShipInterface\assets\SWF\{brand}\SupportScreen16-9\"),
         format!(r"Data\UI\ShipInterface\assets\SWF\{brand}\SupportScreen1-1\"),
         format!(r"Data\UI\ShipInterface\assets\SWF\{brand}\SupportScreenBespoke2\"),
         format!(r"Data\UI\ShipInterface\assets\SWF\{brand}\Support_Bespoke_2\"),
     ];
-    bases
+    let mut candidates: Vec<String> = direct_dirs
         .into_iter()
         .flat_map(|base| [format!("{base}{stem}Status.swf"), format!("{base}{stem}.swf")])
-        .collect()
+        .collect();
+
+    // Some brands store SWFs under a ship-named subdirectory (e.g. DRA\DRAK_Dragonfly\Support_Bespoke_2\).
+    // Probe those paths in addition to the flat brand-level dirs above.
+    let ship_support_dirs = [
+        "Support_Bespoke_2",
+        "Support_Bespoke_1",
+        "SupportScreen16-9",
+        "SupportScreen1-1",
+        "SupportScreenBespoke2",
+    ];
+    for ship in brand_ship_subdirs(brand) {
+        for dir in &ship_support_dirs {
+            let base = format!(r"Data\UI\ShipInterface\assets\SWF\{brand}\{ship}\{dir}\");
+            candidates.push(format!("{base}{stem}Status.swf"));
+            candidates.push(format!("{base}{stem}.swf"));
+        }
+    }
+
+    candidates
+}
+
+/// Ship-subdir fallback order for shared annunciator SWFs.
+///
+/// The standard annunciator is a thin horizontal strip. For DRA the Buccaneer
+/// variant matches that shape (stage ~364×82), whereas the Dragonfly's bespoke
+/// annunciator is square (~143×143); a ship without its own annunciator SWF
+/// should fall back to the strip-shaped variant first. This differs from
+/// [`brand_ship_subdirs`] (used for support screens, where the Dragonfly hosts
+/// the canonical assets), which is why the annunciator keeps its own order.
+fn annunciator_ship_subdirs(brand: &str) -> &'static [&'static str] {
+    match brand {
+        "DRA" => &["DRAK_Buccaneer", "DRAK_Dragonfly", "DRAK_Caterpillar"],
+        other => brand_ship_subdirs(other),
+    }
 }
 
 fn annunciator_swf_candidates(canvas_name: &str, brand: &str) -> Vec<String> {
@@ -180,13 +223,7 @@ fn annunciator_swf_candidates(canvas_name: &str, brand: &str) -> Vec<String> {
     let mut candidates = Vec::new();
     candidates.push(format!(r"{swf_root}{brand}\AnnunciatorScreen\{halve_file}"));
 
-    let ship_fallbacks: &[&str] = match brand {
-        "DRA" => &["DRAK_Buccaneer", "DRAK_Dragonfly"],
-        "ORI" => &["ORIG_85X"],
-        "MIS" => &["MISC_Freelancer_Base"],
-        _ => &[],
-    };
-    for ship in ship_fallbacks {
+    for ship in annunciator_ship_subdirs(brand) {
         candidates.push(format!(
             r"{swf_root}{brand}\{ship}\AnnunciatorScreen\{halve_file}"
         ));

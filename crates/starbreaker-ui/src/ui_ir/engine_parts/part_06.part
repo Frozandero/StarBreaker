@@ -390,6 +390,13 @@ fn background_fill_alpha_from_raw(raw: &serde_json::Value, allow_fill_colour: bo
 }
 
 fn raw_background_enabled(raw: &serde_json::Value) -> bool {
+    // An explicit EnableBackground: false must win over any BackgroundColor
+    // that may also be present (style entries sometimes set both; the disable
+    // flag is the authoritative gate).
+    if raw.get("EnableBackground").and_then(|e| e.as_bool()) == Some(false) {
+        return false;
+    }
+
     if raw.get("BackgroundColor").is_some()
         || raw
             .get("BackgroundColorToken")

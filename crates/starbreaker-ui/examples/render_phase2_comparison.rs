@@ -31,7 +31,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let before = render_ui_ir_document(&document, &ctx, &atlas)?;
-    let after = render_ui_ir_with_swf_overlay(&document, &ctx, &atlas, Some(&swf_assets))?;
+    let after = render_ui_ir_with_swf_overlay(&document, &ctx, &atlas)?;
 
     before.save(output_dir.join("synthetic-hybrid-before.png"))?;
     after.save(output_dir.join("synthetic-hybrid-after.png"))?;
