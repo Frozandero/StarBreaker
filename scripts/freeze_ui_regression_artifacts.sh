@@ -13,8 +13,12 @@ Usage:
     [--output <path>]
 
 Description:
-  Freezes current UI regression artifacts by writing a metadata lock file with
-  per-target hashes, dimensions, channels, tier, and source path.
+  Generates each target's artifact baseline from its current source-generated
+  PNG (the freshly exported `ships/...` image), then freezes the UI regression
+  artifacts by writing a metadata lock file with per-target hashes, dimensions,
+  channels, tier, and source path. The artifact image generation is built in, so
+  a separate generate_ui_regression_artifacts.sh run is NOT required first; the
+  ship must already be exported so the source PNGs exist.
 
 Options:
   --approver      Required approver identity (name/alias)
@@ -149,13 +153,15 @@ while IFS=$'\t' read -r target_id source_png tier; do
 
   if [[ ! -f "${source_path}" ]]; then
     echo "error: source image missing for ${target_id}: ${source_path}" >&2
+    echo "       re-export the ship first (see docs/ui-regression-baseline-workflow.md)" >&2
     exit 1
   fi
 
-  if [[ ! -f "${artifact_path}" ]]; then
-    echo "error: artifact image missing for ${target_id}: ${artifact_path}" >&2
-    exit 1
-  fi
+  # Generate the artifact baseline from the current source render, so freezing is
+  # a single step (no separate generate_ui_regression_artifacts.sh run needed).
+  mkdir -p "${ARTIFACT_DIR}"
+  cp -f "${source_path}" "${artifact_path}"
+  echo "generated artifact from source: ${target_id} -> ${artifact_rel}"
 
   hash="$(sha256sum "${artifact_path}" | awk '{print $1}')"
   meta="$(magick identify -format '%w %h %[channels]' "${artifact_path}")"

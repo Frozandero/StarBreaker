@@ -26,11 +26,17 @@ All tracked baseline targets are treated as approved reference outputs. Deviatio
 
 - Add or update a manifest target: `./scripts/add_ui_regression_target.sh`
 - Generate local artifact images from manifest targets: `./scripts/generate_ui_regression_artifacts.sh`
+  (optional — `freeze_ui_regression_artifacts.sh` now generates the artifacts
+  itself from the source PNGs; use this script when you also want it to re-export
+  the ship first)
 - Validate manifest/artifact/source integrity: `./scripts/validate_ui_regression_artifacts.sh`
 - Freeze approved artifact hashes/metadata: `./scripts/freeze_ui_regression_artifacts.sh`
+  (generates each artifact image from its current source PNG, then writes the lock)
 - Unfreeze by approved reason (archives prior freeze): `./scripts/unfreeze_ui_regression_artifacts.sh`
 
-Example: add a new platinum target and then regenerate artifacts.
+Example: add a new platinum target and freeze. The freeze step copies the current
+source-generated PNGs into `test-artifacts/ui` itself, so an explicit generate
+step is not required (the ship must already be exported so the source PNGs exist).
 
 ```bash
 ./scripts/add_ui_regression_target.sh \
@@ -38,11 +44,10 @@ Example: add a new platinum target and then regenerate artifacts.
   --tier platinum \
   --source-generated-png ships/Data/UI/Generated/ship/drak/Clipper/clipper_new_panel.png
 
-./scripts/generate_ui_regression_artifacts.sh
-./scripts/validate_ui_regression_artifacts.sh --full
 ./scripts/freeze_ui_regression_artifacts.sh \
   --approver "<name>" \
   --reason "Approve baseline refresh"
+./scripts/validate_ui_regression_artifacts.sh --full
 ```
 
 Modes for validator:
@@ -55,10 +60,13 @@ Modes for validator:
 1. Confirm the drift is intentional and source-driven (not a hardcoded workaround).
 2. Confirm the failure is not an obvious regression signal such as visible placeholder text, unresolved placeholder keys, or missing major UI elements.
 3. If you need to register a new target, add it via `./scripts/add_ui_regression_target.sh`.
-4. Refresh local visual artifacts via `./scripts/generate_ui_regression_artifacts.sh`.
-  - Generated files are written to `StarBreaker/test-artifacts/ui`.
+4. Re-export the ship so the source-generated PNGs under `ships/Data/UI/Generated/...`
+   are current (or run `./scripts/generate_ui_regression_artifacts.sh`, which
+   re-exports and copies). The freeze step in (6) generates the
+   `StarBreaker/test-artifacts/ui` images from those source PNGs itself.
 5. Run `./scripts/validate_ui_regression_artifacts.sh` to verify manifest/source/artifact consistency.
-6. Freeze approved baselines via `./scripts/freeze_ui_regression_artifacts.sh --approver "<name>" --reason "<why>"`.
+6. Freeze approved baselines via `./scripts/freeze_ui_regression_artifacts.sh --approver "<name>" --reason "<why>"`
+   (this regenerates the artifact images from the current source PNGs, then writes the lock).
 7. Re-run focused validation before any baseline updates:
    - `cargo test -p starbreaker-ui ui_snapshot --lib`
   - `cargo test -p starbreaker-ui --test manifest_snapshot_regression -- --nocapture`
