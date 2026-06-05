@@ -53,6 +53,7 @@ pub fn extract_sprite_first_frame(
                             .color_transform
                             .or_else(|| previous.as_ref().and_then(|r| r.color_transform)),
                         name: po.name.map(|n| n.to_string_lossy(swf::UTF_8)),
+                        clip_depth: po.clip_depth.or_else(|| previous.as_ref().and_then(|r| r.clip_depth)),
                     },
                 );
             }
@@ -122,6 +123,7 @@ pub fn extract_stage_frame(swf_bytes: &[u8], frame_index: u32) -> Vec<PlaceRecor
                             .color_transform
                             .or_else(|| previous.as_ref().and_then(|r| r.color_transform)),
                         name: po.name.map(|n| n.to_string_lossy(swf::UTF_8)),
+                        clip_depth: po.clip_depth.or_else(|| previous.as_ref().and_then(|r| r.clip_depth)),
                     },
                 );
             }

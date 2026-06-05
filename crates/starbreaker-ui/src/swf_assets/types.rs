@@ -59,4 +59,7 @@ pub struct PlaceRecord {
     pub matrix: Matrix,
     pub color_transform: Option<ColorTransform>,
     pub name: Option<String>,
+    /// When set, this character acts as a clipping mask for depths
+    /// `depth + 1` through `clip_depth` (inclusive).
+    pub clip_depth: Option<Depth>,
 }

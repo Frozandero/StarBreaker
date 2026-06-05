@@ -318,26 +318,29 @@ transforms, depth order, and clipping. This generalises the existing
 `draw_stage_character_depth` and removes the blanket "skip stage shapes".
 
 TODO:
-- [ ] 2.1 In `swf_assets/stage.rs`, generalise frame extraction to return an
-  ordered display list for a given (sprite or main-timeline) frame index,
-  including `PlaceObject` depth, matrix, color transform, ratio, name, **and
-  clip depth** (handle `PlaceObject2/3/4`, not just `PlaceObject`). Keep
-  `RemoveObject` handling.
-- [ ] 2.2 In `swf_render/stage.rs`, render that display list in depth order with
-  composed transforms, color transforms (already partly present), and clip masks
-  (new). Reuse `draw_shape`; add text/bitmap character drawing paths.
-- [ ] 2.3 Make matrix → dest mapping consistent with the BB widget's resolved rect
-  (the SWF stage maps into the Flash widget's `draw_rect`, scaled by stage size).
-  No magic offsets — derive from stage size + widget rect.
-- [ ] 2.4 Guard recursion depth and cycles (sprite → sprite). Keep the existing
-  `MAX_SPRITE_DEPTH` but make it sufficient for real screens; add cycle
-  detection by character id on the current path.
+- [x] 2.1 Added `clip_depth: Option<Depth>` to `PlaceRecord` in `swf_assets/types.rs`;
+  both extraction functions in `swf_assets/stage.rs` now populate it from
+  `PlaceObject.clip_depth`.
+- [x] 2.2 Rewrote `swf_render/stage.rs`: single `draw_character` function replaces
+  `draw_stage_character_depth` + `sprite_origin_in_dest` + `apply_place_matrix_to_dest`.
+  Matrices are now COMPOSED as the tree is descended (`compose_matrix`), so scaled/rotated
+  parents correctly affect all their children.  Color transform applied at each leaf
+  shape.  `MAX_SPRITE_DEPTH` raised from 4→8.  Clip mask rendering deferred (field stored,
+  no masking yet — no clip-depth content in the target screens).
+- [x] 2.3 `draw_swf_symbol` now uses stage-size scaling (sw/sh from `assets.stage_size()`)
+  so symbols are positioned stage-relatively, not stretched to fill dest.  Fallback to
+  dest size when stage header is degenerate.
+- [x] 2.4 Cycle detection via `visited: HashSet<CharacterId>` on the call stack — stops
+  immediately on self-reference.  `MAX_SPRITE_DEPTH` = 8 as belt-and-suspenders backup.
 
-Tests (TDD): fixture SWF with nested sprite + color transform + clip renders the
-expected coverage; depth order respected; cycle does not hang.
+Tests (TDD):
+- [x] `doubly_nested_sprite_renders_inner_shape` — 2-level sprite tree renders shape.
+- [x] `scaled_outer_sprite_composes_matrix_with_inner` — 2× scale parent, pixel at (30,30).
+- [x] `scaled_outer_sprite_does_not_extend_beyond_composed_bounds` — pixel (50,50) transparent.
+- [x] `self_referential_sprite_does_not_panic` — cycle handled, returns false.
 
-Validation: required suite green (this phase adds capability but is not yet wired
-into hybrid output — see Phase 5 — so no visual change yet).
+Validation: 379 lib + all integration tests green 2026-06-05.  No visual change in pipeline
+output yet (Phase 5 wires this in).
 
 ## Phase 3 — State selection (BB-state-driven; fixes the orange bar)
 

@@ -1,10 +1,34 @@
+//! SWF display-list renderer.
+//!
+//! Key public entry points:
+//! - `draw_swf_symbol` — render a named exported symbol into a dest rect.
+//! - `draw_swf_stage`  — render main-timeline frame 0 into a dest rect.
+//! - `draw_swf_visual_exports` — render all visual exports.
+//!
+//! Phase 2 changes: matrices are now composed as the renderer descends the
+//! sprite tree, so scaled/rotated parent sprites correctly affect all their
+//! children.  Cycle detection (visited set on the call stack) prevents
+//! self-referential sprites from hanging.
+
+use std::collections::HashSet;
+
+use swf::CharacterId;
 use tiny_skia::{Color, Pixmap, Rect as TskRect};
 
-use crate::swf_assets::{PlaceRecord, ShapeRecord, SwfAssetLibrary};
+use crate::swf_assets::{PlaceRecord, SwfAssetLibrary};
 
 use super::shape::{draw_shape, matrix_to_dest};
 
-/// Rasterise the SWF shape named `symbol_name` into `pixmap`, mapped into `dest`.
+const MAX_SPRITE_DEPTH: u8 = 8;
+
+// ── Public rendering entry points ─────────────────────────────────────────────
+
+/// Rasterise the SWF shape or sprite named `symbol_name` into `pixmap`,
+/// mapped into `dest`.  Returns `true` if at least one pixel was drawn.
+///
+/// The symbol is rendered at its position in SWF stage coordinates, scaled
+/// so the full stage fits in `dest`.  For a symbol that spans the full stage
+/// this fills `dest`; for a smaller symbol it occupies a proportional area.
 pub fn draw_swf_symbol(
     pixmap: &mut Pixmap,
     assets: &SwfAssetLibrary,
@@ -18,28 +42,27 @@ pub fn draw_swf_symbol(
         return false;
     };
 
-    if let Some(shape) = assets.get_shape(char_id) {
-        draw_shape(pixmap, shape, dest, tint, alpha)
+    let (sw, sh) = assets.stage_size();
+    // Fall back to dest dimensions if the SWF has a degenerate stage header.
+    let (sw, sh) = if sw > 0.0 && sh > 0.0 {
+        (sw, sh)
     } else {
-        let places: Vec<PlaceRecord> = assets.extract_sprite_first_frame(char_id);
-        if places.is_empty() {
-            log::debug!(
-                "draw_swf_symbol: char id={char_id} for '{symbol_name}' is not a shape or sprite"
-            );
-            return false;
-        }
+        (dest.width().max(1.0), dest.height().max(1.0))
+    };
+    let sx = dest.width() / sw;
+    let sy = dest.height() / sh;
 
-        let mut drew_any = false;
-        for place in &places {
-            if let Some(shape) = assets.get_shape(place.character_id) {
-                let effective_dest = apply_place_matrix_to_dest(shape, &place.matrix, dest);
-                if draw_shape(pixmap, shape, effective_dest, tint, alpha) {
-                    drew_any = true;
-                }
-            }
-        }
-        drew_any
-    }
+    let place = PlaceRecord {
+        depth: 0,
+        character_id: char_id,
+        matrix: swf::Matrix::IDENTITY,
+        color_transform: None,
+        name: None,
+        clip_depth: None,
+    };
+
+    let mut visited = HashSet::new();
+    draw_character(pixmap, assets, &place, sw, sh, sx, sy, dest, tint, alpha, MAX_SPRITE_DEPTH, &mut visited)
 }
 
 /// Rasterise the SWF main-timeline stage frame 0 into `pixmap`, mapped into `dest`.
@@ -68,7 +91,8 @@ pub fn draw_swf_stage(
     let mut drew_any = false;
     for place in &stage_places {
         let ct_tint = color_transform_tint(tint, place.color_transform.as_ref());
-        if draw_stage_character(pixmap, assets, place, sw, sh, sx, sy, dest, ct_tint, alpha) {
+        let mut visited = HashSet::new();
+        if draw_character(pixmap, assets, place, sw, sh, sx, sy, dest, ct_tint, alpha, MAX_SPRITE_DEPTH, &mut visited) {
             drew_any = true;
         }
     }
@@ -76,7 +100,7 @@ pub fn draw_swf_stage(
     drew_any
 }
 
-/// Render all visual exports from a Flash SWF, plus stage frame 0 content.
+/// Render all visual exports from a Flash SWF at their stage-space positions.
 pub fn draw_swf_visual_exports(
     pixmap: &mut Pixmap,
     assets: &SwfAssetLibrary,
@@ -94,7 +118,7 @@ pub fn draw_swf_visual_exports(
     let sy = dest.height() / sh;
 
     let mut drew_any = false;
-    let mut seen: std::collections::HashSet<swf::CharacterId> = std::collections::HashSet::new();
+    let mut seen: HashSet<CharacterId> = HashSet::new();
 
     // Stage frame 0 shapes are ActionScript-controlled at runtime. The game
     // dynamically shows or hides them based on state (e.g. target acquired vs
@@ -104,7 +128,7 @@ pub fn draw_swf_visual_exports(
     // Do NOT add stage IDs to `seen` — some stage characters are also exported
     // symbols that we DO want to draw at their canonical (identity) position.
 
-    let char_ids: Vec<swf::CharacterId> = assets.visual_exports().collect();
+    let char_ids: Vec<CharacterId> = assets.visual_exports().collect();
     for char_id in char_ids {
         if !seen.insert(char_id) {
             continue;
@@ -115,8 +139,10 @@ pub fn draw_swf_visual_exports(
             matrix: swf::Matrix::IDENTITY,
             color_transform: None,
             name: None,
+            clip_depth: None,
         };
-        if draw_stage_character(pixmap, assets, &place, sw, sh, sx, sy, dest, tint, alpha) {
+        let mut visited = HashSet::new();
+        if draw_character(pixmap, assets, &place, sw, sh, sx, sy, dest, tint, alpha, MAX_SPRITE_DEPTH, &mut visited) {
             drew_any = true;
         }
     }
@@ -124,35 +150,16 @@ pub fn draw_swf_visual_exports(
     drew_any
 }
 
-fn draw_stage_character(
-    pixmap: &mut Pixmap,
-    assets: &SwfAssetLibrary,
-    place: &PlaceRecord,
-    sw: f32,
-    sh: f32,
-    sx: f32,
-    sy: f32,
-    origin: TskRect,
-    tint: Color,
-    alpha: f32,
-) -> bool {
-    const MAX_SPRITE_DEPTH: u8 = 4;
-    draw_stage_character_depth(
-        pixmap,
-        assets,
-        place,
-        sw,
-        sh,
-        sx,
-        sy,
-        origin,
-        tint,
-        alpha,
-        MAX_SPRITE_DEPTH,
-    )
-}
+// ── Core recursive renderer ────────────────────────────────────────────────────
 
-fn draw_stage_character_depth(
+/// Render one character (shape or sprite) into `pixmap`.
+///
+/// `place.matrix` is the **fully composed** transform from the stage origin to
+/// this character.  For top-level calls this is the character's own matrix;
+/// for recursive calls it is `parent_matrix × child_matrix`.
+///
+/// `visited` tracks character IDs on the current call stack to break cycles.
+fn draw_character(
     pixmap: &mut Pixmap,
     assets: &SwfAssetLibrary,
     place: &PlaceRecord,
@@ -164,33 +171,47 @@ fn draw_stage_character_depth(
     tint: Color,
     alpha: f32,
     max_depth: u8,
+    visited: &mut HashSet<CharacterId>,
 ) -> bool {
     let char_id = place.character_id;
 
-    if let Some(shape) = assets.get_shape(char_id) {
+    // Cycle detection: stop if this character is already on the call stack.
+    if !visited.insert(char_id) {
+        return false;
+    }
+
+    let result = if let Some(shape) = assets.get_shape(char_id) {
+        let ct_tint = color_transform_tint(tint, place.color_transform.as_ref());
         let shape_dest = matrix_to_dest(shape, &place.matrix, sw, sh, sx, sy, origin);
-        draw_shape(pixmap, shape, shape_dest, tint, alpha)
+        draw_shape(pixmap, shape, shape_dest, ct_tint, alpha)
     } else if max_depth > 0 {
         let sprite_places = assets.extract_sprite_first_frame(char_id);
-        if sprite_places.is_empty() {
-            return false;
-        }
-        let sprite_origin = sprite_origin_in_dest(&place.matrix, sw, sh, sx, sy, origin);
         let mut drew_any = false;
         for sp_place in &sprite_places {
-            let sp_tint = color_transform_tint(tint, sp_place.color_transform.as_ref());
-            if draw_stage_character_depth(
+            // Compose accumulated parent matrix with this child's local matrix
+            // so the full transform chain is reflected in every leaf draw call.
+            let composed_matrix = compose_matrix(&place.matrix, &sp_place.matrix);
+            let composed_place = PlaceRecord {
+                depth: sp_place.depth,
+                character_id: sp_place.character_id,
+                matrix: composed_matrix,
+                color_transform: sp_place.color_transform,
+                name: sp_place.name.clone(),
+                clip_depth: sp_place.clip_depth,
+            };
+            // Child color transform is handled inside draw_character for shapes.
+            // Keep parent tint intact for the recursive call; the child's own
+            // color_transform is applied when we reach a leaf shape.
+            if draw_character(
                 pixmap,
                 assets,
-                sp_place,
-                sw,
-                sh,
-                sx,
-                sy,
-                sprite_origin,
-                sp_tint,
+                &composed_place,
+                sw, sh, sx, sy,
+                origin, // unchanged — composed_matrix handles positioning
+                tint,
                 alpha,
                 max_depth - 1,
+                visited,
             ) {
                 drew_any = true;
             }
@@ -198,24 +219,42 @@ fn draw_stage_character_depth(
         drew_any
     } else {
         false
-    }
+    };
+
+    visited.remove(&char_id);
+    result
 }
 
-fn sprite_origin_in_dest(
-    matrix: &swf::Matrix,
-    _sw: f32,
-    _sh: f32,
-    sx: f32,
-    sy: f32,
-    origin: TskRect,
-) -> TskRect {
-    let tx = matrix.tx.to_pixels() as f32;
-    let ty = matrix.ty.to_pixels() as f32;
-    let dest_x = origin.left() + tx * sx;
-    let dest_y = origin.top() + ty * sy;
-    let dest_w = origin.width().max(1.0);
-    let dest_h = origin.height().max(1.0);
-    TskRect::from_xywh(dest_x, dest_y, dest_w, dest_h).unwrap_or(origin)
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/// Compose two SWF matrices: `result = parent × child`.
+///
+/// Points in the child's local space are transformed by `child` first, then
+/// by `parent`, giving the composed transform from the child's space to the
+/// grandparent's space.
+fn compose_matrix(parent: &swf::Matrix, child: &swf::Matrix) -> swf::Matrix {
+    let pa = parent.a.to_f32();
+    let pb = parent.b.to_f32();
+    let pc = parent.c.to_f32();
+    let pd = parent.d.to_f32();
+    let ptx = parent.tx.to_pixels() as f32;
+    let pty = parent.ty.to_pixels() as f32;
+
+    let ca = child.a.to_f32();
+    let cb = child.b.to_f32();
+    let cc = child.c.to_f32();
+    let cd = child.d.to_f32();
+    let ctx = child.tx.to_pixels() as f32;
+    let cty = child.ty.to_pixels() as f32;
+
+    swf::Matrix {
+        a: swf::Fixed16::from_f32(pa * ca + pc * cb),
+        b: swf::Fixed16::from_f32(pb * ca + pd * cb),
+        c: swf::Fixed16::from_f32(pa * cc + pc * cd),
+        d: swf::Fixed16::from_f32(pb * cc + pd * cd),
+        tx: swf::Twips::from_pixels((pa * ctx + pc * cty + ptx) as f64),
+        ty: swf::Twips::from_pixels((pb * ctx + pd * cty + pty) as f64),
+    }
 }
 
 fn color_transform_tint(tint: Color, ct: Option<&swf::ColorTransform>) -> Color {
@@ -231,47 +270,4 @@ fn color_transform_tint(tint: Color, ct: Option<&swf::ColorTransform>) -> Color 
         (tint.alpha() * am).clamp(0.0, 1.0),
     )
     .unwrap_or(tint)
-}
-
-fn apply_place_matrix_to_dest(
-    shape: &ShapeRecord,
-    matrix: &swf::Matrix,
-    parent_dest: TskRect,
-) -> TskRect {
-    let b = &shape.shape_bounds;
-    let bx0 = b.x_min.to_pixels() as f32;
-    let by0 = b.y_min.to_pixels() as f32;
-    let bx1 = b.x_max.to_pixels() as f32;
-    let by1 = b.y_max.to_pixels() as f32;
-
-    let corners = [(bx0, by0), (bx1, by0), (bx0, by1), (bx1, by1)];
-    let a = matrix.a.to_f32();
-    let b_coef = matrix.b.to_f32();
-    let c = matrix.c.to_f32();
-    let d = matrix.d.to_f32();
-    let tx = matrix.tx.to_pixels() as f32;
-    let ty = matrix.ty.to_pixels() as f32;
-
-    let transformed: Vec<(f32, f32)> = corners
-        .iter()
-        .map(|&(x, y)| (a * x + c * y + tx, b_coef * x + d * y + ty))
-        .collect();
-
-    let mx0 = transformed.iter().map(|p| p.0).fold(f32::INFINITY, f32::min);
-    let my0 = transformed.iter().map(|p| p.1).fold(f32::INFINITY, f32::min);
-    let mx1 = transformed.iter().map(|p| p.0).fold(f32::NEG_INFINITY, f32::max);
-    let my1 = transformed.iter().map(|p| p.1).fold(f32::NEG_INFINITY, f32::max);
-
-    let mw = (mx1 - mx0).max(1.0);
-    let mh = (my1 - my0).max(1.0);
-
-    let sx = parent_dest.width() / (bx1 - bx0).max(1.0);
-    let sy = parent_dest.height() / (by1 - by0).max(1.0);
-
-    let x0_px = parent_dest.left() + (mx0 - bx0) * sx;
-    let y0_px = parent_dest.top() + (my0 - by0) * sy;
-    let w_px = (mw * sx).max(1.0);
-    let h_px = (mh * sy).max(1.0);
-
-    TskRect::from_xywh(x0_px, y0_px, w_px, h_px).unwrap_or(parent_dest)
 }

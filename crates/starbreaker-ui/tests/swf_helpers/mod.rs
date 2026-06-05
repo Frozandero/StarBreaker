@@ -15,11 +15,22 @@
 //! exported symbol via the production `draw_swf_symbol` path and asserts that
 //! at least one non-transparent pixel was produced. Later phases reuse it to
 //! verify that new rendering paths produce actual pixels.
+//!
+//! Phase 2 fixtures:
+//!
+//! - `make_doubly_nested_sprite_swf` — outer sprite → inner sprite → shape (2-level
+//!   nesting exercises the recursive display-list renderer).
+//! - `make_scaled_nested_sprite_swf` — outer sprite places inner at 2× scale; inner
+//!   places a shape.  With correct matrix composition the shape spans 0–40 px; without
+//!   it only 0–20 px.
+//! - `make_self_referential_sprite_swf` — sprite that places itself; exercises cycle
+//!   detection (must not panic or hang).
 
 use swf::{
-    Color, Compression, ExportedAsset, FillStyle, Fixed8, FrameLabel, GlyphEntry, Header, Matrix,
-    PlaceObject, PlaceObjectAction, PointDelta, Rectangle, RemoveObject, Shape, ShapeFlag,
-    ShapeRecord, ShapeStyles, Sprite, StyleChangeData, SwfStr, Tag, Text, TextRecord, Twips,
+    Color, Compression, ExportedAsset, FillStyle, Fixed8, Fixed16,
+    FrameLabel, GlyphEntry, Header, Matrix, PlaceObject, PlaceObjectAction, PointDelta,
+    Rectangle, RemoveObject, Shape, ShapeFlag, ShapeRecord, ShapeStyles, Sprite, StyleChangeData,
+    SwfStr, Tag, Text, TextRecord, Twips,
 };
 use swf::Point;
 
@@ -307,4 +318,154 @@ pub fn assert_swf_symbol_has_non_empty_coverage(
         non_transparent > 0,
         "symbol '{symbol_name}' drew but produced 0 non-transparent pixels in a {dest_w}x{dest_h} pixmap"
     );
+}
+
+// ── Phase 2 fixtures: display-list rendering ─────────────────────────────────
+
+fn scale2x_matrix() -> Matrix {
+    Matrix {
+        a: Fixed16::from_f32(2.0),
+        b: Fixed16::from_f32(0.0),
+        c: Fixed16::from_f32(0.0),
+        d: Fixed16::from_f32(2.0),
+        tx: Twips::ZERO,
+        ty: Twips::ZERO,
+    }
+}
+
+/// Two-level nested sprite: outer(id=3) → inner(id=2) → shape(id=1, red 30×30).
+///
+/// `draw_swf_symbol("DoubleNested")` must recurse into inner sprite to draw
+/// the shape.  Stage: 100×100.
+pub fn make_doubly_nested_sprite_swf() -> Vec<u8> {
+    let header = Header {
+        compression: Compression::None,
+        version: 8,
+        stage_size: Rectangle {
+            x_min: Twips::ZERO,
+            x_max: Twips::from_pixels(100.0),
+            y_min: Twips::ZERO,
+            y_max: Twips::from_pixels(100.0),
+        },
+        frame_rate: Fixed8::from_f32(24.0),
+        num_frames: 1,
+    };
+
+    let red = Color { r: 220, g: 50, b: 50, a: 255 };
+    let tags: Vec<Tag<'_>> = vec![
+        Tag::DefineShape(filled_rect_shape(1, 30.0, 30.0, red)),
+        Tag::DefineSprite(Sprite {
+            id: 2,
+            num_frames: 1,
+            tags: vec![place_tag(1, 1), Tag::ShowFrame],
+        }),
+        Tag::DefineSprite(Sprite {
+            id: 3,
+            num_frames: 1,
+            tags: vec![place_tag(2, 1), Tag::ShowFrame],
+        }),
+        Tag::ExportAssets(vec![ExportedAsset { id: 3, name: SwfStr::from_utf8_str("DoubleNested") }]),
+        Tag::ShowFrame,
+    ];
+
+    let mut buf = Vec::new();
+    swf::write_swf(&header, &tags, &mut buf).expect("make_doubly_nested_sprite_swf: write_swf failed");
+    buf
+}
+
+/// Outer sprite places inner at 2× scale; inner places shape(id=1, red 20×20).
+///
+/// With correct matrix composition the shape covers (0,0)–(40,40) in the
+/// 100×100 stage.  Without composition it would cover only (0,0)–(20,20).
+/// Stage: 100×100.
+pub fn make_scaled_nested_sprite_swf() -> Vec<u8> {
+    let header = Header {
+        compression: Compression::None,
+        version: 8,
+        stage_size: Rectangle {
+            x_min: Twips::ZERO,
+            x_max: Twips::from_pixels(100.0),
+            y_min: Twips::ZERO,
+            y_max: Twips::from_pixels(100.0),
+        },
+        frame_rate: Fixed8::from_f32(24.0),
+        num_frames: 1,
+    };
+
+    let red = Color { r: 220, g: 50, b: 50, a: 255 };
+
+    // Inner sprite places shape at identity; outer places inner at 2×.
+    let tags: Vec<Tag<'_>> = vec![
+        Tag::DefineShape(filled_rect_shape(1, 20.0, 20.0, red)),
+        Tag::DefineSprite(Sprite {
+            id: 2,
+            num_frames: 1,
+            tags: vec![place_tag(1, 1), Tag::ShowFrame],
+        }),
+        Tag::DefineSprite(Sprite {
+            id: 3,
+            num_frames: 1,
+            tags: vec![
+                Tag::PlaceObject(Box::new(PlaceObject {
+                    version: 2,
+                    action: PlaceObjectAction::Place(2),
+                    depth: 1,
+                    matrix: Some(scale2x_matrix()),
+                    color_transform: None,
+                    ratio: None,
+                    name: None,
+                    clip_depth: None,
+                    class_name: None,
+                    filters: None,
+                    background_color: None,
+                    blend_mode: None,
+                    clip_actions: None,
+                    has_image: false,
+                    is_bitmap_cached: None,
+                    is_visible: None,
+                    amf_data: None,
+                })),
+                Tag::ShowFrame,
+            ],
+        }),
+        Tag::ExportAssets(vec![ExportedAsset { id: 3, name: SwfStr::from_utf8_str("ScaledOuter") }]),
+        Tag::ShowFrame,
+    ];
+
+    let mut buf = Vec::new();
+    swf::write_swf(&header, &tags, &mut buf).expect("make_scaled_nested_sprite_swf: write_swf failed");
+    buf
+}
+
+/// A sprite that places itself — used to verify cycle detection does not hang.
+///
+/// Stage: 100×100.  The sprite has no drawable shape, just a self-reference.
+pub fn make_self_referential_sprite_swf() -> Vec<u8> {
+    let header = Header {
+        compression: Compression::None,
+        version: 8,
+        stage_size: Rectangle {
+            x_min: Twips::ZERO,
+            x_max: Twips::from_pixels(100.0),
+            y_min: Twips::ZERO,
+            y_max: Twips::from_pixels(100.0),
+        },
+        frame_rate: Fixed8::from_f32(24.0),
+        num_frames: 1,
+    };
+
+    // Sprite id=1 places itself at depth 1.
+    let tags: Vec<Tag<'_>> = vec![
+        Tag::DefineSprite(Sprite {
+            id: 1,
+            num_frames: 1,
+            tags: vec![place_tag(1, 1), Tag::ShowFrame],
+        }),
+        Tag::ExportAssets(vec![ExportedAsset { id: 1, name: SwfStr::from_utf8_str("SelfRef") }]),
+        Tag::ShowFrame,
+    ];
+
+    let mut buf = Vec::new();
+    swf::write_swf(&header, &tags, &mut buf).expect("make_self_referential_sprite_swf: write_swf failed");
+    buf
 }
