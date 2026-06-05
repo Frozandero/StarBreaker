@@ -11,6 +11,8 @@
 //! cycle detection (visited set on the call stack) prevents infinite loops.
 //! Phase 3: `suppressed` set enables caller-driven state-sprite exclusion;
 //! `draw_swf_at_frame_label` selects a named frame for SWFs that use labels.
+//! Phase 4: `draw_character` handles `DefineEditText` via `edit_text::draw_edit_text`;
+//! `loc_fn` threads through to resolve `@key` loc strings.
 
 use std::collections::HashSet;
 
@@ -65,7 +67,7 @@ pub fn draw_swf_symbol(
 
     let empty = HashSet::new();
     let mut visited = HashSet::new();
-    draw_character(pixmap, assets, &place, sw, sh, sx, sy, dest, tint, alpha, MAX_SPRITE_DEPTH, &mut visited, &empty)
+    draw_character(pixmap, assets, &place, sw, sh, sx, sy, dest, tint, alpha, MAX_SPRITE_DEPTH, &mut visited, &empty, &|_| None)
 }
 
 /// Rasterise the SWF main-timeline stage frame 0 into `pixmap`, mapped into `dest`.
@@ -77,7 +79,7 @@ pub fn draw_swf_stage(
     alpha: f32,
 ) -> bool {
     let empty = HashSet::new();
-    draw_stage_at_frame(pixmap, assets, 0, dest, tint, alpha, &empty)
+    draw_stage_at_frame(pixmap, assets, 0, dest, tint, alpha, &empty, &|_| None)
 }
 
 /// Rasterise the SWF stage at the frame whose `FrameLabel` matches `label`.
@@ -96,7 +98,7 @@ pub fn draw_swf_at_frame_label(
         return false;
     };
     let empty = HashSet::new();
-    draw_stage_at_frame(pixmap, assets, frame_index, dest, tint, alpha, &empty)
+    draw_stage_at_frame(pixmap, assets, frame_index, dest, tint, alpha, &empty, &|_| None)
 }
 
 /// Render the named exported symbol, skipping any character whose ID is in
@@ -137,7 +139,7 @@ pub fn draw_swf_symbol_excluding(
     };
 
     let mut visited = HashSet::new();
-    draw_character(pixmap, assets, &place, sw, sh, sx, sy, dest, tint, alpha, MAX_SPRITE_DEPTH, &mut visited, suppressed)
+    draw_character(pixmap, assets, &place, sw, sh, sx, sy, dest, tint, alpha, MAX_SPRITE_DEPTH, &mut visited, suppressed, &|_| None)
 }
 
 /// Render all visual exports from a Flash SWF at their stage-space positions.
@@ -183,7 +185,7 @@ pub fn draw_swf_visual_exports(
         };
         let empty = HashSet::new();
         let mut visited = HashSet::new();
-        if draw_character(pixmap, assets, &place, sw, sh, sx, sy, dest, tint, alpha, MAX_SPRITE_DEPTH, &mut visited, &empty) {
+        if draw_character(pixmap, assets, &place, sw, sh, sx, sy, dest, tint, alpha, MAX_SPRITE_DEPTH, &mut visited, &empty, &|_| None) {
             drew_any = true;
         }
     }
@@ -202,6 +204,7 @@ fn draw_stage_at_frame(
     tint: Color,
     alpha: f32,
     suppressed: &HashSet<CharacterId>,
+    loc_fn: &dyn Fn(&str) -> Option<String>,
 ) -> bool {
     let (sw, sh) = assets.stage_size();
     if sw <= 0.0 || sh <= 0.0 {
@@ -222,7 +225,7 @@ fn draw_stage_at_frame(
     for place in &stage_places {
         let ct_tint = color_transform_tint(tint, place.color_transform.as_ref());
         let mut visited = HashSet::new();
-        if draw_character(pixmap, assets, place, sw, sh, sx, sy, dest, ct_tint, alpha, MAX_SPRITE_DEPTH, &mut visited, suppressed) {
+        if draw_character(pixmap, assets, place, sw, sh, sx, sy, dest, ct_tint, alpha, MAX_SPRITE_DEPTH, &mut visited, suppressed, loc_fn) {
             drew_any = true;
         }
     }
@@ -231,7 +234,7 @@ fn draw_stage_at_frame(
 
 // ── Core recursive renderer ────────────────────────────────────────────────────
 
-/// Render one character (shape or sprite) into `pixmap`.
+/// Render one character (shape, sprite, or EditText) into `pixmap`.
 ///
 /// `place.matrix` is the **fully composed** transform from the stage origin to
 /// this character.  For top-level calls this is the character's own matrix;
@@ -239,6 +242,7 @@ fn draw_stage_at_frame(
 ///
 /// `visited` tracks character IDs on the current call stack to break cycles.
 /// `suppressed` contains character IDs to skip entirely (state suppression).
+/// `loc_fn` resolves `@key` strings in EditText initial_text (Phase 4).
 fn draw_character(
     pixmap: &mut Pixmap,
     assets: &SwfAssetLibrary,
@@ -253,6 +257,7 @@ fn draw_character(
     max_depth: u8,
     visited: &mut HashSet<CharacterId>,
     suppressed: &HashSet<CharacterId>,
+    loc_fn: &dyn Fn(&str) -> Option<String>,
 ) -> bool {
     let char_id = place.character_id;
 
@@ -270,6 +275,11 @@ fn draw_character(
         let ct_tint = color_transform_tint(tint, place.color_transform.as_ref());
         let shape_dest = matrix_to_dest(shape, &place.matrix, sw, sh, sx, sy, origin);
         draw_shape(pixmap, shape, shape_dest, ct_tint, alpha)
+    } else if let Some(edit) = assets.get_edit_text(char_id) {
+        super::edit_text::draw_edit_text(
+            pixmap, assets, edit, &place.matrix,
+            sw, sh, sx, sy, origin, alpha, loc_fn,
+        )
     } else if max_depth > 0 {
         let sprite_places = assets.extract_sprite_first_frame(char_id);
         let mut drew_any = false;
@@ -299,6 +309,7 @@ fn draw_character(
                 max_depth - 1,
                 visited,
                 suppressed,
+                loc_fn,
             ) {
                 drew_any = true;
             }

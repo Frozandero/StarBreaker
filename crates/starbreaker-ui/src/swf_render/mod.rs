@@ -1,10 +1,18 @@
 //! SWF shape rasterizer API.
+//!
+//! Renders SWF display lists (shapes, sprites, EditText) via `tiny-skia`.
+//! All public entry points produce either a `Pixmap` (stage paths) or
+//! composite into an existing `RgbaImage` (the `_rgba` variants).
+//!
+//! Phase 4 addition: the `edit_text` submodule exposes the Flash HTML parser
+//! and `draw_edit_text` rendering path for `DefineEditText` characters.
 
 use image::RgbaImage;
 use tiny_skia::{Color, Pixmap, Rect as TskRect};
 
 use crate::swf_assets::SwfAssetLibrary;
 
+pub mod edit_text;
 mod rgba;
 mod shape;
 mod stage;
@@ -12,6 +20,7 @@ mod stage;
 mod tests;
 
 use rgba::composite_pixmap_over_rgba;
+pub use edit_text::{FlashTextRun, parse_swf_html};
 pub use stage::{
     draw_swf_at_frame_label, draw_swf_stage, draw_swf_symbol, draw_swf_symbol_excluding,
     draw_swf_visual_exports,

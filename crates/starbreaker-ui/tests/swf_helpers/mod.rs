@@ -36,7 +36,8 @@
 
 use swf::{
     Color, Compression, ExportedAsset, FillStyle, Fixed8, Fixed16,
-    FrameLabel, GlyphEntry, Header, Matrix, PlaceObject, PlaceObjectAction, PointDelta,
+    Font, FontFlag, FontLayout, FrameLabel, Glyph, GlyphEntry, Header, Language,
+    Matrix, PlaceObject, PlaceObjectAction, PointDelta,
     Rectangle, RemoveObject, Shape, ShapeFlag, ShapeRecord, ShapeStyles, Sprite, StyleChangeData,
     SwfStr, Tag, Text, TextRecord, Twips,
 };
@@ -582,5 +583,99 @@ pub fn make_mixed_state_swf() -> Vec<u8> {
 
     let mut buf = Vec::new();
     swf::write_swf(&header, &tags, &mut buf).expect("make_mixed_state_swf: write_swf failed");
+    buf
+}
+
+// ── Phase 4 fixture: EditText with inline font ────────────────────────────────
+
+/// SWF with an inline font (id=1, name="TestFont") and a plain-text
+/// `DefineEditText` (id=2, text="A", font_id=1) placed on the stage timeline.
+///
+/// Stage: 100×100.  EditText bounds: (10,30)–(90,70).
+/// Font: ascent=800, descent=200 (glyph units), one glyph 'A' as a
+/// 300×300-unit filled rectangle.
+///
+/// Used by Phase 4 test `draw_stage_with_edit_text_produces_pixels` to verify
+/// that EditText characters on the stage timeline are rasterised into pixels.
+pub fn make_edit_text_with_font_swf() -> Vec<u8> {
+    let header = Header {
+        compression: Compression::None,
+        version: 8,
+        stage_size: Rectangle {
+            x_min: Twips::ZERO,
+            x_max: Twips::from_pixels(100.0),
+            y_min: Twips::ZERO,
+            y_max: Twips::from_pixels(100.0),
+        },
+        frame_rate: Fixed8::from_f32(24.0),
+        num_frames: 1,
+    };
+
+    // 'A' glyph: rectangle 300×300 in glyph units, top-left at (0, -300).
+    // No fill styles needed — swf_glyph_to_path ignores them; colour comes
+    // from draw_swf_font's `colour` parameter.
+    let a_shape_records = vec![
+        ShapeRecord::StyleChange(Box::new(StyleChangeData {
+            move_to: Some(Point::new(Twips::new(0), Twips::new(-300))),
+            fill_style_0: None,
+            fill_style_1: None,
+            line_style: None,
+            new_styles: None,
+        })),
+        ShapeRecord::StraightEdge { delta: PointDelta::new(Twips::new(300), Twips::new(0)) },
+        ShapeRecord::StraightEdge { delta: PointDelta::new(Twips::new(0), Twips::new(300)) },
+        ShapeRecord::StraightEdge { delta: PointDelta::new(Twips::new(-300), Twips::new(0)) },
+        ShapeRecord::StraightEdge { delta: PointDelta::new(Twips::new(0), Twips::new(-300)) },
+    ];
+
+    let font = Font {
+        version: 2,
+        id: 1,
+        name: SwfStr::from_utf8_str("TestFont"),
+        language: Language::Latin,
+        layout: Some(FontLayout {
+            ascent: 800,
+            descent: 200,
+            leading: 0,
+            kerning: vec![],
+        }),
+        glyphs: vec![Glyph {
+            shape_records: a_shape_records,
+            code: 'A' as u16,
+            advance: 360,
+            // Bounds required by swf::write_swf: x=[0,300], y=[-300,0] in raw Twips.
+            bounds: Some(Rectangle {
+                x_min: Twips::new(0),
+                x_max: Twips::new(300),
+                y_min: Twips::new(-300),
+                y_max: Twips::new(0),
+            }),
+        }],
+        flags: FontFlag::empty(),
+    };
+
+    let tags: Vec<Tag<'_>> = vec![
+        Tag::DefineFont2(Box::new(font)),
+        Tag::DefineEditText(Box::new(
+            swf::EditText::new()
+                .with_id(2)
+                .with_font_id(1, Twips::from_pixels(20.0))
+                .with_bounds(Rectangle {
+                    x_min: Twips::from_pixels(10.0),
+                    x_max: Twips::from_pixels(90.0),
+                    y_min: Twips::from_pixels(30.0),
+                    y_max: Twips::from_pixels(70.0),
+                })
+                .with_initial_text(Some(SwfStr::from_utf8_str("A")))
+                .with_is_html(false),
+        )),
+        // Place the EditText on the stage timeline at depth 1.
+        place_tag(2, 1),
+        Tag::ShowFrame,
+    ];
+
+    let mut buf = Vec::new();
+    swf::write_swf(&header, &tags, &mut buf)
+        .expect("make_edit_text_with_font_swf: write_swf failed");
     buf
 }

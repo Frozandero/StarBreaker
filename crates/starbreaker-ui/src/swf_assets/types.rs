@@ -31,6 +31,23 @@ pub struct FontGlyphSet {
     pub glyphs: Vec<FontGlyph>,
 }
 
+/// An extracted `DefineEditText` character from a SWF.
+///
+/// Stores the bounds, font reference, HTML flag, and initial text verbatim
+/// (with `@…` loc keys unresolved).  Rendering is handled by the
+/// `swf_render::edit_text` module, which resolves loc keys and calls
+/// `TextRenderer::draw_swf_font`.
+#[derive(Clone, Debug)]
+pub struct EditTextRecord {
+    pub id: CharacterId,
+    pub bounds: swf::Rectangle<swf::Twips>,
+    pub is_html: bool,
+    /// Raw `initial_text` from the SWF (may start with `@` loc key).
+    pub initial_text: Option<String>,
+    pub font_id: Option<CharacterId>,
+    pub font_height_px: Option<f32>,
+}
+
 /// Source `DefineEditText` metrics for an imported/exported font symbol.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SwfEditTextMetrics {

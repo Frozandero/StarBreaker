@@ -7,11 +7,11 @@ use swf::CharacterId;
 use crate::error::UiError;
 
 use super::extract::{
-    extract_bitmaps, extract_exported_symbols, extract_font_edit_text_metrics, extract_fonts,
-    extract_main_timeline_labels, extract_shapes,
+    extract_bitmaps, extract_edit_text_records, extract_exported_symbols,
+    extract_font_edit_text_metrics, extract_fonts, extract_main_timeline_labels, extract_shapes,
 };
 use super::stage::{extract_sprite_first_frame, extract_stage_frame, extract_stage_size};
-use super::types::{FontGlyphSet, PlaceRecord, ShapeRecord, SwfEditTextMetrics};
+use super::types::{EditTextRecord, FontGlyphSet, PlaceRecord, ShapeRecord, SwfEditTextMetrics};
 
 /// Content-addressed cache of static visual atoms from one SWF.
 pub struct SwfAssetLibrary {
@@ -20,6 +20,7 @@ pub struct SwfAssetLibrary {
     shapes: HashMap<CharacterId, ShapeRecord>,
     fonts: HashMap<CharacterId, FontGlyphSet>,
     exports: HashMap<String, CharacterId>,
+    edit_texts: HashMap<CharacterId, EditTextRecord>,
     font_edit_text_metrics: HashMap<String, SwfEditTextMetrics>,
     frame_labels: HashMap<String, u32>,
     raw: Vec<u8>,
@@ -37,6 +38,7 @@ impl SwfAssetLibrary {
         let shapes = extract_shapes(&swf_bytes)?;
         let fonts = extract_fonts(&swf_bytes)?;
         let exports = extract_exported_symbols(&swf_bytes)?;
+        let edit_texts = extract_edit_text_records(&swf_bytes)?;
         let font_edit_text_metrics = extract_font_edit_text_metrics(&swf_bytes)?;
         let frame_labels = extract_main_timeline_labels(&swf_bytes)?;
 
@@ -46,6 +48,7 @@ impl SwfAssetLibrary {
             shapes,
             fonts,
             exports,
+            edit_texts,
             font_edit_text_metrics,
             frame_labels,
             raw: swf_bytes,
@@ -78,6 +81,10 @@ impl SwfAssetLibrary {
 
     pub fn get_shape(&self, id: CharacterId) -> Option<&ShapeRecord> {
         self.shapes.get(&id)
+    }
+
+    pub fn get_edit_text(&self, id: CharacterId) -> Option<&EditTextRecord> {
+        self.edit_texts.get(&id)
     }
 
     pub fn get_font(&self, id: CharacterId) -> Option<&FontGlyphSet> {

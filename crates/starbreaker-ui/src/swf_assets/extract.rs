@@ -6,7 +6,7 @@ use swf::{CharacterId, Tag};
 use crate::error::UiError;
 
 use super::decode::{decode_jpeg3, decode_lossless};
-use super::types::{FontGlyph, FontGlyphSet, ShapeRecord, SwfEditTextMetrics};
+use super::types::{EditTextRecord, FontGlyph, FontGlyphSet, ShapeRecord, SwfEditTextMetrics};
 
 macro_rules! with_parsed_swf {
     ($bytes:expr, |$tags:ident| $body:block) => {{
@@ -220,6 +220,34 @@ pub fn extract_exported_symbols(swf_bytes: &[u8]) -> Result<HashMap<String, Char
         }
         if skipped_action_tags > 0 {
             log::debug!("extract_exported_symbols: skipped {skipped_action_tags} action tag(s)");
+        }
+        Ok(out)
+    })
+}
+
+/// Extract all `DefineEditText` characters from a SWF.
+///
+/// Each record captures the character ID, layout bounds, HTML flag, initial
+/// text (with `@` loc keys unresolved), and font reference.
+pub fn extract_edit_text_records(
+    swf_bytes: &[u8],
+) -> Result<HashMap<CharacterId, EditTextRecord>, UiError> {
+    let mut out: HashMap<CharacterId, EditTextRecord> = HashMap::new();
+
+    with_parsed_swf!(swf_bytes, |tags| {
+        for tag in &tags {
+            let Tag::DefineEditText(edit) = tag else {
+                continue;
+            };
+            let rec = EditTextRecord {
+                id: edit.id(),
+                bounds: edit.bounds().clone(),
+                is_html: edit.is_html(),
+                initial_text: edit.initial_text().map(|s| s.to_string_lossy(swf::UTF_8)),
+                font_id: edit.font_id(),
+                font_height_px: edit.height().map(|h| h.to_pixels() as f32),
+            };
+            out.insert(rec.id, rec);
         }
         Ok(out)
     })
