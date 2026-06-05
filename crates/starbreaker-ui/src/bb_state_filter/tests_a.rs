@@ -296,3 +296,38 @@
         );
     }
 
+    /// Integer-state op-types resolve to their at-rest values: an event check
+    /// (`Equal value`) is false (overlay hidden), while content gated by
+    /// `Invert(Equal off_state)` stays visible (the rendered screen is on), and
+    /// a `BooleanFromIntegerSwitch` yields its `defaultValue`.
+    #[test]
+    fn integer_state_ops_resolve_to_at_rest_values() {
+        fn isactive_op(widget: u32, input: u32) -> serde_json::Value {
+            json!({
+                "_Type_": "BuildingBlocks_BindingsBooleanField",
+                "widget": format!("_PointsTo_:ptr:{widget}"),
+                "field": "IsActive",
+                "input": format!("_PointsTo_:ptr:{input}")
+            })
+        }
+        let rv = make_record_value(
+            vec![],
+            vec![
+                // widget 5: IsActive = FromInteger(Equal 5)  → event → hidden.
+                json!({"_Pointer_":"ptr:10","_Type_":"BuildingBlocks_BindingsBooleanFromInteger","type":"Equal","value":5,"inputL":"_PointsTo_:ptr:99"}),
+                isactive_op(5, 10),
+                // widget 6: IsActive = Invert(FromInteger(Equal 0)) → "show unless off" → visible.
+                json!({"_Pointer_":"ptr:21","_Type_":"BuildingBlocks_BindingsBooleanFromInteger","type":"Equal","value":0,"inputL":"_PointsTo_:ptr:99"}),
+                json!({"_Pointer_":"ptr:20","_Type_":"BuildingBlocks_BindingsBooleanInvert","input":"_PointsTo_:ptr:21"}),
+                isactive_op(6, 20),
+                // widget 7: IsActive = IntegerSwitch{defaultValue:false} → hidden.
+                json!({"_Pointer_":"ptr:30","_Type_":"BuildingBlocks_BindingsBooleanFromIntegerSwitch","defaultValue":false,"exceptions":[1],"input":"_PointsTo_:ptr:99"}),
+                isactive_op(7, 30),
+            ],
+        );
+        let result = instantiated_false_widgets(&rv);
+        assert!(result.contains(&5), "FromInteger(Equal 5) event must hide widget 5: {result:?}");
+        assert!(!result.contains(&6), "Invert(Equal 0) (on at rest) must keep widget 6 visible: {result:?}");
+        assert!(result.contains(&7), "IntegerSwitch default-false must hide widget 7: {result:?}");
+    }
+

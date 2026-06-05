@@ -172,36 +172,60 @@ pub(super) fn eval_bool_ref(
                         .map(|v| !v)
                 }
                 "BuildingBlocks_BindingsBooleanEvaluateOr" => {
+                    // Short-circuit on a determining resolved operand: any `true`
+                    // → `true`. Only undetermined (an unresolved operand and no
+                    // resolved `true`) yields `None`, instead of bailing the whole
+                    // Or to `None` the moment one operand is unresolved.
                     let inputs = obj.get("inputs").and_then(|v| v.as_array())?;
-                    let mut any = false;
+                    let mut any_unresolved = false;
                     for inp in inputs {
-                        let v = eval_bool_ref(
-                            inp,
-                            ptr_vals,
-                            ptr_to_op,
-                            static_vals,
-                            param_overrides,
-                            visiting,
-                        )?;
-                        any |= v;
+                        match eval_bool_ref(inp, ptr_vals, ptr_to_op, static_vals, param_overrides, visiting) {
+                            Some(true) => return Some(true),
+                            Some(false) => {}
+                            None => any_unresolved = true,
+                        }
                     }
-                    Some(any)
+                    if any_unresolved { None } else { Some(false) }
                 }
                 "BuildingBlocks_BindingsBooleanEvaluateAnd" => {
+                    // Short-circuit on a determining resolved operand: any `false`
+                    // → `false` (so an at-rest event flag of `false` hides the
+                    // overlay even when a sibling operand is unresolved).
                     let inputs = obj.get("inputs").and_then(|v| v.as_array())?;
-                    let mut all = true;
+                    let mut any_unresolved = false;
                     for inp in inputs {
-                        let v = eval_bool_ref(
-                            inp,
-                            ptr_vals,
-                            ptr_to_op,
-                            static_vals,
-                            param_overrides,
-                            visiting,
-                        )?;
-                        all &= v;
+                        match eval_bool_ref(inp, ptr_vals, ptr_to_op, static_vals, param_overrides, visiting) {
+                            Some(false) => return Some(false),
+                            Some(true) => {}
+                            None => any_unresolved = true,
+                        }
                     }
-                    Some(all)
+                    if any_unresolved { None } else { Some(true) }
+                }
+                "BuildingBlocks_BindingsBooleanFromIntegerSwitch" => {
+                    // No integer-state evaluator: at rest the integer input is its
+                    // cold default, which is not in `exceptions`, so the switch
+                    // yields its authored `defaultValue`. This resolves event
+                    // overlays (incoming-call, low-power, warnings) to their
+                    // at-rest hidden state instead of a conservative `None`.
+                    obj.get("defaultValue").and_then(|v| v.as_bool()).or(Some(false))
+                }
+                "BuildingBlocks_BindingsBooleanFromInteger" => {
+                    // A comparison `(integer <type> value)` with no integer-state
+                    // evaluator. The at-rest screen has **no specific integer
+                    // state-value active**, so an `Equal value` check is false and
+                    // `NotEqual value` is true — for ANY value. This is the engine
+                    // pattern: content is gated by `Invert(Equal off_state)` (→
+                    // shown at rest) and event overlays by `Equal event_state` (→
+                    // hidden at rest). Crucially this also keeps the frame's own
+                    // `Invert(powerstate == 0)` true (the screen we render is on).
+                    // Ordered comparisons depend on the actual integer, so they
+                    // stay unresolved (conservative).
+                    match obj.get("type").and_then(|v| v.as_str()).unwrap_or("") {
+                        "Equal" => Some(false),
+                        "NotEqual" => Some(true),
+                        _ => None,
+                    }
                 }
                 _ => None,
             }

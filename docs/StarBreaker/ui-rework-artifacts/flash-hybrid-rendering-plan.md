@@ -703,24 +703,18 @@ the reference, while keeping genuinely-hidden overlays (incoming-call, warnings,
 low-power) hidden. Generic for any MFD; no per-asset gating.
 
 Research TODO:
-- [ ] 9.1 Pin the structural signature of a "page-in start-state" root whose
-  settled alpha is 1.0: authored `alpha == 0.0` **and** a non-null `animation`
-  block (page-in: `animationTimeline: null`, `fillMode: None`/`additive`) **and**
-  it has `inheritsAlpha` descendants. Confirm against `m_eng_mfdcontent.base_Root`
-  and at least one other MFD/ship so the rule is not Clipper-specific. Cross-check
-  it does **not** match genuinely-hidden nodes (e.g. `background_Primitive`
-  authored `alpha:0.0, isActive:false` with no page-in animation, or
-  `is_transient_static_pulse_node` cases) so we don't reveal off-states.
-- [ ] 9.2 Determine the active-view selection rule from data: match the binding's
-  `content_canvas_guid` (e.g. `mc_s_target_master`) to the embedded
-  `canvas_*MFDView` whose resolved canvas reference equals it; that view (+ the
-  header/footer) is active, the sibling views and the incoming-call overlay are
-  deactivated. Confirm the WidgetCanvas → canvas GUID is available on the resolved
-  node (it is followed during `resolve_canvas_graph`).
-- [ ] 9.3 Investigate Root Cause B3: why standalone `mc_s_target_master` compile
-  yields `node 1 references missing child 3`. Likely a resolve/expand ordering or
-  a Flash-subtree-removal interaction; fix so the content view validates and
-  renders both standalone and embedded.
+- [x] 9.1 Signature pinned and implemented (`settle_pagein_start_roots`): scene
+  root + `alpha==0` + `isActive` + non-null `animation` block. Confirmed against
+  `m_eng_mfdcontent.base_Root`; excludes `background_Primitive` (isActive:false).
+  Done at parse time (not the IR layer) because the merge re-parents these roots.
+- [x] 9.2 Rule determined and implemented: match the binding's content canvas
+  `_RecordName_` to the embedded `canvas_*MFDView` whose `canvas:` reference equals
+  it. Applied at **resolution time** via `mfd_view::apply_bound_view_instantiation`
+  (peers = same-parent + same-layer slots), threaded through `resolve_canvas_graph`.
+- [x] 9.3 Moot — the frame path resolves the content correctly (Pass 1 follows
+  `mc_s_target_master`'s `defaultStyles` → `gen_mc_s_target` → `text_NoTarget`). The
+  `missing child 3` error only appeared when force-rendering the content canvas
+  *standalone*, which the frame approach never does, so no fix is needed there.
 
 Implementation TODO:
 - [x] 9.4 Page-in alpha settled at the SOURCE — but at **parse time**
@@ -747,39 +741,50 @@ Implementation TODO:
   `selected_swf_source: None` (the frame canvas doesn't itself reference the SWF;
   it's on the embedded content view's Flash node). The BB fallback text_NoTarget
   renders now (blenderpro-thin, not Furore); routing the SWF upgrades it to Furore.
-- [ ] 9.10 **Overlay suppression — the remaining blocker (precisely diagnosed).**
-  With 9.4+9.5 the content is correct, but `m_eng_mfdcontent`-level event overlays
-  still bleed through: the incoming-call signal bar (`canvas_incomingCallOverride`,
-  `Instantiated = BooleanEvaluateAnd(...)` → `eval=None`) and the footer
-  low-power/warning/LOADOUT states (`CallingState` etc., `IsActive =
-  BooleanFromIntegerSwitch{defaultValue:false, exceptions:[1]}` → `eval=None`).
-  KEY: the **content** gates already resolve correctly — `gen_mc_s_target` uses
-  `BooleanComponentParameter{defaultValue:false}` (with-target → hidden) and
-  `BooleanInvert` of it (no-target → shown), both handled by `eval.rs`. Only the
-  IntegerSwitch / EvaluateAnd op-types fall through to `eval=None` → the
-  conservative "keep visible" default shows the overlays.
-  **A blanket "unknown → hidden under idle" flip is WRONG** — verified it also
-  blanks the screen (an `m_eng_mfdcontent`-level ancestor of `text_NoTarget` is
-  also `eval=None`). Reverted.
-  THE FIX (clean, generic, but touches the SHARED evaluator → needs regression
-  verification across all screens): extend `bb_state_filter::eval` to resolve
-  - `BooleanFromIntegerSwitch` → its authored `defaultValue` when the integer
-    `input` is unresolved (→ CallingState/LowPower = false → hidden), honouring
-    `exceptions` when the integer *does* resolve;
-  - `BooleanEvaluateAnd`/`...Or` → fold over resolved inputs (skip/idle-default
-    unresolved operands) instead of returning `None`.
-  Then re-render and confirm NO TARGET + footer survive and the overlays vanish,
-  AND run the full visual-regression suite + spot-check medical/door/annunciator
-  for no drift before committing. The Furore SWF (9.6) is the only other gap.
+- [x] 9.10 **Boolean/integer-gated overlay suppression — DONE** (the major
+  blocker). Extended `bb_state_filter::eval::eval_bool_ref` to resolve the
+  integer-state op-types to their at-rest values instead of `eval=None`:
+  - `BooleanFromIntegerSwitch` → its authored `defaultValue` (at rest the integer
+    is not in `exceptions`) — hides CallingState etc.
+  - `BooleanFromInteger` → `Equal value` is **false** / `NotEqual value` is **true**
+    for ANY value (at rest no specific integer state-value is active). This both
+    hides event overlays (`countdown == 5` → false) AND keeps the frame's own
+    `Invert(powerstate == 0)` true (the screen we render is **on**). Ordered
+    comparisons stay unresolved (conservative).
+  - `BooleanEvaluateAnd`/`Or` → short-circuit on a determining resolved operand
+    (any `false`→And `false`; any `true`→Or `true`) instead of bailing to `None`
+    when one operand is unresolved.
+  NOTE: a blanket "unknown → hidden" flip was tried and **proven wrong** (it blanks
+  the screen — content is also gated by unresolved bindings) and reverted; and a
+  naive "integer = cold 0" assumption was **proven wrong** (it made
+  `powerstate == 0` true → dropped the whole frame). The "no specific integer
+  state-value at rest" rule above is the correct generic interpretation.
+  Verified live: the incoming-call signal bar, countdown, and call overlays are
+  **gone**; NO TARGET + dashes + chevrons + footer survive. **Regression-safe**:
+  the shared-evaluator change passed `manifest_visual_regression` 4/4 (medical/
+  door/annunciator unchanged) + 384 lib tests. TDD: `integer_state_ops_resolve_to_at_rest_values`.
+- [ ] 9.11 **Footer state-tag visibility — the last remaining overlay.** The
+  footer (`gen_mc_s_header`) has parallel name cards — `card_ScreenName` (normal,
+  gated by `Invert(ComponentParameter ParamInput2)` → shown), `card_ScreenName_LowPower`,
+  `card_ScreenName_Warning`. The latter two carry **no** boolean `IsActive`/`Instantiated`
+  gate; their visibility is driven by `BindingsStringField` **state tags**
+  (`PrimaryStateTag`/`SecondaryStateTag`/`TertiaryStateTag`) feeding BB **style
+  conditions** — a different mechanism from boolean bindings. So they render at
+  rest ("LOW POWER" / "LOADOUT" overlapping the screen name). FIX (next): evaluate
+  the state-tag → style-condition visibility for the at-rest state (the normal card
+  wins; the alert cards' state tags don't match) — i.e. extend the style-condition
+  evaluator to gate visibility, generic across screens. Everything else matches the
+  reference.
 
 Tests (TDD):
 - [x] 9.7 `compile_ir_settles_pagein_start_root_alpha` (in `pagein_alpha_tests.part`):
   page-in root settles descendants to 1.0; a no-animation alpha=0 root stays 0.0.
 - [x] 9.8 `mfd_view` tests: `apply_bound_view_instantiation` forces the bound slot
   on and its same-parent/same-layer peers off, leaving the footer (other layer).
-- [ ] 9.9 B3 (`missing child 3`) — not reproduced/needed: the frame path resolves
-  the content correctly now (the error only appeared when force-rendering the
-  content canvas standalone, which the frame approach doesn't do).
+- [x] 9.9 B3 (`missing child 3`) — N/A: the frame path resolves the content
+  correctly (the error only appeared when force-rendering the content canvas
+  standalone, which the frame approach doesn't do). New eval test:
+  `integer_state_ops_resolve_to_at_rest_values` covers the 9.10 op-types.
 
 Validation: target MFD shows NO TARGET + dashes + chevrons + footer (✅, matches
 reference core). REMAINING before "done": overlay suppression (9.10) and the
