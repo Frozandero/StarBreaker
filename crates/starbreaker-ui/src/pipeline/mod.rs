@@ -298,12 +298,12 @@ pub fn compile_ir_for_binding(inputs: &PipelineInputs<'_>) -> Result<UiIrDocumen
     ));
 
     if use_frame_canvas {
-        // base_Root alpha=0.0 is the BB animation start-state; patch to 1.0 for static renders.
-        for node in &mut ir.nodes {
-            if node.name == "base_Root" && node.alpha == 0.0 {
-                node.alpha = 1.0;
-            }
-        }
+        // NOTE: the page-in start-state alpha (frame `base_Root` authored alpha=0.0)
+        // is resolved structurally during IR compilation by `is_pagein_start_root`
+        // in `local_alpha_for_node`, so its settled 1.0 cascades correctly through
+        // `inheritsAlpha` descendants. A post-compile name-based patch here was
+        // ineffective (it ran after inheritance was already baked into children).
+
         // Inject the resolved screen name into text_ScreenName nodes.
         if let Some(raw_key) = b.screen_name_loc_key {
             let bare_key = raw_key.trim_start_matches('@');

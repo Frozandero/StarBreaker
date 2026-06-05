@@ -103,6 +103,8 @@ pub fn parse_bb_canvas(json: &serde_json::Value) -> Result<BbScene, String> {
         .map(|(id, _)| id)
         .collect();
 
+    settle_pagein_start_roots(&roots, &mut nodes);
+
     Ok(BbScene {
         canvas_size: (canvas_w, canvas_h),
         coordinate_method,
@@ -110,6 +112,34 @@ pub fn parse_bb_canvas(json: &serde_json::Value) -> Result<BbScene, String> {
         nodes,
         operations,
     })
+}
+
+/// Settle "page-in start-state" canvas roots to full opacity.
+///
+/// A scene root authored `alpha == 0.0` but `isActive`, carrying a page-in
+/// `animation` block, is the engine's screen page-in container (e.g.
+/// `m_eng_mfdcontent.base_Root`). The engine fades it from 0 to full opacity on
+/// page-in; a static "settled" capture must use the end state (1.0).
+///
+/// This is done at parse time — per canvas, while the node is still a scene root
+/// — because canvas merging later re-parents these roots under their referencing
+/// `WidgetCanvas`, after which they can no longer be distinguished from nested
+/// alpha=0 state-hidden widgets (e.g. `base_CastFrame`). Without it, `inheritsAlpha`
+/// cascades the 0.0 start value to every descendant and the whole frame (content
+/// view + footer) renders blank. The guard is deliberately tight: `is_active`
+/// excludes deactivated roots (`background_Primitive`), and the `animation` block
+/// excludes static-hidden roots with no page-in.
+fn settle_pagein_start_roots(roots: &[BbNodeId], nodes: &mut BTreeMap<BbNodeId, BbNode>) {
+    for &id in roots {
+        if let Some(node) = nodes.get_mut(&id) {
+            let is_pagein_start = node.is_active
+                && node.alpha <= 0.001
+                && node.raw.get("animation").is_some_and(|anim| !anim.is_null());
+            if is_pagein_start {
+                node.alpha = 1.0;
+            }
+        }
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -72,6 +72,11 @@ fn frame_canvas() -> serde_json::Value {
                     "name": "base_Root",
                     "alpha": 0.0,
                     "isActive": true,
+                    "inheritsAlpha": true,
+                    // Page-in start-state: authored alpha 0.0 with a page-in
+                    // animation block (matches m_eng_mfdcontent.base_Root). The
+                    // structural rule settles this to 1.0 for static renders.
+                    "animation": {"animationTimeline": null, "duration": 1.0, "additive": true},
                     "sizing": {
                         "width": {"behavior": "Fixed", "value": 1920.0},
                         "height": {"behavior": "Fixed", "value": 1080.0}

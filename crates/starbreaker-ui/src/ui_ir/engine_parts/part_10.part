@@ -309,6 +309,10 @@ fn local_alpha_for_node(
     if is_transient_static_pulse_node(node) {
         return 0.0;
     }
+    // NOTE: page-in start-state roots (authored alpha=0 that the engine fades in)
+    // are settled to 1.0 in `bb_scene::parse` (per-canvas, where the page-in node
+    // is still a scene root — canvas merging later re-parents it under the
+    // referencing `WidgetCanvas`, which is why settling cannot be done here).
     if let Some(sample_percent) = animation_sample_percent {
         sampled_animation_alpha(&node.raw, sample_percent)
             .unwrap_or_else(|| representative_animation_alpha(&node.raw).unwrap_or(node.alpha))
