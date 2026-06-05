@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "frozen_at": "2026-06-01T01:15:18Z",
+  "frozen_at": "2026-06-05T13:42:34Z",
   "approver": "tom",
-  "reason": "Restore fixed Clipper annunciator as gold standard",
+  "reason": "Refresh platinum medical baselines (ui_target_a/b) after confirmed tint fixes",
   "signature": null,
   "manifest_path": "crates/starbreaker-ui/tests/fixtures/ui_ir/ui_snapshot_manifest.json",
   "artifacts": [
@@ -11,7 +11,7 @@
       "tier": "platinum",
       "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_i_med_medicalbed_a.png",
       "artifact_path": "test-artifacts/ui/ui_target_a.png",
-      "sha256": "a0eff2445f6ae316f4a84f790abb3afe32e29ddaf944a938f1f9e93e7e4a60ed",
+      "sha256": "650c30926a2e0bc831450617f33e6dc3f8d05fc9eea94e6c06c0d2125e13d181",
       "width": 1920,
       "height": 1080,
       "channels": "srgba"
@@ -21,7 +21,7 @@
       "tier": "platinum",
       "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_i_med_medicalendofbed_a.png",
       "artifact_path": "test-artifacts/ui/ui_target_b.png",
-      "sha256": "013852c9e1f2afacd0112ba93940e40cb226dcfce4360f71c504b262a1be5215",
+      "sha256": "edd7acacf0df77b767ec16f4643be39cc5a9d66b36767be217a6d62ac3e73198",
       "width": 1920,
       "height": 1080,
       "channels": "srgba"
