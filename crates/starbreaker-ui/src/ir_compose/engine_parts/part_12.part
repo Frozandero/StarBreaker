@@ -1,21 +1,27 @@
 fn secondary_close_button_tint(node: &UiIrNode, ctx: &ComposeContext<'_>) -> [f32; 4] {
+    // The close-button frame is brand surface chrome: its accent resolves with
+    // surface semantics (e.g. `Accent1` → the darker surface slot, matching other
+    // surface accents like the fingerprint), and when no colour is authored it
+    // defaults to the brand surface accent rather than white. The "X" glyph is
+    // drawn white separately by `draw_secondary_close_button`.
     node.stroke_colour
         .or_else(|| {
             node.stroke_colour_token
                 .as_deref()
-                .and_then(|token| resolve_colour_token(ctx, token))
+                .and_then(|token| resolve_surface_colour_token(ctx, token))
         })
         .or(node.icon_tint_colour)
         .or_else(|| {
             node.icon_tint_colour_token
                 .as_deref()
-                .and_then(|token| resolve_colour_token(ctx, token))
+                .and_then(|token| resolve_surface_colour_token(ctx, token))
         })
         .or(node.background_fill_colour)
         .or_else(|| {
             node.background_fill_colour_token
                 .as_deref()
-                .and_then(|token| resolve_colour_token(ctx, token))
+                .and_then(|token| resolve_surface_colour_token(ctx, token))
         })
+        .or_else(|| resolve_surface_colour_token(ctx, "Accent1"))
         .unwrap_or([1.0, 1.0, 1.0, 1.0])
 }

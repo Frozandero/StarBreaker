@@ -145,9 +145,13 @@ fn resolve_colour_token(ctx: &ComposeContext<'_>, token: &str) -> Option<[f32; 4
     }
 
     match key.as_str() {
-        "accent1" | "base" | "bright" => {
+        "accent1" | "base" => {
             style_colour_slot_rgba(ctx, 0).or_else(|| Some(style_primary_rgba_local(ctx)))
         },
+        // `Bright` is the muted light-grey role (BB_ColorStyle index 6), distinct
+        // from `Base`/`Accent1`. It backs dim secondary text such as a caption's
+        // value (e.g. the `Heading6` "200/200" under a `Heading3` label).
+        "bright" => style_colour_slot_rgba(ctx, 6),
         "accent2" | "positive" | "success" => {
             let primary = style_primary_rgba_local(ctx);
             if let Some(slot_2) = style_colour_slot_rgba(ctx, 2)

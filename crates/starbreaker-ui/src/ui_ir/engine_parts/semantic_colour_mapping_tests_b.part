@@ -145,3 +145,36 @@
             node.background_fill_colour
         );
     }
+
+    #[test]
+    fn brand_text_style_fillcolor_is_authoritative_caption_role() {
+        // A standard text-style entry's `FillColor` modifier is the game's own
+        // colour role for that named style (e.g. `Heading6`/`H6` -> `Bright`).
+        // `brand_text_style_colour_token` exposes it so a caption value resolves
+        // to its real role instead of defaulting to white.
+        let entry = serde_json::json!({
+            "name": "H6",
+            "modifiers": [
+                { "field": "FontSize", "value": 21.0 },
+                {
+                    "field": "FillColor",
+                    "color": {
+                        "_Type_": "BuildingBlocks_ColorStyle",
+                        "color": "Bright",
+                        "alpha": 1.0
+                    }
+                }
+            ]
+        });
+        let style = standard_text_style_from_entry(&entry);
+        assert_eq!(style.fill_colour_token.as_deref(), Some("Bright"));
+
+        let mut styles = std::collections::HashMap::new();
+        styles.insert("H6".to_string(), style);
+        assert_eq!(
+            brand_text_style_colour_token(Some("Heading6"), &styles).as_deref(),
+            Some("Bright")
+        );
+        // A style with no entry (no authored FillColor) yields no token.
+        assert_eq!(brand_text_style_colour_token(Some("Heading3"), &styles), None);
+    }

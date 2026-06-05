@@ -151,6 +151,11 @@ struct StandardTextStyle {
     line_spacing: Option<f32>,
     font_size: Option<f32>,
     font_record: Option<String>,
+    /// Authoritative text colour role for this named style, taken from the
+    /// brand text-style entry's `FillColor` modifier (e.g. `Heading6`/`H6`
+    /// → `Bright`). This is the game's own per-style colour and is preferred
+    /// over derived/heuristic colour-token guesses.
+    fill_colour_token: Option<String>,
 }
 
 const STANDARD_TEXTFIELD_NOMINAL_FONT_SCALE: f32 = 0.72;
@@ -259,6 +264,8 @@ fn standard_text_style_from_entry(entry: &serde_json::Value) -> StandardTextStyl
                 style.line_spacing = value;
             } else if field_name.eq_ignore_ascii_case("FontSize") {
                 style.font_size = value;
+            } else if field_name.eq_ignore_ascii_case("FillColor") {
+                style.fill_colour_token = modifier.get("color").and_then(colour_style_token);
             } else if field_name.eq_ignore_ascii_case("FontStyleRecord") {
                 style.font_record = modifier
                     .get("value")
@@ -328,6 +335,21 @@ fn standard_text_style_keys(style: &str) -> Vec<String> {
     }
     keys.push(trimmed.to_string());
     keys
+}
+
+/// The authoritative colour role for a named text style (e.g. `Heading6` →
+/// `Bright`), taken from the active brand's text-style `FillColor` modifier.
+/// Returns `None` when the style is unknown or carries no `FillColor`.
+fn brand_text_style_colour_token(
+    style: Option<&str>,
+    standard_text_styles: &HashMap<String, StandardTextStyle>,
+) -> Option<String> {
+    let style = style.map(str::trim).filter(|name| !name.is_empty())?;
+    standard_text_style_keys(style).into_iter().find_map(|key| {
+        standard_text_styles
+            .get(&key)
+            .and_then(|standard| standard.fill_colour_token.clone())
+    })
 }
 
 fn line_spacing_from_raw(node: &crate::bb_scene::BbNode) -> Option<f32> {

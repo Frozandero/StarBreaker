@@ -20,6 +20,41 @@ The UI pipeline is split into four stages:
 - Structural snapshot extraction and comparison for representative families.
 - File: `ui_snapshot.rs` and example `phase5_certification_dashboard.rs`.
 
+## Reference: BB_ColorStyle colour roles
+
+BuildingBlocks colour tokens (`BuildingBlocks_ColorStyle.color`, e.g. `Base`,
+`Bright`, `Accent1`) are the `BB_ColorStyle` DataCore enum. The enum's integer
+value is the **direct index into a brand style's `colorStyles` palette array**.
+Authoritative order, dumped from `Data\Game2.dcb` via
+`starbreaker_datacore::database::Database::{enum_defs, enum_options, resolve_string2}`:
+
+| idx | role | idx | role | idx | role |
+|----:|------|----:|------|----:|------|
+| 0 | Base | 6 | Bright | 12 | ContactPositiveRep |
+| 1 | Positive | 7 | Selected | 13 | ContactNegativeRep |
+| 2 | Moderate | 8 | Disabled | 14 | ContactAgressive |
+| 3 | Critical | 9 | Background | 15 | ContactUnknown |
+| 4 | Accent1 | 10 | ContactNeutral | 16 | MissionObjectives |
+| 5 | Accent2 | 11 | ContactParty | | |
+
+Key facts:
+
+- **`Bright` (6) is a muted role, distinct from `Base` (0).** Example: a
+  `ComponentLabelCaptionPair` label uses `Heading3`→`Base` while its caption
+  value uses `Heading6`→`Bright` (e.g. medical "MEDGELS" light blue label over a
+  light-grey "200/200" value). Named text-style colours live in the standard
+  textfield widget's per-brand `brandStyles[].entries[].modifiers[FillColor]`
+  (`textfieldwidgetstandard.json`), parsed in `ui_ir` (`StandardTextStyle`,
+  `brand_text_style_colour_token`).
+- **The renderer's token→slot resolvers are role-aware, not pure enum-indexing.**
+  `bb_brand_apply/colors.rs::color_style_slot_index` and
+  `ir_compose` `resolve_colour_token` / `resolve_surface_colour_token` map the
+  same token to different slots depending on whether it paints a *foreground*
+  element (icon/text/glyph) or a *surface* (filled shape / chrome). The clearest
+  case is `Accent1`: foreground → light slot 0, surface → darker slot 4 (the
+  medical fingerprint). When extending the mapping, verify against an in-game
+  reference per role; do not assume `slot == enum index`.
+
 ## Standard Validation Commands
 
 - Full UI crate checks:

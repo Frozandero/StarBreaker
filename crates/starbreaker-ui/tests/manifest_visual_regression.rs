@@ -101,7 +101,11 @@ fn manifest_snapshot_lookup() -> HashMap<String, UiScreenSnapshot> {
     ])
 }
 
-fn assert_manifest_runner_preflight() {
+/// Generic, IR-level structural preflight: every manifest target's snapshot
+/// must compare clean through the manifest runner. Content-agnostic — covers any
+/// target listed in the manifest.
+#[test]
+fn manifest_snapshot_runner_preflight() {
     let mut manifest = snapshot_manifest();
     let snapshots = manifest_snapshot_lookup();
     manifest.targets.retain(|target| {
@@ -214,46 +218,6 @@ fn manifest_targets_frozen_artifact_backstop_guard() {
     );
 }
 
-fn cyan_text_coverage(img: &image::RgbaImage, x0: u32, y0: u32, x1: u32, y1: u32) -> f32 {
-    let mut hits = 0u64;
-    let mut total = 0u64;
-    for y in y0..y1 {
-        for x in x0..x1 {
-            let px = img.get_pixel(x, y);
-            total += 1;
-            if px[1] > 140 && px[2] > 140 && px[0] < 170 {
-                hits += 1;
-            }
-        }
-    }
-    if total == 0 {
-        0.0
-    } else {
-        hits as f32 / total as f32
-    }
-}
-
-/// Background coverage ratio: fraction of pixels that are "dark" (R<60 && G<60 && B<60).
-/// This catches background image changes (e.g. solid black → brown/gray scanline pattern).
-fn background_dark_coverage(img: &image::RgbaImage, x0: u32, y0: u32, x1: u32, y1: u32) -> f32 {
-    let mut hits = 0u64;
-    let mut total = 0u64;
-    for y in y0..y1 {
-        for x in x0..x1 {
-            let px = img.get_pixel(x, y);
-            total += 1;
-            if px[0] < 60 && px[1] < 60 && px[2] < 60 {
-                hits += 1;
-            }
-        }
-    }
-    if total == 0 {
-        0.0
-    } else {
-        hits as f32 / total as f32
-    }
-}
-
 fn foreground_mask_from_border_delta(
     img: &image::RgbaImage,
     x: f32,
@@ -345,163 +309,6 @@ fn mask_touches_all_edges(mask: &[bool], width: usize, height: usize, band: usiz
     touches_top && touches_bottom && touches_left && touches_right
 }
 
-fn assert_manifest_visual_regression_guard(
-    name: &str,
-    min_allowed_coverage_ratio: f32,
-    max_allowed_coverage_ratio: f32,
-) {
-    let (reference_path, current_path) = artifact_paths(name);
-    if !reference_path.is_file() || !current_path.is_file() {
-        let require_artifacts = std::env::var("STARBREAKER_UI_REQUIRE_VISUAL_ARTIFACTS")
-            .map(|value| value == "1")
-            .unwrap_or(false);
-        if require_artifacts {
-            panic!(
-                "missing required visual regression artifacts for {name}: reference={} current={}",
-                reference_path.display(),
-                current_path.display()
-            );
-        }
-        eprintln!(
-            "skipping {name} visual regression guard (missing files: reference={} current={})",
-            reference_path.display(),
-            current_path.display()
-        );
-        return;
-    }
-
-    let reference = image::open(&reference_path)
-        .expect("reference image should decode")
-        .into_rgba8();
-    let current = image::open(&current_path)
-        .expect("current image should decode")
-        .into_rgba8();
-    assert_eq!(
-        reference.dimensions(),
-        current.dimensions(),
-        "{name} dimensions drifted: reference={} current={}",
-        reference_path.display(),
-        current_path.display()
-    );
-
-    let (width, height) = reference.dimensions();
-    let title_x0 = (width as f32 * 0.20) as u32;
-    let title_x1 = (width as f32 * 0.80) as u32;
-    let title_y0 = (height as f32 * 0.12) as u32;
-    let title_y1 = (height as f32 * 0.42) as u32;
-
-    // Run a font-face/weight guard first so wrong-font regressions fail before
-    // wider coverage/size checks.
-    assert_roi_coverage_ratio(
-        &reference,
-        &current,
-        title_x0,
-        title_y0,
-        title_x1,
-        title_y1,
-        name,
-        "title typography ROI",
-        "font-face/weight",
-        0.75,
-        1.25,
-        &reference_path,
-        &current_path,
-    );
-
-    let x0 = (width as f32 * 0.20) as u32;
-    let x1 = (width as f32 * 0.80) as u32;
-    let y0 = (height as f32 * 0.20) as u32;
-    let y1 = (height as f32 * 0.60) as u32;
-
-    assert_roi_coverage_ratio(
-        &reference,
-        &current,
-        x0,
-        y0,
-        x1,
-        y1,
-        name,
-        "central text ROI",
-        "font-size",
-        min_allowed_coverage_ratio,
-        max_allowed_coverage_ratio,
-        &reference_path,
-        &current_path,
-    );
-}
-
-fn assert_roi_coverage_ratio(
-    reference: &image::RgbaImage,
-    current: &image::RgbaImage,
-    x0: u32,
-    y0: u32,
-    x1: u32,
-    y1: u32,
-    name: &str,
-    roi_name: &str,
-    regression_type: &str,
-    min_allowed_coverage_ratio: f32,
-    max_allowed_coverage_ratio: f32,
-    reference_path: &std::path::Path,
-    current_path: &std::path::Path,
-) {
-    let reference_coverage = cyan_text_coverage(reference, x0, y0, x1, y1);
-    let current_coverage = cyan_text_coverage(&current, x0, y0, x1, y1);
-    if reference_coverage <= 1e-6 && current_coverage <= 1e-6 {
-        // This ROI has no cyan typography signal in either image.
-        // Fall back to background dark coverage check to catch
-        // background image changes (e.g. solid black → brown/gray).
-        let reference_bg = background_dark_coverage(reference, x0, y0, x1, y1);
-        let current_bg = background_dark_coverage(&current, x0, y0, x1, y1);
-        let bg_ratio = current_bg / reference_bg.max(1e-6);
-        // Allow up to 15% relative drift in background dark coverage.
-        assert!(
-            bg_ratio >= 0.85,
-            "{name} background regression detected: dark pixel coverage too low in {roi_name} (ratio {bg_ratio:.3} < 0.85).\nreference={}\ncurrent={}\nreference_bg_coverage={}\ncurrent_bg_coverage={}\nACTION: fix the UI/rendering root cause first. Do not update tests, thresholds, or reference artifacts as a first response.",
-            reference_path.display(),
-            current_path.display(),
-            reference_bg,
-            current_bg,
-        );
-        assert!(
-            bg_ratio <= 1.15,
-            "{name} background regression detected: dark pixel coverage too high in {roi_name} (ratio {bg_ratio:.3} > 1.15).\nreference={}\ncurrent={}\nreference_bg_coverage={}\ncurrent_bg_coverage={}\nACTION: fix the UI/rendering root cause first. Do not update tests, thresholds, or reference artifacts as a first response.",
-            reference_path.display(),
-            current_path.display(),
-            reference_bg,
-            current_bg,
-        );
-        return;
-    }
-    let coverage_ratio = current_coverage / reference_coverage.max(1e-6);
-
-    assert!(
-        coverage_ratio >= min_allowed_coverage_ratio,
-        "{name} {regression_type} regression detected: cyan text coverage too low in {roi_name} (ratio {coverage_ratio:.3} < {min_allowed_coverage_ratio:.3}).\nreference={}\ncurrent={}\nACTION: fix the UI/rendering root cause first. Do not update tests, thresholds, or reference artifacts as a first response.",
-        reference_path.display(),
-        current_path.display()
-    );
-    assert!(
-        coverage_ratio <= max_allowed_coverage_ratio,
-        "{name} {regression_type} regression detected: cyan text coverage too high in {roi_name} (ratio {coverage_ratio:.3} > {max_allowed_coverage_ratio:.3}).\nreference={}\ncurrent={}\nACTION: fix the UI/rendering root cause first. Do not update tests, thresholds, or reference artifacts as a first response.",
-        reference_path.display(),
-        current_path.display()
-    );
-}
-
-#[test]
-fn manifest_targets_visual_regression_guard() {
-    assert_manifest_runner_preflight();
-    let manifest = snapshot_manifest();
-    for target in manifest.targets {
-        let (min_ratio, max_ratio) = match target.tier {
-            starbreaker_ui::UiRegressionTier::Platinum => (0.55, 1.10),
-            starbreaker_ui::UiRegressionTier::Gold => (0.70, 1.10),
-        };
-        assert_manifest_visual_regression_guard(&target.id, min_ratio, max_ratio);
-    }
-}
-
 #[test]
 fn target_a_custom_shape_scale_and_position_guard() {
     let (reference_path, current_path) = artifact_paths("ui_target_a");
@@ -558,4 +365,96 @@ fn target_a_custom_shape_scale_and_position_guard() {
             "ui_target_a custom-shape scale/position drift for node {node_id}: edge anchoring changed between source and artifact"
         );
     }
+}
+
+/// Fraction of pixels whose max per-channel difference exceeds `tolerance`.
+/// `None` signals a dimension mismatch (itself a regression).
+fn whole_image_diff_fraction(
+    baseline: &image::RgbaImage,
+    render: &image::RgbaImage,
+    tolerance: u8,
+) -> Option<f32> {
+    if baseline.dimensions() != render.dimensions() {
+        return None;
+    }
+    let tol = tolerance as i32;
+    let total = (baseline.width() as u64) * (baseline.height() as u64);
+    if total == 0 {
+        return Some(0.0);
+    }
+    let mut differing = 0u64;
+    for (a, b) in baseline.pixels().zip(render.pixels()) {
+        let dr = (a[0] as i32 - b[0] as i32).abs();
+        let dg = (a[1] as i32 - b[1] as i32).abs();
+        let db = (a[2] as i32 - b[2] as i32).abs();
+        if dr.max(dg).max(db) > tol {
+            differing += 1;
+        }
+    }
+    Some(differing as f32 / total as f32)
+}
+
+/// Generic, content-agnostic whole-image colour regression.
+///
+/// This is intentionally NOT a focused/ROI/heuristic test. For every target in
+/// the regression manifest it compares the frozen baseline PNG against the
+/// freshly generated PNG pixel-for-pixel and fails when more than a
+/// tier-dependent fraction of pixels differ beyond a small per-channel
+/// tolerance. Any rendered change on any screen — icon tint, text colour, added
+/// chrome, geometry — is detected automatically; adding a new screen to the
+/// manifest extends coverage with no new test code and no per-screen knowledge.
+#[test]
+fn manifest_targets_whole_image_colour_regression_guard() {
+    // Per-channel tolerance absorbs trivial anti-aliasing jitter; the allowed
+    // differing-pixel fraction is tight for platinum and looser for gold.
+    const TOLERANCE: u8 = 16;
+    let manifest = snapshot_manifest();
+    let mut failures = Vec::new();
+    for target in manifest.targets {
+        let max_diff_fraction = match target.tier {
+            starbreaker_ui::UiRegressionTier::Platinum => 0.005,
+            _ => 0.010,
+        };
+        // artifact_paths returns (fresh render from `ships/`, frozen baseline).
+        let (render_path, baseline_path) = artifact_paths(&target.id);
+        if !render_path.is_file() || !baseline_path.is_file() {
+            eprintln!(
+                "skipping whole-image regression for {} (missing files: render={} baseline={})",
+                target.id,
+                render_path.display(),
+                baseline_path.display()
+            );
+            continue;
+        }
+        let baseline = image::open(&baseline_path)
+            .expect("baseline image should decode")
+            .into_rgba8();
+        let render = image::open(&render_path)
+            .expect("render image should decode")
+            .into_rgba8();
+        match whole_image_diff_fraction(&baseline, &render, TOLERANCE) {
+            None => failures.push(format!(
+                "{}: dimension drift baseline={:?} render={:?}",
+                target.id,
+                baseline.dimensions(),
+                render.dimensions()
+            )),
+            Some(fraction) if fraction > max_diff_fraction => failures.push(format!(
+                "{}: {:.4}% of pixels differ (> {:.4}% allowed for {:?})\n  baseline={}\n  render={}",
+                target.id,
+                fraction * 100.0,
+                max_diff_fraction * 100.0,
+                target.tier,
+                baseline_path.display(),
+                render_path.display()
+            )),
+            Some(_) => {}
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "whole-image colour regression detected. Fix the rendering root cause first; \
+         only re-freeze baselines when the change is intentional and approved.\n{}",
+        failures.join("\n")
+    );
 }

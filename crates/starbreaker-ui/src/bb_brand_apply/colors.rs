@@ -99,6 +99,38 @@ fn parse_named_color(
     Some(color)
 }
 
+/// Map a `BuildingBlocks_ColorStyle` role name to an index into a brand style's
+/// `colorStyles` palette array.
+///
+/// ## Authoritative source
+/// The role name is the `BB_ColorStyle` DataCore enum; its integer value is the
+/// direct index into `colorStyles`. Dumped from `Game2.dcb` (via
+/// `Database::enum_options`), the canonical order is:
+///
+/// ```text
+///  0 Base          1 Positive            2 Moderate         3 Critical
+///  4 Accent1       5 Accent2             6 Bright           7 Selected
+///  8 Disabled      9 Background         10 ContactNeutral  11 ContactParty
+/// 12 ContactPositiveRep 13 ContactNegativeRep 14 ContactAgressive
+/// 15 ContactUnknown 16 MissionObjectives
+/// ```
+///
+/// To re-dump: a throwaway example over `Data\Game2.dcb` (needs `SC_DATA_P4K`)
+/// iterating `Database::{enum_defs, enum_options, resolve_string2}` and printing
+/// the enum whose options contain `Base`/`Bright`/`Accent1`.
+///
+/// ## Why this mapping is NOT pure enum-indexing
+/// The engine does not render every role at its raw enum index in every context:
+/// the same token resolves to different palette slots depending on whether it
+/// paints a *foreground* element (icon/text/glyph) or a *surface* (filled shape /
+/// chrome) — see [`ColorStyleRole`] and [`color_style_role_for_field`]. The
+/// clearest case is `Accent1`: foreground → the light slot 0, surface → the
+/// darker slot 4 (e.g. the medical fingerprint). This resolver is therefore a
+/// role-aware approximation reverse-engineered against in-game references, not a
+/// 1:1 copy of the enum. When extending it, verify against a reference capture
+/// per role rather than assuming `slot == enum index`. `Bright` is index 6 (a
+/// muted light-grey role), distinct from `Base` (index 0); the compose-time text
+/// path (`ir_compose` `resolve_colour_token`) resolves `Bright` to slot 6.
 fn color_style_slot_index(name: &str, role: ColorStyleRole) -> Option<usize> {
     match name {
         "Bright" | "Base" => Some(0),

@@ -230,6 +230,13 @@ fn build_ui_ir_nodes(
                 .map(|value| value as f32)
                 .unwrap_or(18.0);
 
+            let caption_style = node
+                .raw
+                .get("captionProperties")
+                .and_then(|cp| cp.get("style"))
+                .and_then(|v| v.as_str())
+                .map(str::to_owned);
+
             Some(UiIrTextStyle {
                 font_record: None,
                 resolved_font_record: None,
@@ -259,17 +266,22 @@ fn build_ui_ir_nodes(
                     .and_then(|v| v.as_f64())
                     .map(|value| value as f32),
                 colour: fill_colour_from_raw_for_text(&node.raw),
-                colour_token: text_colour_token_from_raw(&node.raw).or_else(|| {
-                    semantic_text_colour_token_from_style_tags(&resolved_style_tags, None)
-                }).or_else(|| {
-                    default_style_text_colour_token_from_raw(&node.raw, &node.ty, true)
-                }),
-                label_style: node
-                    .raw
-                    .get("captionProperties")
-                    .and_then(|cp| cp.get("style"))
-                    .and_then(|v| v.as_str())
-                    .map(str::to_owned),
+                // The caption carries its own text style (e.g. `Heading6`); its
+                // authoritative colour is that style's brand `FillColor` role
+                // (e.g. `Bright`). Prefer it over derived/heuristic guesses so
+                // captions match the game instead of defaulting to white.
+                colour_token: text_colour_token_from_raw(&node.raw)
+                    .or_else(|| {
+                        brand_text_style_colour_token(caption_style.as_deref(), &standard_text_styles)
+                    })
+                    .or_else(|| {
+                        semantic_text_colour_token_from_style_tags(
+                            &resolved_style_tags,
+                            caption_style.as_deref(),
+                        )
+                    })
+                    .or_else(|| default_style_text_colour_token_from_raw(&node.raw, &node.ty, true)),
+                label_style: caption_style,
             })
         } else {
             None

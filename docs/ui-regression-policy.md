@@ -19,6 +19,24 @@ The following checks are required in CI for UI changes:
 - `bash .github/scripts/check_ui_hardcoding.sh`
 - `cargo run -p starbreaker-ui --example phase5_certification_dashboard`
 
+## Pixel Regression: generic, not targeted
+
+Rendered-output regressions are caught by a **content-agnostic, per-target
+whole-image** comparison: `manifest_targets_whole_image_colour_regression_guard`
+(`tests/manifest_visual_regression.rs`) iterates every target in the regression
+manifest and fails when more than a tier-dependent fraction of pixels differ from
+the frozen baseline beyond a small per-channel tolerance (platinum 0.5%, gold
+1%). Adding a screen to the manifest extends coverage automatically.
+
+Do **not** add focused/ROI/heuristic per-screen pixel checks (e.g. cyan-coverage
+in a hand-picked title rectangle). Such tests only see the regions and colours
+they were written for and miss everything else (a white→grey caption, a
+white→blue button frame). The whole-image guard catches any rendered change on
+any screen with no per-screen knowledge. Compose-only effects (e.g. a synthetic
+close-button tint) and runtime-bound text (e.g. caption values) are invisible to
+the IR-level guards and rely on this pixel guard. IR-level/tint semantics are
+still gated separately by `manifest_live_ir_guard`.
+
 ## Contributor Guardrails
 
 - New fallback logic requires:
