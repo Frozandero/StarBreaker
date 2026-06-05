@@ -420,46 +420,35 @@ scope for the static reference state — skip them, or optionally fill from a BB
 binding later. Static `DefineText` glyph runs are a third, lower-priority path.
 
 Research TODO (mostly answered — see §1b):
-- [ ] 4.1 ANSWERED for the target screen: "NO TARGET" is a `DefineEditText`
+- [x] 4.1 ANSWERED for the target screen: "NO TARGET" is a `DefineEditText`
   (`id=22`) whose `initial_text` is HTML carrying the font (`$Furore`), size,
   color, align, `letterSpacing`, and a loc key (`@hud_NoTarget`). Confirm
   `@hud_NoTarget` resolves to "NO TARGET" via the loc system, and check a couple
   of other hybrid SWFs to confirm the HTML-`initial_text` pattern generalises.
 
 Implementation TODO:
-- [ ] 4.2 Parse the EditText `initial_text` **Flash-HTML** fragment with the
-  workspace's existing **`quick-xml` 0.37** dependency (do NOT add a full HTML5
-  engine like html5ever/scraper — Flash HTML is a small, XML-shaped subset, not
-  web HTML, and those libs are heavyweight + wrong semantics). The field is
-  HTML-flagged (`edit.is_html()` / `EditTextFlag::HTML`). Extract per text run:
-  `<font face=… size=… color=… letterSpacing=… kerning=…>`, `<p align=…>`, `<br>`,
-  and the inner text (which may be a literal or a `@loc` key). Handle **multiple
-  font runs** (a field can contain several `<font>` spans) and entity decoding
-  (`&apos;`, `&amp;`, `&#xx;`) — quick-xml gives both. Be tolerant: if a fragment
-  fails to parse as XML, fall back to stripping tags and using the raw inner text
-  so we never render markup. Keep the extractor small and unit-tested.
-- [ ] 4.3 Resolve `@…` loc keys via the existing `loc_fetcher` (same path BB text
-  uses). Render the resolved string with the HTML-specified **font symbol**
-  (`select_imported_ui_font` by symbol), size, colour, alignment, and letter
-  spacing. NOTE: the EditText bounds AND the HTML `size` are in the SWF's own
-  coordinate space — they must pass through the **same** stage→dest transform
-  chain as shapes (Phase 2.3: sprite placement matrix × stage-size→widget-rect
-  scale), not be used as raw pixels. Reuse `draw_swf_font` (extend it to honour
-  letter spacing if needed).
-- [ ] 4.4 Also support static `DefineText` glyph runs (some SWFs use them):
-  extend the text path to consume `DefineText` records (font_id + glyph indices →
-  font glyphs). Lower priority — the target screen uses EditText.
-- [ ] 4.5 Resolve imported fonts by symbol (`$Furore`/`$OrbitronLight` →
-  `fonts_en` glyphs) via the already-merged library; no new font sourcing.
+- [x] 4.2 Parse the EditText `initial_text` **Flash-HTML** fragment with the
+  workspace's existing **`quick-xml` 0.37** dependency. Implemented as
+  `parse_swf_html` in `swf_render/edit_text.rs`. Handles `<p align=…>` and
+  `<font face/size/color/letterSpacing>`. Multiple runs, entity decoding via
+  quick-xml, tolerant of unknown elements.
+- [x] 4.3 `draw_edit_text` in `swf_render/edit_text.rs` renders a `DefineEditText`
+  into a `Pixmap`. `loc_fn: &dyn Fn(&str) -> Option<String>` parameter threads
+  from public entry points down through `draw_character`. Uses EditText bounds
+  transformed through the placement matrix + stage→dest scale. Font resolved by
+  HTML face name (strip `$` → `find_font_by_name`) or by font_id fallback.
+  `composite_rgba_over_pixmap` added to blend text output into main Pixmap.
+- [ ] 4.4 Also support static `DefineText` glyph runs (some SWFs use them).
+  Lower priority — the target screen uses EditText. Deferred to Phase 7.
+- [x] 4.5 Imported fonts resolved by HTML `face` attribute (strip leading `$` →
+  `SwfAssetLibrary::find_font_by_name`). Phase 5 will pass `fonts_en` bytes via
+  `merge_swf_bytes` before rendering.
 
-Tests (TDD): HTML parser extracts face/size/color/align/letterSpacing + inner
-text/loc-key from the real `id=22` string (use it as a fixture constant); a
-fixture `DefineEditText` with an HTML `initial_text` + `@loc` renders the resolved
-string in the named imported font at its bounds; a static `DefineText` fixture
-renders in its font.
+Tests (TDD): 6 tests in `tests/swf_edittext_render.rs`. HTML parser (3 cases),
+loc-key detection, EditText extraction from fixture, stage rendering produces
+non-zero pixels. All pass. Suite: 379 lib + all integration tests green.
 
-Validation: re-export Clipper target; "NO TARGET" renders in **Furore**; suite
-green; `SB_UI_FONT_TELEMETRY` shows the SWF-text path used.
+Committed: `28dff435e` — 2026-06-05.
 
 ## Phase 5 — SWF-wins / BB-fallback precedence (wire into hybrid output)
 
