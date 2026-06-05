@@ -2,6 +2,7 @@
 
 use crate::ui_pipeline::{
     authored_canvas_size, binding_target_size, datacore_ui_lookup_type_names, p4k_swf_candidates,
+    swf_immediate_subdirs,
 };
 use serde_json::json;
 
@@ -60,4 +61,39 @@ fn swf_candidates_add_data_prefix_for_relative_paths() {
             "Data\\UI\\BuildingBlocks\\assets\\SWF\\Canvas.swf".to_string(),
         ]
     );
+}
+
+#[test]
+fn swf_immediate_subdirs_lists_ship_dirs_case_insensitively() {
+    // P4K entry names are native (`\`-separated). Their casing is not guaranteed
+    // to match the uppercase-brand prefix the resolver builds, so enumeration
+    // must be case-insensitive (mirroring `fetch_swf_bytes`'s eq_ignore_ascii_case).
+    let names = [
+        r"Data\UI\ShipInterface\assets\SWF\DRA\DRAK_Buccaneer\AnnunciatorScreen\AnnunciatorHalve1.swf",
+        r"Data\UI\ShipInterface\assets\SWF\DRA\DRAK_Buccaneer\AnnunciatorScreen\AnnunciatorHalve2.swf",
+        r"Data\UI\ShipInterface\assets\SWF\DRA\DRAK_Dragonfly\Support_Bespoke_2\TargetStatus.swf",
+        r"Data\UI\ShipInterface\assets\SWF\DRA\RadarScreen\Radar.swf",
+        r"Data\UI\ShipInterface\assets\SWF\DRA\BrandLevelFile.swf", // direct file → not a subdir
+        r"Data\UI\ShipInterface\assets\SWF\AEG\AEGS_Avenger\Foo.swf", // different brand
+    ];
+    // Prefix built by `p4k_ship_subdirs` (uppercase brand, trailing `\`),
+    // deliberately lower-cased here to prove case-insensitive matching.
+    let prefix = r"data\ui\shipinterface\assets\swf\dra\";
+    let dirs = swf_immediate_subdirs(names.iter().copied(), prefix);
+    assert_eq!(
+        dirs,
+        vec![
+            "DRAK_Buccaneer".to_string(),
+            "DRAK_Dragonfly".to_string(),
+            "RadarScreen".to_string(),
+        ],
+        "must return deduped, sorted immediate subdirs, excluding brand-level files and other brands"
+    );
+}
+
+#[test]
+fn swf_immediate_subdirs_empty_when_no_match() {
+    let names = [r"Data\UI\ShipInterface\assets\SWF\AEG\AEGS_Avenger\Foo.swf"];
+    let dirs = swf_immediate_subdirs(names.iter().copied(), r"Data\UI\ShipInterface\assets\SWF\DRA\");
+    assert!(dirs.is_empty(), "no DRA entries → empty");
 }

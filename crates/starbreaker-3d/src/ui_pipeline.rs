@@ -131,6 +131,48 @@ impl<'a> SwfFetcher for P4kSwfFetcher<'a> {
             source: Box::new(e),
         })
     }
+
+    /// Enumerate immediate child directory names under `prefix` from the live
+    /// P4K entry list.  This is what makes the Phase-1 deterministic SWF
+    /// resolver work in production: without it the default empty implementation
+    /// would yield no ship-subdir candidates and every ship-subdir SWF (target
+    /// MFD, annunciators) would be unfindable.
+    fn list_swf_dirs(&self, prefix: &str) -> Vec<String> {
+        swf_immediate_subdirs(self.p4k.entries().iter().map(|entry| entry.name.as_str()), prefix)
+    }
+}
+
+/// Immediate child directory names directly under `prefix`, matched
+/// case-insensitively against native (`\`-separated) P4K entry names.
+///
+/// Returned names preserve their original casing and are deduped + sorted.
+/// `prefix` is expected to end with a `\` (the directory whose children are
+/// listed, e.g. `Data\UI\ShipInterface\assets\SWF\DRA\`).  Entries that are
+/// direct files of `prefix` (no further separator) are not directories and are
+/// skipped.  Matching is case-insensitive because P4K entry casing is not
+/// guaranteed to match the resolver's constructed prefix (the same reason
+/// `fetch_swf_bytes` compares with `eq_ignore_ascii_case`).
+fn swf_immediate_subdirs<'a>(names: impl Iterator<Item = &'a str>, prefix: &str) -> Vec<String> {
+    let plen = prefix.len();
+    let mut seen = std::collections::BTreeSet::new();
+    for name in names {
+        if name.len() <= plen {
+            continue;
+        }
+        if !name.as_bytes()[..plen].eq_ignore_ascii_case(prefix.as_bytes()) {
+            continue;
+        }
+        let rest = &name[plen..];
+        // A subdirectory child has at least one further separator after its name;
+        // an entry with no further `\` is a direct file, not a directory.
+        if let Some(sep) = rest.find('\\') {
+            let subdir = &rest[..sep];
+            if !subdir.is_empty() {
+                seen.insert(subdir.to_string());
+            }
+        }
+    }
+    seen.into_iter().collect()
 }
 
 fn p4k_swf_candidates(path: &str) -> Vec<String> {
