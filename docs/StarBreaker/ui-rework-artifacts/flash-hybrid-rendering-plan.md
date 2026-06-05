@@ -723,34 +723,59 @@ Research TODO:
   renders both standalone and embedded.
 
 Implementation TODO:
-- [ ] 9.4 Fix the alpha at the source: in `local_alpha_for_node`
-  (`ui_ir/engine_parts/part_10.part`), when a node matches the 9.1 page-in
-  signature, return its **settled** alpha (1.0) instead of the authored 0.0, so
-  `effective_alpha_for_node` cascades 1.0 to `inheritsAlpha` descendants. Remove
-  the now-redundant, ineffective `base_Root` name-based patch in
-  `compile_ir_for_binding` (it ran post-bake and never worked). Keep it structural
-  — no `name == "base_Root"` gating.
-- [ ] 9.5 Implement active-view selection (9.2) during/after canvas resolution:
-  deactivate the non-selected `canvas_*MFDView` subtrees so only the bound view +
-  footer remain active. Generic; driven by `content_canvas_guid`.
-- [ ] 9.6 Confirm the footer screen-name injection (already wired:
-  `text_ScreenName` → "Target Status") becomes **visible** once 9.4 lands, and the
-  Phase-5 SWF overlay (Furore NO TARGET, needs Phase 8) composites within the
-  active view's Flash node inside the frame.
+- [x] 9.4 Page-in alpha settled at the SOURCE — but at **parse time**
+  (`bb_scene::parse::settle_pagein_start_roots`), not in `local_alpha_for_node`.
+  Reason: in the merged frame scene `base_Root` is re-parented under its
+  `WidgetCanvas` and is no longer a scene root, so the IR-layer root check missed
+  it (it passed a single-canvas unit test but failed the real merged frame — a
+  Root-Cause-C-in-miniature). Settling per-canvas at parse, where the page-in node
+  is still a root, fixes the real cascade. Signature: scene root + alpha==0 +
+  isActive + page-in `animation`. Removed the ineffective `base_Root` name patch.
+  Commit `57e25256f`. Verified: alpha dist flipped {1.0:12,0.0:209} → {1.0:193,0.0:6}.
+- [x] 9.5 Active-view selection done at **resolution time** (not post-resolution):
+  the frame's state filter put the bound view's `WidgetCanvas` slot in
+  `instantiated_false` (runtime view-selector boolean has no static default), so
+  Pass 2 **skipped merging the content entirely** — a post-resolution deactivate
+  re-activated an empty slot. Fix: thread the bound content canvas `_RecordName_`
+  through `resolve_canvas_graph` (new `..._with_loc_and_bound_view`);
+  `mfd_view::apply_bound_view_instantiation` forces the matching slot instantiated
+  and its mutually-exclusive peers (same parent+layer) out, before Pass 2. Commit.
+  Verified: target MFD now renders **NO TARGET + dashed lines + >>/<< chevrons +
+  "Target Status" footer** — matches the reference's core content.
+- [ ] 9.6 Furore SWF overlay (TargetStatus.swf) routing into the embedded Flash
+  node (`canvas_TargetStatus`) inside the frame — not yet done. The frame compiles
+  `selected_swf_source: None` (the frame canvas doesn't itself reference the SWF;
+  it's on the embedded content view's Flash node). The BB fallback text_NoTarget
+  renders now (blenderpro-thin, not Furore); routing the SWF upgrades it to Furore.
+- [ ] 9.10 **Overlay suppression — the remaining blocker.** With 9.4+9.5 the
+  content is correct, but boolean-gated event overlays still show on top: the
+  incoming-call signal bar (`canvas_incomingCallOverride`, gated by an
+  `Instantiated = BooleanEvaluateAnd` that yields `eval=None`), and the footer
+  low-power/warning/LOADOUT states (`text_LowPowerMessage`/`text_WarningMessage`,
+  gated by `BooleanFromIntegerSwitch{defaultValue:false}` → `eval=None`). Root
+  cause: `bb_state_filter` returns `eval=None` for these op types and the
+  conservative default keeps them visible (to avoid hiding runtime-gated content).
+  **A blanket "unknown → hidden under idle" flip is WRONG** — verified it also
+  hides `text_NoTarget` (itself gated by an unknown binding), blanking the screen.
+  The correct, generic fix is to **evaluate these bindings to their authored
+  at-rest values**: resolve `BooleanFromIntegerSwitch` to its `defaultValue` when
+  the integer input is unresolved (→ CallingState/LowPower false → hidden), and
+  resolve `BooleanEvaluateAnd`/integer state inputs to their idle defaults. That is
+  an `eval.rs` evaluator extension (per op-type defaults) — substantial, generic,
+  and benefits every state-driven screen. Until then the overlays bleed through.
 
 Tests (TDD):
-- [ ] 9.7 IR test on a synthetic frame fixture (root alpha=0 + page-in animation,
-  `inheritsAlpha` children at alpha=1): after compile, descendants have effective
-  alpha 1.0 (not 0.0). A sibling genuinely-hidden node (alpha=0, no animation)
-  stays 0.0.
-- [ ] 9.8 Active-view test: a frame embedding two `canvas_*MFDView`s resolves only
-  the one matching the binding's `content_canvas_guid` as active.
-- [ ] 9.9 Regression test reproducing B3 (`missing child 3`) on the content canvas;
-  fixed compile validates.
+- [x] 9.7 `compile_ir_settles_pagein_start_root_alpha` (in `pagein_alpha_tests.part`):
+  page-in root settles descendants to 1.0; a no-animation alpha=0 root stays 0.0.
+- [x] 9.8 `mfd_view` tests: `apply_bound_view_instantiation` forces the bound slot
+  on and its same-parent/same-layer peers off, leaving the footer (other layer).
+- [ ] 9.9 B3 (`missing child 3`) — not reproduced/needed: the frame path resolves
+  the content correctly now (the error only appeared when force-rendering the
+  content canvas standalone, which the frame approach doesn't do).
 
-Validation: re-export; `mc_s_target_master.png` shows NO TARGET + dashes +
-chevrons + `< TARGET STATUS >` footer, matching the reference (judged via the Read
-tool); self/power MFDs show their own content + names; no off-state bleed-through.
+Validation: target MFD shows NO TARGET + dashes + chevrons + footer (✅, matches
+reference core). REMAINING before "done": overlay suppression (9.10) and the
+Furore SWF (9.6); then self/power MFDs.
 
 ## Phase 10 — Close the regression blind spots (build-coupled + MFD coverage)
 
