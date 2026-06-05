@@ -2050,6 +2050,7 @@ fn ui_binding_json(binding: &UiBinding) -> serde_json::Value {
         "canvas_record_path": binding.canvas_record_path,
         "content_canvas_guid": binding.content_canvas_guid,
         "content_canvas_record_name": binding.content_canvas_record_name,
+        "screen_name_loc_key": binding.screen_name_loc_key,
         "dashboard_view_index": binding.dashboard_view_index,
         "dashboard_screen_slot": binding.dashboard_screen_slot,
         "owner_source_file": binding.owner_source_file,

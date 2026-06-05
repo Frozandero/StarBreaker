@@ -346,6 +346,7 @@ Defined in `crates/starbreaker-3d/src/types.rs`. Key fields:
 | `helper_name` | `Option<String>` | Named child on the seat/dashboard that places this screen (e.g. `Screen_Annunciator_L`). Same name appears as the Blender mesh name. |
 | `canvas_guid` | `Option<String>` | DataCore GUID of the BuildingBlocks canvas root record. |
 | `content_canvas_guid` | `Option<String>` | DataCore GUID of the per-helper content canvas resolved from the parent vehicle's `SCItemUIView_DashboardCanvasDef`. Takes precedence over `canvas_guid` during rendering. |
+| `screen_name_loc_key` | `Option<String>` | Localization key for the MFD screen name from the resolved `SMFDView.name` (e.g. `@ui_MFD_View_TargetStatus`). Injected into the frame canvas's `text_ScreenName` footer node during rendering. `null` for non-MFD bindings. |
 | `generated_image_path` | `Option<String>` | Relative path from the export root to the generated PNG (e.g. `Data/UI/Generated/02ea771f3d96bf1e_TEX0.png`). `null` when rendering failed or was skipped (e.g. null canvas GUID). |
 | `generated_backend` | `Option<String>` | Rendering backend that produced the PNG (always `"starbreaker-ui/compose"`). |
 | `generated_provenance` | `Option<String>` | Freeform note explaining how the image was produced or why it was skipped. |

@@ -251,6 +251,7 @@ fn parse_ui_binding(v: &Value) -> Option<UiBinding> {
         canvas_variable_binding: opt_str("canvas_variable_binding"),
         content_canvas_guid: opt_str("content_canvas_guid"),
         content_canvas_record_name: opt_str("content_canvas_record_name"),
+        screen_name_loc_key: opt_str("screen_name_loc_key"),
         dashboard_view_index: opt_u32("dashboard_view_index"),
         dashboard_screen_slot: opt_u32("dashboard_screen_slot"),
         owner_source_file: opt_str("owner_source_file"),
