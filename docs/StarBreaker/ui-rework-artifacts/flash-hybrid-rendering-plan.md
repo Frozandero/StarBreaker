@@ -1,6 +1,10 @@
 # Plan: Faithful Flash (SWF) hybrid UI rendering + MFD frame composition
 
-Status: APPROVED design, not yet implemented.
+Status: Phases 0–7 implemented (2026-06-05). First live `drak_clipper` export +
+visual inspection found **three regressions** (blank MFDs, stretched annunciator,
+regression-suite blind spot) — root-caused below; fixes are **Phases 8–10**
+(open). Do **not** roll back features to fix these — the new features are sound;
+the bugs are in production wiring, the alpha-inheritance pass, and test coverage.
 Owner: (assign)
 Goal: render BuildingBlocks (BB) UI screens that use Flash/Scaleform SWF content
 the way the game does, generically for **any ship / any manufacturer / any
@@ -293,10 +297,12 @@ Implementation TODO:
   call `p4k_ship_subdirs(brand, fetcher)`.  All signatures thread
   `fetcher: &dyn SwfFetcher` through.
 - [ ] 1.6 Thread the ship/skin context from `child_payload.rs` into the binding.
-  DEFERRED: alphabetical P4K enumeration + first-valid-SWF-wins already handles
-  all known cases correctly (Clipper has no SWF dir → naturally falls back to
-  Dragonfly for support screens, Buccaneer for annunciators).  Revisit if a ship
-  has own assets that must be preferred over alphabetical-first sibling.
+  DEFERRED (skin-context preference) — but ⚠️ **see Phase 8**: the enumeration this
+  phase depends on (`SwfFetcher::list_swf_dirs`) was **never implemented on the
+  production `P4kSwfFetcher`**, so in the live export the resolver returns no
+  ship-subdir SWFs at all (annunciator stretched, `TargetStatus.swf` unreachable).
+  Phase 1's tests passed only because `MockDirFetcher` implements `list_swf_dirs`.
+  Production wiring is Phase 8 (required, not optional).
 
 Tests (TDD):
 - [x] `no_ship_dirs_produces_only_brand_level_candidates` — empty fetcher → no DRAK_* candidates.
@@ -498,6 +504,11 @@ Implementation TODO:
 Tests (TDD): 5 tests in `tests/pipeline_mfd_frame.rs` — all pass (commit `1d7418f54`).
 
 Validation: 379 lib + all integration tests green; committed 2026-06-05.
+⚠️ **INCOMPLETE — see Phase 9.** The synthetic tests passed but the live export
+renders **blank**: 6.2's `base_Root` alpha patch runs after `inheritsAlpha` is
+already baked (no-op), and the active-view selection bullet was never implemented.
+The footer screen-name wiring is correct (`text_ScreenName` → "Target Status") but
+invisible until the alpha-inheritance fix (Phase 9.4) lands.
 
 ## Phase 7 — Performance, cleanup, baseline refresh
 
@@ -521,6 +532,233 @@ TODO:
   annunciator, Furore text, footer) per the workflow doc's onboarding steps
   (`add_ui_regression_target.sh`, `freeze_ui_snapshot_ir.sh`,
   `freeze_ui_regression_artifacts.sh`, validate scripts). Do not commit PNGs.
+
+---
+
+## Post-Phase-7 export validation — THREE REGRESSIONS FOUND (2026-06-05)
+
+The first real `entity export drak_clipper` + visual inspection of the generated
+PNGs (the validation Phases 1/6 deferred) revealed three distinct, independent
+regressions. All three are **fixable without rolling back any feature** — the
+new features (deterministic resolver, frame-canvas footer) are sound; the bugs
+are in how they connect to the production fetcher, the alpha-inheritance pass,
+and the regression harness. Phases 8–10 below fix each root cause. Evidence and
+exact code locations are recorded so a fresh agent can act directly.
+
+### Root Cause A — production SWF resolution is dead (`list_swf_dirs` never implemented)
+
+- **Symptom 1**: `h_eng_annunciator_master_left.png` is now **1920×1080** (16:9,
+  stretched ~2.5× tall); the gold baseline is **1920×432** (thin strip, aspect
+  4.44). The panels (PWR/WPN/THR/SHLD/COOL) render but at the wrong aspect.
+- **Symptom 2**: the target MFD never gets the Furore "NO TARGET" SWF text
+  (`TargetStatus.swf` is unreachable), independent of Root Cause B.
+- **Mechanism**: Phase 1 replaced the hard-coded `*_ship_subdirs` lists with
+  P4K enumeration via `SwfFetcher::list_swf_dirs`. The trait default
+  (`pipeline/mod.rs:81`) returns `vec![]`. The **production** fetcher
+  `P4kSwfFetcher` (`crates/starbreaker-3d/src/ui_pipeline.rs:117`) overrides only
+  `fetch_swf_bytes` — it does **not** override `list_swf_dirs`. So
+  `p4k_ship_subdirs` (`flash_paths.rs:168`) gets an empty list, no ship-subdir
+  candidates are generated, and every ship-subdir SWF is unfindable. The
+  annunciator's SWF aspect override in `compile_ir_for_binding` (the
+  `selected_swf_source` → `stage_visual_bounds` branch) is then skipped, so the
+  raster falls back to the authored 1920×1080 instead of the SWF-derived
+  1920×432. IR confirms `selected_swf_source: None`, `renderer_hint: bb`.
+- **Ground truth (P4K, verified)**: the SWFs exist exactly where the resolver
+  would look if enumeration worked —
+  `Data\UI\ShipInterface\assets\SWF\DRA\DRAK_Buccaneer\AnnunciatorScreen\AnnunciatorHalve1.swf`
+  and `…\DRA\DRAK_Dragonfly\Support_Bespoke_2\TargetStatus.swf`. Ship subdirs
+  present under `SWF\DRA\`: `DRAK_Buccaneer`, `DRAK_Caterpillar`, `DRAK_Dragonfly`.
+- This is Phase 1.6 (marked "DEFERRED") — but it is **not** optional: the whole
+  Phase-1 resolver is inert in production without it.
+
+### Root Cause B — frame-canvas MFD render is blank (alpha inheritance + no view selection)
+
+- **Symptom**: `mc_s_target_master.png` (and self/power) are blank — the dark
+  Drake background only. The NO TARGET text, the dashed lines, and the `>>`/`<<`
+  chevrons (all BB content that rendered **before** Phase 6) are gone, and the
+  `< TARGET STATUS >` footer never appears. Reference:
+  `reference/in-game/Clipper/Screen_Right_Upper_RTT.png`.
+- **Mechanism B1 (alpha inheritance — the dominant cause)**: Phase 6 renders the
+  **frame** canvas `m_eng_mfdcontent`. Its root `base_Root` is authored
+  `alpha: 0.0` (a page-in start state; it carries an `animation` block with
+  `animationTimeline: null`, `duration: 1.0`, `additive: true`) and
+  `inheritsAlpha: true`. The content views and footer are authored `alpha: 1.0`
+  **but also `inheritsAlpha: true`**, so `effective_alpha_for_node`
+  (`ui_ir/engine_parts/part_10.part:321`, called during IR compilation) multiplies
+  every descendant by `base_Root`'s `local_alpha_for_node` = 0.0 → **every node
+  bakes to effective alpha 0.0**. Verified: authored `canvas_PortraitMFDView`,
+  `canvas_Header / Footer`, `base_content` = alpha 1.0, but the compiled IR shows
+  them at 0.0. The Phase 6 `base_Root` patch in `compile_ir_for_binding` sets the
+  `base_Root` *node's* IR alpha to 1.0 **after** inheritance is already baked into
+  the children, so it is a no-op for the descendants. (Animation-sample percent is
+  irrelevant: `base_Root.animationTimeline` is null, so sampling at 0% vs 100%
+  produces identical alphas — confirmed empirically.)
+- **Mechanism B2 (active-view selection — secondary)**: the frame embeds
+  `canvas_PortraitMFDView` (→ `mc_s_target_master`, the target view),
+  `canvas_LandscapeMFDView` (→ `mc_s_self_master`), and an incoming-call overlay.
+  The engine activates exactly one via `aspectRatioLibrary` + "Content Canvas
+  Scaling" style conditions. Our pipeline does not select by the binding's
+  `content_canvas_guid`: the IR shows `canvas_PortraitMFDView` `active=False`
+  while `canvas_LandscapeMFDView` `active=True` — i.e. the wrong view is "active"
+  (and both are invisible anyway under B1). Phase 6.2's "select the single active
+  content view" bullet was never implemented.
+- **Mechanism B3 (separate bug)**: forcing the old content-canvas path
+  (`use_frame_canvas = false`) fails IR validation with
+  `node 1 references missing child 3` — a pre-existing structural defect in the
+  standalone `mc_s_target_master` compile that the frame-canvas switch masked.
+  Must be understood and fixed so the content view renders correctly *inside* the
+  frame too.
+
+### Root Cause C — the regression suite cannot see live-export regressions
+
+- **Symptom**: a gold-standard image changing 1920×432 → 1920×1080, and three
+  MFDs going fully blank, produced **zero** failing tests.
+- **Mechanism**: the "live" regression guards (`tests/manifest_live_ir_guard.rs`,
+  `tests/ui_ir_representative.rs`) compile IR from a **local decompiled canvas
+  tree** using `DummySwfFetcher` (`fetch_swf_bytes` → `Err`, `list_swf_dirs` →
+  empty default) and `DummyAssetFetcher` (`fetch_image_bytes` → `None`). The
+  frozen baselines were therefore generated by a pipeline that **never had real
+  SWFs or assets**, so they never captured the SWF-derived dimensions or the real
+  rendered pixels. They validate IR-structure stability against synthetic inputs,
+  not the live `entity export` path. The real 1920×432 / NO TARGET / footer only
+  exist when the live P4K + real SWFs are used, which the suite never exercises.
+
+### Corrections to earlier plan claims
+
+- §1 was **right** that the content views default `isActive:true, alpha:1.0` and
+  that `base_Root` is authored `alpha:0.0` with a null animation timeline. The bug
+  is purely in how our IR pass bakes `inheritsAlpha` from the page-in-start root.
+- Phase 6.2's note "Footer renders via the existing BB path … no separate
+  composite step needed" is only true *after* B1 + B2 are fixed.
+
+---
+
+## Phase 8 — Restore production SWF resolution (implement `list_swf_dirs`)
+
+Objective: make the Phase-1 deterministic resolver actually work in the live
+export by enumerating P4K SWF directories from the production fetcher. Fixes the
+annunciator aspect regression and re-enables ship-subdir SWFs (incl.
+`TargetStatus.swf`) for every ship — generically, no hard-coding.
+
+Research TODO:
+- [ ] 8.1 Confirm the `MappedP4k` API for directory enumeration. `P4kSwfFetcher`
+  already iterates `self.p4k.entries()`; derive immediate child directory names
+  under a Windows-style `prefix` (case-insensitive, deduped, sorted) from the
+  entry name list. Verify behaviour for the `SWF\DRA\` prefix returns
+  `["DRAK_Buccaneer","DRAK_Caterpillar","DRAK_Dragonfly","RadarScreen"]`.
+
+Implementation TODO:
+- [ ] 8.2 Implement `list_swf_dirs(&self, prefix)` on `P4kSwfFetcher`
+  (`crates/starbreaker-3d/src/ui_pipeline.rs`): filter `entries()` whose name
+  starts with `prefix` (case-insensitive, native `\` separators), take the next
+  path segment after `prefix` as the immediate child dir, collect the distinct
+  set, sort lexicographically. Keep it O(entries) once; if it shows up in
+  profiling, memoise per prefix on the fetcher.
+- [ ] 8.3 Remove Phase 1.6 from "deferred" and mark it done here (it was the
+  missing half of Phase 1). Audit every **production** `SwfFetcher` impl (and the
+  example `P4kFileFetcher`s used for diagnostics) to ensure each that touches the
+  real tree implements `list_swf_dirs`.
+
+Tests (TDD):
+- [ ] 8.4 Unit test against a fake `MappedP4k`-like entry list (or a thin trait
+  seam) asserting `list_swf_dirs("…\\SWF\\DRA\\")` returns the three `DRAK_*`
+  dirs sorted, and excludes deeper paths and non-matching prefixes.
+- [ ] 8.5 Resolution test: with the enumerated dirs, `annunciator_swf_candidates`
+  and `support_screen_candidates_for_brand` produce the
+  `DRAK_Buccaneer\…\AnnunciatorHalve1.swf` and
+  `DRAK_Dragonfly\Support_Bespoke_2\TargetStatus.swf` paths. (Extends the existing
+  `MockDirFetcher` tests to the production enumeration shape.)
+
+Validation: re-export; annunciator is **1920×432** again; `selected_swf_source`
+is `Some(...AnnunciatorHalve1.swf)` for the annunciator and
+`Some(...TargetStatus.swf)` for the target MFD. Required suite green.
+
+## Phase 9 — Fix the blank MFD frame render (settled page-in alpha + active-view selection)
+
+Objective: make the frame-canvas MFD render show the **active** content view
+(NO TARGET, dashes, chevrons) **and** the footer (`< TARGET STATUS >`), matching
+the reference, while keeping genuinely-hidden overlays (incoming-call, warnings,
+low-power) hidden. Generic for any MFD; no per-asset gating.
+
+Research TODO:
+- [ ] 9.1 Pin the structural signature of a "page-in start-state" root whose
+  settled alpha is 1.0: authored `alpha == 0.0` **and** a non-null `animation`
+  block (page-in: `animationTimeline: null`, `fillMode: None`/`additive`) **and**
+  it has `inheritsAlpha` descendants. Confirm against `m_eng_mfdcontent.base_Root`
+  and at least one other MFD/ship so the rule is not Clipper-specific. Cross-check
+  it does **not** match genuinely-hidden nodes (e.g. `background_Primitive`
+  authored `alpha:0.0, isActive:false` with no page-in animation, or
+  `is_transient_static_pulse_node` cases) so we don't reveal off-states.
+- [ ] 9.2 Determine the active-view selection rule from data: match the binding's
+  `content_canvas_guid` (e.g. `mc_s_target_master`) to the embedded
+  `canvas_*MFDView` whose resolved canvas reference equals it; that view (+ the
+  header/footer) is active, the sibling views and the incoming-call overlay are
+  deactivated. Confirm the WidgetCanvas → canvas GUID is available on the resolved
+  node (it is followed during `resolve_canvas_graph`).
+- [ ] 9.3 Investigate Root Cause B3: why standalone `mc_s_target_master` compile
+  yields `node 1 references missing child 3`. Likely a resolve/expand ordering or
+  a Flash-subtree-removal interaction; fix so the content view validates and
+  renders both standalone and embedded.
+
+Implementation TODO:
+- [ ] 9.4 Fix the alpha at the source: in `local_alpha_for_node`
+  (`ui_ir/engine_parts/part_10.part`), when a node matches the 9.1 page-in
+  signature, return its **settled** alpha (1.0) instead of the authored 0.0, so
+  `effective_alpha_for_node` cascades 1.0 to `inheritsAlpha` descendants. Remove
+  the now-redundant, ineffective `base_Root` name-based patch in
+  `compile_ir_for_binding` (it ran post-bake and never worked). Keep it structural
+  — no `name == "base_Root"` gating.
+- [ ] 9.5 Implement active-view selection (9.2) during/after canvas resolution:
+  deactivate the non-selected `canvas_*MFDView` subtrees so only the bound view +
+  footer remain active. Generic; driven by `content_canvas_guid`.
+- [ ] 9.6 Confirm the footer screen-name injection (already wired:
+  `text_ScreenName` → "Target Status") becomes **visible** once 9.4 lands, and the
+  Phase-5 SWF overlay (Furore NO TARGET, needs Phase 8) composites within the
+  active view's Flash node inside the frame.
+
+Tests (TDD):
+- [ ] 9.7 IR test on a synthetic frame fixture (root alpha=0 + page-in animation,
+  `inheritsAlpha` children at alpha=1): after compile, descendants have effective
+  alpha 1.0 (not 0.0). A sibling genuinely-hidden node (alpha=0, no animation)
+  stays 0.0.
+- [ ] 9.8 Active-view test: a frame embedding two `canvas_*MFDView`s resolves only
+  the one matching the binding's `content_canvas_guid` as active.
+- [ ] 9.9 Regression test reproducing B3 (`missing child 3`) on the content canvas;
+  fixed compile validates.
+
+Validation: re-export; `mc_s_target_master.png` shows NO TARGET + dashes +
+chevrons + `< TARGET STATUS >` footer, matching the reference (judged via the Read
+tool); self/power MFDs show their own content + names; no off-state bleed-through.
+
+## Phase 10 — Live-export regression coverage (close the blind spot)
+
+Objective: ensure a future SWF-resolution break, dimension drift, or blank render
+is caught by an automated guard — not by manual visual inspection months later.
+
+Research TODO:
+- [ ] 10.1 Decide the fidelity tier: (a) a pure-unit guard that the production
+  `P4kSwfFetcher` implements `list_swf_dirs` (cheap, no P4K); plus (b) an
+  opt-in live-export guard gated on `SC_DATA_P4K` presence (skipped in CI without
+  the archive) that records per-Clipper-screen **dimensions** and a
+  **non-blank-coverage** assertion (distinct-colour / non-background pixel ratio,
+  reusing `tests/visual_diff.rs` helpers).
+
+Implementation TODO:
+- [ ] 10.2 Add the unit guard (a): a test that constructs the production fetcher
+  type (or asserts via a trait-object check) and fails if `list_swf_dirs` returns
+  empty for a known-present prefix shape. This specifically would have caught
+  Root Cause A.
+- [ ] 10.3 Add the live guard (b) behind an env gate: export/render the Clipper
+  MFD + annunciator helpers from the live P4K and assert (i) annunciator aspect ≈
+  4.44 (1920×432), (ii) target MFD is non-blank (coverage threshold), (iii)
+  `selected_swf_source` is `Some` for both. Document how to run it.
+- [ ] 10.4 Update `docs/ui-regression-policy.md` to record the synthetic-vs-live
+  gap explicitly: the `Dummy*Fetcher` IR guards do **not** cover SWF resolution,
+  real assets, or rendered dimensions; the live guard (10.3) is the contract for
+  those.
+
+Validation: 10.2 fails on `main` *before* Phase 8 (proving it catches Root Cause
+A), passes after; 10.3 passes post-Phase-8/9 and fails if either regresses.
 
 ---
 
@@ -549,10 +787,13 @@ TODO:
 - Target MFD matches the reference: 4:3, Furore "NO TARGET", no orange bar,
   "< TARGET STATUS >" footer; chevrons/dashes intact.
 - self/power MFDs and the annunciator still correct; no other screen regressed.
+  (Annunciator back to 1920×432 via Phase 8; MFDs non-blank via Phase 9.)
 - No hard-coded ship/screen/brand/path lists in production; SWF resolution is
-  data-driven.
+  data-driven **and live in production** (`list_swf_dirs` implemented — Phase 8).
 - Required suite green; baselines refreshed only with approval; export time not
   meaningfully worse.
+- A live-export guard (Phase 10) catches future SWF-resolution, dimension, and
+  blank-render regressions — the synthetic IR guards alone are insufficient.
 
 ## Appendix C — Required validation commands (run every phase)
 
