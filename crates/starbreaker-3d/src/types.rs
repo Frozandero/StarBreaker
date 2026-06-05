@@ -520,6 +520,10 @@ pub struct UiBinding {
     pub content_canvas_guid: Option<String>,
     /// DataCore name of the record pointed to by `content_canvas_guid`.
     pub content_canvas_record_name: Option<String>,
+    /// Localization key for the MFD screen name from the resolved `SMFDView.name`
+    /// (e.g. `"@ui_MFD_View_TargetStatus"`). Injected into the frame canvas's
+    /// `text_ScreenName` node to label the footer. `None` for non-MFD bindings.
+    pub screen_name_loc_key: Option<String>,
     /// View index in the parent dashboard's `SCItemUIView_DashboardCanvasDef.View[]`
     /// array that provided `content_canvas_guid`, if resolved.
     pub dashboard_view_index: Option<u32>,

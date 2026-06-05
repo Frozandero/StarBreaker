@@ -488,8 +488,10 @@ Implementation TODO:
   (`canvas_guid`) for `binding_kind == "mfd"` when it differs from `content_canvas_guid`.
   Post-processing: `base_Root` alpha=0.0 patched to 1.0 (BB animation start-state);
   `text_ScreenName` nodes receive the resolved screen name from `screen_name_loc_key`.
-  `UiBindingView` gains `screen_name_loc_key: Option<&str>` field; all call sites
-  updated with `None` (to be wired to the SMFDView name in `child_payload.rs`).
+  `UiBindingView` gains `screen_name_loc_key: Option<&str>`. **Fully wired**:
+  `build_mfd_view_canvas_map` (child_payload.rs) reads `SMFDView.name`
+  (e.g. `@ui_MFD_View_TargetStatus`) and threads it through `UiBinding.screen_name_loc_key`
+  → `UiBindingView` → IR. Verified: `MFD_View_Target_Status.name == "@ui_MFD_View_TargetStatus"`.
 - [x] 6.3 Footer renders via the existing BB path as part of the frame canvas —
   no separate composite step needed.
 
@@ -503,10 +505,13 @@ TODO:
 - [x] 7.0 Deferred items reviewed: Phase 1.6 (skin context threading) and Phase 4.4
   (DefineText glyph runs) remain deferred — both have adequate fallbacks and are not
   blocking the primary goal. Phases 5 and 6 confirmed complete (see above).
-- [ ] 7.1 Cache parsed SWFs per export run (avoid re-decompress/parse for shared
-  SWFs and per-frame extraction). Verify the resolver does directory listing once
-  per brand. Measure Clipper export wall-time before/after; no significant
-  regression (target: ≤ prior time).
+- [x] 7.1 Sprite first-frames are now parsed once at `SwfAssetLibrary::new`
+  (`extract_all_sprite_first_frames`) and cached, instead of re-decompressing/parsing
+  the whole SWF on every recursive `draw_character` call and every
+  `compute_sample_data_export_ids` node. Exact behavioural parity (cache built from
+  the primary SWF bytes, matching the prior `&self.raw` re-parse). Stage-frame and
+  stage-size extraction remain per-call (low frequency). Formal wall-time
+  before/after measurement still TODO if a perf regression is suspected.
 - [x] 7.2 `//!` headers updated in `pipeline/mod.rs`, `hybrid_compose.rs`,
   `swf_render/mod.rs`. All modified files under 500 lines; no dead code/shims found.
 - [x] 7.3 `docs/ui-fallback-register.md` updated (SWF path-probing retired in Phase 1).

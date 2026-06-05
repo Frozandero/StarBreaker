@@ -355,7 +355,7 @@ pub(crate) fn load_child_payloads(
     };
     // Pre-resolve MFD default content canvases keyed by geometry name (helper_name).
     // Each MFD binding is looked up by name rather than positionally.
-    let mfd_canvases_by_parent: HashMap<String, HashMap<String, (String, Option<String>)>> = {
+    let mfd_canvases_by_parent: HashMap<String, HashMap<String, (String, Option<String>, Option<String>)>> = {
         let mut map = HashMap::new();
         for spec in &specs {
             let parent_name = &spec.parent_entity_name;
@@ -386,13 +386,22 @@ pub(crate) fn load_child_payloads(
             if binding.content_canvas_guid.is_none()
                 && matches!(binding.binding_kind.as_str(), "physical" | "mfd")
             {
-                if let Some((guid, name)) = binding.helper_name.as_deref().and_then(|h| {
-                    let map = if binding.binding_kind == "mfd" {
-                        mfd_canvases_by_parent.get(&spec.parent_entity_name)
-                    } else {
-                        physical_screen_canvases_by_parent.get(&spec.parent_entity_name)
-                    }?;
-                    map.get(h)
+                if binding.binding_kind == "mfd" {
+                    // MFD content canvases carry the per-view screen-name loc key
+                    // (from `SMFDView.name`) that labels the frame footer.
+                    if let Some((guid, name, screen_name_loc_key)) =
+                        binding.helper_name.as_deref().and_then(|h| {
+                            mfd_canvases_by_parent.get(&spec.parent_entity_name)?.get(h)
+                        })
+                    {
+                        binding.content_canvas_guid = Some(guid.clone());
+                        binding.content_canvas_record_name = name.clone();
+                        binding.screen_name_loc_key = screen_name_loc_key.clone();
+                    }
+                } else if let Some((guid, name)) = binding.helper_name.as_deref().and_then(|h| {
+                    physical_screen_canvases_by_parent
+                        .get(&spec.parent_entity_name)?
+                        .get(h)
                 }) {
                     binding.content_canvas_guid = Some(guid.clone());
                     binding.content_canvas_record_name = name.clone();
@@ -619,6 +628,7 @@ pub(crate) fn ui_binding_for_record(db: &Database, record: &Record) -> Option<Ui
                 canvas_variable_binding,
                 content_canvas_guid: None,
                 content_canvas_record_name: None,
+                screen_name_loc_key: None,
                 dashboard_view_index: None,
                 dashboard_screen_slot: None,
                 owner_source_file,
@@ -668,6 +678,7 @@ pub(crate) fn ui_binding_for_record(db: &Database, record: &Record) -> Option<Ui
                 canvas_variable_binding,
                 content_canvas_guid: None,
                 content_canvas_record_name: None,
+                screen_name_loc_key: None,
                 dashboard_view_index: None,
                 dashboard_screen_slot: None,
                 owner_source_file,
@@ -814,6 +825,7 @@ pub(crate) fn ui_binding_for_record(db: &Database, record: &Record) -> Option<Ui
         canvas_variable_binding,
         content_canvas_guid: None,
         content_canvas_record_name: None,
+        screen_name_loc_key: None,
         dashboard_view_index: None,
         dashboard_screen_slot: None,
         owner_source_file,
@@ -1042,13 +1054,18 @@ fn collect_physical_screen_canvases(
 }
 
 /// Build a map from MFD view-type enum name (e.g. `"eView_TargetStatus"`) to
-/// `(canvas_guid, canvas_record_name)` by scanning all `SMFDView` records.
-/// `eView_Off` entries are excluded since they carry no renderable content.
+/// `(canvas_guid, canvas_record_name, screen_name_loc_key)` by scanning all
+/// `SMFDView` records. `eView_Off` entries are excluded since they carry no
+/// renderable content.
 ///
 /// `landscapeCanvas` is stored as a `DataType::Reference` in DataCore; references are
 /// serialised to their file path strings by `to_json_compact`, so we read that JSON
 /// to obtain the path and then match it against `BuildingBlocks_Canvas` records.
-fn build_mfd_view_canvas_map(db: &Database) -> HashMap<String, (String, Option<String>)> {
+/// The same JSON carries `name` (e.g. `"@ui_MFD_View_TargetStatus"`), the
+/// localization key for the MFD screen title rendered in the frame footer.
+fn build_mfd_view_canvas_map(
+    db: &Database,
+) -> HashMap<String, (String, Option<String>, Option<String>)> {
     let mut map = HashMap::new();
     for record in db.records_by_type_name("SMFDView") {
         let Some(view_type_compiled) = db.compile_path::<String>(record.struct_id(), "viewType").ok() else {
@@ -1059,11 +1076,14 @@ fn build_mfd_view_canvas_map(db: &Database) -> HashMap<String, (String, Option<S
             _ => continue,
         };
 
-        // `landscapeCanvas` is a Reference field; read it from the JSON export which follows
-        // the reference and serialises it as the referenced record's file path string.
-        let canvas_ref = starbreaker_datacore::export::to_json_compact(db, record)
+        // `landscapeCanvas` is a Reference field; read it (and the screen-name loc
+        // key) from the JSON export which follows the reference and serialises it
+        // as the referenced record's file path string.
+        let record_json = starbreaker_datacore::export::to_json_compact(db, record)
             .ok()
-            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok());
+        let canvas_ref = record_json
+            .as_ref()
             .and_then(|json| {
                 json.get("_RecordValue_")?
                     .get("landscapeCanvas")?
@@ -1088,15 +1108,22 @@ fn build_mfd_view_canvas_map(db: &Database) -> HashMap<String, (String, Option<S
                 Some(resolved)
             }
         };
+        let screen_name_loc_key = record_json
+            .as_ref()
+            .and_then(|json| json.get("_RecordValue_")?.get("name")?.as_str())
+            .map(|s| s.to_string())
+            .filter(|s| !s.is_empty() && s != "null");
         // Keep the first record found for each view type (avoids duplicates).
-        map.entry(view_type).or_insert((canvas_guid, name));
+        map.entry(view_type)
+            .or_insert((canvas_guid, name, screen_name_loc_key));
     }
     map
 }
 
 /// Collect per-MFD default content canvases from a dashboard entity that carries
 /// `SCItemSeatDashboardParams.MFDParams`.  Returns a map from geometry name
-/// (e.g. `"Screen_Left_Upper_RTT"`) to `(canvas_guid, canvas_record_name)`.
+/// (e.g. `"Screen_Left_Upper_RTT"`) to
+/// `(canvas_guid, canvas_record_name, screen_name_loc_key)`.
 ///
 /// The selection logic mirrors the game's runtime default per the `SMFDModeConfig`
 /// `defaultConfiguration` block:
@@ -1109,7 +1136,7 @@ fn build_mfd_view_canvas_map(db: &Database) -> HashMap<String, (String, Option<S
 pub(crate) fn collect_mfd_default_canvases(
     db: &Database,
     dashboard_entity_record: &Record,
-) -> HashMap<String, (String, Option<String>)> {
+) -> HashMap<String, (String, Option<String>, Option<String>)> {
     let struct_id = dashboard_entity_record.struct_id();
 
     // All MFD geometry names in MFDs[] array order.

@@ -35,7 +35,7 @@
 //!   still rendered and the always-placed shape remains).
 
 use swf::{
-    Color, Compression, ExportedAsset, FillStyle, Fixed8, Fixed16,
+    Color, ColorTransform, Compression, ExportedAsset, FillStyle, Fixed8, Fixed16,
     Font, FontFlag, FontLayout, FrameLabel, Glyph, GlyphEntry, Header, Language,
     Matrix, PlaceObject, PlaceObjectAction, PointDelta,
     Rectangle, RemoveObject, Shape, ShapeFlag, ShapeRecord, ShapeStyles, Sprite, StyleChangeData,
@@ -443,6 +443,141 @@ pub fn make_scaled_nested_sprite_swf() -> Vec<u8> {
 
     let mut buf = Vec::new();
     swf::write_swf(&header, &tags, &mut buf).expect("make_scaled_nested_sprite_swf: write_swf failed");
+    buf
+}
+
+/// A `ColorTransform` with the given channel multipliers (all adds = 0).
+fn color_mult(r: f32, g: f32, b: f32, a: f32) -> ColorTransform {
+    ColorTransform {
+        r_multiply: Fixed8::from_f32(r),
+        g_multiply: Fixed8::from_f32(g),
+        b_multiply: Fixed8::from_f32(b),
+        a_multiply: Fixed8::from_f32(a),
+        r_add: 0,
+        g_add: 0,
+        b_add: 0,
+        a_add: 0,
+    }
+}
+
+/// Place `char_id` at `depth` with the given matrix and colour transform.
+fn place_with_ct(
+    char_id: swf::CharacterId,
+    depth: swf::Depth,
+    matrix: Matrix,
+    ct: ColorTransform,
+) -> Tag<'static> {
+    Tag::PlaceObject(Box::new(PlaceObject {
+        version: 2,
+        action: PlaceObjectAction::Place(char_id),
+        depth,
+        matrix: Some(matrix),
+        color_transform: Some(ct),
+        ratio: None,
+        name: None,
+        clip_depth: None,
+        class_name: None,
+        filters: None,
+        background_color: None,
+        blend_mode: None,
+        clip_actions: None,
+        has_image: false,
+        is_bitmap_cached: None,
+        is_visible: None,
+        amf_data: None,
+    }))
+}
+
+fn translate_matrix(tx_px: f64, ty_px: f64) -> Matrix {
+    Matrix {
+        a: Fixed16::from_f32(1.0),
+        b: Fixed16::from_f32(0.0),
+        c: Fixed16::from_f32(0.0),
+        d: Fixed16::from_f32(1.0),
+        tx: Twips::from_pixels(tx_px),
+        ty: Twips::from_pixels(ty_px),
+    }
+}
+
+/// Stage places a white 40×40 shape directly at (0,0) with `r_multiply = 0.5`.
+///
+/// A white shape adopts the (non-white) composed tint, so the rendered red
+/// channel reflects how many times the colour transform was applied: a single
+/// (correct) application → red ≈ 128; a double application → red ≈ 64.
+/// Stage 100×100.
+pub fn make_stage_color_transform_swf() -> Vec<u8> {
+    let header = Header {
+        compression: Compression::None,
+        version: 8,
+        stage_size: Rectangle {
+            x_min: Twips::ZERO,
+            x_max: Twips::from_pixels(100.0),
+            y_min: Twips::ZERO,
+            y_max: Twips::from_pixels(100.0),
+        },
+        frame_rate: Fixed8::from_f32(24.0),
+        num_frames: 1,
+    };
+
+    let white = Color { r: 255, g: 255, b: 255, a: 255 };
+    let tags: Vec<Tag<'_>> = vec![
+        Tag::DefineShape(filled_rect_shape(1, 40.0, 40.0, white)),
+        place_with_ct(1, 1, Matrix::IDENTITY, color_mult(0.5, 1.0, 1.0, 1.0)),
+        Tag::ShowFrame,
+    ];
+
+    let mut buf = Vec::new();
+    swf::write_swf(&header, &tags, &mut buf).expect("make_stage_color_transform_swf: write_swf failed");
+    buf
+}
+
+/// Nested colour transforms: stage → spriteA (blue→0) → spriteB (green→0) → white shape.
+///
+/// The shape (white, 20×20) is placed inside spriteB at (0,0); spriteB is placed
+/// inside spriteA at translate (40,40) with a green-zeroing transform; spriteA is
+/// placed on the stage with a blue-zeroing transform.  Correct composition folds
+/// both transforms (→ red), so the rendered pixel at (50,50) is pure red.  If the
+/// intermediate (spriteB) transform is dropped, green survives (→ yellow).
+/// Stage 100×100.
+pub fn make_nested_color_transform_swf() -> Vec<u8> {
+    let header = Header {
+        compression: Compression::None,
+        version: 8,
+        stage_size: Rectangle {
+            x_min: Twips::ZERO,
+            x_max: Twips::from_pixels(100.0),
+            y_min: Twips::ZERO,
+            y_max: Twips::from_pixels(100.0),
+        },
+        frame_rate: Fixed8::from_f32(24.0),
+        num_frames: 1,
+    };
+
+    let white = Color { r: 255, g: 255, b: 255, a: 255 };
+    let tags: Vec<Tag<'_>> = vec![
+        Tag::DefineShape(filled_rect_shape(1, 20.0, 20.0, white)),
+        // spriteB places the shape at its origin (no transform).
+        Tag::DefineSprite(Sprite {
+            id: 2,
+            num_frames: 1,
+            tags: vec![place_tag(1, 1), Tag::ShowFrame],
+        }),
+        // spriteA places spriteB at (40,40) with a green-zeroing transform.
+        Tag::DefineSprite(Sprite {
+            id: 3,
+            num_frames: 1,
+            tags: vec![
+                place_with_ct(2, 1, translate_matrix(40.0, 40.0), color_mult(1.0, 0.0, 1.0, 1.0)),
+                Tag::ShowFrame,
+            ],
+        }),
+        // Stage places spriteA with a blue-zeroing transform.
+        place_with_ct(3, 1, Matrix::IDENTITY, color_mult(1.0, 1.0, 0.0, 1.0)),
+        Tag::ShowFrame,
+    ];
+
+    let mut buf = Vec::new();
+    swf::write_swf(&header, &tags, &mut buf).expect("make_nested_color_transform_swf: write_swf failed");
     buf
 }
 

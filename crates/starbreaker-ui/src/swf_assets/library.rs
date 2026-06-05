@@ -10,7 +10,7 @@ use super::extract::{
     extract_bitmaps, extract_edit_text_records, extract_exported_symbols,
     extract_font_edit_text_metrics, extract_fonts, extract_main_timeline_labels, extract_shapes,
 };
-use super::stage::{extract_sprite_first_frame, extract_stage_frame, extract_stage_size};
+use super::stage::{extract_all_sprite_first_frames, extract_stage_frame, extract_stage_size};
 use super::types::{EditTextRecord, FontGlyphSet, PlaceRecord, ShapeRecord, SwfEditTextMetrics};
 
 /// Content-addressed cache of static visual atoms from one SWF.
@@ -23,6 +23,9 @@ pub struct SwfAssetLibrary {
     edit_texts: HashMap<CharacterId, EditTextRecord>,
     font_edit_text_metrics: HashMap<String, SwfEditTextMetrics>,
     frame_labels: HashMap<String, u32>,
+    /// First-frame display list of every `DefineSprite`, parsed once at
+    /// construction so the recursive renderer does not re-parse the SWF per node.
+    sprite_first_frames: HashMap<CharacterId, Vec<PlaceRecord>>,
     raw: Vec<u8>,
 }
 
@@ -41,6 +44,7 @@ impl SwfAssetLibrary {
         let edit_texts = extract_edit_text_records(&swf_bytes)?;
         let font_edit_text_metrics = extract_font_edit_text_metrics(&swf_bytes)?;
         let frame_labels = extract_main_timeline_labels(&swf_bytes)?;
+        let sprite_first_frames = extract_all_sprite_first_frames(&swf_bytes);
 
         Ok(Self {
             content_hash,
@@ -51,6 +55,7 @@ impl SwfAssetLibrary {
             edit_texts,
             font_edit_text_metrics,
             frame_labels,
+            sprite_first_frames,
             raw: swf_bytes,
         })
     }
@@ -117,11 +122,19 @@ impl SwfAssetLibrary {
     }
 
     pub fn get_sprite_first_frame(&self, sprite_id: CharacterId) -> Result<Vec<PlaceRecord>, UiError> {
-        extract_sprite_first_frame(&self.raw, sprite_id)
+        self.sprite_first_frames
+            .get(&sprite_id)
+            .cloned()
+            .ok_or_else(|| UiError::UnsupportedTag(format!("DefineSprite id={sprite_id} not found")))
     }
 
+    /// First-frame display list of `character_id` from the construction-time
+    /// cache (empty if `character_id` is not a `DefineSprite`).
     pub fn extract_sprite_first_frame(&self, character_id: CharacterId) -> Vec<PlaceRecord> {
-        self.get_sprite_first_frame(character_id).unwrap_or_default()
+        self.sprite_first_frames
+            .get(&character_id)
+            .cloned()
+            .unwrap_or_default()
     }
 
     pub fn export_name_for(&self, character_id: CharacterId) -> Option<String> {

@@ -192,20 +192,44 @@ pub(super) fn draw_edit_text(
         return false;
     }
 
-    // Transform EditText bounds through the placement matrix.
+    // Transform the EditText bounds through the full placement matrix, then map
+    // stage space into the dest rect via sx/sy.  Transforming all four corners
+    // and taking their axis-aligned bounding box honours scale and translation
+    // (and approximates rotation/skew, which the axis-aligned text renderer
+    // cannot reproduce exactly).  For an identity/translation matrix this is
+    // identical to using the raw bounds plus tx/ty.
     let bounds = &edit.bounds;
     let bx0 = bounds.x_min.to_pixels() as f32;
     let by0 = bounds.y_min.to_pixels() as f32;
     let bx1 = bounds.x_max.to_pixels() as f32;
     let by1 = bounds.y_max.to_pixels() as f32;
 
-    let tx = matrix.tx.to_pixels() as f32;
-    let ty = matrix.ty.to_pixels() as f32;
-    // Use the translation component of the matrix; scale/rotation applied via sx/sy.
-    let dest_x = origin.left() + (bx0 + tx) * sx;
-    let dest_y = origin.top() + (by0 + ty) * sy;
-    let dest_w = ((bx1 - bx0) * sx).max(1.0);
-    let dest_h = ((by1 - by0) * sy).max(1.0);
+    let ma = matrix.a.to_f32();
+    let mb = matrix.b.to_f32();
+    let mc = matrix.c.to_f32();
+    let md = matrix.d.to_f32();
+    let mtx = matrix.tx.to_pixels() as f32;
+    let mty = matrix.ty.to_pixels() as f32;
+    let mut min_x = f32::MAX;
+    let mut min_y = f32::MAX;
+    let mut max_x = f32::MIN;
+    let mut max_y = f32::MIN;
+    for (px, py) in [(bx0, by0), (bx1, by0), (bx1, by1), (bx0, by1)] {
+        let stage_x = ma * px + mc * py + mtx;
+        let stage_y = mb * px + md * py + mty;
+        min_x = min_x.min(stage_x);
+        min_y = min_y.min(stage_y);
+        max_x = max_x.max(stage_x);
+        max_y = max_y.max(stage_y);
+    }
+    let dest_x = origin.left() + min_x * sx;
+    let dest_y = origin.top() + min_y * sy;
+    let dest_w = ((max_x - min_x) * sx).max(1.0);
+    let dest_h = ((max_y - min_y) * sy).max(1.0);
+
+    // Font size scales by the matrix's vertical scale as well as the stage→dest
+    // scale (|d| for an axis-aligned matrix; the vector length handles rotation).
+    let matrix_scale_y = (mb * mb + md * md).sqrt();
 
     let text_rect = Rect { x: dest_x, y: dest_y, w: dest_w, h: dest_h };
 
@@ -232,8 +256,9 @@ pub(super) fn draw_edit_text(
             continue;
         };
 
-        // size_swf is in Flash font-size units; scale by sy to get destination pixels.
-        let size_px = (run.size_swf * sy).max(1.0);
+        // size_swf is in Flash font-size units; scale by the matrix vertical
+        // scale and the stage→dest scale to get destination pixels.
+        let size_px = (run.size_swf * matrix_scale_y * sy).max(1.0);
         let colour = apply_alpha(run.color, alpha);
 
         if renderer.draw_swf_font(

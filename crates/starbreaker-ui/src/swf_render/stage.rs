@@ -240,9 +240,10 @@ fn draw_stage_at_frame(
 
     let mut drew_any = false;
     for place in &stage_places {
-        let ct_tint = color_transform_tint(tint, place.color_transform.as_ref());
+        // `draw_character` folds each place's own colour transform into the tint,
+        // so pass the unmodified stage tint here (no pre-application).
         let mut visited = HashSet::new();
-        if draw_character(pixmap, assets, place, sw, sh, sx, sy, dest, ct_tint, alpha, MAX_SPRITE_DEPTH, &mut visited, suppressed, loc_fn) {
+        if draw_character(pixmap, assets, place, sw, sh, sx, sy, dest, tint, alpha, MAX_SPRITE_DEPTH, &mut visited, suppressed, loc_fn) {
             drew_any = true;
         }
     }
@@ -288,10 +289,16 @@ fn draw_character(
         return false;
     }
 
+    // Fold this character's colour transform into the inherited tint exactly
+    // once. The folded tint is used for the leaf draw and propagated to sprite
+    // children, so nested colour transforms compose down the tree the same way
+    // matrices do — without being dropped (intermediate sprites) or applied
+    // twice (top-level shapes).
+    let local_tint = color_transform_tint(tint, place.color_transform.as_ref());
+
     let result = if let Some(shape) = assets.get_shape(char_id) {
-        let ct_tint = color_transform_tint(tint, place.color_transform.as_ref());
         let shape_dest = matrix_to_dest(shape, &place.matrix, sw, sh, sx, sy, origin);
-        draw_shape(pixmap, shape, shape_dest, ct_tint, alpha)
+        draw_shape(pixmap, shape, shape_dest, local_tint, alpha)
     } else if let Some(edit) = assets.get_edit_text(char_id) {
         super::edit_text::draw_edit_text(
             pixmap, assets, edit, &place.matrix,
@@ -312,16 +319,15 @@ fn draw_character(
                 name: sp_place.name.clone(),
                 clip_depth: sp_place.clip_depth,
             };
-            // Child color transform is handled inside draw_character for shapes.
-            // Keep parent tint intact for the recursive call; the child's own
-            // color_transform is applied when we reach a leaf shape.
+            // Propagate the folded tint so this sprite's own colour transform
+            // affects its children; each child folds its own transform in turn.
             if draw_character(
                 pixmap,
                 assets,
                 &composed_place,
                 sw, sh, sx, sy,
                 origin, // unchanged — composed_matrix handles positioning
-                tint,
+                local_tint,
                 alpha,
                 max_depth - 1,
                 visited,

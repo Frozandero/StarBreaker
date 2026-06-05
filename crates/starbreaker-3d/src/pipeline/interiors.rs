@@ -1391,6 +1391,7 @@ mod tests {
             canvas_variable_binding: None,
             content_canvas_guid: None,
             content_canvas_record_name: None,
+            screen_name_loc_key: None,
             dashboard_view_index: None,
             dashboard_screen_slot: None,
             owner_source_file: None,

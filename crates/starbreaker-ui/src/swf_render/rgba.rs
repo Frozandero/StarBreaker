@@ -31,8 +31,7 @@ pub(super) fn composite_rgba_over_pixmap(src: &RgbaImage, dst: &mut Pixmap) {
             dst_data[idx] = (r_pm + dst_data[idx] as u32 * inv / 255).min(255) as u8;
             dst_data[idx + 1] = (g_pm + dst_data[idx + 1] as u32 * inv / 255).min(255) as u8;
             dst_data[idx + 2] = (b_pm + dst_data[idx + 2] as u32 * inv / 255).min(255) as u8;
-            dst_data[idx + 3] =
-                (sa * 255 / 255 + dst_data[idx + 3] as u32 * inv / 255).min(255) as u8;
+            dst_data[idx + 3] = (sa + dst_data[idx + 3] as u32 * inv / 255).min(255) as u8;
         }
     }
 }
