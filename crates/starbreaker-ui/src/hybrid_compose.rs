@@ -1,30 +1,99 @@
-//! Hybrid UI IR renderer that composes IR-backed BB content.
+//! Hybrid UI IR renderer that composes IR-backed BB content with SWF overlays.
 //!
-//! Provides `render_ui_ir_with_swf_overlay`, which renders the IR document.
-//! SWF visual-exports overlays are intentionally not applied; per-node symbol
-//! drawing handles named SWF symbols at their correct canvas positions.
+//! `render_ui_ir_with_swf_overlay` renders the IR document with Phase 5 Flash-wins
+//! precedence: nodes with `is_flash_renderer == true` suppress their BB subtrees
+//! and instead composite the SWF stage at the node's `computed_rect`.  Nodes
+//! without `is_flash_renderer` render via the normal BB path unchanged.
+
+use std::collections::{HashMap, HashSet};
 
 use image::RgbaImage;
+use tiny_skia::{Color, Rect as TskRect};
 
 use crate::bb_atlas::AtlasLibrary;
 use crate::compose::ComposeContext;
 use crate::error::UiError;
 use crate::ir_compose::render_ui_ir_document;
+use crate::swf_render::draw_swf_stage_rgba_in_rect;
+use crate::swf_render::state_select::compute_sample_data_export_ids;
 use crate::ui_ir::UiIrDocument;
 
-/// Render a UI IR document, compositing any required SWF content.
+/// Render a UI IR document with SWF-wins / BB-fallback precedence (Phase 5).
 ///
-/// SWF visual-exports overlays are intentionally NOT applied here. Per-node
-/// symbol drawing (for WidgetCustomShape) already handles named SWF symbols
-/// at their correct positions. The full-stage visual-exports overlay only
-/// adds ActionScript-controlled state-driven content (e.g. targeting brackets,
-/// lock indicators) that must not appear in static "default state" renders.
+/// For each node with `is_flash_renderer == true`:
+/// - The node and its entire BB subtree are removed from the BB render pass.
+/// - The SWF stage (frame 0, with sample-data suppression) is composited at
+///   the node's `computed_rect` over the BB result.
+///
+/// `loc_fn` resolves `@key` loc strings in EditText fields encountered during
+/// the SWF stage render.
 pub fn render_ui_ir_with_swf_overlay(
     document: &UiIrDocument,
     ctx: &ComposeContext<'_>,
     atlas: &AtlasLibrary<'_>,
+    loc_fn: &dyn Fn(&str) -> Option<String>,
 ) -> Result<RgbaImage, UiError> {
-    render_ui_ir_document(document, ctx, atlas)
+    let flash_ids: Vec<u32> = document
+        .nodes
+        .iter()
+        .filter(|n| n.is_flash_renderer)
+        .map(|n| n.id)
+        .collect();
+
+    if flash_ids.is_empty() {
+        return render_ui_ir_document(document, ctx, atlas);
+    }
+
+    // Collect all node IDs in Flash subtrees (root + all recursive children).
+    let suppressed_bb_ids = collect_subtree_ids(document, &flash_ids);
+
+    // Render the BB document with Flash subtrees removed.
+    let reduced = UiIrDocument {
+        nodes: document
+            .nodes
+            .iter()
+            .filter(|n| !suppressed_bb_ids.contains(&n.id))
+            .cloned()
+            .collect(),
+        ..document.clone()
+    };
+    let mut image = render_ui_ir_document(&reduced, ctx, atlas)?;
+
+    // Composite the SWF stage at each Flash node's computed_rect.
+    let suppressed_swf = compute_sample_data_export_ids(ctx.assets);
+    let tint = Color::WHITE;
+    for &flash_id in &flash_ids {
+        let Some(node) = document.nodes.iter().find(|n| n.id == flash_id) else {
+            continue;
+        };
+        let r = &node.computed_rect;
+        let Some(dest) = TskRect::from_xywh(r.x, r.y, r.w, r.h) else {
+            continue;
+        };
+        draw_swf_stage_rgba_in_rect(&mut image, ctx.assets, dest, tint, 1.0, &suppressed_swf, loc_fn);
+    }
+
+    Ok(image)
+}
+
+/// Collect the IDs of all nodes reachable from `roots` via the children graph.
+fn collect_subtree_ids(document: &UiIrDocument, roots: &[u32]) -> HashSet<u32> {
+    let children_of: HashMap<u32, &[u32]> = document
+        .nodes
+        .iter()
+        .map(|n| (n.id, n.children.as_slice()))
+        .collect();
+
+    let mut result = HashSet::new();
+    let mut queue: std::collections::VecDeque<u32> = roots.iter().copied().collect();
+    while let Some(id) = queue.pop_front() {
+        if result.insert(id) {
+            if let Some(children) = children_of.get(&id) {
+                queue.extend(children.iter().copied());
+            }
+        }
+    }
+    result
 }
 
 #[cfg(test)]
@@ -98,7 +167,7 @@ mod tests {
             assets: &assets,
         };
 
-        render_ui_ir_with_swf_overlay(&document, &ctx, &atlas)
+        render_ui_ir_with_swf_overlay(&document, &ctx, &atlas, &|_| None)
             .expect("hybrid IR should render without requiring separate swf_assets");
     }
 }

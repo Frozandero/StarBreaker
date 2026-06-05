@@ -103,6 +103,11 @@ pub struct UiIrNode {
     pub custom_shape: Option<UiIrCustomShape>,
     pub style_tag_uuids: Vec<String>,
     pub resolved_style_tags: Vec<UiIrStyleTag>,
+    /// `true` when this node's source BB widget has `rendererType == "Flash"`.
+    /// When `true`, the hybrid renderer replaces this node's BB subtree with
+    /// the resolved SWF stage content.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub is_flash_renderer: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -679,3 +679,85 @@ pub fn make_edit_text_with_font_swf() -> Vec<u8> {
         .expect("make_edit_text_with_font_swf: write_swf failed");
     buf
 }
+
+// ── Phase 5 fixture: sample-data state-selection ─────────────────────────────
+
+/// Phase 5 sample-data state-selection fixture.
+///
+/// Three exported sprites exercising the `compute_sample_data_export_ids` rule:
+///
+/// - `"StaticState"` (id=4): places shape id=1 + EditText id=2 (`@hud_NoTarget`)
+///   → has a loc-key EditText → must NOT be suppressed
+/// - `"SampleState"` (id=5): places EditText id=3 ("Ship Name/Label")
+///   → all EditText is sample data (no `@`) → must be suppressed
+/// - `"AlwaysVisible"` (id=6): places shape id=1 only → no EditText → must NOT be suppressed
+pub fn make_sample_data_swf() -> Vec<u8> {
+    let header = Header {
+        compression: Compression::None,
+        version: 8,
+        stage_size: Rectangle {
+            x_min: Twips::ZERO,
+            x_max: Twips::from_pixels(100.0),
+            y_min: Twips::ZERO,
+            y_max: Twips::from_pixels(100.0),
+        },
+        frame_rate: Fixed8::from_f32(24.0),
+        num_frames: 1,
+    };
+
+    let red = Color { r: 220, g: 50, b: 50, a: 255 };
+    let loc_html = r##"<p align="center"><font face="$Furore" size="6" color="#ffffff" letterSpacing="0.0">@hud_NoTarget</font></p>"##;
+
+    let tags: Vec<Tag<'_>> = vec![
+        Tag::DefineShape(filled_rect_shape(1, 50.0, 50.0, red)),
+        Tag::DefineEditText(Box::new(
+            swf::EditText::new()
+                .with_id(2)
+                .with_bounds(Rectangle {
+                    x_min: Twips::ZERO,
+                    x_max: Twips::from_pixels(100.0),
+                    y_min: Twips::from_pixels(50.0),
+                    y_max: Twips::from_pixels(70.0),
+                })
+                .with_initial_text(Some(SwfStr::from_utf8_str(loc_html)))
+                .with_is_html(true),
+        )),
+        Tag::DefineEditText(Box::new(
+            swf::EditText::new()
+                .with_id(3)
+                .with_bounds(Rectangle {
+                    x_min: Twips::ZERO,
+                    x_max: Twips::from_pixels(100.0),
+                    y_min: Twips::ZERO,
+                    y_max: Twips::from_pixels(30.0),
+                })
+                .with_initial_text(Some(SwfStr::from_utf8_str("Ship Name/Label")))
+                .with_is_html(false),
+        )),
+        Tag::DefineSprite(Sprite {
+            id: 4,
+            num_frames: 1,
+            tags: vec![place_tag(1, 1), place_tag(2, 2), Tag::ShowFrame],
+        }),
+        Tag::DefineSprite(Sprite {
+            id: 5,
+            num_frames: 1,
+            tags: vec![place_tag(3, 1), Tag::ShowFrame],
+        }),
+        Tag::DefineSprite(Sprite {
+            id: 6,
+            num_frames: 1,
+            tags: vec![place_tag(1, 1), Tag::ShowFrame],
+        }),
+        Tag::ExportAssets(vec![
+            ExportedAsset { id: 4, name: SwfStr::from_utf8_str("StaticState") },
+            ExportedAsset { id: 5, name: SwfStr::from_utf8_str("SampleState") },
+            ExportedAsset { id: 6, name: SwfStr::from_utf8_str("AlwaysVisible") },
+        ]),
+        Tag::ShowFrame,
+    ];
+
+    let mut buf = Vec::new();
+    swf::write_swf(&header, &tags, &mut buf).expect("make_sample_data_swf: write_swf failed");
+    buf
+}

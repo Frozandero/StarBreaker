@@ -82,6 +82,23 @@ pub fn draw_swf_stage(
     draw_stage_at_frame(pixmap, assets, 0, dest, tint, alpha, &empty, &|_| None)
 }
 
+/// Rasterise the SWF main-timeline stage frame 0 with state suppression and loc resolution.
+///
+/// `suppressed` is the set of CharacterIds to skip (and their subtrees); populated
+/// from `compute_sample_data_export_ids` for static renders.  `loc_fn` resolves
+/// `@key` loc strings in EditText.
+pub fn draw_swf_stage_with_state(
+    pixmap: &mut Pixmap,
+    assets: &SwfAssetLibrary,
+    dest: TskRect,
+    tint: Color,
+    alpha: f32,
+    suppressed: &HashSet<CharacterId>,
+    loc_fn: &dyn Fn(&str) -> Option<String>,
+) -> bool {
+    draw_stage_at_frame(pixmap, assets, 0, dest, tint, alpha, suppressed, loc_fn)
+}
+
 /// Rasterise the SWF stage at the frame whose `FrameLabel` matches `label`.
 ///
 /// Returns `false` when the label is not found or the display list is empty.

@@ -60,5 +60,10 @@
             custom_shape,
             style_tag_uuids,
             resolved_style_tags,
+            is_flash_renderer: node
+                .raw
+                .get("rendererType")
+                .and_then(|v| v.as_str())
+                .is_some_and(|s| s.eq_ignore_ascii_case("Flash")),
         });
     }

@@ -31,7 +31,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let before = render_ui_ir_document(&document, &ctx, &atlas)?;
-    let after = render_ui_ir_with_swf_overlay(&document, &ctx, &atlas)?;
+    let after = render_ui_ir_with_swf_overlay(&document, &ctx, &atlas, &|_| None)?;
 
     before.save(output_dir.join("synthetic-hybrid-before.png"))?;
     after.save(output_dir.join("synthetic-hybrid-after.png"))?;
@@ -124,6 +124,7 @@ fn synthetic_hybrid_document() -> UiIrDocument {
             custom_shape: None,
             style_tag_uuids: Vec::new(),
             resolved_style_tags: Vec::new(),
+            is_flash_renderer: false,
         }],
     }
 }

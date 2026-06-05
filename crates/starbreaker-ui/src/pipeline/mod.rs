@@ -384,6 +384,7 @@ pub fn render_for_binding_ir(inputs: &PipelineInputs<'_>) -> Result<Vec<u8>, UiE
             &ir,
             &ctx,
             &atlas,
+            &|key| inputs.loc_fetcher.and_then(|f| f.fetch_loc(key)),
         )?,
     };
     encode_png(&image)

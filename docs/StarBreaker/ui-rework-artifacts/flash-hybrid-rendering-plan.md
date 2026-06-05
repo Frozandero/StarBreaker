@@ -516,6 +516,7 @@ self/power MFDs show their own names; suite green.
 ## Phase 7 — Performance, cleanup, baseline refresh
 
 TODO:
+- [ ] 7.0 Check the plan for any unished or deferred items, then complete them.
 - [ ] 7.1 Cache parsed SWFs per export run (avoid re-decompress/parse for shared
   SWFs and per-frame extraction). Verify the resolver does directory listing once
   per brand. Measure Clipper export wall-time before/after; no significant

@@ -91,6 +91,7 @@
                 custom_shape: None,
                 style_tag_uuids: Vec::new(),
                 resolved_style_tags: Vec::new(),
+                is_flash_renderer: false,
             }],
         };
 
