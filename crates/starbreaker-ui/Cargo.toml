@@ -25,6 +25,8 @@ usvg = "0.42"
 [dev-dependencies]
 anyhow = "1"
 starbreaker-p4k = { path = "../starbreaker-p4k" }
+swf = "0.2"
+tiny-skia = { version = "0.12", default-features = false, features = ["std"] }
 
 [lints]
 workspace = true

@@ -1,0 +1,566 @@
+# Plan: Faithful Flash (SWF) hybrid UI rendering + MFD frame composition
+
+Status: APPROVED design, not yet implemented.
+Owner: (assign)
+Goal: render BuildingBlocks (BB) UI screens that use Flash/Scaleform SWF content
+the way the game does, generically for **any ship / any manufacturer / any
+screen**, with **no hard-coding and no heuristics**. This closes the two open
+DRAK Clipper target-MFD gaps (the "NO TARGET" font and the "TARGET STATUS"
+footer) and, more importantly, makes every hybrid screen render correctly.
+
+Read first (in order): `StarBreaker/AGENTS.md`,
+`StarBreaker/.github/copilot-instructions.md`,
+`StarBreaker/crates/starbreaker-ui/AGENTS.md`,
+`StarBreaker/crates/starbreaker-ui/docs/ui-matching-workflow.md`, and the sibling
+`clipper-target-mfd-plan.md` (the investigation that produced this plan). The
+recalled memory note `clipper-mfd-hybrid-flash-architecture` summarises the data
+model.
+
+---
+
+## ⚠️ DATA-SOURCE AUTHORITY — READ BEFORE ANY RESEARCH
+
+**Live DataCore and the P4K archive are the single source of truth.** Always
+verify facts with the MCP `datacore_record` / `datacore_query` / `p4k_*` tools
+(or the in-game reference capture).
+
+**The `ui_*` MCP tools (`ui_ir_query`, `ui_canvas_style_inventory`,
+`ui_scene_style_probe`) are NOT ground truth.** They compile from a **local,
+decompiled copy** of the records (`../ships/dcb_canvas/...`) and from StarBreaker's
+own pipeline, so they show **derived data that can be stale or already
+transformed by the code under investigation**. Use them only to see *what the
+pipeline currently produces*, never to establish *what the game authored*.
+
+Concrete lesson from this work: while debugging a separate medical-screen tint
+bug, `ui_ir_query` reported a shape's tint as `null` — but **live DataCore showed
+it was authored `"Accent1"`**. Trusting the IR tool there would have sent the fix
+in the wrong direction. When the IR tool and DataCore disagree, **DataCore wins**,
+and the disagreement itself is often the bug.
+
+---
+
+## 0. Approved decisions (from the user — do not re-litigate)
+
+1. **Fidelity = static template + named-state frames.** Render the SWF's
+   display list for the *correct state*, selecting a named timeline frame
+   (`FrameLabel`) / sprite frame when the SWF exposes one; otherwise the default
+   (frame 0). No ActionScript VM. Dynamic live data (real target name, live
+   gauges) is out of scope; the *static reference state* (e.g. the "no target"
+   state) must match.
+   NOTE (verified, see §1b / Phase 3): many SWFs — including the target screen —
+   have **no frame labels**; their states are AS-driven nested-sprite visibility.
+   So "named-state frames" is one mechanism among two: frame-label selection where
+   present, **BB-resolved-state-driven sprite selection** otherwise. Do not assume
+   frame labels exist.
+2. **SWF wins, BB is fallback.** For a widget whose `rendererType == "Flash"`,
+   the SWF presentation is authoritative (its graphics + its fonts). The
+   BB-native render of that widget's subtree is the fallback used only when no
+   SWF resolves. (So "NO TARGET" renders in the SWF's Furore, not the BB
+   `blenderpro-thin`.)
+3. **Deterministic SWF resolution.** Replace today's multi-path candidate
+   probing (and the hard-coded `brand_ship_subdirs` / `annunciator_ship_subdirs`
+   lists) with a resolver derived from game data + the P4K asset tree. No
+   hard-coded ship lists.
+
+---
+
+## 1. Verified game-data facts (already confirmed via MCP — don't re-derive)
+
+Re-verify with the MCP **P4K**/**datacore** tools (ground truth); the `ui_*` tools
+are derived/decompiled data — see the DATA-SOURCE AUTHORITY callout above.
+
+- **Binding** (`scene.json`, helper `Screen_Right_Upper_RTT`, kind `mfd`):
+  `canvas_guid` = `33bda02c…` (`M_MFD_Screen`, 800×600 = 4:3 frame),
+  `content_canvas_guid` = `b8d2d65c…` (`MC_S_Target_Master`, 1920×1080 = 16:9).
+- **Frame chain**: `M_MFD_Screen` → `canvas_MFDContent` (WidgetCanvas) →
+  `m_eng_mfdcontent.json` (800×600). `m_eng_mfdcontent` statically embeds:
+  `canvas_PortraitMFDView`→`mc_s_target_master`,
+  `canvas_LandscapeMFDView`→`mc_s_self_master`, `canvas_incomingCallOverride`,
+  and `canvas_Header / Footer`→`gen_mc_s_header` (the footer, 11% height,
+  bottom-anchored, pivot/anchor y=1.0). All three content views default
+  `isActive:true, alpha:1.0`; the engine shows one via `aspectRatioLibrary`
+  (`aspectratiototag_mfd.json`) + "Content Canvas Scaling" style conditions.
+  `m_eng_mfdcontent`'s root `base_Root` has authored `alpha:0.0` with no
+  animation timeline (a runtime page-in start state).
+- **Content canvas** `MC_S_Target_Master` scene = `base_Root` +
+  `canvas_TargetStatus` (**`rendererType: "Flash"`, `canvas: null`**). Its
+  `defaultStyles` modifier sets the canvas ref to `gen_mc_s_target.json`
+  (per-brand variants `mrai/rsi/grin`; DRAK → default). `gen_mc_s_target` holds
+  the BB `text_NoTarget` ("NO TARGET", `blenderpro-thin` → `$Text1Thin`) and
+  target-info fields (FACTION/VELOCITY/HAIL, `is_active:false` in no-target
+  state). `renderer_hint = hybrid`.
+- **SWF reference is NOT explicit.** `vehicle_screen_mfd`'s
+  `UIBuildingBlocksEntityComponentParams` references only the canvas GUID; the
+  Flash widget carries only a `BuildingBlocks_FlashRendererPolicy` (no path).
+  SWFs live by convention at
+  `Data\UI\ShipInterface\assets\SWF\<BRAND>\[<ShipSubdir>\]<ScreenSet>\<File>.swf`,
+  e.g. `…\DRA\DRAK_Dragonfly\Support_Bespoke_2\TargetStatus.swf`. The Clipper
+  has **no own SWF dir** and reuses another DRAK ship's set.
+- **Font fact**: the reference "NO TARGET" is **Furore** (proven by rendering
+  every `fonts_en.swf` symbol through `draw_swf_font`; `$Furore` matches, Blender
+  Pro variants do not). `TargetStatus.swf` *imports* `$Furore`+`$OrbitronLight`
+  from `…/fonts/Shared/fonts_en.swf` and renders its own text; it defines **no**
+  fonts itself. The shared font library is already merged at render time
+  (`load_first_swf` merges `fonts_en.gfx` and follows `ImportAssets`).
+- **The "orange bar"** (D5): a stage element that appeared when stage frame 0 was
+  drawn. The current code (`swf_render/stage.rs::draw_swf_visual_exports`) now
+  **skips all stage-frame-0 shapes** and the hybrid path
+  (`hybrid_compose.rs`) applies **no** SWF stage/visual-export overlay at all —
+  only per-node `WidgetCustomShape` symbols (`draw_swf_symbol`) and SWF fonts
+  (`draw_swf_font`) are used. This is why Furore text + footer are missing.
+- **`swf` crate 0.2** exposes `Tag::FrameLabel` (43), `DefineSprite`,
+  `PlaceObject(2/3/4)`, `ShowFrame`, `DefineEditText`, `DefineText`.
+- **CRITICAL (verified by probing `TargetStatus.swf`)**: this SWF has **1
+  main-timeline frame and NO frame labels**. Its main timeline places a single
+  document sprite (`id=27`). States are **ActionScript-driven visibility of
+  nested exported sprites**, not timeline frames:
+  `TargetSelection_Placeholder` (`id=23`) is the **no-target** state (the Furore
+  "NO TARGET"); `TargetSelectionShip` (`id=18`) / `TargetSelectionEntity`
+  (`id=20`) are the acquired states; `TargetStatus_ImageBox` (`id=2`) etc. are
+  other parts. ⇒ **"named-state frames" does NOT apply here.** The achievable
+  generic approach is to drive SWF content selection from the **BB-resolved
+  active state** (the BB IR already resolves it — `text_NoTarget` is active and
+  the target-info fields are `is_active:false` in the no-target state) and render
+  the matching SWF exported sprite, treating other state sprites as hidden. Some
+  other SWFs (e.g. annunciator/background) MAY use frame labels — support both
+  (frame-label selection when present; BB-state-driven symbol selection
+  otherwise). This reframes Phase 3 (below).
+
+## 1b. Phase 3/4 DE-RISK FINDINGS (verified by probing `TargetStatus.swf`)
+
+These materially simplify the work — read before Phase 3/4.
+
+- **The no-target "NO TARGET" is STATIC text in the SWF; no ActionScript needed.**
+  Sprite `id=23` (`TargetSelection_Placeholder`) places `id=22`, a
+  `DefineEditText` whose `initial_text` is **HTML**:
+  `<p align="center"><font face="$Furore" size="6" color="#ffffff"
+  letterSpacing="0.600000">@hud_NoTarget</font></p>`.
+- **Typography is specified IN the SWF EditText HTML** — `face="$Furore"`,
+  `size`, `color`, `align`, `letterSpacing`. This is the authoritative,
+  data-driven font source for SWF-rendered text (parse the HTML; do NOT use the
+  BB font record for SWF text). `$Furore`/`$OrbitronLight` resolve via the
+  already-merged shared font library.
+- **Text content is a localization key** (`@hud_NoTarget`) → resolve via the
+  existing loc system (`loc_fetcher`; the pipeline already resolves `@…` keys for
+  BB text). `letterSpacing="0.6"` matches the reference's wide tracking.
+- **State = static vs sample data.** The acquired-state sprites (`id=18`
+  `TargetSelectionShip`, `id=20` `TargetSelectionEntity`) hold *sample* EditText
+  ("EM", "Emissions", "Ship Name/Label", "000") that AS replaces with live data —
+  meaningless in a static export. The **placeholder/no-target sprite is the
+  correct static state**. The root sprite `id=27` places only AS *manager*
+  objects (`ScreenContextParams`/`TargetStatusManager`/`TargetSelectionManager`,
+  ids 26/25/24) — these are non-visual; the visual sprites hang off the managers.
+- **Implication**: for the immediate font goal, Phase 4 can render the SWF
+  EditText fields of the active/placeholder state directly (parse HTML → font +
+  size + color + align + letterSpacing; resolve loc key; draw with `draw_swf_font`
+  in the EditText bounds, placed by sprite matrix). No AS VM, no BB↔SWF symbol
+  mapping required for this path. The probe (`swf_text_probe`) now dumps sprite
+  trees, frame labels, `DefineText`, and EditText `initial_text` to repeat this
+  analysis for any SWF.
+- **Still to confirm during impl**: which sprite(s) constitute the
+  "static/default" state generically (heuristic-free rule). Candidate rule:
+  render EditText whose text is a loc-key/static literal; treat fields carrying
+  obvious sample data as live (AS) and either skip or fill from BB bindings. The
+  BB IR's resolved active state (e.g. `text_NoTarget` active) is the cross-check.
+
+## 2. Current code map (what exists, what to change)
+
+- `crates/starbreaker-ui/src/swf_assets/` — SWF parse/extract: `extract.rs`
+  (fonts, shapes, bitmaps, exports, edit-text metrics), `stage.rs`
+  (`extract_stage_frame`, `extract_sprite_first_frame`, `extract_stage_size`),
+  `library.rs` (`SwfAssetLibrary`: caches + `merge_swf_bytes`, `content_hash`),
+  `types.rs` (`PlaceRecord`, `ShapeRecord`, `FontGlyphSet`, …).
+- `crates/starbreaker-ui/src/swf_render/` — rasterise: `stage.rs`
+  (`draw_swf_stage`, `draw_swf_visual_exports`, `draw_swf_symbol`,
+  `draw_stage_character*`), `shape.rs` (`draw_shape`, `matrix_to_dest`).
+- `crates/starbreaker-ui/src/text/swf_draw.rs` — `draw_swf_font` (SWF glyph text).
+- `crates/starbreaker-ui/src/pipeline/swf_selection/` — SWF path resolution:
+  `flash_paths.rs` (candidate generation; **hard-coded** `brand_ship_subdirs`,
+  `annunciator_ship_subdirs`), `candidates.rs` (`build_swf_selection_manifest`,
+  `canvas_has_flash_renderer`), `loader.rs` (`load_first_swf`: merges Canvas.swf
+  + `fonts_en.gfx`, follows imports).
+- `crates/starbreaker-ui/src/ir_compose/` — BB IR → pixels (engine_parts/part_*).
+  `part_04.part` draws text nodes (SWF-font selection `select_imported_ui_font`,
+  `used_swf_font`). This is where SWF-vs-BB precedence + SWF content compositing
+  must integrate.
+- `crates/starbreaker-ui/src/hybrid_compose.rs` — `render_ui_ir_with_swf_overlay`
+  (currently == `render_ui_ir_document`).
+- `crates/starbreaker-ui/src/pipeline/mod.rs` — `compile_ir_for_binding`
+  (`frame_canvas_aspect` for mfd 4:3), `render_for_binding_ir`.
+- `crates/starbreaker-3d/src/pipeline/child_payload.rs` — binding population,
+  `build_mfd_view_canvas_map` (`SMFDView`), `collect_mfd_default_canvases`
+  (`SCItemSeatDashboardParams.MFDParams`).
+- Diagnostics: `examples/swf_text_probe.rs` (now takes path args, prints stage
+  size/aspect/fonts/exports/edit-text). `SB_UI_FONT_TELEMETRY=1` logs font
+  selection per text node.
+
+## 3. Guardrails (apply to EVERY phase)
+
+- **Track progress IN THIS DOC.** As each TODO completes, change its `- [ ]` to
+  `- [x]` and append a short note + commit hash on the same line. Update phase
+  status as you go. This file is the living progress tracker — keep it current so
+  any later session (or a fresh agent) can resume precisely from here. If a step's
+  reality differs from the plan, edit the plan to match what you found.
+- **No hard-coding / no heuristics in production code.** No ship/screen/brand
+  name branches, no magic path lists, no "try many paths until one exists". Drive
+  everything from DataCore fields + the P4K asset tree (enumerate, don't guess).
+  Named assets are allowed only in tests/fixtures.
+- **IR is the styling/positioning authority.** SWF content placement must come
+  from SWF matrices + the BB widget's resolved rect; do not invent positions.
+- **TDD**: write a failing test that encodes the expected behaviour first, watch
+  it fail, implement, watch it pass. Unit tests use small synthetic SWFs or
+  checked-in fixture SWFs (see Phase 0), never the live P4K.
+- **Regression cadence**: after every phase (and before declaring any task done)
+  run the required suite (Appendix C). Do **not** edit baselines to pass; fix root
+  cause. Baseline/tier changes need explicit user approval (workflow doc).
+- **Keep files < 500 lines**; split by responsibility; every new `.rs` starts
+  with a `//!` header.
+- **Performance**: parse each SWF once per export (cache by content hash / path
+  in the fetcher or a per-run map); the deterministic resolver must do O(1)–O(k)
+  lookups, not O(paths) probing; reuse `SwfAssetLibrary` across the bindings that
+  share a SWF. Measure export wall-time before/after (Phase 7).
+
+---
+
+## Phase 0 — Test harness & regression safety net (do first)
+
+Objective: be able to test SWF rendering deterministically and catch regressions.
+
+TODO:
+- [x] 0.1 Add 1–2 **tiny fixture SWFs** under
+  `crates/starbreaker-ui/tests/fixtures/swf/` that exercise: a labeled frame
+  (`FrameLabel`), a `DefineSprite`, a `DefineText` static string, a
+  `DefineEditText`, and an `ImportAssets` font reference. Prefer generating them
+  programmatically in a test helper (so they're readable/maintainable) over
+  binary blobs. Document each fixture's contents in a `//!` header.
+  NOTE (implemented): builders live in `tests/swf_helpers/mod.rs` rather than a
+  `fixtures/swf/` subdirectory (programmatic, no binary blobs).
+  `make_labeled_frames_swf()` → FrameLabel + multi-frame; `make_state_sprites_swf()` →
+  DefineSprite, DefineText, DefineEditText (HTML + @hud_NoTarget), ImportAssets.
+  Added `swf = "0.2"` and `tiny-skia = "0.12"` to [dev-dependencies].
+- [x] 0.2 Capture the **current** required-suite results as the green baseline (Appendix C). Record the current generated dimensions of every Clipper UI image
+  so later phases can detect unintended drift.
+  BASELINE (2026-06-05): 373 lib tests + snapshot 11 + live-IR 4 + visual 4 all green.
+  Clipper image dimensions: mc_s_target_master 1600×1200, mc_s_self_master 1600×1200,
+  mc_s_power_master 1600×1200, h_eng_annunciator_master_left 1920×432,
+  h_eng_annunciator_master_right 1920×432. All other screens: 1920×1080 or native
+  authored size.  These must not change through Phases 1–6 without approval.
+- [x] 0.3 Add a `cargo test` helper that renders a fixture SWF via the
+  production path and asserts pixel/coverage invariants (non-empty regions, glyph
+  bounds), to be reused by later phases.
+  NOTE: `swf_helpers::assert_swf_symbol_has_non_empty_coverage` in
+  `tests/swf_helpers/mod.rs`; tested via `tests/swf_rendering_fixtures.rs`
+  (13 tests: parse, frame-label, export, sprite, ImportAssets, DefineText,
+  DefineEditText HTML, and 3 pixel-coverage assertions).
+- [x] 0.4 Confirm `examples/swf_text_probe.rs` + `SB_UI_FONT_TELEMETRY=1` are
+  sufficient diagnostics; extend generically if a phase needs another signal.
+  CONFIRMED: probe covers FrameLabel, DefineSprite trees, DefineText, DefineEditText
+  HTML initial_text, ImportAssets, ExportAssets, font defs. No changes needed.
+
+Validation: suite green; fixtures parse; helper renders.
+
+## Phase 1 — Deterministic SWF resolution (remove the heuristic)
+
+Objective: given a binding (canvas + manufacturer + ship/dashboard context),
+resolve the **exact** SWF path(s) deterministically from data, with a
+data-derived fallback when a ship has no own assets. Remove hard-coded ship
+lists.
+
+Research TODO (use MCP P4K + datacore):
+- [ ] 1.1 Find the config that selects a ship's UI skin / screen set. Start at
+  the dashboard entity (`DRAK_Clipper_Dashboard`, GUID
+  `cab2c9f0-02df-46cd-bc11-06e3a5d12d89`) and its
+  `Components[SCItemSeatDashboardParams]` (and `SCItemSeatDashboardMFDParams`
+  struct fields — query narrow sub-paths; the full struct exceeds the
+  materialization limit). Look for an interface-style / screen-style / SWF-set
+  reference. Also inspect the seat (`DRAK_Clipper_Pilot_Seat`) and any
+  `ShipInterface`/`ScreenStyle` record types (`search_records`).
+- [ ] 1.2 Determine the exact path grammar and the fallback rule from data:
+  `…\SWF\<BRAND>\[<ShipSubdir>\]<ScreenSet>\<ScreenFile>.swf`. `<BRAND>` from
+  manufacturer (3-letter). `<ScreenFile>` from the canvas/screen type
+  (`MC_S_Target` → `TargetStatus`, annunciator → `AnnunciatorHalve{1,2}`, etc. —
+  derive the mapping from data/record names, not a hard-coded table). `<ScreenSet>`
+  and `<ShipSubdir>` from 1.1.
+- [ ] 1.3 If (and only if) a ship has no own assets, the fallback ship/screen-set
+  must be **enumerated from the P4K** (`p4k_list`/`p4k_search` of
+  `…\SWF\<BRAND>\`) and chosen by a data-defined rule (e.g. the brand's default
+  set indicated by config), NOT a hard-coded ship preference. Document the rule.
+
+Implementation TODO:
+- [ ] 1.4 Add a `SwfResolver` (new module under `pipeline/swf_selection/`) that
+  takes structured inputs (brand, screen-type key, ship/skin context) and returns
+  the resolved P4K path(s) + the screen-set, using a P4K directory listing
+  (add a `list_dir`-style capability to the `SwfFetcher`/P4K abstraction if not
+  present). Cache directory listings per brand for the run.
+- [ ] 1.5 Replace `flash_paths.rs` candidate generation and delete
+  `brand_ship_subdirs` / `annunciator_ship_subdirs` (the temporary Buccaneer-first
+  stopgap) once the resolver reproduces the correct selections.
+- [ ] 1.6 Thread the ship/skin context from `child_payload.rs` into the binding so
+  the resolver has it (extend `UiBinding`/`UiBindingView` as needed).
+
+Tests (TDD):
+- [ ] DRAK target screen resolves to the correct `TargetStatus.swf` deterministically.
+- [ ] DRAK annunciator left/right resolve to the **thin** `AnnunciatorHalve{1,2}.swf`
+  (regression lock for the fix already shipped, now via the resolver).
+- [ ] A manufacturer with per-ship assets resolves to the ship's own SWF, not a fallback.
+- [ ] Unknown/missing screen → no SWF (BB-only), no panic.
+
+Validation: resolver unit tests green; re-export Clipper; annunciator stays
+1920×432; MFD unchanged; required suite green.
+
+## Phase 2 — SWF content rendering core (re-enable + correct the display list)
+
+Objective: a correct, generic SWF display-list rasteriser for a chosen frame:
+walk `PlaceObject(2/3/4)` at the target frame, resolve characters
+(shapes/sprites/text/bitmaps) recursively with composed matrices, color
+transforms, depth order, and clipping. This generalises the existing
+`draw_stage_character_depth` and removes the blanket "skip stage shapes".
+
+TODO:
+- [ ] 2.1 In `swf_assets/stage.rs`, generalise frame extraction to return an
+  ordered display list for a given (sprite or main-timeline) frame index,
+  including `PlaceObject` depth, matrix, color transform, ratio, name, **and
+  clip depth** (handle `PlaceObject2/3/4`, not just `PlaceObject`). Keep
+  `RemoveObject` handling.
+- [ ] 2.2 In `swf_render/stage.rs`, render that display list in depth order with
+  composed transforms, color transforms (already partly present), and clip masks
+  (new). Reuse `draw_shape`; add text/bitmap character drawing paths.
+- [ ] 2.3 Make matrix → dest mapping consistent with the BB widget's resolved rect
+  (the SWF stage maps into the Flash widget's `draw_rect`, scaled by stage size).
+  No magic offsets — derive from stage size + widget rect.
+- [ ] 2.4 Guard recursion depth and cycles (sprite → sprite). Keep the existing
+  `MAX_SPRITE_DEPTH` but make it sufficient for real screens; add cycle
+  detection by character id on the current path.
+
+Tests (TDD): fixture SWF with nested sprite + color transform + clip renders the
+expected coverage; depth order respected; cycle does not hang.
+
+Validation: required suite green (this phase adds capability but is not yet wired
+into hybrid output — see Phase 5 — so no visual change yet).
+
+## Phase 3 — State selection (BB-state-driven; fixes the orange bar)
+
+Objective: render only the SWF content for the **active state**, so the orange
+bar (a different-state / always-placed element) is not shown and the no-target
+content is. NOTE (verified): `TargetStatus.swf` has **no frame labels** — its
+states are AS-driven nested-sprite visibility. So selection is primarily
+**BB-state-driven symbol selection**, with frame-label selection as a secondary
+path for SWFs that do use labels.
+
+Research TODO:
+- [ ] 3.1 Parse `FrameLabel` into a `label → frame_index` map (main timeline +
+  each `DefineSprite`) for the SWFs that have them (probe a range of SWFs; the
+  target one has none — annunciator/background may). Support it where present.
+- [ ] 3.2 Establish the generic BB-state → SWF-content mapping. The BB IR already
+  resolves which nodes are active (e.g. `text_NoTarget` active ⇒ no-target
+  state). Find how a BB widget references the SWF symbol/instance to show:
+  candidates are the BB widget/instance **name**, `visualState`, a state
+  style-tag, or `SymbolClass`/`ExportAssets` name linkage (e.g. an active BB
+  "Placeholder/NoTarget" subtree ↔ exported `TargetSelection_Placeholder`).
+  Prefer a name/linkage match; document exactly what links them.
+- [ ] 3.3 Determine, from data, the set of SWF exported sprites that represent
+  mutually-exclusive states (e.g. `TargetSelection_*`) so non-active ones are
+  suppressed. Do not hard-code symbol names — derive the grouping (e.g. shared
+  prefix / `SymbolClass` group / co-located depth) generically.
+
+Implementation TODO:
+- [ ] 3.4 Render the SWF subtree for the active state only (the matched exported
+  sprite's display list), suppressing sibling state sprites and any
+  always-placed element that the BB-active state implies hidden (the orange bar).
+- [ ] 3.5 Where the SWF *does* expose frame labels and the BB state maps to a
+  label, select that frame instead.
+
+Tests (TDD): fixture with two exported "state" sprites renders only the selected
+one; fixture with two labeled frames renders only the selected frame; an
+always-placed element tied to a non-active state is suppressed.
+
+Validation: re-export Clipper target; **orange bar absent**; the no-target SWF
+sprite is the one rendered (full visual lands in Phase 5); suite green.
+
+## Phase 4 — SWF text rendering (the Furore "NO TARGET")
+
+Objective: render SWF text in SWF fonts with the SWF-specified typography. Per the
+verified findings (§1b), the **primary** path for the target screen is **static**:
+a `DefineEditText` whose `initial_text` is Flash-HTML carrying the font, size,
+colour, alignment, letter spacing, and a **localization key** — render it directly
+(parse HTML → resolve loc key → draw). No ActionScript and no BB↔SWF mapping are
+needed for this. A **secondary** path covers genuinely dynamic fields (an EditText
+whose text is AS-filled sample data, e.g. live target name); those are out of
+scope for the static reference state — skip them, or optionally fill from a BB
+binding later. Static `DefineText` glyph runs are a third, lower-priority path.
+
+Research TODO (mostly answered — see §1b):
+- [ ] 4.1 ANSWERED for the target screen: "NO TARGET" is a `DefineEditText`
+  (`id=22`) whose `initial_text` is HTML carrying the font (`$Furore`), size,
+  color, align, `letterSpacing`, and a loc key (`@hud_NoTarget`). Confirm
+  `@hud_NoTarget` resolves to "NO TARGET" via the loc system, and check a couple
+  of other hybrid SWFs to confirm the HTML-`initial_text` pattern generalises.
+
+Implementation TODO:
+- [ ] 4.2 Parse the EditText `initial_text` **Flash-HTML** fragment with the
+  workspace's existing **`quick-xml` 0.37** dependency (do NOT add a full HTML5
+  engine like html5ever/scraper — Flash HTML is a small, XML-shaped subset, not
+  web HTML, and those libs are heavyweight + wrong semantics). The field is
+  HTML-flagged (`edit.is_html()` / `EditTextFlag::HTML`). Extract per text run:
+  `<font face=… size=… color=… letterSpacing=… kerning=…>`, `<p align=…>`, `<br>`,
+  and the inner text (which may be a literal or a `@loc` key). Handle **multiple
+  font runs** (a field can contain several `<font>` spans) and entity decoding
+  (`&apos;`, `&amp;`, `&#xx;`) — quick-xml gives both. Be tolerant: if a fragment
+  fails to parse as XML, fall back to stripping tags and using the raw inner text
+  so we never render markup. Keep the extractor small and unit-tested.
+- [ ] 4.3 Resolve `@…` loc keys via the existing `loc_fetcher` (same path BB text
+  uses). Render the resolved string with the HTML-specified **font symbol**
+  (`select_imported_ui_font` by symbol), size, colour, alignment, and letter
+  spacing. NOTE: the EditText bounds AND the HTML `size` are in the SWF's own
+  coordinate space — they must pass through the **same** stage→dest transform
+  chain as shapes (Phase 2.3: sprite placement matrix × stage-size→widget-rect
+  scale), not be used as raw pixels. Reuse `draw_swf_font` (extend it to honour
+  letter spacing if needed).
+- [ ] 4.4 Also support static `DefineText` glyph runs (some SWFs use them):
+  extend the text path to consume `DefineText` records (font_id + glyph indices →
+  font glyphs). Lower priority — the target screen uses EditText.
+- [ ] 4.5 Resolve imported fonts by symbol (`$Furore`/`$OrbitronLight` →
+  `fonts_en` glyphs) via the already-merged library; no new font sourcing.
+
+Tests (TDD): HTML parser extracts face/size/color/align/letterSpacing + inner
+text/loc-key from the real `id=22` string (use it as a fixture constant); a
+fixture `DefineEditText` with an HTML `initial_text` + `@loc` renders the resolved
+string in the named imported font at its bounds; a static `DefineText` fixture
+renders in its font.
+
+Validation: re-export Clipper target; "NO TARGET" renders in **Furore**; suite
+green; `SB_UI_FONT_TELEMETRY` shows the SWF-text path used.
+
+## Phase 5 — SWF-wins / BB-fallback precedence (wire into hybrid output)
+
+Objective: for `rendererType == "Flash"` widgets, render the resolved SWF content
+(Phases 2–4) in place of the BB-native subtree; fall back to BB only when no SWF
+resolves. Compose at the widget's resolved rect.
+
+TODO:
+- [ ] 5.1 In `ir_compose`/`hybrid_compose`, detect Flash-rendererType widgets in
+  the IR (carry `rendererType` and the resolved SWF handle into IR — add fields
+  to the IR node/text-style as needed; IR stays the authority).
+- [ ] 5.2 When a Flash widget resolves a SWF, render the SWF state into the
+  widget's `draw_rect` and **suppress** the BB-native drawing of that widget's
+  subtree (the SWF-wins rule). When it does not, render BB as today (fallback).
+- [ ] 5.3 Keep SWF-font usage for genuinely BB-native text on non-Flash widgets
+  (current behaviour) unchanged.
+- [ ] 5.4 Remove the now-obsolete blanket "skip all stage shapes" comment/logic in
+  `swf_render/stage.rs` and the no-op `render_ui_ir_with_swf_overlay` shim if it
+  becomes redundant; replace failed-experiment branches.
+
+Tests (TDD): a hybrid IR with a Flash widget + resolved SWF renders SWF content
+and not the BB subtree; with no SWF, renders the BB subtree.
+
+Validation: re-export full Clipper; **target screen matches reference** (Furore
+NO TARGET, no orange bar); other screens unchanged; suite green. Inspect images
+with the Read tool (not pixel diff) per the workflow doc.
+
+## Phase 6 — MFD frame composition (the "< TARGET STATUS >" footer)
+
+Objective: render the screen the way the engine does — the **frame** chrome
+(`gen_mc_s_header` footer) appears with the content. Generic for any MFD.
+
+Research TODO:
+- [ ] 6.1 Confirm the footer screen-name source. `gen_mc_s_header.text_ScreenName`
+  is a parameter (placeholder `@ui_leaderboards_Loadout`); find where the real
+  name ("TARGET STATUS") is injected — likely from the MFD view / dashboard
+  config (`SMFDView`, `SCItemSeatDashboardParams.MFDParams`) or a localized key
+  tied to the screen type. Resolve generically (no hard-coded strings).
+
+Implementation TODO:
+- [ ] 6.2 Render the MFD **frame** (`canvas_guid` → `m_eng_mfdcontent`) for mfd
+  bindings instead of content-only, OR compose the footer band. Engine-faithful
+  is the frame render; if chosen, you must also:
+  - resolve `m_eng_mfdcontent.base_Root` page-in `alpha:0.0` → settled visible
+    (it's a start-state, not a steady value; treat a canvas-root start-alpha with
+    no driving animation as its settled fill value — derive structurally, no
+    per-asset gate);
+  - select the single active content view by matching the binding's
+    `content_canvas_guid` to the embedded `canvas_*MFDView` (generic; the binding
+    already names the active screen) and deactivate the others;
+  - inject the screen name into the footer.
+  (`frame_canvas_aspect` already gives 4:3.) If frame-render proves too risky,
+  fall back to compositing `gen_mc_s_header` into the bottom band using the
+  frame's `canvas_Header / Footer` sizing (11% height, bottom-anchored) — but
+  prefer the faithful frame render.
+- [ ] 6.3 The footer is BB (renders standalone); reuse the existing BB path. Its
+  prev/next chevrons + name + top line should appear.
+
+Tests (TDD): frame render shows footer + exactly one content view; view selection
+picks the bound screen; screen name resolves from data.
+
+Validation: re-export; footer "< TARGET STATUS >" present and correctly placed;
+self/power MFDs show their own names; suite green.
+
+## Phase 7 — Performance, cleanup, baseline refresh
+
+TODO:
+- [ ] 7.1 Cache parsed SWFs per export run (avoid re-decompress/parse for shared
+  SWFs and per-frame extraction). Verify the resolver does directory listing once
+  per brand. Measure Clipper export wall-time before/after; no significant
+  regression (target: ≤ prior time).
+- [ ] 7.2 Remove dead code (old candidate probing, no-op shims, failed-experiment
+  branches), update `//!` headers, keep files < 500 lines.
+- [ ] 7.3 Update `docs/ui-fallback-register.md` (retire the SWF path-probing
+  fallback + the annunciator stopgap) and `clipper-target-mfd-plan.md`.
+- [ ] 7.4 With **explicit user approval**, refresh gold/platinum baselines and the
+  IR snapshot freeze for the intentionally-changed screens (4:3 MFDs, thin
+  annunciator, Furore text, footer) per the workflow doc's onboarding steps
+  (`add_ui_regression_target.sh`, `freeze_ui_snapshot_ir.sh`,
+  `freeze_ui_regression_artifacts.sh`, validate scripts). Do not commit PNGs.
+
+---
+
+## Appendix A — Risks & open questions to resolve during research (not blockers)
+
+- **State selection (Phase 3) is the central feasibility risk.** Confirmed: the
+  target SWF has no frame labels — states are AS-driven nested-sprite visibility.
+  We do not run ActionScript, so we must infer the active state from the BB IR
+  (which resolves it) and map it to the SWF sprite to show. If a robust generic
+  BB→SWF-symbol link cannot be established (3.2), fall back to: render the
+  exported sprite whose name/`SymbolClass` best matches the active BB subtree, and
+  if even that is ambiguous, render the BB-native subtree (current behaviour) for
+  that widget rather than risk drawing the wrong/overlapping state (the orange
+  bar). Document whichever rule is used; never hard-code symbol names.
+- **BB-node ↔ SWF-text-field mapping (4.1)**: prefer instance-name/`SymbolClass`
+  linkage; fall back to position only if no name link exists, and document it.
+- **Frame-render vs footer-composite (6.2)**: frame-render is faithful but must
+  not regress the 3 working MFD screens; gate behind the required suite and
+  per-screen visual checks; keep content-only as the proven fallback until the
+  frame render is validated.
+- **`.gfx` vs `.swf` font glyphs**: the shared lib is loaded as `.gfx`; if any
+  glyph fidelity issue appears, prefer the `.swf` outlines (both exist in P4K).
+
+## Appendix B — Done = all true
+
+- Target MFD matches the reference: 4:3, Furore "NO TARGET", no orange bar,
+  "< TARGET STATUS >" footer; chevrons/dashes intact.
+- self/power MFDs and the annunciator still correct; no other screen regressed.
+- No hard-coded ship/screen/brand/path lists in production; SWF resolution is
+  data-driven.
+- Required suite green; baselines refreshed only with approval; export time not
+  meaningfully worse.
+
+## Appendix C — Required validation commands (run every phase)
+
+```bash
+cd StarBreaker
+cargo test -p starbreaker-ui --lib
+cargo test -p starbreaker-ui --test manifest_snapshot_regression -- --nocapture
+cargo test -p starbreaker-ui --test manifest_live_ir_guard -- --nocapture
+cargo test -p starbreaker-ui --test manifest_visual_regression -- --nocapture
+cargo test -p starbreaker-ui --tests        # broad crate check
+# Re-export + view (accuracy is judged against the reference, via the Read tool).
+# Build the release binary once, then export with --kind decomposed (a directory
+# export root; do NOT use the default bundled kind here — it treats the output as
+# a file and errors on a directory):
+cargo build --release -p starbreaker
+SC_DATA_P4K="$HOME/Games/star-citizen/drive_c/Program Files/Roberts Space Industries/StarCitizen/LIVE/Data.p4k" \
+  ./target/release/starbreaker entity export drak_clipper \
+  "$(cd .. && pwd)/ships" --kind decomposed --lod 0 --mip 0 --materials all
+```
+Reference: `reference/in-game/Clipper/Screen_Right_Upper_RTT.png`.
+Generated: `ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_mc_s_target_master.png`.
+Diagnostics: `examples/swf_text_probe.rs <p4k\path.swf>`; `SB_UI_FONT_TELEMETRY=1`.
