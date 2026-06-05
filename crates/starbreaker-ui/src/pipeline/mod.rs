@@ -209,6 +209,19 @@ pub fn compile_ir_for_binding(inputs: &PipelineInputs<'_>) -> Result<UiIrDocumen
         inputs.loc_fetcher,
     );
 
+    // For an MFD frame canvas, activate only the content view the binding points
+    // at and deactivate the mutually-exclusive sibling views (the frame statically
+    // embeds every view; the engine selects one at runtime from state we don't
+    // have). Matches by the content canvas's `_RecordName_`.
+    if use_frame_canvas
+        && let Some(cguid) = content_guid
+        && let Ok(content_json) = inputs.canvas_fetcher.fetch_canvas_json(cguid)
+        && let Some(content_record_name) =
+            content_json.get("_RecordName_").and_then(|v| v.as_str())
+    {
+        crate::mfd_view::select_active_mfd_view(&mut scene, content_record_name);
+    }
+
     let swf_manifest = build_swf_selection_manifest(
         &raw_root_json,
         &resolved,
