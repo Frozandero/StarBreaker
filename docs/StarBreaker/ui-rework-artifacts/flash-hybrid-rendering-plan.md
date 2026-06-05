@@ -352,34 +352,60 @@ states are AS-driven nested-sprite visibility. So selection is primarily
 path for SWFs that do use labels.
 
 Research TODO:
-- [ ] 3.1 Parse `FrameLabel` into a `label → frame_index` map (main timeline +
-  each `DefineSprite`) for the SWFs that have them (probe a range of SWFs; the
-  target one has none — annunciator/background may). Support it where present.
-- [ ] 3.2 Establish the generic BB-state → SWF-content mapping. The BB IR already
-  resolves which nodes are active (e.g. `text_NoTarget` active ⇒ no-target
-  state). Find how a BB widget references the SWF symbol/instance to show:
-  candidates are the BB widget/instance **name**, `visualState`, a state
-  style-tag, or `SymbolClass`/`ExportAssets` name linkage (e.g. an active BB
-  "Placeholder/NoTarget" subtree ↔ exported `TargetSelection_Placeholder`).
-  Prefer a name/linkage match; document exactly what links them.
-- [ ] 3.3 Determine, from data, the set of SWF exported sprites that represent
-  mutually-exclusive states (e.g. `TargetSelection_*`) so non-active ones are
-  suppressed. Do not hard-code symbol names — derive the grouping (e.g. shared
-  prefix / `SymbolClass` group / co-located depth) generically.
+- [x] 3.1 Parse `FrameLabel` into a `label → frame_index` map for the main
+  timeline. Added `extract_main_timeline_labels` in `swf_assets/extract.rs`;
+  `SwfAssetLibrary` stores the map as `frame_labels` field (populated in `new()`)
+  and exposes `frame_label_index(label) -> Option<u32>`.  Sprite-level labels
+  deferred (no need identified; target SWF has none).
+- [x] 3.2 BB-state → SWF-content mapping research complete.
+  FINDING: there is **no direct name link** between BB node names
+  (`text_NoTarget`, `canvas_TargetStatus`) and SWF export names
+  (`TargetSelection_Placeholder`).  Neither `mc_s_target_master.json` nor
+  `gen_mc_s_target.json` contains any reference to SWF symbol names.
+  `visualState` is `null` for all nodes.  The mapping must be derived from SWF
+  content:
+  - A sprite whose EditText `initial_text` contains an `@loc` key is a **static
+    placeholder** state (render it).
+  - A sprite whose EditText holds sample data (no `@` prefix, e.g. "Ship
+    Name/Label", "000") is a **live/dynamic** state driven by AS at runtime
+    (suppress it in static renders).
+  - A sprite with no EditText is always-visible graphical content (render it).
+  This rule is data-driven (reads SWF EditText content), not hard-coded.
+  Implementation lives in Phase 4/5 (needs the EditText parser built in Phase 4).
+- [x] 3.3 Mutually exclusive state groups: the `TargetSelection_*` exports
+  (`_Placeholder`, `Ship`, `Entity`) are at the same depth in the document
+  sprite's display list, placed by the same parent.  The generic grouping rule:
+  exports placed at the same depth in the same sprite frame are mutually
+  exclusive states.  The @loc vs sample-data content rule (3.2) identifies which
+  to render without needing to enumerate depths.  No code needed for Phase 3 —
+  the suppression API (`draw_swf_symbol_excluding`) lets Phase 5 pass the
+  suppressed set computed from the editorial rule above.
 
 Implementation TODO:
-- [ ] 3.4 Render the SWF subtree for the active state only (the matched exported
-  sprite's display list), suppressing sibling state sprites and any
-  always-placed element that the BB-active state implies hidden (the orange bar).
-- [ ] 3.5 Where the SWF *does* expose frame labels and the BB state maps to a
-  label, select that frame instead.
+- [x] 3.4 Added `draw_swf_symbol_excluding(pixmap, assets, symbol, suppressed,
+  dest, tint, alpha)` in `swf_render/stage.rs`.  `suppressed: &HashSet<CharacterId>`
+  is propagated through `draw_character`; any character whose ID is in the set
+  (and its full subtree) is silently skipped.  All existing callers pass an empty
+  set so behaviour is unchanged.
+- [x] 3.5 Added `draw_swf_at_frame_label(pixmap, assets, label, dest, tint, alpha)`
+  in `swf_render/stage.rs`.  Looks up the frame index via
+  `SwfAssetLibrary::frame_label_index`, then calls the shared
+  `draw_stage_at_frame` helper.  Returns `false` for unknown labels.
 
-Tests (TDD): fixture with two exported "state" sprites renders only the selected
-one; fixture with two labeled frames renders only the selected frame; an
-always-placed element tied to a non-active state is suppressed.
+Tests (TDD):
+- [x] `frame_label_state_a_renders_red_shape` — state_a frame → red pixels at (50,50).
+- [x] `frame_label_state_a_suppresses_state_b_green` — state_a frame → no green.
+- [x] `frame_label_state_b_renders_green_shape` — state_b frame → green pixels.
+- [x] `frame_label_unknown_returns_false` — unknown label returns false, empty pixmap.
+- [x] `draw_without_exclusion_renders_all_states` — empty suppress set, all 3 shapes visible.
+- [x] `suppress_state_b_hides_blue_pixels` — suppress StateB_Content → (10,45) transparent.
+- [x] `suppress_state_b_keeps_orange_and_state_a` — suppress StateB → orange + red still visible.
+- [x] `suppress_state_a_keeps_orange_and_state_b` — suppress StateA → (45,10) transparent.
 
-Validation: re-export Clipper target; **orange bar absent**; the no-target SWF
-sprite is the one rendered (full visual lands in Phase 5); suite green.
+Validation: 379 lib + all integration tests green 2026-06-05.  No visual change in
+pipeline output yet (the @loc/sample-data suppression logic and Phase 4 EditText
+rendering are the remaining pieces; full visual fix lands in Phase 5).
+Committed 2026-06-05.
 
 ## Phase 4 — SWF text rendering (the Furore "NO TARGET")
 

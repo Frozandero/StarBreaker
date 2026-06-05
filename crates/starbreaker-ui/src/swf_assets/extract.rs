@@ -225,6 +225,31 @@ pub fn extract_exported_symbols(swf_bytes: &[u8]) -> Result<HashMap<String, Char
     })
 }
 
+/// Extract a `label → frame_index` map from the SWF main timeline.
+///
+/// `FrameLabel` tags before the first `ShowFrame` map to frame 0; before the
+/// second `ShowFrame` to frame 1; and so on.  Only the main timeline is
+/// scanned (not sprites).
+pub fn extract_main_timeline_labels(swf_bytes: &[u8]) -> Result<HashMap<String, u32>, UiError> {
+    let mut out: HashMap<String, u32> = HashMap::new();
+
+    with_parsed_swf!(swf_bytes, |tags| {
+        let mut current_frame: u32 = 0;
+        for tag in &tags {
+            match tag {
+                Tag::FrameLabel(label) => {
+                    out.insert(label.label.to_string_lossy(swf::UTF_8), current_frame);
+                }
+                Tag::ShowFrame => {
+                    current_frame += 1;
+                }
+                _ => {}
+            }
+        }
+        Ok(out)
+    })
+}
+
 pub fn extract_font_edit_text_metrics(
     swf_bytes: &[u8],
 ) -> Result<HashMap<String, SwfEditTextMetrics>, UiError> {

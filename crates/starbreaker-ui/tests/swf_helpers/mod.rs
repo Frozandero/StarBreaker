@@ -25,6 +25,14 @@
 //!   it only 0–20 px.
 //! - `make_self_referential_sprite_swf` — sprite that places itself; exercises cycle
 //!   detection (must not panic or hang).
+//!
+//! Phase 3 fixtures:
+//!
+//! - `make_mixed_state_swf` — a document sprite (`"DocSprite"`) that places an
+//!   orange always-visible shape plus two state sprites (`"StateA_Content"`,
+//!   `"StateB_Content"`) at non-overlapping positions.  Exercises
+//!   `draw_swf_symbol_excluding` (suppress one state, verify the other is
+//!   still rendered and the always-placed shape remains).
 
 use swf::{
     Color, Compression, ExportedAsset, FillStyle, Fixed8, Fixed16,
@@ -437,6 +445,40 @@ pub fn make_scaled_nested_sprite_swf() -> Vec<u8> {
     buf
 }
 
+fn place_tag_at(
+    char_id: swf::CharacterId,
+    depth: swf::Depth,
+    tx_px: f64,
+    ty_px: f64,
+) -> Tag<'static> {
+    Tag::PlaceObject(Box::new(PlaceObject {
+        version: 2,
+        action: PlaceObjectAction::Place(char_id),
+        depth,
+        matrix: Some(Matrix {
+            a: Fixed16::from_f32(1.0),
+            b: Fixed16::from_f32(0.0),
+            c: Fixed16::from_f32(0.0),
+            d: Fixed16::from_f32(1.0),
+            tx: Twips::from_pixels(tx_px),
+            ty: Twips::from_pixels(ty_px),
+        }),
+        color_transform: None,
+        ratio: None,
+        name: None,
+        clip_depth: None,
+        class_name: None,
+        filters: None,
+        background_color: None,
+        blend_mode: None,
+        clip_actions: None,
+        has_image: false,
+        is_bitmap_cached: None,
+        is_visible: None,
+        amf_data: None,
+    }))
+}
+
 /// A sprite that places itself — used to verify cycle detection does not hang.
 ///
 /// Stage: 100×100.  The sprite has no drawable shape, just a self-reference.
@@ -467,5 +509,78 @@ pub fn make_self_referential_sprite_swf() -> Vec<u8> {
 
     let mut buf = Vec::new();
     swf::write_swf(&header, &tags, &mut buf).expect("make_self_referential_sprite_swf: write_swf failed");
+    buf
+}
+
+// ── Phase 3 fixture: mixed always-placed + state sprites ──────────────────────
+
+/// Document sprite (`"DocSprite"`) that places three non-overlapping shapes:
+///
+/// - `id=1` orange 30×30 at (0,0)   — depth 1, always present
+/// - `id=4` sprite `"StateA_Content"` at (35,0)  — depth 2, contains red 30×30
+/// - `id=5` sprite `"StateB_Content"` at (0,35)  — depth 3, contains blue 30×30
+///
+/// In a 100×100 dest (stage is also 100×100, sx=sy=1):
+/// - Orange → pixels (0–30, 0–30), check (10,10)
+/// - StateA red → pixels (35–65, 0–30), check (45,10)
+/// - StateB blue → pixels (0–30, 35–65), check (10,45)
+///
+/// Suppressing `StateB_Content` must zero out (10,45) while leaving (10,10)
+/// and (45,10) non-transparent.
+pub fn make_mixed_state_swf() -> Vec<u8> {
+    let header = Header {
+        compression: Compression::None,
+        version: 8,
+        stage_size: Rectangle {
+            x_min: Twips::ZERO,
+            x_max: Twips::from_pixels(100.0),
+            y_min: Twips::ZERO,
+            y_max: Twips::from_pixels(100.0),
+        },
+        frame_rate: Fixed8::from_f32(24.0),
+        num_frames: 1,
+    };
+
+    let orange = Color { r: 220, g: 120, b: 0, a: 255 };
+    let red = Color { r: 220, g: 50, b: 50, a: 255 };
+    let blue = Color { r: 50, g: 80, b: 220, a: 255 };
+
+    let tags: Vec<Tag<'_>> = vec![
+        // Leaf shapes
+        Tag::DefineShape(filled_rect_shape(1, 30.0, 30.0, orange)),
+        Tag::DefineShape(filled_rect_shape(2, 30.0, 30.0, red)),
+        Tag::DefineShape(filled_rect_shape(3, 30.0, 30.0, blue)),
+        // State sprites — each wraps one leaf shape at identity
+        Tag::DefineSprite(Sprite {
+            id: 4,
+            num_frames: 1,
+            tags: vec![place_tag(2, 1), Tag::ShowFrame],
+        }),
+        Tag::DefineSprite(Sprite {
+            id: 5,
+            num_frames: 1,
+            tags: vec![place_tag(3, 1), Tag::ShowFrame],
+        }),
+        // Document sprite: orange always at (0,0), StateA at (35,0), StateB at (0,35)
+        Tag::DefineSprite(Sprite {
+            id: 6,
+            num_frames: 1,
+            tags: vec![
+                place_tag_at(1, 1, 0.0, 0.0),
+                place_tag_at(4, 2, 35.0, 0.0),
+                place_tag_at(5, 3, 0.0, 35.0),
+                Tag::ShowFrame,
+            ],
+        }),
+        Tag::ExportAssets(vec![
+            ExportedAsset { id: 4, name: SwfStr::from_utf8_str("StateA_Content") },
+            ExportedAsset { id: 5, name: SwfStr::from_utf8_str("StateB_Content") },
+            ExportedAsset { id: 6, name: SwfStr::from_utf8_str("DocSprite") },
+        ]),
+        Tag::ShowFrame,
+    ];
+
+    let mut buf = Vec::new();
+    swf::write_swf(&header, &tags, &mut buf).expect("make_mixed_state_swf: write_swf failed");
     buf
 }

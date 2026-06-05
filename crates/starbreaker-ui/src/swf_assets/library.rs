@@ -8,7 +8,7 @@ use crate::error::UiError;
 
 use super::extract::{
     extract_bitmaps, extract_exported_symbols, extract_font_edit_text_metrics, extract_fonts,
-    extract_shapes,
+    extract_main_timeline_labels, extract_shapes,
 };
 use super::stage::{extract_sprite_first_frame, extract_stage_frame, extract_stage_size};
 use super::types::{FontGlyphSet, PlaceRecord, ShapeRecord, SwfEditTextMetrics};
@@ -21,6 +21,7 @@ pub struct SwfAssetLibrary {
     fonts: HashMap<CharacterId, FontGlyphSet>,
     exports: HashMap<String, CharacterId>,
     font_edit_text_metrics: HashMap<String, SwfEditTextMetrics>,
+    frame_labels: HashMap<String, u32>,
     raw: Vec<u8>,
 }
 
@@ -37,6 +38,7 @@ impl SwfAssetLibrary {
         let fonts = extract_fonts(&swf_bytes)?;
         let exports = extract_exported_symbols(&swf_bytes)?;
         let font_edit_text_metrics = extract_font_edit_text_metrics(&swf_bytes)?;
+        let frame_labels = extract_main_timeline_labels(&swf_bytes)?;
 
         Ok(Self {
             content_hash,
@@ -45,6 +47,7 @@ impl SwfAssetLibrary {
             fonts,
             exports,
             font_edit_text_metrics,
+            frame_labels,
             raw: swf_bytes,
         })
     }
@@ -98,6 +101,12 @@ impl SwfAssetLibrary {
 
     pub fn font_edit_text_metrics(&self, symbol: &str) -> Option<&SwfEditTextMetrics> {
         self.font_edit_text_metrics.get(symbol)
+    }
+
+    /// Return the 0-based frame index for a main-timeline `FrameLabel`, or `None`
+    /// if the SWF has no such label.
+    pub fn frame_label_index(&self, label: &str) -> Option<u32> {
+        self.frame_labels.get(label).copied()
     }
 
     pub fn get_sprite_first_frame(&self, sprite_id: CharacterId) -> Result<Vec<PlaceRecord>, UiError> {

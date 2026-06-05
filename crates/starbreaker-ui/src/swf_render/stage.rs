@@ -1,14 +1,16 @@
 //! SWF display-list renderer.
 //!
 //! Key public entry points:
-//! - `draw_swf_symbol` — render a named exported symbol into a dest rect.
-//! - `draw_swf_stage`  — render main-timeline frame 0 into a dest rect.
-//! - `draw_swf_visual_exports` — render all visual exports.
+//! - `draw_swf_symbol`          — render a named exported symbol into a dest rect.
+//! - `draw_swf_symbol_excluding`— same, but skips specified character IDs (state suppression).
+//! - `draw_swf_stage`           — render main-timeline frame 0 into a dest rect.
+//! - `draw_swf_at_frame_label`  — render the stage at a named `FrameLabel` frame.
+//! - `draw_swf_visual_exports`  — render all visual exports.
 //!
-//! Phase 2 changes: matrices are now composed as the renderer descends the
-//! sprite tree, so scaled/rotated parent sprites correctly affect all their
-//! children.  Cycle detection (visited set on the call stack) prevents
-//! self-referential sprites from hanging.
+//! Phase 2: matrices are composed as the renderer descends the sprite tree;
+//! cycle detection (visited set on the call stack) prevents infinite loops.
+//! Phase 3: `suppressed` set enables caller-driven state-sprite exclusion;
+//! `draw_swf_at_frame_label` selects a named frame for SWFs that use labels.
 
 use std::collections::HashSet;
 
@@ -61,8 +63,9 @@ pub fn draw_swf_symbol(
         clip_depth: None,
     };
 
+    let empty = HashSet::new();
     let mut visited = HashSet::new();
-    draw_character(pixmap, assets, &place, sw, sh, sx, sy, dest, tint, alpha, MAX_SPRITE_DEPTH, &mut visited)
+    draw_character(pixmap, assets, &place, sw, sh, sx, sy, dest, tint, alpha, MAX_SPRITE_DEPTH, &mut visited, &empty)
 }
 
 /// Rasterise the SWF main-timeline stage frame 0 into `pixmap`, mapped into `dest`.
@@ -73,31 +76,68 @@ pub fn draw_swf_stage(
     tint: Color,
     alpha: f32,
 ) -> bool {
+    let empty = HashSet::new();
+    draw_stage_at_frame(pixmap, assets, 0, dest, tint, alpha, &empty)
+}
+
+/// Rasterise the SWF stage at the frame whose `FrameLabel` matches `label`.
+///
+/// Returns `false` when the label is not found or the display list is empty.
+pub fn draw_swf_at_frame_label(
+    pixmap: &mut Pixmap,
+    assets: &SwfAssetLibrary,
+    label: &str,
+    dest: TskRect,
+    tint: Color,
+    alpha: f32,
+) -> bool {
+    let Some(frame_index) = assets.frame_label_index(label) else {
+        log::debug!("draw_swf_at_frame_label: label '{label}' not found");
+        return false;
+    };
+    let empty = HashSet::new();
+    draw_stage_at_frame(pixmap, assets, frame_index, dest, tint, alpha, &empty)
+}
+
+/// Render the named exported symbol, skipping any character whose ID is in
+/// `suppressed` (and recursively all its children).
+///
+/// Callers use this to suppress inactive-state sprites while still rendering
+/// always-placed siblings and the active-state sprite.
+pub fn draw_swf_symbol_excluding(
+    pixmap: &mut Pixmap,
+    assets: &SwfAssetLibrary,
+    symbol_name: &str,
+    suppressed: &HashSet<CharacterId>,
+    dest: TskRect,
+    tint: Color,
+    alpha: f32,
+) -> bool {
+    let Some(char_id) = assets.lookup_export(symbol_name) else {
+        log::debug!("draw_swf_symbol_excluding: symbol '{symbol_name}' not found");
+        return false;
+    };
+
     let (sw, sh) = assets.stage_size();
-    if sw <= 0.0 || sh <= 0.0 {
-        log::debug!("draw_swf_stage: degenerate stage size ({sw}x{sh}), skipping");
-        return false;
-    }
-
-    let stage_places = assets.stage_frame(0);
-    if stage_places.is_empty() {
-        log::debug!("draw_swf_stage: stage frame 0 is empty");
-        return false;
-    }
-
+    let (sw, sh) = if sw > 0.0 && sh > 0.0 {
+        (sw, sh)
+    } else {
+        (dest.width().max(1.0), dest.height().max(1.0))
+    };
     let sx = dest.width() / sw;
     let sy = dest.height() / sh;
 
-    let mut drew_any = false;
-    for place in &stage_places {
-        let ct_tint = color_transform_tint(tint, place.color_transform.as_ref());
-        let mut visited = HashSet::new();
-        if draw_character(pixmap, assets, place, sw, sh, sx, sy, dest, ct_tint, alpha, MAX_SPRITE_DEPTH, &mut visited) {
-            drew_any = true;
-        }
-    }
+    let place = PlaceRecord {
+        depth: 0,
+        character_id: char_id,
+        matrix: swf::Matrix::IDENTITY,
+        color_transform: None,
+        name: None,
+        clip_depth: None,
+    };
 
-    drew_any
+    let mut visited = HashSet::new();
+    draw_character(pixmap, assets, &place, sw, sh, sx, sy, dest, tint, alpha, MAX_SPRITE_DEPTH, &mut visited, suppressed)
 }
 
 /// Render all visual exports from a Flash SWF at their stage-space positions.
@@ -141,12 +181,51 @@ pub fn draw_swf_visual_exports(
             name: None,
             clip_depth: None,
         };
+        let empty = HashSet::new();
         let mut visited = HashSet::new();
-        if draw_character(pixmap, assets, &place, sw, sh, sx, sy, dest, tint, alpha, MAX_SPRITE_DEPTH, &mut visited) {
+        if draw_character(pixmap, assets, &place, sw, sh, sx, sy, dest, tint, alpha, MAX_SPRITE_DEPTH, &mut visited, &empty) {
             drew_any = true;
         }
     }
 
+    drew_any
+}
+
+// ── Private helpers ───────────────────────────────────────────────────────────
+
+/// Render all placed characters in the stage display list at `frame_index`.
+fn draw_stage_at_frame(
+    pixmap: &mut Pixmap,
+    assets: &SwfAssetLibrary,
+    frame_index: u32,
+    dest: TskRect,
+    tint: Color,
+    alpha: f32,
+    suppressed: &HashSet<CharacterId>,
+) -> bool {
+    let (sw, sh) = assets.stage_size();
+    if sw <= 0.0 || sh <= 0.0 {
+        log::debug!("draw_stage_at_frame: degenerate stage size ({sw}x{sh}), skipping");
+        return false;
+    }
+
+    let stage_places = assets.stage_frame(frame_index);
+    if stage_places.is_empty() {
+        log::debug!("draw_stage_at_frame: frame {frame_index} is empty");
+        return false;
+    }
+
+    let sx = dest.width() / sw;
+    let sy = dest.height() / sh;
+
+    let mut drew_any = false;
+    for place in &stage_places {
+        let ct_tint = color_transform_tint(tint, place.color_transform.as_ref());
+        let mut visited = HashSet::new();
+        if draw_character(pixmap, assets, place, sw, sh, sx, sy, dest, ct_tint, alpha, MAX_SPRITE_DEPTH, &mut visited, suppressed) {
+            drew_any = true;
+        }
+    }
     drew_any
 }
 
@@ -159,6 +238,7 @@ pub fn draw_swf_visual_exports(
 /// for recursive calls it is `parent_matrix × child_matrix`.
 ///
 /// `visited` tracks character IDs on the current call stack to break cycles.
+/// `suppressed` contains character IDs to skip entirely (state suppression).
 fn draw_character(
     pixmap: &mut Pixmap,
     assets: &SwfAssetLibrary,
@@ -172,8 +252,14 @@ fn draw_character(
     alpha: f32,
     max_depth: u8,
     visited: &mut HashSet<CharacterId>,
+    suppressed: &HashSet<CharacterId>,
 ) -> bool {
     let char_id = place.character_id;
+
+    // State suppression: caller-nominated IDs and their subtrees are skipped.
+    if suppressed.contains(&char_id) {
+        return false;
+    }
 
     // Cycle detection: stop if this character is already on the call stack.
     if !visited.insert(char_id) {
@@ -212,6 +298,7 @@ fn draw_character(
                 alpha,
                 max_depth - 1,
                 visited,
+                suppressed,
             ) {
                 drew_any = true;
             }

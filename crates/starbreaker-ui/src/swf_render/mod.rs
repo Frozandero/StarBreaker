@@ -12,7 +12,10 @@ mod stage;
 mod tests;
 
 use rgba::composite_pixmap_over_rgba;
-pub use stage::{draw_swf_stage, draw_swf_symbol, draw_swf_visual_exports};
+pub use stage::{
+    draw_swf_at_frame_label, draw_swf_stage, draw_swf_symbol, draw_swf_symbol_excluding,
+    draw_swf_visual_exports,
+};
 
 /// Render the SWF main-timeline stage (frame 0) as alpha-over composite into `img`.
 pub fn draw_swf_stage_rgba(
