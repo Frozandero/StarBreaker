@@ -1,0 +1,113 @@
+#[cfg(test)]
+mod pagein_alpha_tests {
+    #![allow(unused_imports, dead_code)]
+
+    use super::*;
+
+    fn defaults() -> crate::defaults::DefaultValueRegistry {
+        crate::defaults::DefaultValueRegistry::with_well_known_path_defaults()
+    }
+
+    #[test]
+    fn compile_ir_settles_pagein_start_root_alpha() {
+        // A scene-ROOT node authored alpha=0 + isActive + a page-in `animation`
+        // block is the engine's screen page-in container (e.g. m_eng_mfdcontent's
+        // `base_Root`). Its settled (post-page-in) alpha is 1.0; otherwise
+        // alpha inheritance cascades the 0.0 start value to every descendant and
+        // the whole frame renders blank. A different alpha=0 root WITHOUT a
+        // page-in animation must stay hidden (no blanket reveal).
+        let canvas = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.TestPageInRoot",
+            "_RecordValue_": {
+                "size": {"x": 100, "y": 100},
+                "scene": [
+                    {
+                        "_Pointer_": "ptr:1",
+                        "_Type_": "BuildingBlocks_DisplayWidget",
+                        "name": "base_Root",
+                        "isActive": true,
+                        "alpha": 0.0,
+                        "inheritsAlpha": true,
+                        "animation": {"animationTimeline": null, "duration": 1.0, "additive": true},
+                        "sizing": {
+                            "width": {"behavior": "Fixed", "value": 100.0},
+                            "height": {"behavior": "Fixed", "value": 100.0}
+                        },
+                        "children": ["ptr:2"]
+                    },
+                    {
+                        "_Pointer_": "ptr:2",
+                        "_Type_": "BuildingBlocks_WidgetSeparator",
+                        "name": "content",
+                        "isActive": true,
+                        "parent": "_PointsTo_:ptr:1",
+                        "alpha": 1.0,
+                        "inheritsAlpha": true,
+                        "sizing": {
+                            "width": {"behavior": "Fixed", "value": 80.0},
+                            "height": {"behavior": "Fixed", "value": 8.0}
+                        },
+                        "svgFill": {"svgPath": "", "renderShape": true, "enableColorOverlay": true, "strokeExtent": 1.0}
+                    },
+                    {
+                        "_Pointer_": "ptr:3",
+                        "_Type_": "BuildingBlocks_DisplayWidget",
+                        "name": "static_hidden_root",
+                        "isActive": true,
+                        "alpha": 0.0,
+                        "inheritsAlpha": true,
+                        "sizing": {
+                            "width": {"behavior": "Fixed", "value": 100.0},
+                            "height": {"behavior": "Fixed", "value": 100.0}
+                        },
+                        "children": ["ptr:4"]
+                    },
+                    {
+                        "_Pointer_": "ptr:4",
+                        "_Type_": "BuildingBlocks_WidgetSeparator",
+                        "name": "hidden_content",
+                        "isActive": true,
+                        "parent": "_PointsTo_:ptr:3",
+                        "alpha": 1.0,
+                        "inheritsAlpha": true,
+                        "sizing": {
+                            "width": {"behavior": "Fixed", "value": 80.0},
+                            "height": {"behavior": "Fixed", "value": 8.0}
+                        },
+                        "svgFill": {"svgPath": "", "renderShape": true, "enableColorOverlay": true, "strokeExtent": 1.0}
+                    }
+                ],
+                "operations": []
+            }
+        });
+
+        let scene = crate::bb_scene::parse_bb_canvas(&canvas).expect("scene parse");
+        let ir = compile_ui_ir_from_scene(
+            &scene,
+            None,
+            "guid-pagein-root",
+            Some("BuildingBlocks_Canvas.TestPageInRoot"),
+            (100, 100),
+            &defaults(),
+            None,
+            None,
+            &[],
+            Vec::new(),
+            Vec::new(),
+            100,
+        );
+
+        let content = ir.nodes.iter().find(|node| node.name == "content").expect("content node");
+        assert!(
+            (content.alpha - 1.0).abs() < 0.001,
+            "page-in root must settle to 1.0 so descendants are visible; got {}",
+            content.alpha
+        );
+        let hidden = ir.nodes.iter().find(|node| node.name == "hidden_content").expect("hidden node");
+        assert!(
+            hidden.alpha <= 0.001,
+            "an alpha=0 root WITHOUT a page-in animation must NOT be revealed; got {}",
+            hidden.alpha
+        );
+    }
+}

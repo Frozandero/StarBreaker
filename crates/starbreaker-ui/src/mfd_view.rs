@@ -1,74 +1,73 @@
 //! MFD active content-view selection for frame-canvas renders.
 //!
 //! The MFD frame canvas (e.g. `m_eng_mfdcontent`) statically embeds every
-//! content view (target, self, power, …) as mutually-exclusive `WidgetCanvas`
-//! slots; at runtime the engine activates exactly one based on the bound view
-//! and aspect-ratio state. A static export has no runtime state, so without
-//! selection every view renders at once and overlaps.
+//! content view (target/self/power/…) as mutually-exclusive `WidgetCanvas`
+//! slots; at runtime the engine instantiates exactly one based on the bound view
+//! and aspect-ratio state. A static export has no runtime state, so the frame's
+//! boolean state filter marks the slots `Instantiated` by an arbitrary default —
+//! dropping the bound view's content during resolution (Pass 2) and merging the
+//! wrong one.
 //!
-//! [`select_active_mfd_view`] activates the slot whose embedded `canvas:`
-//! reference matches the binding's content canvas and deactivates the sibling
-//! view slots, so the capture shows the bound screen. Selection is structural
-//! (no per-asset names): the mutually-exclusive slots are the `WidgetCanvas`
-//! nodes sharing the matched slot's parent and layer.
+//! [`apply_bound_view_instantiation`] corrects this at resolution time: it forces
+//! the slot whose embedded `canvas:` reference matches the binding's content
+//! canvas to be instantiated, and forces the mutually-exclusive sibling slots
+//! out. Selection is structural (no per-asset names): the mutually-exclusive
+//! slots are the `WidgetCanvas` nodes sharing the matched slot's parent and layer
+//! (the footer/chrome sits on a distinct layer and is untouched).
 
 use std::collections::HashSet;
 
 use crate::bb_scene::{BbNode, BbNodeId, BbNodeType, BbScene};
 
-/// Activate the content-view slot matching `bound_content_record_name` and
-/// deactivate its mutually-exclusive peers.
+/// Adjust `instantiated_false` so only the content view matching
+/// `bound_content_record_name` is instantiated among its mutually-exclusive
+/// peers.
 ///
 /// `bound_content_record_name` is the binding's content canvas `_RecordName_`
-/// (e.g. `"BuildingBlocks_Canvas.MC_S_Target_Master"`). Peers are the
-/// `WidgetCanvas` nodes that share the matched slot's parent **and** layer but
-/// reference a different canvas — same parent + same layer marks the engine's
-/// mutually-exclusive view slots and excludes sibling chrome at other layers
-/// (e.g. the header/footer canvas, which sits on a distinct layer). No-op when
-/// the frame has no slot matching the bound canvas (e.g. non-MFD frames).
-pub fn select_active_mfd_view(scene: &mut BbScene, bound_content_record_name: &str) {
+/// (e.g. `"BuildingBlocks_Canvas.MC_S_Target_Master"`). The matched slot is
+/// removed from `instantiated_false` (forced on) and its mutually-exclusive
+/// peers — `WidgetCanvas` nodes sharing its parent **and** layer that reference a
+/// different canvas — are inserted (forced off). No-op when no slot matches
+/// (non-MFD frames, or frames that don't embed the bound view).
+pub fn apply_bound_view_instantiation(
+    scene: &BbScene,
+    bound_content_record_name: &str,
+    instantiated_false: &mut HashSet<BbNodeId>,
+) {
+    let Some((matched_id, parent, layer)) = matched_view_slot(scene, bound_content_record_name)
+    else {
+        return;
+    };
+
+    instantiated_false.remove(&matched_id);
+    for (id, node) in &scene.nodes {
+        if *id != matched_id
+            && node.ty == BbNodeType::WidgetCanvas
+            && node.parent == parent
+            && node.layer == layer
+            && canvas_ref_record_name(node).is_some()
+        {
+            instantiated_false.insert(*id);
+        }
+    }
+}
+
+/// The `(id, parent, layer)` of the `WidgetCanvas` slot whose `canvas:` reference
+/// matches `bound_content_record_name`, or `None`.
+fn matched_view_slot(
+    scene: &BbScene,
+    bound_content_record_name: &str,
+) -> Option<(BbNodeId, Option<BbNodeId>, i32)> {
     let bound = normalize_record_name(bound_content_record_name);
     if bound.is_empty() {
-        return;
+        return None;
     }
-
-    let matched = scene.nodes.iter().find_map(|(id, node)| {
+    scene.nodes.iter().find_map(|(id, node)| {
         if node.ty != BbNodeType::WidgetCanvas {
             return None;
         }
         (canvas_ref_record_name(node)? == bound).then_some((*id, node.parent, node.layer))
-    });
-    let Some((matched_id, parent, layer)) = matched else {
-        return;
-    };
-
-    let peers: HashSet<BbNodeId> = scene
-        .nodes
-        .iter()
-        .filter(|(id, node)| {
-            **id != matched_id
-                && node.ty == BbNodeType::WidgetCanvas
-                && node.parent == parent
-                && node.layer == layer
-                && canvas_ref_record_name(node).is_some()
-        })
-        .map(|(id, _)| *id)
-        .collect();
-
-    deactivate_subtrees(scene, &peers);
-    // The frame's runtime view-selector boolean (e.g. `useportraitview`) has no
-    // static default, so the resolver may have deactivated the bound view's slot
-    // too. Re-activate it so the bound screen renders.
-    activate_node(scene, matched_id);
-}
-
-/// Re-activate a single node (the matched view slot). Its already-resolved
-/// content (e.g. the no-target placeholder state) is preserved — only the slot
-/// node's own activation, which the frame view-selector toggled off, is restored.
-fn activate_node(scene: &mut BbScene, id: BbNodeId) {
-    if let Some(node) = scene.nodes.get_mut(&id) {
-        node.is_active = true;
-    }
+    })
 }
 
 /// The lower-cased, prefix-stripped record name a `WidgetCanvas` node references
@@ -88,30 +87,12 @@ fn normalize_record_name(name: &str) -> String {
         .to_ascii_lowercase()
 }
 
-/// Set `is_active = false` on every node in the subtrees rooted at `roots`.
-fn deactivate_subtrees(scene: &mut BbScene, roots: &HashSet<BbNodeId>) {
-    let mut stack: Vec<BbNodeId> = roots.iter().copied().collect();
-    let mut seen: HashSet<BbNodeId> = HashSet::new();
-    while let Some(node_id) = stack.pop() {
-        if !seen.insert(node_id) {
-            continue;
-        }
-        let Some(node) = scene.nodes.get_mut(&node_id) else {
-            continue;
-        };
-        node.is_active = false;
-        stack.extend(node.children.iter().copied());
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     /// A frame embedding two mutually-exclusive content views (same parent +
-    /// layer) plus a footer at a different layer. Selecting the target view must
-    /// activate it (even if the resolver had deactivated it), deactivate the
-    /// sibling self view, and leave the footer untouched.
+    /// layer) plus a footer at a different layer.
     fn frame_scene() -> serde_json::Value {
         serde_json::json!({
             "_RecordName_": "BuildingBlocks_Canvas.M_Eng_MfdContent",
@@ -121,7 +102,7 @@ mod tests {
                     {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget", "name": "base_content",
                      "isActive": true, "sizing": {"width": {"behavior": "Fixed", "value": 800.0}, "height": {"behavior": "Fixed", "value": 600.0}}},
                     {"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_WidgetCanvas", "name": "canvas_PortraitMFDView",
-                     "parent": "_PointsTo_:ptr:1", "isActive": false, "layer": 5,
+                     "parent": "_PointsTo_:ptr:1", "isActive": true, "layer": 5,
                      "canvas": "file://./screens/target/mc_s_target_master.json"},
                     {"_Pointer_": "ptr:3", "_Type_": "BuildingBlocks_WidgetCanvas", "name": "canvas_LandscapeMFDView",
                      "parent": "_PointsTo_:ptr:1", "isActive": true, "layer": 5,
@@ -135,24 +116,31 @@ mod tests {
         })
     }
 
-    #[test]
-    fn selects_bound_view_and_deactivates_sibling_keeping_footer() {
-        let mut scene = crate::bb_scene::parse_bb_canvas(&frame_scene()).expect("parse");
-        select_active_mfd_view(&mut scene, "BuildingBlocks_Canvas.MC_S_Target_Master");
+    fn slot_id(scene: &BbScene, name: &str) -> BbNodeId {
+        *scene.nodes.iter().find(|(_, n)| n.name == name).unwrap().0
+    }
 
-        let by_name = |n: &str| scene.nodes.values().find(|node| node.name == n).cloned().unwrap();
-        assert!(by_name("canvas_PortraitMFDView").is_active, "bound target view must be activated");
-        assert!(!by_name("canvas_LandscapeMFDView").is_active, "sibling self view must be deactivated");
-        assert!(by_name("canvas_Header / Footer").is_active, "footer (different layer) must stay active");
+    #[test]
+    fn forces_bound_view_on_and_sibling_off_keeping_footer() {
+        let scene = crate::bb_scene::parse_bb_canvas(&frame_scene()).expect("parse");
+        let portrait = slot_id(&scene, "canvas_PortraitMFDView");
+        let landscape = slot_id(&scene, "canvas_LandscapeMFDView");
+        let footer = slot_id(&scene, "canvas_Header / Footer");
+
+        // Resolver default mistakenly skipped the bound (target) slot.
+        let mut inst_false: HashSet<BbNodeId> = HashSet::from([portrait]);
+        apply_bound_view_instantiation(&scene, "BuildingBlocks_Canvas.MC_S_Target_Master", &mut inst_false);
+
+        assert!(!inst_false.contains(&portrait), "bound target slot must be instantiated");
+        assert!(inst_false.contains(&landscape), "sibling self slot must be skipped");
+        assert!(!inst_false.contains(&footer), "footer (other layer) must be untouched");
     }
 
     #[test]
     fn no_op_when_no_view_matches() {
-        let mut scene = crate::bb_scene::parse_bb_canvas(&frame_scene()).expect("parse");
-        select_active_mfd_view(&mut scene, "BuildingBlocks_Canvas.MC_S_Power_Master");
-        // Nothing matched → leave activation exactly as authored.
-        let by_name = |n: &str| scene.nodes.values().find(|node| node.name == n).cloned().unwrap();
-        assert!(by_name("canvas_LandscapeMFDView").is_active);
-        assert!(!by_name("canvas_PortraitMFDView").is_active);
+        let scene = crate::bb_scene::parse_bb_canvas(&frame_scene()).expect("parse");
+        let mut inst_false: HashSet<BbNodeId> = HashSet::new();
+        apply_bound_view_instantiation(&scene, "BuildingBlocks_Canvas.MC_S_Power_Master", &mut inst_false);
+        assert!(inst_false.is_empty(), "no matching slot → no changes");
     }
 }

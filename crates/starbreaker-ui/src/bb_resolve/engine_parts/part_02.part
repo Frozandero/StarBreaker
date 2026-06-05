@@ -130,6 +130,29 @@ pub fn resolve_canvas_graph_with_loc(
     fetch_by_path: &dyn Fn(&str) -> Result<serde_json::Value, String>,
     loc_fetcher: Option<&dyn LocFetcher>,
 ) -> Result<BbScene, String> {
+    resolve_canvas_graph_with_loc_and_bound_view(
+        root_json,
+        manufacturer_id,
+        fetch_by_path,
+        loc_fetcher,
+        None,
+    )
+}
+
+/// Like [`resolve_canvas_graph_with_loc`] but also accepts the binding's bound
+/// content-canvas `_RecordName_` (e.g. `"BuildingBlocks_Canvas.MC_S_Target_Master"`).
+///
+/// When set, an MFD frame's mutually-exclusive content-view slots are
+/// instantiated by the bound view rather than by the frame's arbitrary
+/// static-default boolean state (which otherwise drops the bound view's content
+/// during Pass 2). See [`crate::mfd_view`].
+pub fn resolve_canvas_graph_with_loc_and_bound_view(
+    root_json: &serde_json::Value,
+    manufacturer_id: Option<&str>,
+    fetch_by_path: &dyn Fn(&str) -> Result<serde_json::Value, String>,
+    loc_fetcher: Option<&dyn LocFetcher>,
+    bound_view_canvas: Option<&str>,
+) -> Result<BbScene, String> {
     let mut visited = HashSet::new();
     // Seed visited with the root's own record name so cycles back to the root
     // are caught without needing a separate check.
@@ -147,6 +170,7 @@ pub fn resolve_canvas_graph_with_loc(
         None,
         None,
         &HashMap::new(),
+        bound_view_canvas,
     )
 }
 

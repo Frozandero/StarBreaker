@@ -16,6 +16,7 @@ include!("engine_parts/part_12.part");
 include!("engine_parts/part_13.part");
 include!("engine_parts/part_14.part");
 include!("engine_parts/part_15.part");
+include!("engine_parts/pagein_alpha_tests.part");
 include!("engine_parts/part_16.part");
 include!("engine_parts/part_17.part");
 include!("engine_parts/part_18.part");

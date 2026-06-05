@@ -13,6 +13,7 @@ fn resolve_canvas_graph_inner(
     inherited_style_identifier: Option<&str>,
     inherited_param_inputs: Option<&[serde_json::Value]>,
     inherited_boolean_bindings: &HashMap<String, bool>,
+    bound_view_canvas: Option<&str>,
 ) -> Result<BbScene, String> {
     let mut scene = parse_bb_canvas(root_json)?;
     inline_animation_timeline_references(&mut scene, fetch_by_path);
@@ -169,6 +170,7 @@ fn resolve_canvas_graph_inner(
                     local_style_identifier.as_deref(),
                     match_to_param_inputs.as_deref(),
                     &local_boolean_bindings,
+                    bound_view_canvas,
                 ) {
                     Ok(scene) => scene,
                     Err(e) => {
@@ -264,11 +266,21 @@ fn resolve_canvas_graph_inner(
         // canvases are inactive at startup and must not be followed in Pass 2.
         // For canvases without any `Instantiated` bindings (e.g. MFD screens)
         // the set is empty and all WidgetCanvas URLs are followed normally.
-        let instantiated_false = crate::bb_state_filter::instantiated_false_widgets_with_param_inputs_and_inherited_bindings(
+        let mut instantiated_false = crate::bb_state_filter::instantiated_false_widgets_with_param_inputs_and_inherited_bindings(
             record_value,
             inherited_param_inputs.unwrap_or(&[]),
             inherited_boolean_bindings,
         );
+
+        // MFD frame content-view selection: the frame embeds every view as
+        // mutually-exclusive WidgetCanvas slots whose `Instantiated` is gated by a
+        // runtime view-selector boolean with no static default. Instantiate the
+        // slot matching the binding's bound content canvas (and skip its peers)
+        // instead of the arbitrary static default, so the bound screen's content
+        // is merged in Pass 2 rather than dropped.
+        if let Some(bound) = bound_view_canvas {
+            crate::mfd_view::apply_bound_view_instantiation(&scene, bound, &mut instantiated_false);
+        }
 
         deactivate_subtrees(&mut scene, &instantiated_false);
 
@@ -344,6 +356,7 @@ fn resolve_canvas_graph_inner(
                 local_style_identifier.as_deref(),
                 Some(param_inputs.as_slice()),
                 &local_boolean_bindings,
+                bound_view_canvas,
             ) {
                 Ok(s) => s,
                 Err(e) => {

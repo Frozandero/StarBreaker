@@ -189,7 +189,24 @@ pub fn compile_ir_for_binding(inputs: &PipelineInputs<'_>) -> Result<UiIrDocumen
         // manufacturer metadata is absent.
         .or(Some("drak"));
 
-    let mut scene = crate::bb_resolve::resolve_canvas_graph_with_loc(
+    // For an MFD frame canvas, the binding's content canvas selects which of the
+    // frame's mutually-exclusive content-view slots is instantiated (the frame
+    // embeds every view; the runtime view-selector boolean has no static default).
+    // Resolve the bound content's `_RecordName_` so the resolver can instantiate
+    // the matching slot and skip its peers during Pass 2.
+    let bound_view_record_name: Option<String> = if use_frame_canvas {
+        content_guid
+            .and_then(|cguid| inputs.canvas_fetcher.fetch_canvas_json(cguid).ok())
+            .and_then(|json| {
+                json.get("_RecordName_")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_owned)
+            })
+    } else {
+        None
+    };
+
+    let mut scene = crate::bb_resolve::resolve_canvas_graph_with_loc_and_bound_view(
         &raw_root_json,
         effective_manufacturer_id,
         &|p| {
@@ -199,6 +216,7 @@ pub fn compile_ir_for_binding(inputs: &PipelineInputs<'_>) -> Result<UiIrDocumen
                 .map_err(|e| e.to_string())
         },
         inputs.loc_fetcher,
+        bound_view_record_name.as_deref(),
     )
     .map_err(UiError::RenderError)?;
 
@@ -208,19 +226,6 @@ pub fn compile_ir_for_binding(inputs: &PipelineInputs<'_>) -> Result<UiIrDocumen
         effective_manufacturer_id,
         inputs.loc_fetcher,
     );
-
-    // For an MFD frame canvas, activate only the content view the binding points
-    // at and deactivate the mutually-exclusive sibling views (the frame statically
-    // embeds every view; the engine selects one at runtime from state we don't
-    // have). Matches by the content canvas's `_RecordName_`.
-    if use_frame_canvas
-        && let Some(cguid) = content_guid
-        && let Ok(content_json) = inputs.canvas_fetcher.fetch_canvas_json(cguid)
-        && let Some(content_record_name) =
-            content_json.get("_RecordName_").and_then(|v| v.as_str())
-    {
-        crate::mfd_view::select_active_mfd_view(&mut scene, content_record_name);
-    }
 
     let swf_manifest = build_swf_selection_manifest(
         &raw_root_json,
