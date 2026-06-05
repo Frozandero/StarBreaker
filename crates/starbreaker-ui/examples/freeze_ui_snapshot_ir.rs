@@ -289,6 +289,7 @@ fn compile_snapshot(
         helper_name: Some("freeze-ui-snapshot-ir"),
         default_view_index: None,
         default_screen_slot: None,
+        screen_name_loc_key: None,
     };
 
     let inputs = PipelineInputs {

@@ -107,11 +107,12 @@ fn compile_ir_for_binding_uses_content_canvas_guid() {
     let binding = UiBindingView {
         canvas_guid: Some("container-guid"),
         content_canvas_guid: Some("content-guid"),
-        binding_kind: Some("mfd"),
+        binding_kind: Some("physical"),
         manufacturer_id: Some("drak"),
         helper_name: Some("Screen_Left_Upper_RTT"),
         default_view_index: None,
         default_screen_slot: None,
+        screen_name_loc_key: None,
     };
 
     let inputs = PipelineInputs {
@@ -171,11 +172,12 @@ fn compile_ir_for_binding_matches_golden_fixture() {
     let binding = UiBindingView {
         canvas_guid: Some("container-guid"),
         content_canvas_guid: Some("content-guid"),
-        binding_kind: Some("mfd"),
+        binding_kind: Some("physical"),
         manufacturer_id: Some("drak"),
         helper_name: Some("Screen_Left_Upper_RTT"),
         default_view_index: None,
         default_screen_slot: None,
+        screen_name_loc_key: None,
     };
 
     let inputs = PipelineInputs {
@@ -236,11 +238,12 @@ fn render_for_binding_ir_produces_nonempty_png() {
     let binding = UiBindingView {
         canvas_guid: Some("container-guid"),
         content_canvas_guid: Some("content-guid"),
-        binding_kind: Some("mfd"),
+        binding_kind: Some("physical"),
         manufacturer_id: Some("drak"),
         helper_name: Some("Screen_Left_Upper_RTT"),
         default_view_index: None,
         default_screen_slot: None,
+        screen_name_loc_key: None,
     };
 
     let inputs = PipelineInputs {
@@ -310,11 +313,12 @@ fn render_for_binding_matches_ir_entrypoint_for_bb_canvas() {
     let binding = UiBindingView {
         canvas_guid: Some("container-guid"),
         content_canvas_guid: Some("content-guid"),
-        binding_kind: Some("mfd"),
+        binding_kind: Some("physical"),
         manufacturer_id: Some("drak"),
         helper_name: Some("Screen_Left_Upper_RTT"),
         default_view_index: None,
         default_screen_slot: None,
+        screen_name_loc_key: None,
     };
 
     let inputs = PipelineInputs {
@@ -387,11 +391,12 @@ fn render_for_binding_ir_honours_canvas_style_override() {
     let binding = UiBindingView {
         canvas_guid: Some("container-guid"),
         content_canvas_guid: Some("content-guid"),
-        binding_kind: Some("mfd"),
+        binding_kind: Some("physical"),
         manufacturer_id: Some("drak"),
         helper_name: Some("MedicalStyleOverride"),
         default_view_index: None,
         default_screen_slot: None,
+        screen_name_loc_key: None,
     };
 
     let inputs = PipelineInputs {

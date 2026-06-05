@@ -11,7 +11,7 @@ use crate::error::UiError;
 use crate::hybrid_compose::render_ui_ir_with_swf_overlay;
 use crate::ir_compose::render_ui_ir_document;
 use crate::style::{ManufacturerStyle, StyleLoader};
-use crate::ui_ir::{UiIrDocument, UiRendererHint};
+use crate::ui_ir::{UiIrDocument, UiIrTextPayload, UiRendererHint};
 
 mod asset_manifest;
 mod style_selection;
@@ -92,6 +92,9 @@ pub struct UiBindingView<'a> {
     pub helper_name: Option<&'a str>,
     pub default_view_index: Option<u32>,
     pub default_screen_slot: Option<u32>,
+    /// Localization key for the MFD screen name (e.g. `"@ui_MFD_View_TargetStatus"`).
+    /// Injected into `text_ScreenName` nodes when rendering the MFD frame canvas.
+    pub screen_name_loc_key: Option<&'a str>,
 }
 
 /// All inputs required by pipeline entrypoints.
@@ -132,16 +135,27 @@ pub struct UiRenderOutput {
 pub fn compile_ir_for_binding(inputs: &PipelineInputs<'_>) -> Result<UiIrDocument, UiError> {
     let b = inputs.binding;
 
-    let effective_guid = b
-        .content_canvas_guid
-        .filter(|g| !g.is_empty())
-        .or_else(|| b.canvas_guid.filter(|g| !g.is_empty()))
-        .ok_or_else(|| {
-            UiError::RenderError(format!(
-                "no canvas GUID available for helper {:?} (kind {:?})",
-                b.helper_name, b.binding_kind,
-            ))
-        })?;
+    // Phase 6: for mfd bindings with a distinct frame canvas, compile the frame
+    // (canvas_guid) instead of the content canvas so that the footer chrome is
+    // included.  For all other bindings keep the existing content-first priority.
+    let frame_guid = b.canvas_guid.filter(|g| !g.is_empty());
+    let content_guid = b.content_canvas_guid.filter(|g| !g.is_empty());
+    let use_frame_canvas = b.binding_kind == Some("mfd")
+        && frame_guid.is_some()
+        && content_guid.is_some()
+        && frame_guid != content_guid;
+
+    let effective_guid = if use_frame_canvas {
+        frame_guid
+    } else {
+        content_guid.or(frame_guid)
+    }
+    .ok_or_else(|| {
+        UiError::RenderError(format!(
+            "no canvas GUID available for helper {:?} (kind {:?})",
+            b.helper_name, b.binding_kind,
+        ))
+    })?;
 
     let raw_root_json = inputs.canvas_fetcher.fetch_canvas_json(effective_guid)?;
     let resolver = CanvasWidgetTreeResolver::new();
@@ -277,6 +291,29 @@ pub fn compile_ir_for_binding(inputs: &PipelineInputs<'_>) -> Result<UiIrDocumen
             .chain(swf_manifest.fallback_counters.iter())
             .map(|(key, value): (&String, &u32)| (key.as_str(), *value)),
     ));
+
+    if use_frame_canvas {
+        // base_Root alpha=0.0 is the BB animation start-state; patch to 1.0 for static renders.
+        for node in &mut ir.nodes {
+            if node.name == "base_Root" && node.alpha == 0.0 {
+                node.alpha = 1.0;
+            }
+        }
+        // Inject the resolved screen name into text_ScreenName nodes.
+        if let Some(raw_key) = b.screen_name_loc_key {
+            let bare_key = raw_key.trim_start_matches('@');
+            let text = inputs
+                .loc_fetcher
+                .and_then(|f| f.fetch_loc(bare_key))
+                .unwrap_or_else(|| raw_key.to_string());
+            for node in &mut ir.nodes {
+                if node.name == "text_ScreenName" {
+                    node.text_payload = Some(UiIrTextPayload::Resolved { text: text.clone() });
+                }
+            }
+        }
+    }
+
     Ok(ir)
 }
 

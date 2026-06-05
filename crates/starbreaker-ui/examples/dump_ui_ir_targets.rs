@@ -199,6 +199,7 @@ fn dump_one(
         helper_name: Some("ui-target-ir-dump"),
         default_view_index: None,
         default_screen_slot: None,
+        screen_name_loc_key: None,
     };
 
     let inputs = PipelineInputs {

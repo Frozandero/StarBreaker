@@ -274,6 +274,7 @@ fn render_target(
         helper_name: Some(helper_name),
         default_view_index: None,
         default_screen_slot: None,
+        screen_name_loc_key: None,
     };
 
     let inputs = PipelineInputs {
@@ -451,6 +452,7 @@ fn main() -> Result<(), String> {
             helper_name: Some("ui_target_a-phase2-render"),
             default_view_index: None,
             default_screen_slot: None,
+            screen_name_loc_key: None,
         };
         let ui_target_a_inputs = PipelineInputs {
             binding: &ui_target_a_binding,
@@ -474,6 +476,7 @@ fn main() -> Result<(), String> {
             helper_name: Some("ui_target_b-phase2-render"),
             default_view_index: None,
             default_screen_slot: None,
+            screen_name_loc_key: None,
         };
         let ui_target_b_inputs = PipelineInputs {
             binding: &ui_target_b_binding,

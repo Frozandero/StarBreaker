@@ -227,6 +227,7 @@ fn trace_for_canvas(
         helper_name: Some(helper_name),
         default_view_index: None,
         default_screen_slot: None,
+        screen_name_loc_key: None,
     };
 
     let inputs = PipelineInputs {
