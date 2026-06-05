@@ -29,6 +29,15 @@ use crate::bb_scene::{BbNode, BbNodeId, BbNodeType, BbScene};
 /// peers — `WidgetCanvas` nodes sharing its parent **and** layer that reference a
 /// different canvas — are inserted (forced off). No-op when no slot matches
 /// (non-MFD frames, or frames that don't embed the bound view).
+///
+/// Peer detection is structural and **relative** — peers share the *matched
+/// slot's* layer, not a hard-coded one — so the always-on chrome (header/footer)
+/// on a different layer is left alone, and the frame's absolute layering doesn't
+/// matter. The one assumption is that a frame's mutually-exclusive content views
+/// share a layer with each other (observed on `m_eng_mfdcontent`: views layer 5,
+/// footer layer 10). If a future ship authors its views on differing layers, the
+/// 3d crate's `SMFDView` view-canvas set (already enumerated for the binding)
+/// would be the stronger signal to thread in.
 pub fn apply_bound_view_instantiation(
     scene: &BbScene,
     bound_content_record_name: &str,
@@ -78,7 +87,7 @@ fn canvas_ref_record_name(node: &BbNode) -> Option<String> {
         .get("canvas")
         .and_then(|value| value.as_str())
         .filter(|s| !s.is_empty() && *s != "null")?;
-    Some(normalize_record_name(&crate::pipeline::extract_record_name(url)))
+    Some(normalize_record_name(&crate::record_name::extract_record_name(url)))
 }
 
 fn normalize_record_name(name: &str) -> String {
@@ -142,5 +151,69 @@ mod tests {
         let mut inst_false: HashSet<BbNodeId> = HashSet::new();
         apply_bound_view_instantiation(&scene, "BuildingBlocks_Canvas.MC_S_Power_Master", &mut inst_false);
         assert!(inst_false.is_empty(), "no matching slot → no changes");
+    }
+
+    /// End-to-end through the resolver: a frame embedding two mutually-exclusive
+    /// view slots must merge ONLY the bound view's content in Pass 2 (the other
+    /// slot is forced into `instantiated_false` and skipped). This guards the real
+    /// integration — the unit tests above exercise the helper in isolation, but
+    /// the bug they protect against (the bound view's content dropped during
+    /// resolution) only manifests through `resolve_canvas_graph`.
+    #[test]
+    fn resolver_merges_only_the_bound_view_content() {
+        let frame = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.TestFrame",
+            "_RecordValue_": {
+                "size": {"x": 800, "y": 600},
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget", "name": "base",
+                     "isActive": true, "sizing": {"width": {"behavior": "Fixed", "value": 800.0}, "height": {"behavior": "Fixed", "value": 600.0}}},
+                    {"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_WidgetCanvas", "name": "canvas_ViewA",
+                     "parent": "_PointsTo_:ptr:1", "isActive": true, "layer": 5, "canvas": "file://./viewa.json"},
+                    {"_Pointer_": "ptr:3", "_Type_": "BuildingBlocks_WidgetCanvas", "name": "canvas_ViewB",
+                     "parent": "_PointsTo_:ptr:1", "isActive": true, "layer": 5, "canvas": "file://./viewb.json"}
+                ],
+                "operations": []
+            }
+        });
+        let view = |name: &str, marker: &str| serde_json::json!({
+            "_RecordName_": format!("BuildingBlocks_Canvas.{name}"),
+            "_RecordValue_": {"size": {"x": 800, "y": 600}, "scene": [
+                {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_WidgetTextField", "name": marker,
+                 "isActive": true, "text": "x",
+                 "sizing": {"width": {"behavior": "Fixed", "value": 100.0}, "height": {"behavior": "Fixed", "value": 20.0}}}
+            ], "operations": []}
+        });
+        let view_a = view("ViewA", "marker_A");
+        let view_b = view("ViewB", "marker_B");
+        let fetch = move |path: &str| -> Result<serde_json::Value, String> {
+            let p = path.to_ascii_lowercase();
+            if p.contains("viewa") {
+                Ok(view_a.clone())
+            } else if p.contains("viewb") {
+                Ok(view_b.clone())
+            } else {
+                Err(format!("unknown canvas: {path}"))
+            }
+        };
+
+        let scene = crate::bb_resolve::resolve_canvas_graph_with_loc_and_bound_view(
+            &frame,
+            Some("drak"),
+            &fetch,
+            None,
+            Some("BuildingBlocks_Canvas.ViewA"),
+        )
+        .expect("resolve");
+
+        let names: Vec<&str> = scene.nodes.values().map(|n| n.name.as_str()).collect();
+        assert!(
+            names.contains(&"marker_A"),
+            "bound view A content must be merged; got {names:?}"
+        );
+        assert!(
+            !names.contains(&"marker_B"),
+            "non-bound view B content must NOT be merged; got {names:?}"
+        );
     }
 }

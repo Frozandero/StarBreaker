@@ -34,21 +34,10 @@ pub use swf_selection::flash_swf_candidates;
 /// Static UI captures use midpoint sampling for authored animations.
 pub const DEFAULT_STATIC_ANIMATION_SAMPLE_PERCENT: f32 = 50.0;
 
-/// Extract a DataCore record name from a BuildingBlocks file URL or bare name.
-pub fn extract_record_name(file_url_or_name: &str) -> String {
-    let without_scheme = file_url_or_name
-        .strip_prefix("file://")
-        .unwrap_or(file_url_or_name);
-    let basename = without_scheme.rsplit('/').next().unwrap_or(without_scheme);
-    if basename
-        .get(basename.len().saturating_sub(5)..)
-        .is_some_and(|suffix| suffix.eq_ignore_ascii_case(".json"))
-    {
-        basename[..basename.len() - 5].to_string()
-    } else {
-        basename.to_string()
-    }
-}
+// `extract_record_name` now lives in the neutral `crate::record_name` module so
+// the lower layers don't depend up into `pipeline`. Re-exported here for the
+// existing `pipeline::extract_record_name` call sites (incl. external crates).
+pub use crate::record_name::extract_record_name;
 
 /// Fetch a BuildingBlocks canvas record as JSON.
 pub trait CanvasFetcher {
@@ -195,13 +184,25 @@ pub fn compile_ir_for_binding(inputs: &PipelineInputs<'_>) -> Result<UiIrDocumen
     // Resolve the bound content's `_RecordName_` so the resolver can instantiate
     // the matching slot and skip its peers during Pass 2.
     let bound_view_record_name: Option<String> = if use_frame_canvas {
-        content_guid
+        let name = content_guid
             .and_then(|cguid| inputs.canvas_fetcher.fetch_canvas_json(cguid).ok())
             .and_then(|json| {
                 json.get("_RecordName_")
                     .and_then(|v| v.as_str())
                     .map(str::to_owned)
-            })
+            });
+        if name.is_none() {
+            // Without the bound content's record name the frame falls back to its
+            // arbitrary static-default view, which usually renders the wrong
+            // content. Surface it rather than failing silently.
+            log::warn!(
+                "mfd frame {:?}: could not resolve content canvas record name for guid {:?}; \
+                 view selection skipped (frame may render the wrong content view)",
+                b.helper_name,
+                content_guid,
+            );
+        }
+        name
     } else {
         None
     };

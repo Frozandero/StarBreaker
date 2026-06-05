@@ -223,7 +223,7 @@ fn collect_standard_text_styles(
             brand
                 .get("brandIdentifier")
                 .and_then(|identifier| identifier.as_str())
-                .map(crate::pipeline::extract_record_name)
+                .map(crate::record_name::extract_record_name)
                 .is_some_and(|identifier| identifier.eq_ignore_ascii_case(selected_style_name))
         })
         .filter_map(|brand| brand.get("entries").and_then(|entries| entries.as_array()))

@@ -414,7 +414,7 @@ fn resolve_canvas_graph_inner(
             let identifier = record_value
                 .get("style")
                 .and_then(|v| v.as_str())
-                .map(crate::pipeline::extract_record_name)
+                .map(crate::record_name::extract_record_name)
                 .unwrap_or_else(|| "linked_style".to_string());
             let brand = bb_brand_style::BrandStyle {
                 identifier,

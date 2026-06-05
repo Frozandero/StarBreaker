@@ -3,7 +3,7 @@
 //! Handles per-canvas brand override (IC_* family) and ship-manufacturer-based
 //! brand selection (MC_* family) with generic fallback support.
 
-use crate::pipeline::extract_record_name;
+use crate::record_name::extract_record_name;
 
 /// Canvas family classification by record-name prefix.
 ///

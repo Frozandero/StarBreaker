@@ -3,7 +3,7 @@ mod tests_d {
     #![allow(unused_imports, dead_code)]
 
     use super::*;
-    use crate::pipeline::extract_record_name;
+    use crate::record_name::extract_record_name;
 
 
     fn load_fixture(name: &str) -> serde_json::Value {

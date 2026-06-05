@@ -126,9 +126,12 @@ pub fn parse_bb_canvas(json: &serde_json::Value) -> Result<BbScene, String> {
 /// `WidgetCanvas`, after which they can no longer be distinguished from nested
 /// alpha=0 state-hidden widgets (e.g. `base_CastFrame`). Without it, `inheritsAlpha`
 /// cascades the 0.0 start value to every descendant and the whole frame (content
-/// view + footer) renders blank. The guard is deliberately tight: `is_active`
-/// excludes deactivated roots (`background_Primitive`), and the `animation` block
-/// excludes static-hidden roots with no page-in.
+/// view + footer) renders blank. The discriminating guards are `parent.is_none()`
+/// (a scene root — the embedded content canvases' roots are re-parented under
+/// their `WidgetCanvas` and so are excluded) and `is_active` (excludes
+/// deactivated roots like `background_Primitive`). The `animation`-block check is
+/// a weak backstop — nearly every authored node carries an `animation` block —
+/// kept only to avoid settling a static-hidden root that has none.
 fn settle_pagein_start_roots(roots: &[BbNodeId], nodes: &mut BTreeMap<BbNodeId, BbNode>) {
     for &id in roots {
         if let Some(node) = nodes.get_mut(&id) {

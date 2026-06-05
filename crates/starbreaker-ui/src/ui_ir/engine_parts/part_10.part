@@ -44,7 +44,7 @@ fn standard_textfield_font_size_from_styles(
                 .font_record
                 .as_deref()
                 .is_some_and(|record| {
-                    let font_style = crate::pipeline::extract_record_name(record);
+                    let font_style = crate::record_name::extract_record_name(record);
                     font_style.eq_ignore_ascii_case("blenderpro-thin")
                 })
         })

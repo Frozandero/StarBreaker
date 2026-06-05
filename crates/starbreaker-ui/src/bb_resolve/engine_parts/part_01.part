@@ -44,7 +44,7 @@ use std::collections::{HashMap, HashSet};
 use crate::bb_loc::LocFetcher;
 use crate::bb_scene::{BbNodeId, BbNodeType, BbScene, BbValue, parse_bb_canvas};
 use crate::bb_brand_style;
-use crate::pipeline::extract_record_name;
+use crate::record_name::extract_record_name;
 
 fn is_linear_progress_meter(node: &crate::bb_scene::BbNode) -> bool {
     matches!(

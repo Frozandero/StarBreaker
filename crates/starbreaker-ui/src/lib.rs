@@ -38,6 +38,7 @@ pub mod error;
 pub mod hybrid_compose;
 pub mod ir_compose;
 pub mod mfd_view;
+pub mod record_name;
 pub mod pipeline;
 pub mod postprocess;
 pub mod style;
