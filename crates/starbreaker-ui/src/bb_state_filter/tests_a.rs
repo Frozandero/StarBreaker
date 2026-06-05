@@ -331,3 +331,33 @@
         assert!(result.contains(&7), "IntegerSwitch default-false must hide widget 7: {result:?}");
     }
 
+    /// An `EvaluateAnd` with a determining `false` operand resolves to `false`
+    /// (overlay hidden) even when a sibling operand is unresolved — rather than
+    /// bailing to "unknown" and falling to the conservative keep-visible default.
+    #[test]
+    fn and_short_circuits_on_a_false_operand() {
+        fn isactive_op(widget: u32, input: u32) -> serde_json::Value {
+            json!({
+                "_Type_": "BuildingBlocks_BindingsBooleanField",
+                "widget": format!("_PointsTo_:ptr:{widget}"),
+                "field": "IsActive",
+                "input": format!("_PointsTo_:ptr:{input}")
+            })
+        }
+        let rv = make_record_value(
+            vec![],
+            vec![
+                // ptr:10 = FromInteger(Equal 5) → false (event not active).
+                json!({"_Pointer_":"ptr:10","_Type_":"BuildingBlocks_BindingsBooleanFromInteger","type":"Equal","value":5,"inputL":"_PointsTo_:ptr:99"}),
+                // ptr:11 = And(ptr:10=false, ptr:98=unresolvable) → false via short-circuit.
+                json!({"_Pointer_":"ptr:11","_Type_":"BuildingBlocks_BindingsBooleanEvaluateAnd","inputs":["_PointsTo_:ptr:10","_PointsTo_:ptr:98"]}),
+                isactive_op(5, 11),
+            ],
+        );
+        let result = instantiated_false_widgets(&rv);
+        assert!(
+            result.contains(&5),
+            "And(false, unknown) must short-circuit to false and hide widget 5: {result:?}"
+        );
+    }
+

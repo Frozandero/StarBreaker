@@ -38,36 +38,46 @@ pub(super) fn evaluate_bool_ops(
                         ptr_val.get(&inp).copied().map(|v| !v)
                     }
                     "BuildingBlocks_BindingsBooleanEvaluateOr" => {
+                        // Short-circuit on a determining operand (any known `true`
+                        // → `true`); consistent with `eval_bool_ref`.
                         let inputs = op.get("inputs").and_then(|v| v.as_array())?;
-                        let mut result = false;
-                        let mut all_known = true;
+                        let mut any_unknown = false;
                         for inp_v in inputs {
                             let inp = inp_v.as_str().and_then(parse_points_to_ptr)?;
                             match ptr_val.get(&inp).copied() {
-                                Some(v) => result |= v,
-                                None => {
-                                    all_known = false;
-                                    break;
-                                }
+                                Some(true) => return Some(true),
+                                Some(false) => {}
+                                None => any_unknown = true,
                             }
                         }
-                        if all_known { Some(result) } else { None }
+                        if any_unknown { None } else { Some(false) }
                     }
                     "BuildingBlocks_BindingsBooleanEvaluateAnd" => {
+                        // Short-circuit on a determining operand (any known `false`
+                        // → `false`); consistent with `eval_bool_ref`.
                         let inputs = op.get("inputs").and_then(|v| v.as_array())?;
-                        let mut result = true;
-                        let mut all_known = true;
+                        let mut any_unknown = false;
                         for inp_v in inputs {
                             let inp = inp_v.as_str().and_then(parse_points_to_ptr)?;
                             match ptr_val.get(&inp).copied() {
-                                Some(v) => result &= v,
-                                None => {
-                                    all_known = false;
-                                    break;
-                                }
+                                Some(false) => return Some(false),
+                                Some(true) => {}
+                                None => any_unknown = true,
                             }
                         }
-                        if all_known { Some(result) } else { None }
+                        if any_unknown { None } else { Some(true) }
+                    }
+                    // Integer-state op-types resolved to their at-rest values,
+                    // mirroring `eval_bool_ref` (see there for the rationale).
+                    "BuildingBlocks_BindingsBooleanFromIntegerSwitch" => {
+                        op.get("defaultValue").and_then(|v| v.as_bool()).or(Some(false))
+                    }
+                    "BuildingBlocks_BindingsBooleanFromInteger" => {
+                        match op.get("type").and_then(|v| v.as_str()).unwrap_or("") {
+                            "Equal" => Some(false),
+                            "NotEqual" => Some(true),
+                            _ => None,
+                        }
                     }
                     _ => None,
                 }
