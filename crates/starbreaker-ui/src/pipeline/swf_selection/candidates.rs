@@ -32,9 +32,9 @@ pub(crate) fn build_swf_selection_manifest(
     fetcher: &dyn SwfFetcher,
 ) -> SwfSelectionManifest {
     let flash_candidates = if canvas_has_flash_renderer(raw_root_json) {
-        let mut source_candidates = flash_swf_candidates_from_canvas_refs(raw_root_json, manufacturer_id);
+        let mut source_candidates = flash_swf_candidates_from_canvas_refs(raw_root_json, manufacturer_id, fetcher);
         let record_name = canvas_record_name(raw_root_json).unwrap_or("");
-        source_candidates.extend(flash_swf_candidates(record_name, manufacturer_id));
+        source_candidates.extend(flash_swf_candidates(record_name, manufacturer_id, fetcher));
 
         let deduped = source_candidates
             .into_iter()

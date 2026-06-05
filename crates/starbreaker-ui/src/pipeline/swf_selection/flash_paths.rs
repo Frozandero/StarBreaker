@@ -1,8 +1,18 @@
 //! Flash-canvas SWF path derivation helpers.
+//!
+//! All ship-subdir enumeration is driven by P4K directory listing via the
+//! `SwfFetcher::list_swf_dirs` method; no ship or asset names are
+//! hard-coded.  Brand-level screen-set dirs (e.g. `SupportScreen16-9`) are
+//! still constructed from the known P4K directory grammar without probing.
 
 use super::super::extract_record_name;
+use super::super::SwfFetcher;
 
-pub fn flash_swf_candidates(record_name: &str, manufacturer_id: &str) -> Vec<String> {
+pub fn flash_swf_candidates(
+    record_name: &str,
+    manufacturer_id: &str,
+    fetcher: &dyn SwfFetcher,
+) -> Vec<String> {
     let name = record_name
         .strip_prefix("BuildingBlocks_Canvas.")
         .unwrap_or(record_name);
@@ -17,7 +27,7 @@ pub fn flash_swf_candidates(record_name: &str, manufacturer_id: &str) -> Vec<Str
     }
 
     if name.to_ascii_lowercase().contains("annunciator") {
-        return annunciator_swf_candidates(name, &brand);
+        return annunciator_swf_candidates(name, &brand, fetcher);
     }
 
     let is_generic_mc = name.starts_with("MC_S_") || name.starts_with("GEN_MC_S_");
@@ -35,9 +45,9 @@ pub fn flash_swf_candidates(record_name: &str, manufacturer_id: &str) -> Vec<Str
         return vec![];
     }
 
-    let mut candidates = support_screen_candidates_for_brand(&brand, stem);
+    let mut candidates = support_screen_candidates_for_brand(&brand, stem, fetcher);
     if is_generic_mc && brand != "RSI" {
-        candidates.extend(support_screen_candidates_for_brand("RSI", stem));
+        candidates.extend(support_screen_candidates_for_brand("RSI", stem, fetcher));
     }
 
     candidates
@@ -46,6 +56,7 @@ pub fn flash_swf_candidates(record_name: &str, manufacturer_id: &str) -> Vec<Str
 pub(super) fn flash_swf_candidates_from_canvas_refs(
     raw_root_json: &serde_json::Value,
     manufacturer_id: &str,
+    fetcher: &dyn SwfFetcher,
 ) -> Vec<String> {
     let Some(record_value) = raw_root_json.get("_RecordValue_") else {
         return Vec::new();
@@ -82,7 +93,7 @@ pub(super) fn flash_swf_candidates_from_canvas_refs(
     for path in refs {
         let reference_name = extract_record_name(&path).to_ascii_lowercase();
         if let Some(stem) = flash_stem_from_canvas_reference_name(&reference_name) {
-            candidates.extend(flash_swf_candidates_from_stem(&stem, manufacturer_id));
+            candidates.extend(flash_swf_candidates_from_stem(&stem, manufacturer_id, fetcher));
         }
     }
     candidates
@@ -135,7 +146,7 @@ fn flash_stem_from_canvas_reference_name(reference_name: &str) -> Option<String>
     }
 }
 
-fn flash_swf_candidates_from_stem(stem: &str, manufacturer_id: &str) -> Vec<String> {
+fn flash_swf_candidates_from_stem(stem: &str, manufacturer_id: &str, fetcher: &dyn SwfFetcher) -> Vec<String> {
     let brand: String = manufacturer_id
         .chars()
         .take(3)
@@ -144,19 +155,29 @@ fn flash_swf_candidates_from_stem(stem: &str, manufacturer_id: &str) -> Vec<Stri
     if brand.is_empty() || stem.is_empty() {
         return Vec::new();
     }
-    support_screen_candidates_for_brand(&brand, stem)
+    support_screen_candidates_for_brand(&brand, stem, fetcher)
 }
 
-fn brand_ship_subdirs(brand: &str) -> &'static [&'static str] {
-    match brand {
-        "DRA" => &["DRAK_Dragonfly", "DRAK_Buccaneer", "DRAK_Caterpillar"],
-        "ORI" => &["ORIG_85X"],
-        "MIS" => &["MISC_Freelancer_Base"],
-        _ => &[],
-    }
+/// Enumerate ship subdirs for `brand` from the P4K tree.
+///
+/// Returns bare subdir names (e.g. `"DRAK_Buccaneer"`) sorted
+/// lexicographically.  Only dirs whose name starts with the brand prefix
+/// are treated as ship dirs; others (e.g. `SupportScreen16-9`) are
+/// screen-set dirs handled by the static grammar in
+/// `support_screen_candidates_for_brand`.
+fn p4k_ship_subdirs(brand: &str, fetcher: &dyn SwfFetcher) -> Vec<String> {
+    let brand_root = format!(r"Data\UI\ShipInterface\assets\SWF\{brand}\");
+    let brand_upper = brand.to_ascii_uppercase();
+    let mut dirs: Vec<String> = fetcher
+        .list_swf_dirs(&brand_root)
+        .into_iter()
+        .filter(|d| d.to_ascii_uppercase().starts_with(&brand_upper))
+        .collect();
+    dirs.sort();
+    dirs
 }
 
-fn support_screen_candidates_for_brand(brand: &str, stem: &str) -> Vec<String> {
+fn support_screen_candidates_for_brand(brand: &str, stem: &str, fetcher: &dyn SwfFetcher) -> Vec<String> {
     if brand.is_empty() || stem.is_empty() {
         return Vec::new();
     }
@@ -171,8 +192,6 @@ fn support_screen_candidates_for_brand(brand: &str, stem: &str) -> Vec<String> {
         .flat_map(|base| [format!("{base}{stem}Status.swf"), format!("{base}{stem}.swf")])
         .collect();
 
-    // Some brands store SWFs under a ship-named subdirectory (e.g. DRA\DRAK_Dragonfly\Support_Bespoke_2\).
-    // Probe those paths in addition to the flat brand-level dirs above.
     let ship_support_dirs = [
         "Support_Bespoke_2",
         "Support_Bespoke_1",
@@ -180,7 +199,7 @@ fn support_screen_candidates_for_brand(brand: &str, stem: &str) -> Vec<String> {
         "SupportScreen1-1",
         "SupportScreenBespoke2",
     ];
-    for ship in brand_ship_subdirs(brand) {
+    for ship in p4k_ship_subdirs(brand, fetcher) {
         for dir in &ship_support_dirs {
             let base = format!(r"Data\UI\ShipInterface\assets\SWF\{brand}\{ship}\{dir}\");
             candidates.push(format!("{base}{stem}Status.swf"));
@@ -191,22 +210,7 @@ fn support_screen_candidates_for_brand(brand: &str, stem: &str) -> Vec<String> {
     candidates
 }
 
-/// Ship-subdir fallback order for shared annunciator SWFs.
-///
-/// The standard annunciator is a thin horizontal strip. For DRA the Buccaneer
-/// variant matches that shape (stage ~364×82), whereas the Dragonfly's bespoke
-/// annunciator is square (~143×143); a ship without its own annunciator SWF
-/// should fall back to the strip-shaped variant first. This differs from
-/// [`brand_ship_subdirs`] (used for support screens, where the Dragonfly hosts
-/// the canonical assets), which is why the annunciator keeps its own order.
-fn annunciator_ship_subdirs(brand: &str) -> &'static [&'static str] {
-    match brand {
-        "DRA" => &["DRAK_Buccaneer", "DRAK_Dragonfly", "DRAK_Caterpillar"],
-        other => brand_ship_subdirs(other),
-    }
-}
-
-fn annunciator_swf_candidates(canvas_name: &str, brand: &str) -> Vec<String> {
+fn annunciator_swf_candidates(canvas_name: &str, brand: &str, fetcher: &dyn SwfFetcher) -> Vec<String> {
     let name_lower = canvas_name.to_ascii_lowercase();
 
     let halve = if name_lower.contains("_left") {
@@ -223,7 +227,7 @@ fn annunciator_swf_candidates(canvas_name: &str, brand: &str) -> Vec<String> {
     let mut candidates = Vec::new();
     candidates.push(format!(r"{swf_root}{brand}\AnnunciatorScreen\{halve_file}"));
 
-    for ship in annunciator_ship_subdirs(brand) {
+    for ship in p4k_ship_subdirs(brand, fetcher) {
         candidates.push(format!(
             r"{swf_root}{brand}\{ship}\AnnunciatorScreen\{halve_file}"
         ));

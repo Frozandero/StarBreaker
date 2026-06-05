@@ -62,9 +62,20 @@ pub trait CanvasFetcher {
     }
 }
 
-/// Fetch raw SWF bytes by P4K path.
+/// Fetch raw SWF bytes by P4K path and enumerate P4K SWF directories.
 pub trait SwfFetcher {
     fn fetch_swf_bytes(&self, p4k_path: &str) -> Result<Vec<u8>, UiError>;
+
+    /// List immediate child directory names under `prefix` in the P4K SWF tree.
+    ///
+    /// `prefix` is a Windows-style path ending with `\`, e.g.
+    /// `Data\UI\ShipInterface\assets\SWF\DRA\`.  Returns bare names (no
+    /// leading path), sorted lexicographically.  The default returns an empty
+    /// list; P4K-backed implementations should override to enable
+    /// deterministic ship-subdir enumeration.
+    fn list_swf_dirs(&self, _prefix: &str) -> Vec<String> {
+        vec![]
+    }
 }
 
 /// Resolve a manufacturer style by short id.

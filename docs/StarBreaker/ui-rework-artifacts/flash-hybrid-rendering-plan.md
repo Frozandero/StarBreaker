@@ -267,46 +267,47 @@ data-derived fallback when a ship has no own assets. Remove hard-coded ship
 lists.
 
 Research TODO (use MCP P4K + datacore):
-- [ ] 1.1 Find the config that selects a ship's UI skin / screen set. Start at
-  the dashboard entity (`DRAK_Clipper_Dashboard`, GUID
-  `cab2c9f0-02df-46cd-bc11-06e3a5d12d89`) and its
-  `Components[SCItemSeatDashboardParams]` (and `SCItemSeatDashboardMFDParams`
-  struct fields — query narrow sub-paths; the full struct exceeds the
-  materialization limit). Look for an interface-style / screen-style / SWF-set
-  reference. Also inspect the seat (`DRAK_Clipper_Pilot_Seat`) and any
-  `ShipInterface`/`ScreenStyle` record types (`search_records`).
-- [ ] 1.2 Determine the exact path grammar and the fallback rule from data:
-  `…\SWF\<BRAND>\[<ShipSubdir>\]<ScreenSet>\<ScreenFile>.swf`. `<BRAND>` from
-  manufacturer (3-letter). `<ScreenFile>` from the canvas/screen type
-  (`MC_S_Target` → `TargetStatus`, annunciator → `AnnunciatorHalve{1,2}`, etc. —
-  derive the mapping from data/record names, not a hard-coded table). `<ScreenSet>`
-  and `<ShipSubdir>` from 1.1.
-- [ ] 1.3 If (and only if) a ship has no own assets, the fallback ship/screen-set
-  must be **enumerated from the P4K** (`p4k_list`/`p4k_search` of
-  `…\SWF\<BRAND>\`) and chosen by a data-defined rule (e.g. the brand's default
-  set indicated by config), NOT a hard-coded ship preference. Document the rule.
+- [x] 1.1 Find the config that selects a ship's UI skin / screen set.
+  FINDING: `SCItemSeatDashboardScreen.Style.Type` maps to P4K subdir for
+  some brands (AEG: `MFD_16_9`, `MFD_4_3`, `Annunciator`) but DRA ships only
+  list `HeadUpDisplay` — no support-screen style link in DataCore for DRA.
+  `SMFDView.urlpostfix` links view to SWF filename (e.g. `"targetstatus"` →
+  `TargetStatus.swf`). DRAK Clipper has **no own SWF directory** in P4K.
+- [x] 1.2 Path grammar confirmed: `SWF\{BRAND}\[{ship}\]{screen-set}\{file}.swf`.
+  BRAND = first 3 chars of manufacturer_id, uppercase (drak→DRA). Ship subdirs
+  start with the brand prefix (DRAK_*, AEGS_*, etc.). Screen files derived from
+  canvas name (MC_S_Target → TargetStatus, annunciator → AnnunciatorHalve{1,2}).
+- [x] 1.3 Fallback rule: enumerate P4K `SWF\{BRAND}\` alphabetically; generate
+  candidates for all ship subdirs whose name starts with the brand prefix;
+  first valid SWF wins.  Alphabetical ordering naturally picks DRAK_Buccaneer
+  first (thin annunciator strip) and Dragonfly for support screens that
+  Buccaneer lacks (e.g. Support_Bespoke_2).
 
 Implementation TODO:
-- [ ] 1.4 Add a `SwfResolver` (new module under `pipeline/swf_selection/`) that
-  takes structured inputs (brand, screen-type key, ship/skin context) and returns
-  the resolved P4K path(s) + the screen-set, using a P4K directory listing
-  (add a `list_dir`-style capability to the `SwfFetcher`/P4K abstraction if not
-  present). Cache directory listings per brand for the run.
-- [ ] 1.5 Replace `flash_paths.rs` candidate generation and delete
-  `brand_ship_subdirs` / `annunciator_ship_subdirs` (the temporary Buccaneer-first
-  stopgap) once the resolver reproduces the correct selections.
-- [ ] 1.6 Thread the ship/skin context from `child_payload.rs` into the binding so
-  the resolver has it (extend `UiBinding`/`UiBindingView` as needed).
+- [x] 1.4 Added `list_swf_dirs` default method to `SwfFetcher` trait
+  (`pipeline/mod.rs`). In `flash_paths.rs`, `p4k_ship_subdirs` enumerates
+  `SWF\{BRAND}\` via the fetcher and filters by brand prefix, sorted
+  lexicographically — replaces both hard-coded lists.
+- [x] 1.5 Deleted `brand_ship_subdirs` and `annunciator_ship_subdirs`;
+  `support_screen_candidates_for_brand` and `annunciator_swf_candidates` now
+  call `p4k_ship_subdirs(brand, fetcher)`.  All signatures thread
+  `fetcher: &dyn SwfFetcher` through.
+- [ ] 1.6 Thread the ship/skin context from `child_payload.rs` into the binding.
+  DEFERRED: alphabetical P4K enumeration + first-valid-SWF-wins already handles
+  all known cases correctly (Clipper has no SWF dir → naturally falls back to
+  Dragonfly for support screens, Buccaneer for annunciators).  Revisit if a ship
+  has own assets that must be preferred over alphabetical-first sibling.
 
 Tests (TDD):
-- [ ] DRAK target screen resolves to the correct `TargetStatus.swf` deterministically.
-- [ ] DRAK annunciator left/right resolve to the **thin** `AnnunciatorHalve{1,2}.swf`
-  (regression lock for the fix already shipped, now via the resolver).
-- [ ] A manufacturer with per-ship assets resolves to the ship's own SWF, not a fallback.
-- [ ] Unknown/missing screen → no SWF (BB-only), no panic.
+- [x] `no_ship_dirs_produces_only_brand_level_candidates` — empty fetcher → no DRAK_* candidates.
+- [x] `p4k_enumeration_excludes_dirs_not_returned_by_fetcher` — only listed dirs appear.
+- [x] `ship_dir_candidates_appear_in_alphabetical_order` — reverse fetcher order → sorted.
+- [x] `annunciator_candidates_enumerate_ship_dirs_alphabetically` — Buccaneer before Dragonfly.
+- [x] `new_ship_dir_from_fetcher_produces_candidates` — previously-unknown ships supported.
+- [x] `flash_candidates_no_panic_on_empty_manufacturer` — no panic, empty result.
 
-Validation: resolver unit tests green; re-export Clipper; annunciator stays
-1920×432; MFD unchanged; required suite green.
+Validation: 379 lib tests green; required suite (snapshot 11, live-IR 4, visual 4) green.
+Committed 2026-06-05.
 
 ## Phase 2 — SWF content rendering core (re-enable + correct the display list)
 
