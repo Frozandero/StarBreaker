@@ -18,6 +18,7 @@ This register tracks active UI fallbacks in `starbreaker-ui` and explicitly reco
 | --- | --- | --- | --- |
 | `crates/starbreaker-ui/src/pipeline.rs` | Pipeline-local defaults builder and split fallback policy | Retired | Consolidated to `DefaultValueRegistry::with_pipeline_defaults(...)` in Phase 4 |
 | `crates/starbreaker-ui/src/ir_compose.rs` | Name/path-based screen/manufacturer hardcoded rendering branches | Retired | Eliminated in Phase 2B source-backed IR pass and guarded by `.github/scripts/check_ui_hardcoding.sh` |
+| `crates/starbreaker-ui/src/pipeline/swf_selection/flash_paths.rs` | Hard-coded `brand_ship_subdirs` / `annunciator_ship_subdirs` ship lists for SWF path probing | Retired (Phase 1, 2026-06-05) | Replaced by `p4k_ship_subdirs` which enumerates P4K brand dir dynamically; no hard-coded ship names remain. |
 
 ## Operational Policy
 

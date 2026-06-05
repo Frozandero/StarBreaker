@@ -1,4 +1,9 @@
 //! High-level rendering pipeline entry points.
+//!
+//! Key entry points: [`compile_ir_for_binding`] (canvas → UI IR), [`render_for_binding`] (→ PNG).
+//! Phase 6: for `binding_kind == "mfd"` with distinct frame/content canvases, `compile_ir_for_binding`
+//! uses the frame canvas and post-processes: patches `base_Root` alpha=0.0 → 1.0 and injects
+//! `screen_name_loc_key` into `text_ScreenName` nodes.
 
 use std::collections::BTreeMap;
 

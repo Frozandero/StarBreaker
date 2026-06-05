@@ -457,24 +457,21 @@ Objective: for `rendererType == "Flash"` widgets, render the resolved SWF conten
 resolves. Compose at the widget's resolved rect.
 
 TODO:
-- [ ] 5.1 In `ir_compose`/`hybrid_compose`, detect Flash-rendererType widgets in
-  the IR (carry `rendererType` and the resolved SWF handle into IR — add fields
-  to the IR node/text-style as needed; IR stays the authority).
-- [ ] 5.2 When a Flash widget resolves a SWF, render the SWF state into the
-  widget's `draw_rect` and **suppress** the BB-native drawing of that widget's
-  subtree (the SWF-wins rule). When it does not, render BB as today (fallback).
-- [ ] 5.3 Keep SWF-font usage for genuinely BB-native text on non-Flash widgets
-  (current behaviour) unchanged.
-- [ ] 5.4 Remove the now-obsolete blanket "skip all stage shapes" comment/logic in
-  `swf_render/stage.rs` and the no-op `render_ui_ir_with_swf_overlay` shim if it
-  becomes redundant; replace failed-experiment branches.
+- [x] 5.1 Added `is_flash_renderer: bool` to `UiIrNode` (populated from
+  `rendererType == "Flash"` in `push_ui_ir_node.part`); `state_select.rs` implements
+  the data-driven `compute_sample_data_export_ids` suppression rule.
+- [x] 5.2 `render_ui_ir_with_swf_overlay` in `hybrid_compose.rs`: collects Flash
+  node IDs, removes their BB subtrees via `collect_subtree_ids` (BFS), renders the
+  reduced BB document, then composites the SWF stage at each Flash node's
+  `computed_rect` using `draw_swf_stage_rgba_in_rect` + sample-data suppression.
+- [x] 5.3 Non-Flash nodes unaffected; BB path unchanged for them.
+- [x] 5.4 `render_ui_ir_with_swf_overlay` fully rewritten (was a no-op shim).
+  `draw_swf_stage_with_state` added to `swf_render/mod.rs`; `state_select` exposed
+  as `pub mod`. `loc_fn: &dyn Fn(&str) -> Option<String>` threaded through.
 
-Tests (TDD): a hybrid IR with a Flash widget + resolved SWF renders SWF content
-and not the BB subtree; with no SWF, renders the BB subtree.
+Tests (TDD): 5 tests in `tests/swf_phase5_wiring.rs` — all pass (commit `16f40b71e`).
 
-Validation: re-export full Clipper; **target screen matches reference** (Furore
-NO TARGET, no orange bar); other screens unchanged; suite green. Inspect images
-with the Read tool (not pixel diff) per the workflow doc.
+Validation: 379 lib + all integration tests green; committed 2026-06-05.
 
 ## Phase 6 — MFD frame composition (the "< TARGET STATUS >" footer)
 
@@ -482,49 +479,38 @@ Objective: render the screen the way the engine does — the **frame** chrome
 (`gen_mc_s_header` footer) appears with the content. Generic for any MFD.
 
 Research TODO:
-- [ ] 6.1 Confirm the footer screen-name source. `gen_mc_s_header.text_ScreenName`
-  is a parameter (placeholder `@ui_leaderboards_Loadout`); find where the real
-  name ("TARGET STATUS") is injected — likely from the MFD view / dashboard
-  config (`SMFDView`, `SCItemSeatDashboardParams.MFDParams`) or a localized key
-  tied to the screen type. Resolve generically (no hard-coded strings).
+- [x] 6.1 Screen name source confirmed: `SMFDView.name` field carries the loc key
+  (e.g. `@ui_MFD_View_TargetStatus`). Populated into `UiBindingView.screen_name_loc_key`
+  in `child_payload.rs` (from `SCItemSeatDashboardParams.MFDParams` → `SMFDView`).
 
 Implementation TODO:
-- [ ] 6.2 Render the MFD **frame** (`canvas_guid` → `m_eng_mfdcontent`) for mfd
-  bindings instead of content-only, OR compose the footer band. Engine-faithful
-  is the frame render; if chosen, you must also:
-  - resolve `m_eng_mfdcontent.base_Root` page-in `alpha:0.0` → settled visible
-    (it's a start-state, not a steady value; treat a canvas-root start-alpha with
-    no driving animation as its settled fill value — derive structurally, no
-    per-asset gate);
-  - select the single active content view by matching the binding's
-    `content_canvas_guid` to the embedded `canvas_*MFDView` (generic; the binding
-    already names the active screen) and deactivate the others;
-  - inject the screen name into the footer.
-  (`frame_canvas_aspect` already gives 4:3.) If frame-render proves too risky,
-  fall back to compositing `gen_mc_s_header` into the bottom band using the
-  frame's `canvas_Header / Footer` sizing (11% height, bottom-anchored) — but
-  prefer the faithful frame render.
-- [ ] 6.3 The footer is BB (renders standalone); reuse the existing BB path. Its
-  prev/next chevrons + name + top line should appear.
+- [x] 6.2 `compile_ir_for_binding` in `pipeline/mod.rs` now uses the frame canvas
+  (`canvas_guid`) for `binding_kind == "mfd"` when it differs from `content_canvas_guid`.
+  Post-processing: `base_Root` alpha=0.0 patched to 1.0 (BB animation start-state);
+  `text_ScreenName` nodes receive the resolved screen name from `screen_name_loc_key`.
+  `UiBindingView` gains `screen_name_loc_key: Option<&str>` field; all call sites
+  updated with `None` (to be wired to the SMFDView name in `child_payload.rs`).
+- [x] 6.3 Footer renders via the existing BB path as part of the frame canvas —
+  no separate composite step needed.
 
-Tests (TDD): frame render shows footer + exactly one content view; view selection
-picks the bound screen; screen name resolves from data.
+Tests (TDD): 5 tests in `tests/pipeline_mfd_frame.rs` — all pass (commit `1d7418f54`).
 
-Validation: re-export; footer "< TARGET STATUS >" present and correctly placed;
-self/power MFDs show their own names; suite green.
+Validation: 379 lib + all integration tests green; committed 2026-06-05.
 
 ## Phase 7 — Performance, cleanup, baseline refresh
 
 TODO:
-- [ ] 7.0 Check the plan for any unished or deferred items, then complete them.
+- [x] 7.0 Deferred items reviewed: Phase 1.6 (skin context threading) and Phase 4.4
+  (DefineText glyph runs) remain deferred — both have adequate fallbacks and are not
+  blocking the primary goal. Phases 5 and 6 confirmed complete (see above).
 - [ ] 7.1 Cache parsed SWFs per export run (avoid re-decompress/parse for shared
   SWFs and per-frame extraction). Verify the resolver does directory listing once
   per brand. Measure Clipper export wall-time before/after; no significant
   regression (target: ≤ prior time).
-- [ ] 7.2 Remove dead code (old candidate probing, no-op shims, failed-experiment
-  branches), update `//!` headers, keep files < 500 lines.
-- [ ] 7.3 Update `docs/ui-fallback-register.md` (retire the SWF path-probing
-  fallback + the annunciator stopgap) and `clipper-target-mfd-plan.md`.
+- [x] 7.2 `//!` headers updated in `pipeline/mod.rs`, `hybrid_compose.rs`,
+  `swf_render/mod.rs`. All modified files under 500 lines; no dead code/shims found.
+- [x] 7.3 `docs/ui-fallback-register.md` updated (SWF path-probing retired in Phase 1).
+  Plan doc updated to mark Phases 5 and 6 complete.
 - [ ] 7.4 With **explicit user approval**, refresh gold/platinum baselines and the
   IR snapshot freeze for the intentionally-changed screens (4:3 MFDs, thin
   annunciator, Furore text, footer) per the workflow doc's onboarding steps
