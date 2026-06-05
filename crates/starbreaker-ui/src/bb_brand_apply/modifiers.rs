@@ -7,7 +7,6 @@ use super::colors::{
     parse_color_value,
     write_color_to_raw,
     write_color_token_to_raw,
-    ColorStyleRole,
 };
 pub(super) fn apply_inline_color_overlay(node: &mut BbNode, palette_source: &serde_json::Value) {
     if node.raw.get("FillColor").is_some() {
@@ -28,11 +27,16 @@ pub(super) fn apply_inline_color_overlay(node: &mut BbNode, palette_source: &ser
         return;
     }
 
+    // Resolve the inline overlay colour with the role appropriate to the node
+    // type (custom-shape fill = surface; icon/image overlay = foreground), so a
+    // shape's `Accent1` resolves to the darker surface slot rather than the light
+    // foreground slot.
+    let role = color_style_role_for_field("FillColor", node);
     let color_value = node
         .raw
         .get("color")
         .or_else(|| node.raw.get("svgFill").and_then(|v| v.get("color")));
-    if let Some(color) = color_value.and_then(|value| parse_color_value(value, palette_source, ColorStyleRole::Foreground)) {
+    if let Some(color) = color_value.and_then(|value| parse_color_value(value, palette_source, role)) {
         let token = color_value.and_then(color_style_token).map(str::to_owned);
         apply_color_field("FillColor", color, token.as_deref(), node);
     }

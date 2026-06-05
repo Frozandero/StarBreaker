@@ -411,7 +411,46 @@ mod tests {
         node.background_fill_colour = Some([0.1, 0.9, 0.1, 1.0]);
         node.icon_tint_colour_token = Some("Accent1".to_string());
 
-        assert_eq!(custom_shape_fill_override(&node, &ctx), Some(style_primary_rgba(&ctx)));
+        // The icon-tint token wins over the background colour, and `Accent1` on a
+        // shape fill resolves with surface semantics (slot 4), not slot 0.
+        assert_eq!(custom_shape_fill_override(&node, &ctx), style_colour_slot_rgba(&ctx, 4));
+    }
+
+
+    #[test]
+    fn custom_shape_fill_resolves_accent1_token_as_surface_slot() {
+        // A custom-shape SVG fill is a *surface* fill, so the `Accent1` token must
+        // resolve to the surface slot (4), not the foreground slot (0). Regression
+        // guard for the medical "fingerprint" rendering light blue instead of the
+        // authored darker blue.
+        let style = stub_style();
+        let defaults = crate::defaults::DefaultValueRegistry::with_well_known_path_defaults();
+        let assets = minimal_swf_assets();
+        let ctx = ComposeContext {
+            style: &style,
+            defaults: &defaults,
+            assets: &assets,
+        };
+        let mut node = blank_node("widget_custom_shape");
+        node.asset_ref = Some("UI/Textures/Vector/General/FingerPrint.svg".to_string());
+        node.custom_shape = Some(UiIrCustomShape {
+            shape_type: None,
+            shape: None,
+            svg_path: None,
+            render_shape: Some(true),
+            enable_nine_slice_rect: None,
+            nine_slice_rect: None,
+            nine_slice_scale: None,
+        });
+        node.icon_tint_colour_token = Some("Accent1".to_string());
+
+        assert_eq!(
+            custom_shape_fill_override(&node, &ctx),
+            style_colour_slot_rgba(&ctx, 4),
+            "Accent1 on a shape fill must resolve to the surface slot (4 = darker blue), not slot 0"
+        );
+        // slot 4 must be distinct from the foreground/primary slot 0 for this to be meaningful.
+        assert_ne!(style_colour_slot_rgba(&ctx, 4), Some(style_primary_rgba(&ctx)));
     }
 
 

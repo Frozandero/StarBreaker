@@ -200,9 +200,11 @@ use serde_json::json;
             .unwrap()
             .fill_colour
             .unwrap();
-        assert!((fill[0] - 115.0 / 255.0).abs() < 0.001);
-        assert!((fill[1] - 198.0 / 255.0).abs() < 0.001);
-        assert!((fill[2] - 254.0 / 255.0).abs() < 0.001);
+        // A custom-shape fill overlay (the FingerPrint) resolves `Accent1` with
+        // SURFACE semantics → slot 4 = (0,113,188) darker blue, not the light slot 0.
+        assert!((fill[0] - 0.0 / 255.0).abs() < 0.001);
+        assert!((fill[1] - 113.0 / 255.0).abs() < 0.001);
+        assert!((fill[2] - 188.0 / 255.0).abs() < 0.001);
         assert_eq!(fill[3], 1.0);
     }
 

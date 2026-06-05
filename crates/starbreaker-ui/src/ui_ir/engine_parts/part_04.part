@@ -32,6 +32,15 @@ fn build_ui_ir_nodes(
             &binding_resolver,
             defaults,
         );
+        // The node's OWN tags (no ancestor inheritance) — used for icon/shape
+        // tinting so a raster image isn't tinted by an inherited container tag.
+        let own_style_tags = own_style_tags_for_node(
+            canvas_fetcher,
+            node,
+            id,
+            &binding_resolver,
+            defaults,
+        );
         let state_driven_image_activation = !node.is_active
             && matches!(node.ty, BbNodeType::WidgetImage)
             && if is_annunciator_gradient_image(node) {
@@ -448,7 +457,7 @@ fn build_ui_ir_nodes(
                 &node.raw,
                 true,
             )
-            .or_else(|| icon_tint_colour_token_from_style_tags(&resolved_style_tags, &node.ty))
+            .or_else(|| icon_tint_colour_token_from_style_tags(&own_style_tags, &node.ty))
         };
         if is_annunciator_gradient_image(node) && icon_tint_colour_token.is_some() {
             icon_tint_colour = None;

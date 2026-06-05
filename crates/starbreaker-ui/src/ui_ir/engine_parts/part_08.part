@@ -292,9 +292,14 @@ fn semantic_text_colour_token_from_style_tags(
     })
 }
 
-fn resolved_style_tags_for_node(
+/// Style tags authored on the node itself (its own `styleTags` plus its own
+/// `PrimaryStateTag`), WITHOUT ancestor inheritance.
+///
+/// Use this where a tag should reflect the node's own intent rather than an
+/// inherited container tag — notably icon/shape tinting: a raster image must not
+/// be tinted just because an ancestor carries an accent tag like `Primary`.
+fn own_style_tags_for_node(
     canvas_fetcher: Option<&dyn CanvasFetcher>,
-    scene: &crate::bb_scene::BbScene,
     node: &crate::bb_scene::BbNode,
     node_id: BbNodeId,
     binding_resolver: &BindingResolver,
@@ -330,6 +335,19 @@ fn resolved_style_tags_for_node(
             tag_name,
         });
     }
+
+    resolved
+}
+
+fn resolved_style_tags_for_node(
+    canvas_fetcher: Option<&dyn CanvasFetcher>,
+    scene: &crate::bb_scene::BbScene,
+    node: &crate::bb_scene::BbNode,
+    node_id: BbNodeId,
+    binding_resolver: &BindingResolver,
+    defaults: &DefaultValueRegistry,
+) -> Vec<UiIrStyleTag> {
+    let mut resolved = own_style_tags_for_node(canvas_fetcher, node, node_id, binding_resolver, defaults);
 
     let mut ancestor_id = node.parent;
     while let Some(parent_id) = ancestor_id {

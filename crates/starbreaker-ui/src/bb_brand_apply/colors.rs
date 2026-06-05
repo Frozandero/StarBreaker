@@ -7,8 +7,14 @@ pub(super) enum ColorStyleRole {
 }
 
 pub(super) fn color_style_role_for_field(field_name: &str, node: &BbNode) -> ColorStyleRole {
+    // An icon/image tinted via a colour overlay reads as a *foreground* element
+    // (e.g. `Accent1` → the bright slot 0). A custom *shape* fill, by contrast, is
+    // a *surface* (e.g. `Accent1` → the darker slot 4): a filled vector shape such
+    // as the medical "fingerprint" is part of the screen surface, not a foreground
+    // glyph. Treating custom-shape fills as Foreground rendered them in the light
+    // slot-0 blue instead of the authored darker slot-4 blue.
     if field_name.eq_ignore_ascii_case("FillColor")
-        && matches!(node.ty, BbNodeType::WidgetCustomShape | BbNodeType::WidgetIcon | BbNodeType::WidgetImage)
+        && matches!(node.ty, BbNodeType::WidgetIcon | BbNodeType::WidgetImage)
         && color_overlay_enabled(node)
     {
         return ColorStyleRole::Foreground;

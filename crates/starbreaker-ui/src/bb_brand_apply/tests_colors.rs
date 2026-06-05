@@ -37,6 +37,50 @@ use serde_json::json;
     }
 
     #[test]
+    fn custom_shape_inline_overlay_accent1_resolves_to_surface_slot() {
+        // s_bioc-like palette: slot 0 = light blue (foreground), slot 4 = dark blue
+        // (surface). A custom-shape fill overlay (the medical "fingerprint") must
+        // resolve `Accent1` to the darker surface slot 4, not the light slot 0.
+        let palette = json!({
+            "colorStyles": [
+                {"color": {"r": 115, "g": 198, "b": 254, "a": 255}},
+                {"color": {"r": 0, "g": 0, "b": 0, "a": 255}},
+                {"color": {"r": 0, "g": 0, "b": 0, "a": 255}},
+                {"color": {"r": 0, "g": 0, "b": 0, "a": 255}},
+                {"color": {"r": 0, "g": 113, "b": 188, "a": 255}}
+            ]
+        });
+
+        let mut scene = make_test_scene();
+        let node = scene.nodes.get_mut(&1).expect("test node");
+        node.ty = crate::bb_scene::BbNodeType::WidgetCustomShape;
+        node.raw = json!({
+            "svgFill": {
+                "renderShape": true,
+                "enableColorOverlay": true,
+                "color": {"_Type_": "BuildingBlocks_ColorStyle", "color": "Accent1", "alpha": 1.0}
+            }
+        });
+
+        apply_inline_color_overlay(node, &palette);
+
+        let fill = node
+            .raw
+            .get("FillColor")
+            .and_then(|v| v.as_object())
+            .expect("inline overlay should apply a resolved FillColor");
+        let chan = |k: &str| {
+            let v = fill.get(k).and_then(|v| v.as_f64()).unwrap() as f32;
+            if v > 1.0 { v / 255.0 } else { v }
+        };
+        // Surface slot 4 = (0,113,188): red ≈ 0. Foreground slot 0 = (115,198,254):
+        // red ≈ 0.45. A low red proves we resolved the surface (dark) slot.
+        assert!(chan("r") < 0.05, "expected surface slot4 (dark blue, low red), got r={}", chan("r"));
+        assert!(chan("b") > 0.5, "expected a blue fill, got b={}", chan("b"));
+        assert_eq!(node.raw.get("FillColorToken").and_then(|v| v.as_str()), Some("Accent1"));
+    }
+
+    #[test]
     fn record_ref_font_style_object_field_maps_to_font_style_record() {
         let palette = json!({});
         let modifier = json!({

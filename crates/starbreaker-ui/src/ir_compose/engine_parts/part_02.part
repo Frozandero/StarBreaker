@@ -231,23 +231,29 @@ fn custom_shape_fill_override(node: &UiIrNode, ctx: &ComposeContext<'_>) -> Opti
         return None;
     }
 
+    // A custom-shape fill/stroke is a *surface* element, so its colour tokens
+    // resolve with surface semantics (e.g. `Accent1` → surface slot 4), not the
+    // foreground semantics used for text/icons (where `Accent1` → slot 0). Using
+    // the foreground resolver here rendered authored `Accent1` shape fills (e.g.
+    // the medical "fingerprint") in the light slot-0 blue instead of the darker
+    // slot-4 blue.
     node.icon_tint_colour
         .or_else(|| {
             node.icon_tint_colour_token
                 .as_deref()
-                .and_then(|token| resolve_colour_token(ctx, token))
+                .and_then(|token| resolve_surface_colour_token(ctx, token))
         })
         .or(node.background_fill_colour)
         .or_else(|| {
             node.background_fill_colour_token
                 .as_deref()
-                .and_then(|token| resolve_colour_token(ctx, token))
+                .and_then(|token| resolve_surface_colour_token(ctx, token))
         })
         .or(node.stroke_colour)
         .or_else(|| {
             node.stroke_colour_token
                 .as_deref()
-                .and_then(|token| resolve_colour_token(ctx, token))
+                .and_then(|token| resolve_surface_colour_token(ctx, token))
         })
 }
 
