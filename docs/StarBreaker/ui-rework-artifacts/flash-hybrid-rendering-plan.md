@@ -747,22 +747,30 @@ Implementation TODO:
   `selected_swf_source: None` (the frame canvas doesn't itself reference the SWF;
   it's on the embedded content view's Flash node). The BB fallback text_NoTarget
   renders now (blenderpro-thin, not Furore); routing the SWF upgrades it to Furore.
-- [ ] 9.10 **Overlay suppression — the remaining blocker.** With 9.4+9.5 the
-  content is correct, but boolean-gated event overlays still show on top: the
-  incoming-call signal bar (`canvas_incomingCallOverride`, gated by an
-  `Instantiated = BooleanEvaluateAnd` that yields `eval=None`), and the footer
-  low-power/warning/LOADOUT states (`text_LowPowerMessage`/`text_WarningMessage`,
-  gated by `BooleanFromIntegerSwitch{defaultValue:false}` → `eval=None`). Root
-  cause: `bb_state_filter` returns `eval=None` for these op types and the
-  conservative default keeps them visible (to avoid hiding runtime-gated content).
+- [ ] 9.10 **Overlay suppression — the remaining blocker (precisely diagnosed).**
+  With 9.4+9.5 the content is correct, but `m_eng_mfdcontent`-level event overlays
+  still bleed through: the incoming-call signal bar (`canvas_incomingCallOverride`,
+  `Instantiated = BooleanEvaluateAnd(...)` → `eval=None`) and the footer
+  low-power/warning/LOADOUT states (`CallingState` etc., `IsActive =
+  BooleanFromIntegerSwitch{defaultValue:false, exceptions:[1]}` → `eval=None`).
+  KEY: the **content** gates already resolve correctly — `gen_mc_s_target` uses
+  `BooleanComponentParameter{defaultValue:false}` (with-target → hidden) and
+  `BooleanInvert` of it (no-target → shown), both handled by `eval.rs`. Only the
+  IntegerSwitch / EvaluateAnd op-types fall through to `eval=None` → the
+  conservative "keep visible" default shows the overlays.
   **A blanket "unknown → hidden under idle" flip is WRONG** — verified it also
-  hides `text_NoTarget` (itself gated by an unknown binding), blanking the screen.
-  The correct, generic fix is to **evaluate these bindings to their authored
-  at-rest values**: resolve `BooleanFromIntegerSwitch` to its `defaultValue` when
-  the integer input is unresolved (→ CallingState/LowPower false → hidden), and
-  resolve `BooleanEvaluateAnd`/integer state inputs to their idle defaults. That is
-  an `eval.rs` evaluator extension (per op-type defaults) — substantial, generic,
-  and benefits every state-driven screen. Until then the overlays bleed through.
+  blanks the screen (an `m_eng_mfdcontent`-level ancestor of `text_NoTarget` is
+  also `eval=None`). Reverted.
+  THE FIX (clean, generic, but touches the SHARED evaluator → needs regression
+  verification across all screens): extend `bb_state_filter::eval` to resolve
+  - `BooleanFromIntegerSwitch` → its authored `defaultValue` when the integer
+    `input` is unresolved (→ CallingState/LowPower = false → hidden), honouring
+    `exceptions` when the integer *does* resolve;
+  - `BooleanEvaluateAnd`/`...Or` → fold over resolved inputs (skip/idle-default
+    unresolved operands) instead of returning `None`.
+  Then re-render and confirm NO TARGET + footer survive and the overlays vanish,
+  AND run the full visual-regression suite + spot-check medical/door/annunciator
+  for no drift before committing. The Furore SWF (9.6) is the only other gap.
 
 Tests (TDD):
 - [x] 9.7 `compile_ir_settles_pagein_start_root_alpha` (in `pagein_alpha_tests.part`):
