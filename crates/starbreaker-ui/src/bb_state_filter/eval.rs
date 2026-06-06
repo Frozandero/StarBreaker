@@ -9,6 +9,17 @@ pub(super) fn evaluate_bool_ops(
 ) -> HashMap<BbNodeId, bool> {
     let mut ptr_val: HashMap<BbNodeId, bool> = HashMap::new();
 
+    // Static op index for resolving integer operands (`inputL`/`inputR`
+    // pointers) when evaluating `BooleanFromInteger`. Built once — it depends
+    // only on the op structure, not on the fixpoint's resolved booleans.
+    let ptr_to_op: HashMap<BbNodeId, &serde_json::Value> = ops
+        .iter()
+        .filter_map(|op| {
+            let p = op.get("_Pointer_").and_then(|v| v.as_str()).and_then(parse_ptr_id)?;
+            Some((p, op))
+        })
+        .collect();
+
     loop {
         let mut changed = false;
         for op in ops {
@@ -73,11 +84,7 @@ pub(super) fn evaluate_bool_ops(
                         op.get("defaultValue").and_then(|v| v.as_bool()).or(Some(false))
                     }
                     "BuildingBlocks_BindingsBooleanFromInteger" => {
-                        match op.get("type").and_then(|v| v.as_str()).unwrap_or("") {
-                            "Equal" => Some(false),
-                            "NotEqual" => Some(true),
-                            _ => None,
-                        }
+                        super::integer::eval_bool_from_integer(op, &ptr_to_op)
                     }
                     _ => None,
                 }
@@ -221,21 +228,15 @@ pub(super) fn eval_bool_ref(
                     obj.get("defaultValue").and_then(|v| v.as_bool()).or(Some(false))
                 }
                 "BuildingBlocks_BindingsBooleanFromInteger" => {
-                    // A comparison `(integer <type> value)` with no integer-state
-                    // evaluator. The at-rest screen has **no specific integer
-                    // state-value active**, so an `Equal value` check is false and
-                    // `NotEqual value` is true — for ANY value. This is the engine
-                    // pattern: content is gated by `Invert(Equal off_state)` (→
-                    // shown at rest) and event overlays by `Equal event_state` (→
-                    // hidden at rest). Crucially this also keeps the frame's own
-                    // `Invert(powerstate == 0)` true (the screen we render is on).
-                    // Ordered comparisons depend on the actual integer, so they
-                    // stay unresolved (conservative).
-                    match obj.get("type").and_then(|v| v.as_str()).unwrap_or("") {
-                        "Equal" => Some(false),
-                        "NotEqual" => Some(true),
-                        _ => None,
-                    }
+                    // A comparison `inputL <type> {inputR | value}`. When the
+                    // operands resolve statically (an `IntegerComponentParameter`
+                    // default) the real comparison is computed; otherwise the
+                    // at-rest heuristic applies. This keeps the engine pattern
+                    // working — content gated by `Invert(Equal off_state)` stays
+                    // shown, event overlays gated by `Equal event_state` stay
+                    // hidden — and the frame's runtime `IntegerVariable` gates
+                    // (e.g. `Invert(powerstate == 0)`) stay on the heuristic.
+                    super::integer::eval_bool_from_integer(input, ptr_to_op)
                 }
                 _ => None,
             }

@@ -746,11 +746,18 @@ Implementation TODO:
   integer-state op-types to their at-rest values instead of `eval=None`:
   - `BooleanFromIntegerSwitch` → its authored `defaultValue` (at rest the integer
     is not in `exceptions`) — hides CallingState etc.
-  - `BooleanFromInteger` → `Equal value` is **false** / `NotEqual value` is **true**
+  - `BooleanFromInteger` → when **both operands resolve statically** (an
+    `IntegerComponentParameter` carries an authored `defaultValue`) the **real
+    comparison** is computed (`Equal`/`NotEqual`/`Greater`/`GreaterOrEqual`/`Less`/
+    `LessOrEqual`; a wired `inputR` overrides the inline `value` literal). When an
+    operand is a runtime `IntegerVariable` binding (no static default — the
+    frame's `powerstate`/`criticalWarningState` gates) it falls back to the
+    at-rest heuristic: `Equal value` is **false** / `NotEqual value` is **true**
     for ANY value (at rest no specific integer state-value is active). This both
     hides event overlays (`countdown == 5` → false) AND keeps the frame's own
     `Invert(powerstate == 0)` true (the screen we render is **on**). Ordered
-    comparisons stay unresolved (conservative).
+    comparisons on the heuristic path stay unresolved (conservative). Resolution
+    logic factored into `bb_state_filter::integer`. (Finding B, see 9.12.)
   - `BooleanEvaluateAnd`/`Or` → short-circuit on a determining resolved operand
     (any `false`→And `false`; any `true`→Or `true`) instead of bailing to `None`
     when one operand is unresolved.
@@ -775,6 +782,36 @@ Implementation TODO:
   wins; the alert cards' state tags don't match) — i.e. extend the style-condition
   evaluator to gate visibility, generic across screens. Everything else matches the
   reference.
+
+- [x] 9.12 **Phase 8/9 code-review follow-ups — DONE.** Three findings + one nit
+  from the review of the Phase 8/9 code, each fixed TDD-first (failing test → fix
+  → green) with no MFD regression:
+  - **Finding A — evaluator consistency.** The two boolean evaluators
+    (`eval_bool_ref` recursive; `evaluate_bool_ops` iterative) had diverged on the
+    integer/short-circuit op-types. Both now share the same op handling.
+  - **Finding B — static integer resolution.** `BooleanFromInteger` resolved by a
+    blunt `Equal→false`/`NotEqual→true` heuristic even when the integer was
+    statically known. Now factored into `bb_state_filter::integer`
+    (`resolve_static_integer` + `eval_bool_from_integer`): an
+    `IntegerComponentParameter` default yields the **real comparison** (all six
+    operators; wired `inputR` overrides the inline `value`), while runtime
+    `IntegerVariable` bindings keep the heuristic. Confirmed against live data: the
+    frame's gates are all `IntegerVariable` (heuristic, unchanged); only the header
+    uses `IntegerComponentParameter`, and its one `IsActive`-gating op resolves to
+    the same `false` — the other feeds only an unimplemented `PrimaryStateTag`
+    (9.11), so **zero visibility change**. TDD:
+    `from_integer_with_component_parameter_resolves_real_comparison`.
+  - **Finding C — page-in raw/field consistency.** `settle_pagein_start_roots` set
+    the parsed `alpha` field to 1.0 but left `raw["alpha"]` at the 0.0 start value;
+    now settles both so a later re-derivation from `raw` can't reintroduce the
+    blank. TDD: `pagein_start_root_settles_alpha_in_field_and_raw`.
+  - **Nit — empty-prefix guard.** `swf_immediate_subdirs("")` would have enumerated
+    the whole archive's top-level dirs; guarded to return empty. TDD:
+    `swf_immediate_subdirs_empty_prefix_returns_nothing`.
+  Verified: 387 ui-lib + ui_pipeline tests, `manifest_visual_regression` 4/4, both
+  `line_count_guard`s green; re-render of all 43 Clipper bindings (new release
+  binary) = 0 failures; the target MFD render is unchanged (NO TARGET + dashes +
+  chevrons + footer, LOADOUT overlap still pending 9.11).
 
 Tests (TDD):
 - [x] 9.7 `compile_ir_settles_pagein_start_root_alpha` (in `pagein_alpha_tests.part`):

@@ -77,6 +77,7 @@ use crate::bb_scene::BbNodeId;
 
 mod eval;
 mod idle_defaults;
+mod integer;
 #[cfg(test)]
 mod tests_a;
 #[cfg(test)]

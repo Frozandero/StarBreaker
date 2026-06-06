@@ -140,6 +140,12 @@ fn settle_pagein_start_roots(roots: &[BbNodeId], nodes: &mut BTreeMap<BbNodeId, 
                 && node.raw.get("animation").is_some_and(|anim| !anim.is_null());
             if is_pagein_start {
                 node.alpha = 1.0;
+                // Keep the backing JSON consistent with the parsed field, so a
+                // later reader that re-derives alpha from `raw` (e.g. IR
+                // recompilation) sees the settled end-state, not the start value.
+                if let Some(obj) = node.raw.as_object_mut() {
+                    obj.insert("alpha".to_owned(), serde_json::json!(1.0));
+                }
             }
         }
     }

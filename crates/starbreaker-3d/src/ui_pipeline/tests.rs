@@ -97,3 +97,18 @@ fn swf_immediate_subdirs_empty_when_no_match() {
     let dirs = swf_immediate_subdirs(names.iter().copied(), r"Data\UI\ShipInterface\assets\SWF\DRA\");
     assert!(dirs.is_empty(), "no DRA entries → empty");
 }
+
+#[test]
+fn swf_immediate_subdirs_empty_prefix_returns_nothing() {
+    // A degenerate empty prefix would otherwise match every entry's leading
+    // path segment and enumerate the whole archive's top-level directories.
+    let names = [
+        r"Data\UI\ShipInterface\assets\SWF\DRA\Radar.swf",
+        r"Engine\Fonts\Arial.swf",
+    ];
+    let dirs = swf_immediate_subdirs(names.iter().copied(), "");
+    assert!(
+        dirs.is_empty(),
+        "empty prefix must enumerate nothing, not every top-level dir: {dirs:?}"
+    );
+}

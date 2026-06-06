@@ -361,3 +361,64 @@
         );
     }
 
+    /// When a `BooleanFromInteger`'s operands are statically resolvable — an
+    /// `IntegerComponentParameter` carries an authored `defaultValue` — the real
+    /// comparison is computed instead of the blunt at-rest `Equal→false`
+    /// heuristic. A wired `inputR` operand takes precedence over the inline
+    /// `value` literal (the engine uses `value` only for an unwired right
+    /// operand). Runtime `IntegerVariable` operands have no static default and
+    /// still take the heuristic path (covered by
+    /// `integer_state_ops_resolve_to_at_rest_values`).
+    #[test]
+    fn from_integer_with_component_parameter_resolves_real_comparison() {
+        fn isactive_op(widget: u32, input: u32) -> serde_json::Value {
+            json!({
+                "_Type_": "BuildingBlocks_BindingsBooleanField",
+                "widget": format!("_PointsTo_:ptr:{widget}"),
+                "field": "IsActive",
+                "input": format!("_PointsTo_:ptr:{input}")
+            })
+        }
+        fn int_param(ptr: u32, parameter: &str, default: i64) -> serde_json::Value {
+            json!({
+                "_Pointer_": format!("ptr:{ptr}"),
+                "_Type_": "BuildingBlocks_BindingsIntegerComponentParameter",
+                "parameter": parameter,
+                "defaultValue": default
+            })
+        }
+        let rv = make_record_value(
+            vec![],
+            vec![
+                // widget 5: IsActive = (param[5] Equal 5) → TRUE → shown. The
+                // blunt heuristic would wrongly hide this (Equal→false).
+                int_param(40, "ParamInput0", 5),
+                json!({"_Pointer_":"ptr:41","_Type_":"BuildingBlocks_BindingsBooleanFromInteger","type":"Equal","value":5,"inputL":"_PointsTo_:ptr:40"}),
+                isactive_op(5, 41),
+                // widget 6: IsActive = (param[5] Equal 0) → FALSE → hidden.
+                int_param(50, "ParamInput1", 5),
+                json!({"_Pointer_":"ptr:51","_Type_":"BuildingBlocks_BindingsBooleanFromInteger","type":"Equal","value":0,"inputL":"_PointsTo_:ptr:50"}),
+                isactive_op(6, 51),
+                // widget 7: IsActive = (param[7] Equal inputR=param[7]) → TRUE.
+                // A wired inputR overrides the inline `value` literal (0).
+                int_param(60, "ParamInput2", 7),
+                int_param(61, "ParamInput3", 7),
+                json!({"_Pointer_":"ptr:62","_Type_":"BuildingBlocks_BindingsBooleanFromInteger","type":"Equal","value":0,"inputL":"_PointsTo_:ptr:60","inputR":"_PointsTo_:ptr:61"}),
+                isactive_op(7, 62),
+            ],
+        );
+        let result = instantiated_false_widgets(&rv);
+        assert!(
+            !result.contains(&5),
+            "param(5)==5 is TRUE → widget 5 shown (heuristic would wrongly hide it): {result:?}"
+        );
+        assert!(
+            result.contains(&6),
+            "param(5)==0 is FALSE → widget 6 hidden: {result:?}"
+        );
+        assert!(
+            !result.contains(&7),
+            "param(7)==inputR param(7) is TRUE (inputR overrides value literal) → widget 7 shown: {result:?}"
+        );
+    }
+

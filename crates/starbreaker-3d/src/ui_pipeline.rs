@@ -153,6 +153,11 @@ impl<'a> SwfFetcher for P4kSwfFetcher<'a> {
 /// guaranteed to match the resolver's constructed prefix (the same reason
 /// `fetch_swf_bytes` compares with `eq_ignore_ascii_case`).
 fn swf_immediate_subdirs<'a>(names: impl Iterator<Item = &'a str>, prefix: &str) -> Vec<String> {
+    // An empty prefix would match every entry and enumerate the whole archive's
+    // top-level directories; callers always pass a concrete directory path.
+    if prefix.is_empty() {
+        return Vec::new();
+    }
     let plen = prefix.len();
     let mut seen = std::collections::BTreeSet::new();
     for name in names {

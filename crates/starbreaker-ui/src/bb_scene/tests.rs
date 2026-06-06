@@ -304,3 +304,38 @@ use super::types::{BbNodeType, BbScene};
         let root = &scene.nodes[&scene.roots[0]];
         assert!(root.is_active, "root node should be active");
     }
+
+    // ── page-in start-state settling ─────────────────────────────────────────
+
+    /// A scene root authored `alpha == 0` but `isActive` with a page-in
+    /// `animation` block is the engine's page-in container; a settled static
+    /// capture must use the end state (1.0). Both the parsed `alpha` field **and**
+    /// the backing `raw["alpha"]` must be settled so any later reader that
+    /// re-derives alpha from `raw` sees the end-state, not the page-in start.
+    #[test]
+    fn pagein_start_root_settles_alpha_in_field_and_raw() {
+        let canvas = serde_json::json!({
+            "_RecordValue_": {
+                "size": {"x": 100.0, "y": 100.0},
+                "scene": [
+                    {
+                        "_Pointer_": "ptr:1",
+                        "_Type_": "BuildingBlocks_DisplayWidget",
+                        "name": "base_Root",
+                        "isActive": true,
+                        "alpha": 0.0,
+                        "animation": {"_Type_": "BuildingBlocks_AnimationPlayer", "playOnLoad": true}
+                    }
+                ],
+                "operations": []
+            }
+        });
+        let scene = parse_bb_canvas(&canvas).expect("parse failed");
+        let root = &scene.nodes[&scene.roots[0]];
+        assert_eq!(root.alpha, 1.0, "parsed alpha field must be settled to 1.0");
+        assert_eq!(
+            root.raw.get("alpha").and_then(|v| v.as_f64()),
+            Some(1.0),
+            "raw[\"alpha\"] must be settled to 1.0 to stay consistent with the parsed field"
+        );
+    }
