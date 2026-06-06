@@ -31,3 +31,55 @@ pub struct ResolvedText {
     pub text: String,
     pub is_name_derived: bool,
 }
+
+/// Resolve `BindingsStringField` state-tag bindings (`PrimaryStateTag` …
+/// `QuinaryStateTag`) onto each node's `style_tag_uuids`.
+///
+/// A node's authored `styleTags` are its at-rest set; the runtime state tags
+/// (e.g. the footer's selected-screen `Tag fef243b7`, produced by a
+/// `TagFromBoolean` over `bindingid == selectedmfd`) are computed from the scene
+/// operations and appended here. Run before style application so style entries
+/// gated on those tags (selected/unselected name colours, the footer border
+/// colours) match correctly. Tags already present are not duplicated.
+pub fn resolve_state_tags_into_scene(
+    scene: &mut crate::bb_scene::BbScene,
+    defaults: &crate::defaults::DefaultValueRegistry,
+) {
+    const STATE_TAG_FIELDS: &[&str] = &[
+        "PrimaryStateTag",
+        "SecondaryStateTag",
+        "TertiaryStateTag",
+        "QuarternaryStateTag",
+        "QuinaryStateTag",
+    ];
+    let resolver = BindingResolver::from_operations(&scene.operations);
+    let node_ids: Vec<BbNodeId> = scene.nodes.keys().copied().collect();
+    for node_id in node_ids {
+        for field in STATE_TAG_FIELDS {
+            let Some(tag_ref) = resolver.resolve_field_text(node_id, field, defaults) else {
+                continue;
+            };
+            let Some(uuid) = state_tag_uuid_from_reference(&tag_ref) else {
+                continue;
+            };
+            if let Some(node) = scene.nodes.get_mut(&node_id) {
+                if !node.style_tag_uuids.iter().any(|t| t.eq_ignore_ascii_case(&uuid)) {
+                    node.style_tag_uuids.push(uuid);
+                }
+            }
+        }
+    }
+}
+
+/// Extract a lower-cased UUID from a tag reference (`"Tag.<uuid>"`, a bare
+/// `_RecordId_` UUID, or a record path ending in the UUID). Returns `None` for
+/// anything that is not a canonical 8-4-4-4-12 UUID.
+fn state_tag_uuid_from_reference(reference: &str) -> Option<String> {
+    let candidate = reference.trim().rsplit('.').next().unwrap_or("").trim();
+    let is_uuid = candidate.len() == 36
+        && candidate.chars().enumerate().all(|(i, ch)| match i {
+            8 | 13 | 18 | 23 => ch == '-',
+            _ => ch.is_ascii_hexdigit(),
+        });
+    is_uuid.then(|| candidate.to_ascii_lowercase())
+}

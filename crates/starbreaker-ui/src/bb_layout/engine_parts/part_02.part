@@ -51,6 +51,19 @@ fn layout_node_with_rect(
     });
 
     if let Some(flex) = flex_policy {
+        // FlexContainer flow order follows each item's `layoutItemCommon.order`
+        // (CSS flex `order`); ties keep the (layer, id) order established above.
+        // The MFD footer relies on this — children authored Prev/Next/Name lay out
+        // Prev, Name, Next so the nav carats sit at the bar's far ends.
+        children.sort_by_key(|&child_id| {
+            scene
+                .nodes
+                .get(&child_id)
+                .and_then(|n| n.raw.get("layoutItemCommon"))
+                .and_then(|c| c.get("order"))
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0)
+        });
         layout_flex_children(
             &children,
             inner_rect,

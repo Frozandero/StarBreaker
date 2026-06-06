@@ -251,7 +251,7 @@ fn parse_node_with_id(raw: &serde_json::Value, id: BbNodeId) -> Result<BbNode, S
             | BbNodeType::ComponentGeneralButton
             | BbNodeType::ComponentGeneralButtonSecondary
     ) {
-        Some(parse_icon(raw))
+        Some(parse_icon(raw, &ty))
     } else {
         None
     };

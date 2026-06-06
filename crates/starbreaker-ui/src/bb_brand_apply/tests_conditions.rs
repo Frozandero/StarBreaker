@@ -307,6 +307,100 @@ use serde_json::json;
         apply_brand_modifiers(&mut scene, &brand, None);
         assert_eq!(scene.nodes.get(&1).unwrap().is_active, false);
     }
+    /// `StyleSelectorConditionNotTag` matches a node when the tag is **absent**.
+    /// This is the footer's at-rest hide rule: `BG_Neutral` carries
+    /// `NotTag(warning-active)` + `IsActive=false`, so a node that does not carry
+    /// the warning-active state tag is hidden. Node 1 only carries `tag-uuid-1`.
+    #[test]
+    fn not_tag_matches_when_tag_absent() {
+        let mut scene = make_test_scene();
+        let brand = BrandStyle {
+            identifier: "test_brand".to_string(),
+            entries: &[json!({
+                "conditionsList": [{ "conditions": [{
+                    "_Type_": "BuildingBlocks_StyleSelectorConditionNotTag",
+                    "tag": { "_RecordId_": "warning-active" }
+                }]}],
+                "modifiers": [{
+                    "_Type_": "BuildingBlocks_FieldModifierBoolean",
+                    "field": "IsActive",
+                    "value": false
+                }]
+            })],
+            raw: &json!({}),
+        };
+        apply_brand_modifiers(&mut scene, &brand, None);
+        assert!(!scene.nodes.get(&1).unwrap().is_active,
+            "NotTag(absent) must match → IsActive=false applied");
+    }
+
+    /// `NotTag` must NOT match when the tag is present (the inverse of the rule).
+    #[test]
+    fn not_tag_does_not_match_when_tag_present() {
+        let mut scene = make_test_scene();
+        let brand = BrandStyle {
+            identifier: "test_brand".to_string(),
+            entries: &[json!({
+                "conditionsList": [{ "conditions": [{
+                    "_Type_": "BuildingBlocks_StyleSelectorConditionNotTag",
+                    "tag": { "_RecordId_": "tag-uuid-1" }
+                }]}],
+                "modifiers": [{
+                    "_Type_": "BuildingBlocks_FieldModifierBoolean",
+                    "field": "IsActive",
+                    "value": false
+                }]
+            })],
+            raw: &json!({}),
+        };
+        apply_brand_modifiers(&mut scene, &brand, None);
+        assert!(scene.nodes.get(&1).unwrap().is_active,
+            "NotTag(present) must NOT match → node stays active");
+    }
+
+    /// `StyleSelectorConditionAllOfTag` matches only when **every** listed tag is
+    /// present. This is the footer's show rule (`BG_Warning` requires all of the
+    /// warning state tags), so at rest — when those tags are absent — it must not
+    /// apply.
+    #[test]
+    fn all_of_tag_matches_only_when_all_present() {
+        // All present → matches.
+        let mut scene = make_test_scene();
+        let entry = |tags: serde_json::Value| json!({
+            "conditionsList": [{ "conditions": [{
+                "_Type_": "BuildingBlocks_StyleSelectorConditionAllOfTag",
+                "tags": tags
+            }]}],
+            "modifiers": [{
+                "_Type_": "BuildingBlocks_FieldModifierBoolean",
+                "field": "IsActive",
+                "value": false
+            }]
+        });
+        let brand = BrandStyle {
+            identifier: "test_brand".to_string(),
+            entries: &[entry(json!([{ "_RecordId_": "tag-uuid-1" }]))],
+            raw: &json!({}),
+        };
+        apply_brand_modifiers(&mut scene, &brand, None);
+        assert!(!scene.nodes.get(&1).unwrap().is_active,
+            "AllOfTag([present]) must match");
+
+        // One tag absent → must NOT match.
+        let mut scene2 = make_test_scene();
+        let brand2 = BrandStyle {
+            identifier: "test_brand".to_string(),
+            entries: &[entry(json!([
+                { "_RecordId_": "tag-uuid-1" },
+                { "_RecordId_": "absent-state-tag" }
+            ]))],
+            raw: &json!({}),
+        };
+        apply_brand_modifiers(&mut scene2, &brand2, None);
+        assert!(scene2.nodes.get(&1).unwrap().is_active,
+            "AllOfTag([present, absent]) must NOT match");
+    }
+
     #[test]
     fn test_border_color_modifier() {
         let mut scene = make_test_scene();

@@ -246,6 +246,56 @@ impl BindingResolver {
                     .and_then(parse_points_to_or_ptr_str)?;
                 self.eval_bool_ptr(inp, defaults, seen).map(|v| !v)
             }
+            "BuildingBlocks_BindingsBooleanFromInteger" => {
+                // `inputL <type> {inputR | value}`. When both operands resolve
+                // statically (an `IntegerComponentParameter` default), compute the
+                // real comparison; otherwise fall back to the at-rest heuristic (no
+                // specific integer state is active, so `Equal` is false / `NotEqual`
+                // is true; ordered comparisons stay unresolved). Mirrors the
+                // `bb_state_filter::integer` rule used for visibility gating.
+                let cmp = op.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                let l_ptr = op
+                    .get("inputL")
+                    .and_then(|v| v.as_str())
+                    .and_then(parse_points_to_or_ptr_str);
+                let mut seen_l = std::collections::HashSet::new();
+                let lhs = l_ptr.and_then(|p| self.eval_integer_ptr(p, defaults, &mut seen_l));
+                let l_unbound = l_ptr.is_some_and(|p| self.is_unbound_integer_param(p, defaults));
+                let (rhs, r_unbound) = match op.get("inputR") {
+                    Some(r) if !r.is_null() => {
+                        let r_ptr = r.as_str().and_then(parse_points_to_or_ptr_str);
+                        let mut seen_r = std::collections::HashSet::new();
+                        let rv = r_ptr.and_then(|p| self.eval_integer_ptr(p, defaults, &mut seen_r));
+                        let ru = r_ptr.is_some_and(|p| self.is_unbound_integer_param(p, defaults));
+                        (rv, ru)
+                    }
+                    // An authored literal `value` is a real constant, not an unbound param.
+                    _ => (op.get("value").and_then(|v| v.as_i64()), false),
+                };
+                // Two *unbound* component parameters (both at their `defaultValue`
+                // sentinel, e.g. an idle MFD header's `bindingid == selectedmfd`,
+                // both -1) are not a real runtime state: comparing the sentinels
+                // would spuriously fire a selected/active gate. Fall to the at-rest
+                // heuristic unless at least one side is bound or an authored literal.
+                if let (Some(l), Some(r)) = (lhs, rhs)
+                    && !(l_unbound && r_unbound)
+                {
+                    return match cmp {
+                        "Equal" => Some(l == r),
+                        "NotEqual" => Some(l != r),
+                        "Greater" => Some(l > r),
+                        "GreaterOrEqual" => Some(l >= r),
+                        "Less" => Some(l < r),
+                        "LessOrEqual" => Some(l <= r),
+                        _ => None,
+                    };
+                }
+                match cmp {
+                    "Equal" => Some(false),
+                    "NotEqual" => Some(true),
+                    _ => None,
+                }
+            }
             "BindingsOperation_BooleanFromStringIsEmpty" => {
                 let inp = op
                     .get("input")
@@ -275,6 +325,23 @@ impl BindingResolver {
             }
             _ => None,
         }
+    }
+
+    /// True when `ptr` is an `IntegerComponentParameter` with no parent-supplied
+    /// override — i.e. it resolves only to its design-time `defaultValue` sentinel
+    /// and carries no real runtime value.
+    fn is_unbound_integer_param(&self, ptr: BbNodeId, defaults: &DefaultValueRegistry) -> bool {
+        let Some(op) = self.ptr_to_op.get(&ptr) else {
+            return false;
+        };
+        if op.get("_Type_").and_then(|v| v.as_str())
+            != Some("BuildingBlocks_BindingsIntegerComponentParameter")
+        {
+            return false;
+        }
+        let mut seen = std::collections::HashSet::new();
+        self.eval_integer_component_parameter_override(op, ptr, defaults, &mut seen)
+            .is_none()
     }
 
     pub(super) fn eval_integer_ptr(

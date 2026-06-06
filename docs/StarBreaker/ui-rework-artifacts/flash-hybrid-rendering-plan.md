@@ -737,7 +737,7 @@ Implementation TODO:
   Verified: target MFD now renders **NO TARGET + dashed lines + >>/<< chevrons +
   "Target Status" footer** — matches the reference's core content.
 - [ ] 9.6 Furore SWF overlay (TargetStatus.swf) routing into the embedded Flash
-  node (`canvas_TargetStatus`) inside the frame — not yet done. The frame compiles
+  node — **carried into Phase 12.2** (NO TARGET font/size). Not yet done. The frame compiles
   `selected_swf_source: None` (the frame canvas doesn't itself reference the SWF;
   it's on the embedded content view's Flash node). The BB fallback text_NoTarget
   renders now (blenderpro-thin, not Furore); routing the SWF upgrades it to Furore.
@@ -770,7 +770,8 @@ Implementation TODO:
   **gone**; NO TARGET + dashes + chevrons + footer survive. **Regression-safe**:
   the shared-evaluator change passed `manifest_visual_regression` 4/4 (medical/
   door/annunciator unchanged) + 384 lib tests. TDD: `integer_state_ops_resolve_to_at_rest_values`.
-- [ ] 9.11 **Footer state-tag visibility — the last remaining overlay.** The
+- [ ] 9.11 **Footer state-tag visibility — the last remaining overlay.** (Promoted to
+  **Phase 11.1** with full root-cause detail.) The
   footer (`gen_mc_s_header`) has parallel name cards — `card_ScreenName` (normal,
   gated by `Invert(ComponentParameter ParamInput2)` → shown), `card_ScreenName_LowPower`,
   `card_ScreenName_Warning`. The latter two carry **no** boolean `IsActive`/`Instantiated`
@@ -870,6 +871,174 @@ either regresses, *without* needing a manual re-export first.
 
 ---
 
+## Phase 11 — Footer parity (`gen_mc_s_header`)
+
+Objective: make the bottom **TARGET STATUS** bar match the reference. Drives user
+observations 4, 5, 6, 7, 8, 9. Research (this session) pinned each to a concrete
+root cause via `BB_STATE_PROBE=1` + `SB_UI_FONT_TELEMETRY=1` on the live render and
+the decomposed `gen_mc_s_header.json`:
+
+- The footer's normal label `text_ScreenName` already resolves correctly to
+  **"Target Status"** (frame `LocalizedComponentParameter` override applied;
+  IsActive=true).
+- The spurious **"LOADOUT"** is `text_WarningMessage` rendering its authored
+  default label `@ui_leaderboards_Loadout`, and the **solid brown bar** behind the
+  footer is `base_BG_Warning`. Both are **state-tag-gated only** (no boolean
+  IsActive/Instantiated op — they never appear in the state filter), so they
+  render at rest because **state-tag→visibility is unimplemented**. This is the
+  existing **9.11** item, promoted here.
+- The `‹`/`›` nav arrows (`card_PreviousViewButton`/`card_NextViewButton` +
+  `icon_Previous`/`icon_Next`), the `card_VerticalSeparator`s, and the
+  semi-transparent segment boxes + light-orange top lines are **not** state-gated
+  (they don't appear in the state filter) — they reach the render but their
+  **style-driven background/border + icon are not drawn** (a style-resolution /
+  icon issue, not a visibility one).
+
+Implementation TODO (each TDD-first; regenerate + compare to the reference after
+every item — see Phase 13):
+
+- [~] 11.1 **State-tag → visibility gating (was 9.11). PARTIAL — condition matcher
+  fixed; node state-tag resolution still required.** Done so far: `bb_brand_apply`'s
+  condition matcher now handles `StyleSelectorConditionAllOfTag` (all tags present)
+  and `ConditionNotTag` (tag **absent**) — the latter was previously mis-routed to
+  the presence `ConditionTag` (inverted). With it, the footer's `BG_Neutral`
+  (`NotTag(warning) ∧ AnyOf(identity tags)` → `IsActive=false`) correctly hides
+  `base_BG_Warning` and `base_Clip_LowPower` in the IR (verified). TDD:
+  `not_tag_matches_when_tag_absent`, `not_tag_does_not_match_when_tag_present`,
+  `all_of_tag_matches_only_when_all_present`.
+  **Still broken (root cause pinned):** the visible "LOADOUT" + the bright bar are
+  NOT `base_BG_Warning`. (a) `text_WarningMessage` ("LOADOUT") and `text_ScreenName`
+  ("Target Status") carry the **same authored** style tags and the **same** shared
+  placeholder label `@ui_leaderboards_Loadout` (via `ComponentLabelProperties`).
+  The faithful distinguisher is a **resolved runtime state tag**: `text_ScreenName`'s
+  `PrimaryStateTag` op resolves `Tag.fef243b7` (it is the selected MFD) while the
+  warning field's state tags are empty at rest — but our pipeline does **not** add
+  these resolved `BindingsStringField` state tags to `node.style_tag_uuids`, so no
+  condition can tell them apart. (b) The placeholder leaks through *three* text
+  paths (`labelProperties.label`, `widget_to_loc_key`, and the binding path), so
+  gating one is insufficient. (c) The bright bar is a different always-on footer
+  node (`base_BG` / `image_BG` / a `card_ScreenName_*` container), still TBD.
+  **Next (the real fix):** resolve `BindingsStringField` state tags onto nodes
+  (evaluate the `TagFromBoolean`/`StringComponentParameter` input; add the tag GUID
+  when active), then gate the alert text/bar visibility on those tags via the style
+  conditions (loading the external `mfd_g_*` style records if the gating entries
+  aren't embedded). This is a sizeable, generic feature — do it properly, not via
+  per-path placeholder patches (an attempted placeholder-suppression patch was
+  reverted as incomplete).
+  Original intent retained for reference — hide the alert nodes whose
+  visibility is driven only by `BindingsStringField` state tags
+  (`PrimaryStateTag`/`SecondaryStateTag`/`TertiaryStateTag`/…) feeding BB **style
+  conditions**, when no state tag matches at rest. At rest the normal
+  `card_ScreenName` wins; `text_WarningMessage` (LOADOUT), `base_BG_Warning` (solid
+  bar), `text_LowPowerMessage`, `text_Countdown`, and the warning chevron all
+  hide. Generic across screens: evaluate the state-tag/style-condition mechanism,
+  do **not** name nodes. Resolves obs **4** (LOADOUT gone) and the solid bar; lets
+  obs **6** (centering) fall out. TDD: a header fixture where a state-tag-only
+  alert card resolves hidden while the normal card stays shown.
+- [ ] 11.2 **Footer label casing → "TARGET STATUS" (obs 5).** Our render shows
+  mixed-case "Target Status"; the reference is uppercase. The header's
+  `embeddedStyles` carry **no** text-transform/capitalization modifier (verified),
+  so the casing source is still open — investigate first, in order: (a) the
+  resolved loc-string value itself (the frame's screen-name parameter may be
+  authored uppercase in `global.ini`; our lookup returns "Target Status"), (b) an
+  **all-caps display font** (the correct footer font may render caps for lowercase
+  input — in which case obs **5** and **7** collapse into the same font fix), or
+  (c) a text-transform on the **external** `mfd_g_*` style record (not the embedded
+  styles). Apply the faithful mechanism in IR (styling/loc authority), never a
+  renderer-side forced-uppercase. TDD chosen once the source is known.
+- [ ] 11.3 **Footer chrome — boxes, top-lines, nav arrows.** Render the three
+  segment **semi-transparent box backgrounds** + their **light-orange top lines**,
+  and the `‹`/`›` **arrow icons**. Investigate first whether the gap is (a) the
+  `WidgetCard` style entry (background fill + top border) not resolved/applied, or
+  (b) the `WidgetIcon` asset (`icon_Previous`/`icon_Next`) not resolving, or both.
+  Fix the resolved-style/asset path generically. Resolves obs **8** + **9**. TDD:
+  IR for the footer button cards carries the resolved background-fill + top-border
+  + icon `asset_ref`.
+- [ ] 11.4 **Footer font check (obs 7).** With 11.1–11.3 done, verify the
+  "TARGET STATUS" glyphs match the reference weight/family; if the requested style
+  symbol is wrong, correct the style resolution (no renderer-side font override).
+- [ ] 11.5 **Centering/position verify (obs 6).** Confirm "TARGET STATUS" is
+  horizontally centered in the bar and the bar sits flush at the bottom, once the
+  alert overlays are gone. Adjust only if a real layout defect remains.
+
+Success: footer is a single centered uppercase **TARGET STATUS** flanked by `‹`/`›`
+in three light-bordered translucent segments; no LOADOUT, no solid bar.
+
+## Phase 12 — Central content parity (NO TARGET, chevrons, dashes)
+
+Objective: match the central group. Drives user observations 1, 2, 3. Research
+pinned the causes:
+
+- The central content is the **Flash** node `canvas_TargetStatus` (a 16:9 content
+  canvas) whose BB overlay `gen_mc_s_target` supplies `text_NoTarget`
+  (`@hud_NoTarget`), `shape_Chevron`, and the dashes. Font telemetry shows
+  `text_NoTarget` resolves **`$Text1Thin`** (thin, ~46px nominal); the reference's
+  heavy squared **Furore** "NO TARGET" is the SWF Flash stage's own text, which the
+  renderer currently **skips** (stage-frame-0 suppression added to drop an orange
+  bar). The Clipper has **no dedicated SWF dir** (`SWF\DRA\` has Caterpillar/
+  Dragonfly/Buccaneer only), so SWF selection falls back — confirm which
+  `TargetStatus.swf` it picks.
+- Obs **3** (too narrow): the 16:9 content is non-uniformly scaled into the 4:3
+  frame output (x≈0.83 vs y≈1.11 → ~25% horizontal squash). The reference fills
+  4:3 **without** horizontal squash (wide NO TARGET, large vertical margins),
+  i.e. the content is fit to the frame at a **uniform** scale, not stretched.
+
+Implementation TODO (TDD-first; regenerate + compare after each):
+
+> **Investigation update (this session):** the central `>>`/`<<` chevrons and the
+> dashed separators are **SWF exported symbols**, not BB shapes — `gen_mc_s_target`'s
+> `shape_Chevron`/`card_Chevron` are `is_active=false` in the compiled IR, yet the
+> chevrons render, so they come from the SWF symbol pass. And `text_NoTarget` (BB,
+> percent-based, anchored 0.5) already lays out at the correct ~52.5% width (rect
+> 840/1600) — i.e. the BB layer is **not** squashed. Therefore obs **3** (too
+> narrow) is a property of the **SWF symbol → Flash-node-rect mapping** (aspect
+> preserved within the node rect), and obs **1/2** (Furore) is the SWF **stage**
+> text. 12.1 and 12.2 are the **same Flash/SWF-rendering feature**; do them
+> together. (All canvases are `aspectOverridesWidth`; the frame is 4:3 rendered at
+> 4:3, so the BB layout scale is uniform — the squash is purely in the SWF mapping.)
+
+- [ ] 12.1 **Aspect — stop the horizontal squash (obs 3).** Render the MFD content
+  at a uniform fit into the 4:3 frame (preserve the content's aspect; let the
+  frame background fill the extra vertical space) rather than non-uniformly
+  stretching 16:9→4:3. Generic: derive from frame vs content aspect, not per-ship.
+  Success: chevron-to-chevron span and NO-TARGET glyph width match the reference
+  proportions. TDD: a layout test asserting uniform x/y scale for an MFD content
+  node when frame aspect ≠ content aspect.
+- [ ] 12.2 **NO TARGET font + size (obs 1, 2) — the Furore path.** Render the
+  faithful heavy **Furore** "NO TARGET" at the reference size. Investigate the two
+  candidate sources and pick the faithful one: (a) render the SWF Flash stage's own
+  Furore text selectively (text yes, stage-bg orange bar no), or (b) if the engine
+  actually draws the BB `text_NoTarget` with a Furore style, correct the style/font
+  resolution (telemetry currently shows `$Text1Thin`). Decide from evidence
+  (probe `TargetStatus.swf` stage text + the BB style symbol); document the rule;
+  no hard-coded font names. Supersedes/closes **9.6**. TDD: telemetry/IR shows the
+  NO-TARGET node resolves the Furore symbol at the larger size.
+- [ ] 12.3 **Chevron + dash fidelity (obs verify).** Confirm `shape_Chevron`
+  glyph form and the dashed separators match the reference once 12.1 lands (the
+  squash was distorting them). Fix only if a real defect remains after aspect.
+
+Success: large heavy Furore **NO TARGET**, correctly-proportioned chevrons/dashes,
+no horizontal squash.
+
+## Phase 13 — Iterative parity loop + clean baseline freeze
+
+Objective: drive to near-pixel parity (resolution diff, vignette/scanline CRT, and
+screenshot perspective excepted) and lock it in.
+
+- [ ] 13.1 **Regenerate-and-compare loop (run every item of Phases 11–12).** After
+  each fix: rebuild release, re-render `Screen_Right_Upper_RTT` (or full
+  `entity export`), read both PNGs with the Read tool, update the Phase-A diff
+  catalog (resolved / remaining / regressed). Keep the required suite +
+  `manifest_visual_regression` green throughout.
+- [ ] 13.2 **Final parity assessment** against the Phase-A catalog: every one of
+  the 9 user observations resolved or a proven blocker documented.
+- [ ] 13.3 **Freeze a clean baseline (ties to 10.3).** Only once parity is reached
+  (and with user approval), add `mc_s_target_master` as a `manifest_visual_regression`
+  target so the corrected footer + central content are guarded against regression.
+  (Doing 10.3 before parity would bake the current defects into the gold standard.)
+
+---
+
 ## Appendix A — Risks & open questions to resolve during research (not blockers)
 
 - **State selection (Phase 3) is the central feasibility risk.** Confirmed: the
@@ -924,3 +1093,78 @@ SC_DATA_P4K="$HOME/Games/star-citizen/drive_c/Program Files/Roberts Space Indust
 Reference: `reference/in-game/Clipper/Screen_Right_Upper_RTT.png`.
 Generated: `ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_mc_s_target_master.png`.
 Diagnostics: `examples/swf_text_probe.rs <p4k\path.swf>`; `SB_UI_FONT_TELEMETRY=1`.
+
+---
+
+## Session outcomes (feature A delivered; B + annunciator flagged)
+
+**Feature A — footer text: DONE, visually confirmed.** Obs 4 (LOADOUT), 5 (casing),
+6 (centering) fixed:
+- **LOADOUT gone.** Root cause was a *placeholder* leak: the warning/countdown
+  fields are `ComponentLabelProperties` driven by a `LocalizedField → ParamInput0`
+  component parameter; at rest the parameter is empty so the field is empty, but
+  we fell back to the shared design-time `labelProperties.label`
+  (`@ui_leaderboards_Loadout`). Fix: `BindingResolver::is_component_param_label` +
+  `resolve_param_label_content` — a component-param-driven label resolves from its
+  parameter (localized binding / injected override / path), and an empty parameter
+  ⇒ empty field; gated in `build_ui_ir_nodes` so `classify_text_payload` can't
+  re-derive the placeholder. TDD: 3 tests in `bb_bindings::tests`. LOW POWER hides
+  via its container (`base_Clip_LowPower`) through the condition-matcher fix.
+- **TARGET STATUS uppercase + centered.** The screen-name injection
+  (`pipeline/mod.rs`) and the `widget_to_path` resolution now apply the field's
+  authored `caseModifier`.
+- **Condition matcher** (`bb_brand_apply`): `AllOfTag`/`NotTag` handled correctly
+  (NotTag was inverted). **Required** — proven that without it "LOW POWER" renders
+  over "TARGET STATUS". 3 TDD tests.
+
+**⚠️ Annunciator gold-standard drift (decision needed).** The (correct, required)
+matcher fix also flips an `Image_Gradient` (`Annunciator_On.tif`) to visible on the
+annunciator — `manifest_live_ir_guard` fails ("new visible element 35"). The
+rendered annunciator still **matches the in-game reference** (ON chiclets show the
+gradient; COOL stays cool), so this is almost certainly a *correction*: the frozen
+baseline encoded the old inverted-`NotTag` bug. Resolution requires either updating
+the annunciator baseline (source-backed) **with approval**, or confirming the
+chiclet-component condition first. Not done unilaterally (frozen gold standard).
+
+**Feature B — Furore NO TARGET (obs 1,2) + aspect (obs 3): NOT a SWF-stage-text
+feature as assumed.** Probing the Clipper's `TargetStatus.swf` (DRAK_Dragonfly/
+Support_Bespoke_2 — the Clipper has no own SWF dir) shows **no text / EditText**
+(`inner_text=0, inner_edit=0`). So the heavy Furore "NO TARGET" is NOT SWF stage
+text. The chevrons/dashes are SWF exported symbols (the BB `shape_Chevron` is
+inactive). Open: determine the real Furore source (BB style symbol vs a different
+SWF/font) before implementing. Larger, still-uncertain.
+
+**Footer chrome (obs 8,9) + the bright bar: distinct, not yet implemented.** The
+`‹`/`›` icons reach the IR with **no `asset_ref`** (arrows not drawn); the button
+cards have no resolved background fill (boxes not drawn); separators have no stroke.
+The bright bar is `base_BG` (`{Base, alpha:0.3}`). All TBD.
+
+### Feature B follow-up — Furore NO TARGET is ActionScript-generated (PROVEN BLOCKER)
+
+Investigation (user-approved): the Clipper's `TargetStatus.swf` (DRAK_Dragonfly/
+Support_Bespoke_2 fallback) **imports `$Furore`** but has **no static text/EditText**
+— the heavy Furore "NO TARGET" is created by the SWF's **ActionScript at runtime**.
+We don't run AS, so it can't be rendered faithfully. The BB stand-in
+`text_NoTarget` is genuinely authored `$Text1Thin`. Obs 1/2 have no fully-faithful
+static path. Options: (a) pragmatic font substitution (render the BB Flash-overlay
+text in the SWF's imported `$Furore`); (b) accept the thin font. Obs 3 (too narrow)
+is independent (SWF exported-symbol→rect aspect).
+
+### Footer chrome (obs 8,9) — scoped as a 3-part feature (deferred)
+
+`sharedStyles` loading was implemented (the external `mfd_g_header.json` record
+loads correctly via `fetch_by_path`) but **reverted** as insufficient alone: the
+chrome entries don't match yet. Full chrome needs all three:
+1. Load `defaultStyles.sharedStyles` (the external `mfd_g_header.json`) — only MFD
+   frame/content canvases use it, so safe for the gold standards.
+2. `ConditionType "Base"` in `node_type_matches` — `ScreenNameBackground` (the
+   segment-box bg + top-border line of obs 9) requires `AllOf(Type=Base,
+   Tag fb089da7)`; "Base" is currently unhandled (→ no match).
+3. **State-tag resolution onto `node.style_tag_uuids`** — `SelectedName`/
+   `UnSelectedName` require `Ancestor(Tag fef243b7)` (the runtime selected-screen
+   tag from the `BindingsStringField` PrimaryStateTag), which we don't resolve onto
+   nodes. This is the generic state-tag-resolution feature (also relevant to other
+   state-driven styling).
+
+Both annunciator baselines (live-IR freeze + visual-regression PNG/hash) were
+refreshed for the approved NotTag/AllOfTag correction.

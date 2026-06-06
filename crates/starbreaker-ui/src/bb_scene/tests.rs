@@ -257,6 +257,41 @@ use super::types::{BbNodeType, BbScene};
         }
     }
 
+    /// A `WidgetIcon` selecting its glyph by `iconProperties.iconPreset` (with an
+    /// empty `customIcon`/`svgPath`) must resolve the preset to its vector-icon
+    /// asset path so it renders — e.g. the MFD footer's `<`/`>` nav carats.
+    #[test]
+    fn icon_preset_without_custom_icon_resolves_to_svg_asset() {
+        let canvas = serde_json::json!({
+            "_RecordValue_": {
+                "size": {"x": 100.0, "y": 100.0},
+                "scene": [
+                    {
+                        "_Pointer_": "ptr:1",
+                        "_Type_": "BuildingBlocks_WidgetIcon",
+                        "name": "icon_Previous",
+                        "isActive": true,
+                        "svgFill": {"_Type_": "BuildingBlocks_SvgFill", "svgPath": ""},
+                        "iconProperties": {
+                            "_Type_": "BuildingBlocks_ComponentIconProperties",
+                            "iconPreset": "ArrowCaratLeft",
+                            "customIcon": ""
+                        }
+                    }
+                ],
+                "operations": []
+            }
+        });
+        let scene = parse_bb_canvas(&canvas).expect("parse failed");
+        let node = &scene.nodes[&scene.roots[0]];
+        let icon = node.icon.as_ref().expect("WidgetIcon should have icon field");
+        assert_eq!(
+            icon.image_record.as_deref(),
+            Some("UI/Textures/Vector/General/ModularKit/Widgets/IconWidget/arrow_carat_left.svg"),
+            "an empty-customIcon WidgetIcon must resolve its iconPreset to an SVG asset"
+        );
+    }
+
     #[test]
     fn radar_style_tags_parsed() {
         let json = load_fixture("BB_ScreenRadar_C_App_Starmap_68ff6d17.json");

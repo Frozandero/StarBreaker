@@ -426,4 +426,47 @@ mod tests_d {
             );
         }
     }
+
+    /// A `FlexContainer` flows children by `layoutItemCommon.order` (CSS flex
+    /// `order`), not scene/(layer,id) order. The MFD footer relies on this:
+    /// children authored `[Prev(0), Next(4), Name(2)]` must lay out `Prev, Name,
+    /// Next` so the nav carats sit at the bar's far ends.
+    #[test]
+    fn flex_row_orders_children_by_layout_item_order() {
+        use crate::bb_scene::{
+            BbCoordinateMethod, BbNode, BbNodeType, BbScene, BbSizing, BbTrbl, BbValue, Vec2, Vec3,
+        };
+        use std::collections::BTreeMap;
+        let mk = |id: BbNodeId, order: i64| BbNode {
+            id, parent: Some(1), children: vec![], ty: BbNodeType::WidgetCard,
+            name: format!("c{order}"), style_tag_uuids: vec![], is_active: true, layer: 0, alpha: 1.0,
+            position: Vec3::default(), position_offset: Vec3::default(),
+            sizing: BbSizing { width: BbValue::Fixed(100.0), height: BbValue::Fixed(20.0) },
+            padding: BbTrbl::default(), margin: BbTrbl::default(), pivot: Vec2::default(), anchor: Vec2::default(),
+            background: None, border: None, radial: None, text: None, icon: None,
+            raw: serde_json::json!({ "layoutItemCommon": { "order": order } }),
+        };
+        let root = BbNode {
+            id: 1, parent: None, children: vec![2, 3, 4], ty: BbNodeType::DisplayWidget,
+            name: "flex".into(), style_tag_uuids: vec![], is_active: true, layer: 0, alpha: 1.0,
+            position: Vec3::default(), position_offset: Vec3::default(),
+            sizing: BbSizing { width: BbValue::Fixed(300.0), height: BbValue::Fixed(20.0) },
+            padding: BbTrbl::default(), margin: BbTrbl::default(), pivot: Vec2::default(), anchor: Vec2::default(),
+            background: None, border: None, radial: None, text: None, icon: None,
+            raw: serde_json::json!({ "layoutPolicy": {
+                "_Type_": "BuildingBlocks_FlexContainer", "direction": "Row", "wrap": "NoWrap",
+                "axisJustification": "Start", "crossAxisJustification": "Start",
+                "itemAlignment": "Start", "columnSpacing": 0.0, "rowSpacing": 0.0 } }),
+        };
+        let mut nodes = BTreeMap::new();
+        nodes.insert(1, root);
+        nodes.insert(2, mk(2, 0)); // A, order 0
+        nodes.insert(3, mk(3, 4)); // B, order 4
+        nodes.insert(4, mk(4, 2)); // C, order 2
+        let scene = BbScene { coordinate_method: BbCoordinateMethod::UseRaw, canvas_size: (300.0, 20.0), roots: vec![1], nodes, operations: vec![] };
+        let result = layout(&scene, 300, 20);
+        let (a, b, c) = (result.rects[&2], result.rects[&3], result.rects[&4]);
+        assert!(a.x < c.x && c.x < b.x, "flow must be A(0), C(2), B(4); got A.x={} C.x={} B.x={}", a.x, c.x, b.x);
+        assert!((c.x - 100.0).abs() < 1.0, "C (order 2) must sit in the middle ≈100, got {}", c.x);
+    }
 }

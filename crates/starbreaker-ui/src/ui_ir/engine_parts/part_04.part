@@ -21,9 +21,17 @@ fn build_ui_ir_nodes(
         let has_text_intent = node_has_text_intent(node);
         let resolved_text = has_text_intent
             .then(|| binding_resolver.resolve_text_detailed(id, &node.raw, defaults));
-        let text_payload = resolved_text
-            .as_ref()
-            .map(|resolved| classify_text_payload(Some(resolved.text.as_str()), &node.raw, defaults));
+        let text_payload = resolved_text.as_ref().map(|resolved| {
+            // An empty component-parameter-driven label (inactive alert at rest)
+            // stays blank — don't let classify re-derive its placeholder label.
+            if resolved.text.trim().is_empty()
+                && binding_resolver.is_component_param_label(id, &node.raw)
+            {
+                UiIrTextPayload::Empty
+            } else {
+                classify_text_payload(Some(resolved.text.as_str()), &node.raw, defaults)
+            }
+        });
         let resolved_style_tags = resolved_style_tags_for_node(
             canvas_fetcher,
             scene,

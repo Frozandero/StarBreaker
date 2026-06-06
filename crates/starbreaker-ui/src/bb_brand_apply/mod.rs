@@ -9,6 +9,10 @@
 //! that **every** `conditions[j]` item passes. Each condition item is one of:
 //! - `BuildingBlocks_StyleSelectorConditionTag` — `tag._RecordId_` must be in
 //!   `node.style_tag_uuids`.
+//! - `BuildingBlocks_StyleSelectorConditionAllOfTag` / `…AnyOfTag` — every / any
+//!   of `tags[]._RecordId_` must be present.
+//! - `BuildingBlocks_StyleSelectorConditionNotTag` — `tag._RecordId_` must be
+//!   **absent** (drives at-rest hide rules like the footer's `BG_Neutral`).
 //! - `BuildingBlocks_StyleSelectorConditionType` — `type` string must match the
 //!   node widget type (e.g. `"Image"` → `WidgetImage`).
 //! An entry with EMPTY or ABSENT `conditionsList` matches **every** node
@@ -296,6 +300,33 @@ fn condition_matches_node(
         });
     }
 
+    // ALL listed tags must be present (e.g. `BG_Warning` requires every warning
+    // state tag). An empty/unresolvable `tags` list does NOT match — a condition
+    // that requires "all of nothing" must not match every node (that over-matches
+    // and reveals state-gated elements like the annunciator's ON gradient).
+    if cond_type.ends_with("ConditionAllOfTag") {
+        let Some(tags) = condition.get("tags").and_then(|v| v.as_array()) else {
+            return false;
+        };
+        let ids: Vec<&str> = tags.iter().filter_map(tag_ref_id).collect();
+        return !ids.is_empty()
+            && ids
+                .iter()
+                .all(|tag_id| node.style_tag_uuids.iter().any(|node_tag| node_tag == *tag_id));
+    }
+
+    // The tag must be ABSENT (e.g. `BG_Neutral` hides the warning chrome with
+    // `NotTag(warning-active)` when no warning state is active). This MUST be
+    // checked before the `condition.get("tag").is_some()` catch below, because a
+    // `NotTag` also carries a `tag` field and would otherwise be mis-evaluated as
+    // a (presence) `ConditionTag` — the inverse of its meaning. An unresolvable
+    // tag ref does NOT match (conservative — avoid over-matching).
+    if cond_type.ends_with("ConditionNotTag") {
+        return condition_tag_id(condition)
+            .map(|tag_id| !node.style_tag_uuids.iter().any(|tag| tag == tag_id))
+            .unwrap_or(false);
+    }
+
     if cond_type.ends_with("ConditionTag") || condition.get("tag").is_some() {
         return condition_tag_id(condition)
             .map(|tag_id| node.style_tag_uuids.iter().any(|tag| tag == tag_id))
@@ -335,7 +366,10 @@ fn node_type_matches(type_str: &str, ty: &BbNodeType) -> bool {
         "Canvas" => matches!(ty, BbNodeType::WidgetCanvas),
         "Icon" => matches!(ty, BbNodeType::WidgetIcon),
         "Card" => matches!(ty, BbNodeType::WidgetCard),
-        "DisplayWidget" => matches!(ty, BbNodeType::DisplayWidget),
+        // The game's `Base` widget type is the base display widget — it matches
+        // `DisplayWidget` nodes (e.g. the footer's `base_BG`, which the
+        // `ScreenNameBackground` style gates on `AllOf(Type=Base, Tag …)`).
+        "Base" | "DisplayWidget" => matches!(ty, BbNodeType::DisplayWidget),
         "CustomShape" => matches!(ty, BbNodeType::WidgetCustomShape),
         _ => false,
     }

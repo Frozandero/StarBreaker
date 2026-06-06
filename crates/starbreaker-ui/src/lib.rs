@@ -36,6 +36,7 @@ pub mod compose;
 pub mod defaults;
 pub mod error;
 pub mod hybrid_compose;
+pub mod icon_preset;
 pub mod ir_compose;
 pub mod mfd_view;
 pub mod record_name;

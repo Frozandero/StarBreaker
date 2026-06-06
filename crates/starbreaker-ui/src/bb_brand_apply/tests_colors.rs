@@ -80,6 +80,104 @@ use serde_json::json;
         assert_eq!(node.raw.get("FillColorToken").and_then(|v| v.as_str()), Some("Accent1"));
     }
 
+    /// A drak-HUD-shaped palette: slot 0 Base = orange, slot 6 Bright = cream,
+    /// slot 8 Disabled = near-black. Mirrors `s_drak_hud.json`.
+    fn drak_like_palette() -> serde_json::Value {
+        let dummy = json!({"color": {"r": 0, "g": 0, "b": 0, "a": 255}});
+        let mut slots = vec![dummy.clone(); 17];
+        slots[0] = json!({"color": {"r": 255, "g": 158, "b": 57, "a": 255}}); // Base
+        slots[6] = json!({"color": {"r": 255, "g": 255, "b": 224, "a": 255}}); // Bright
+        slots[7] = json!({"color": {"r": 255, "g": 119, "b": 0, "a": 255}}); // Selected
+        slots[8] = json!({"color": {"r": 20, "g": 13, "b": 5, "a": 255}}); // Disabled
+        json!({ "colorStyles": slots })
+    }
+
+    fn raw_color_channel(node: &crate::bb_scene::BbNode, field: &str, chan: &str) -> f32 {
+        let v = node
+            .raw
+            .get(field)
+            .and_then(|c| c.get(chan))
+            .and_then(|v| v.as_f64())
+            .unwrap_or_else(|| panic!("missing {field}.{chan}")) as f32;
+        if v > 1.0 { v / 255.0 } else { v }
+    }
+
+    #[test]
+    fn background_color_disabled_resolves_to_dark_slot_8() {
+        // The MFD footer's segment-box background is `BackgroundColor = Disabled`,
+        // which in-game is the near-black slot 8 (20,13,5) — a dark, recessed bar.
+        // Mapping it to the light slot 6 paints a bright bar (the opposite).
+        let palette = drak_like_palette();
+        let modifier = json!({
+            "_Type_": "BuildingBlocks_FieldModifierColor",
+            "field": "BackgroundColor",
+            "color": {"_Type_": "BuildingBlocks_ColorStyle", "color": "Disabled", "alpha": 1.0}
+        });
+        let mut scene = make_test_scene();
+        let node = scene.nodes.get_mut(&1).expect("test node");
+        apply_modifier(&modifier, node, &palette, None);
+        let node = scene.nodes.get(&1).unwrap();
+        assert!(
+            raw_color_channel(node, "BackgroundColor", "r") < 0.15,
+            "Disabled must resolve to dark slot 8, got r={}",
+            raw_color_channel(node, "BackgroundColor", "r")
+        );
+    }
+
+    #[test]
+    fn fill_color_bright_surface_resolves_to_brand_slot_0() {
+        // In the brand-apply (surface) resolver, `Bright` maps to the brand's
+        // primary slot 0 — NOT the enum's index-6. Verified in-game: the MFD
+        // footer's `Bright` selected-name renders the drak slot-0 orange (the
+        // reference's "TARGET STATUS" is the same orange as "NO TARGET"), and
+        // medical `Bright` custom-shapes render the s_bioc slot-0 light-blue.
+        let palette = drak_like_palette();
+        let modifier = json!({
+            "_Type_": "BuildingBlocks_FieldModifierColor",
+            "field": "FillColor",
+            "color": {"_Type_": "BuildingBlocks_ColorStyle", "color": "Bright", "alpha": 1.0}
+        });
+        let mut scene = make_test_scene();
+        let node = scene.nodes.get_mut(&1).expect("test node");
+        apply_modifier(&modifier, node, &palette, None);
+        let node = scene.nodes.get(&1).unwrap();
+        // Orange slot 0: red ≈ 1.0, blue ≈ 0.22. Cream slot 6: blue ≈ 0.88.
+        assert!(
+            raw_color_channel(node, "FillColor", "r") > 0.9
+                && raw_color_channel(node, "FillColor", "b") < 0.4,
+            "Bright (surface) must resolve to brand slot 0 orange, got r={} b={}",
+            raw_color_channel(node, "FillColor", "r"),
+            raw_color_channel(node, "FillColor", "b")
+        );
+    }
+
+    #[test]
+    fn overlay_icon_without_authored_colour_defaults_to_brand_base() {
+        // The MFD footer's nav carats are overlay-enabled WidgetIcons with a null
+        // `svgFill.color`; in-game they tint to the brand's primary foreground
+        // (`Base` — drak slot 0 orange), not the SVG's own (dark) colour.
+        let palette = drak_like_palette();
+        let mut scene = make_test_scene();
+        let node = scene.nodes.get_mut(&1).expect("test node");
+        node.ty = crate::bb_scene::BbNodeType::WidgetIcon;
+        node.raw = json!({
+            "svgFill": {"_Type_": "BuildingBlocks_SvgFill", "enableColorOverlay": true, "color": null}
+        });
+        apply_inline_color_overlay(node, &palette);
+        let node = scene.nodes.get(&1).unwrap();
+        assert!(
+            raw_color_channel(node, "FillColor", "r") > 0.9
+                && raw_color_channel(node, "FillColor", "b") < 0.4,
+            "overlay icon with null colour must default to Base slot 0 orange, got r={} b={}",
+            raw_color_channel(node, "FillColor", "r"),
+            raw_color_channel(node, "FillColor", "b")
+        );
+        assert_eq!(
+            node.raw.get("FillColorToken").and_then(|v| v.as_str()),
+            Some("Base")
+        );
+    }
+
     #[test]
     fn record_ref_font_style_object_field_maps_to_font_style_record() {
         let palette = json!({});

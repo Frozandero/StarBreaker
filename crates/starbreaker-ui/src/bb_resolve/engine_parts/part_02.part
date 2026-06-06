@@ -174,3 +174,43 @@ pub fn resolve_canvas_graph_with_loc_and_bound_view(
     )
 }
 
+/// Apply the external *shared* styles referenced by `defaultStyles.sharedStyles`
+/// (e.g. the footer's `mfd_g_header.json`), if any. These carry chrome the
+/// canvas's own styles don't — the screen-name segment-box background + its
+/// top-border line, separator strokes, and selected/unselected name colours.
+/// Only MFD frame/content canvases reference `sharedStyles`; standalone screens
+/// leave it null, so this does not touch other gold-standard targets.
+fn apply_shared_styles(
+    scene: &mut BbScene,
+    record_value: &serde_json::Value,
+    palette: &serde_json::Value,
+    fetch_by_path: &dyn Fn(&str) -> Result<serde_json::Value, String>,
+    loc_fetcher: Option<&dyn LocFetcher>,
+) {
+    let Some(shared_url) = record_value
+        .get("defaultStyles")
+        .and_then(|ds| ds.get("sharedStyles"))
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty() && *s != "null")
+    else {
+        return;
+    };
+    match fetch_by_path(shared_url) {
+        Ok(shared_json) => {
+            let shared_value = shared_json.get("_RecordValue_").unwrap_or(&shared_json);
+            if let Some(entries) = shared_value.get("entries").and_then(|v| v.as_array()) {
+                // The shared style's own `colorStyles` are null placeholders; its
+                // `ColorStyle` roles resolve against the canvas's effective brand
+                // palette, so pass that as the palette source.
+                let brand = bb_brand_style::BrandStyle {
+                    identifier: extract_record_name(shared_url),
+                    entries: entries.as_slice(),
+                    raw: palette,
+                };
+                crate::bb_brand_apply::apply_brand_modifiers(scene, &brand, loc_fetcher);
+            }
+        }
+        Err(e) => log::warn!("bb_resolve: failed to load sharedStyles {shared_url}: {e}"),
+    }
+}
+

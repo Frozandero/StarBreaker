@@ -229,7 +229,7 @@ pub(super) fn parse_text(node: &serde_json::Value) -> BbText {
     }
 }
 
-pub(super) fn parse_icon(node: &serde_json::Value) -> BbIcon {
+pub(super) fn parse_icon(node: &serde_json::Value, ty: &BbNodeType) -> BbIcon {
     let image_record = node
         .get("iconProperties")
         .and_then(|ip| ip.get("customIcon"))
@@ -256,6 +256,19 @@ pub(super) fn parse_icon(node: &serde_json::Value) -> BbIcon {
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(str::to_owned);
+
+    // A raw `WidgetIcon` with no explicit `customIcon`/`imagePath` selects its
+    // glyph by `iconPreset` (a `BB_IconWidgetPreset` enum value); resolve it to the
+    // engine's vector-icon asset so the icon renders (e.g. the MFD footer's `<`/`>`
+    // carats). Button components (GeneralButton[Secondary]) also carry an
+    // `iconProperties` but paint their icon through their own component pipeline
+    // (the procedural `GeneralX` close button, or a `ParamInput0`-supplied SVG), so
+    // the preset fallback is scoped to `WidgetIcon` to avoid injecting a duplicate.
+    let image_record = image_record.or_else(|| {
+        (*ty == BbNodeType::WidgetIcon)
+            .then(|| icon_preset.as_deref().and_then(crate::icon_preset::svg_path_for_preset))
+            .flatten()
+    });
 
     BbIcon {
         image_record,

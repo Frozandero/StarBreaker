@@ -114,6 +114,56 @@ use serde_json::json;
         );
     }
 
+    /// `ConditionType "Base"` matches a `DisplayWidget` node (the game's base
+    /// widget type). This is the footer's `ScreenNameBackground` gate
+    /// (`AllOf(Type=Base, Tag …)` on `base_BG`).
+    #[test]
+    fn type_condition_base_matches_display_widget() {
+        let mut scene = make_test_scene();
+        scene.nodes.get_mut(&1).unwrap().ty = BbNodeType::DisplayWidget;
+        let brand = BrandStyle {
+            identifier: "test_brand".to_string(),
+            entries: &[json!({
+                "conditionsList": [{ "conditions": [
+                    { "_Type_": "BuildingBlocks_StyleSelectorConditionType", "type": "Base" }
+                ]}],
+                "modifiers": [{
+                    "_Type_": "BuildingBlocks_FieldModifierBoolean",
+                    "field": "IsActive",
+                    "value": false
+                }]
+            })],
+            raw: &json!({}),
+        };
+        apply_brand_modifiers(&mut scene, &brand, None);
+        assert!(!scene.nodes.get(&1).unwrap().is_active,
+            "ConditionType 'Base' must match a DisplayWidget node");
+    }
+
+    /// `ConditionType "Base"` must NOT match a non-DisplayWidget node (a TextField).
+    #[test]
+    fn type_condition_base_does_not_match_text_field() {
+        let mut scene = make_test_scene();
+        scene.nodes.get_mut(&1).unwrap().ty = BbNodeType::WidgetTextField;
+        let brand = BrandStyle {
+            identifier: "test_brand".to_string(),
+            entries: &[json!({
+                "conditionsList": [{ "conditions": [
+                    { "_Type_": "BuildingBlocks_StyleSelectorConditionType", "type": "Base" }
+                ]}],
+                "modifiers": [{
+                    "_Type_": "BuildingBlocks_FieldModifierBoolean",
+                    "field": "IsActive",
+                    "value": false
+                }]
+            })],
+            raw: &json!({}),
+        };
+        apply_brand_modifiers(&mut scene, &brand, None);
+        assert!(scene.nodes.get(&1).unwrap().is_active,
+            "ConditionType 'Base' must not match a WidgetTextField node");
+    }
+
     #[test]
     fn test_mixed_type_and_tag_condition_matches() {
         // Mixed AllOf condition: ConditionType "Image" + ConditionTag must both pass.

@@ -332,7 +332,21 @@ pub fn compile_ir_for_binding(inputs: &PipelineInputs<'_>) -> Result<UiIrDocumen
                 .unwrap_or_else(|| raw_key.to_string());
             for node in &mut ir.nodes {
                 if node.name == "text_ScreenName" {
-                    node.text_payload = Some(UiIrTextPayload::Resolved { text: text.clone() });
+                    // Apply the label field's authored case modifier (the footer
+                    // screen name uses `caseModifier = "Upper"` → "TARGET STATUS"),
+                    // read from the scene node so it stays data-driven.
+                    let cased = match scene
+                        .nodes
+                        .get(&node.id)
+                        .and_then(|n| n.raw.get("labelProperties"))
+                        .and_then(|lp| lp.get("caseModifier"))
+                        .and_then(|v| v.as_str())
+                    {
+                        Some("Upper") | Some("AllCaps") => text.to_uppercase(),
+                        Some("Lower") => text.to_lowercase(),
+                        _ => text.clone(),
+                    };
+                    node.text_payload = Some(UiIrTextPayload::Resolved { text: cased });
                 }
             }
         }

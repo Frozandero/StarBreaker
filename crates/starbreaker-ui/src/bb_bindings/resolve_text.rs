@@ -4,6 +4,7 @@ use crate::defaults::DefaultValueRegistry;
 use super::util::{
     apply_case_modifier,
     case_modifier_from_raw,
+    is_placeholder_label,
     number_to_compact_string,
     value_to_string,
 };
@@ -132,6 +133,71 @@ impl BindingResolver {
         None
     }
 
+    /// Whether `node` is a component-parameter-driven label: a
+    /// `ComponentLabelProperties` field fed by a `LocalizedField → ParamInput0`
+    /// op. For these the authored `labelProperties.label` is a design-time
+    /// placeholder, not runtime content.
+    pub fn is_component_param_label(&self, node_id: BbNodeId, node_raw: &serde_json::Value) -> bool {
+        let is_component_label = node_raw
+            .get("labelProperties")
+            .and_then(|lp| lp.get("_Type_"))
+            .and_then(|v| v.as_str())
+            .is_some_and(|t| t.ends_with("ComponentLabelProperties"));
+        is_component_label
+            && self
+                .widget_field_to_input_ptrs
+                .get(&(node_id, "ParamInput0".to_string()))
+                .is_some_and(|ptrs| !ptrs.is_empty())
+    }
+
+    /// Resolve the runtime content of a component-parameter-driven label from its
+    /// parameter sources (localized bindings, injected param overrides, paths),
+    /// applying the authored case modifier. Returns `None` when no source carries
+    /// real content (an empty / placeholder parameter ⇒ an empty field), so the
+    /// caller can leave the field blank instead of using the placeholder label.
+    fn resolve_param_label_content(
+        &self,
+        node_id: BbNodeId,
+        node_raw: &serde_json::Value,
+        defaults: &DefaultValueRegistry,
+    ) -> Option<String> {
+        let case = case_modifier_from_raw(node_raw);
+        let usable = |s: &str| -> Option<String> {
+            let t = s.trim();
+            (!is_placeholder_label(t)).then(|| apply_case_modifier(t, case))
+        };
+        // Localized-operation bindings (the `ParamInput0` LocalizedField and any
+        // sibling localized field). `eval_localized_ptr` returns `None` for the
+        // node's non-text bindings (state-tag ops), so only real content surfaces.
+        if let Some(input_ptrs) = self.widget_to_input_ptrs.get(&node_id) {
+            for &input_ptr in input_ptrs {
+                let mut seen = std::collections::HashSet::new();
+                if let Some(s) = self.eval_localized_ptr(input_ptr, defaults, &mut seen)
+                    && let Some(text) = usable(&s)
+                {
+                    return Some(text);
+                }
+            }
+        }
+        // Param override injected from the embedding frame's `paramInputValues`.
+        if let Some(loc_key) = self.widget_to_loc_key.get(&node_id)
+            && let Some(resolved) = defaults.lookup_localization(loc_key)
+            && let Some(text) = usable(resolved)
+        {
+            return Some(text);
+        }
+        // Direct path binding (e.g. the screen name supplied as a data path).
+        if let Some(path) = self.widget_to_path.get(&node_id)
+            && let Some(val) = defaults.lookup_path(path)
+        {
+            let s = value_to_string(val);
+            if !s.trim().is_empty() {
+                return Some(apply_case_modifier(s.trim(), case));
+            }
+        }
+        None
+    }
+
     /// Resolve display text with provenance for downstream formatting.
     pub fn resolve_text_detailed(
         &self,
@@ -154,6 +220,24 @@ impl BindingResolver {
                 }
                 return ResolvedText { text: lit.to_owned(), is_name_derived: false };
             }
+        }
+
+        // Component-parameter-driven label: a `ComponentLabelProperties` field that
+        // is fed by a `LocalizedField → ParamInput0` op takes its content from that
+        // parameter; its authored `labelProperties.label` is only a design-time
+        // placeholder (e.g. `@ui_leaderboards_Loadout`, reused across the footer's
+        // screen-name / warning / countdown fields). The parameter wins: a real
+        // value renders (with the authored case modifier), and an unset / empty
+        // parameter means the field is genuinely empty (an inactive alert at rest)
+        // — it must NOT fall back to the placeholder label. Static labels (no
+        // `ParamInput0` binding, e.g. `text_NoTarget`) keep using their label below.
+        if self.is_component_param_label(node_id, node_raw) {
+            return ResolvedText {
+                text: self
+                    .resolve_param_label_content(node_id, node_raw, defaults)
+                    .unwrap_or_default(),
+                is_name_derived: false,
+            };
         }
 
         // `labelProperties.label` carries a localization key such as
@@ -180,7 +264,10 @@ impl BindingResolver {
             if let Some(val) = defaults.lookup_path(path) {
                 let s = value_to_string(val);
                 return ResolvedText {
-                    text: s,
+                    // Apply the authored case modifier (e.g. the footer screen
+                    // name's `caseModifier = "Upper"`), consistent with the other
+                    // resolution paths.
+                    text: apply_case_modifier(&s, case_modifier_from_raw(node_raw)),
                     is_name_derived: false,
                 };
             }

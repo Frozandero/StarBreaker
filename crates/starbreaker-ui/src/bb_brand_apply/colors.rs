@@ -128,9 +128,15 @@ fn parse_named_color(
 /// darker slot 4 (e.g. the medical fingerprint). This resolver is therefore a
 /// role-aware approximation reverse-engineered against in-game references, not a
 /// 1:1 copy of the enum. When extending it, verify against a reference capture
-/// per role rather than assuming `slot == enum index`. `Bright` is index 6 (a
-/// muted light-grey role), distinct from `Base` (index 0); the compose-time text
-/// path (`ir_compose` `resolve_colour_token`) resolves `Bright` to slot 6.
+/// per role rather than assuming `slot == enum index`. Two deliberate divergences:
+/// (1) `Bright`'s enum index is 6, but in this surface/brand-apply resolver it
+/// maps to the brand's primary bright slot 0 — verified in-game (medical `Bright`
+/// custom-shapes render s_bioc slot-0 light-blue; the MFD footer's `Bright`
+/// selected-name renders drak slot-0 orange, matching the reference). The
+/// compose-time *text* path (`ir_compose` `resolve_colour_token`) resolves
+/// `Bright`→6 for glyph fills. (2) `Disabled` is the near-black index 8 (the MFD
+/// footer bar's `BackgroundColor = Disabled`), not the light slot it was
+/// previously lumped onto.
 fn color_style_slot_index(name: &str, role: ColorStyleRole) -> Option<usize> {
     match name {
         "Bright" | "Base" => Some(0),
@@ -140,9 +146,9 @@ fn color_style_slot_index(name: &str, role: ColorStyleRole) -> Option<usize> {
         "Accent4" | "Critical" | "Negative" => Some(3),
         "Accent1" | "Accent5" | "ContactUnknown" => Some(4),
         "Mid" | "ContactNeutral" => Some(5),
-        "Light" | "Disabled" => Some(6),
+        "Light" => Some(6),
         "Highlight" | "ContactPositiveRep" => Some(7),
-        "Surface" => Some(8),
+        "Surface" | "Disabled" => Some(8),
         "BG" | "Background" => Some(9),
         "FG" | "Foreground" => Some(10),
         "Backlight" | "ContactAgressive" | "ContactAggressive" => Some(11),

@@ -71,6 +71,19 @@ fn strip_widget_suffix(s: &str) -> &str {
     s
 }
 
+/// Whether a resolved label string is an empty / placeholder sentinel that
+/// carries no real content. Used so a component-parameter-driven label whose
+/// parameter is unset at rest (e.g. an inactive footer warning message) renders
+/// empty rather than surfacing its design-time placeholder.
+pub(super) fn is_placeholder_label(s: &str) -> bool {
+    let t = s.trim();
+    t.is_empty()
+        || t.eq_ignore_ascii_case("@LOC_PLACEHOLDER")
+        || t.eq_ignore_ascii_case("LOC_PLACEHOLDER")
+        || t.eq_ignore_ascii_case("@LOC_EMPTY")
+        || t.eq_ignore_ascii_case("LOC_EMPTY")
+}
+
 #[allow(dead_code)]
 pub(super) fn apply_case_modifier(s: &str, modifier: &str) -> String {
     match modifier {

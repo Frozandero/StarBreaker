@@ -1,5 +1,5 @@
 use crate::bb_loc::LocFetcher;
-use crate::bb_scene::{BbNode, BbValue};
+use crate::bb_scene::{BbNode, BbNodeType, BbValue};
 use super::colors::{
     color_style_role_for_field,
     color_style_token,
@@ -39,6 +39,23 @@ pub(super) fn apply_inline_color_overlay(node: &mut BbNode, palette_source: &ser
     if let Some(color) = color_value.and_then(|value| parse_color_value(value, palette_source, role)) {
         let token = color_value.and_then(color_style_token).map(str::to_owned);
         apply_color_field("FillColor", color, token.as_deref(), node);
+        return;
+    }
+    // An overlay-enabled icon with no authored colour (`color: null`) tints to the
+    // brand's primary foreground role `Base` — e.g. the MFD footer's nav carats
+    // render brand-orange, not the SVG's own (dark) fill. Scoped to `WidgetIcon`
+    // (monochrome glyphs): a `WidgetImage` displays a photo/texture that must keep
+    // its own colour, and custom-shape fills without a colour keep their own paint.
+    if node.ty == BbNodeType::WidgetIcon {
+        let base = serde_json::json!({"color": "Base", "alpha": 1.0});
+        match parse_color_value(&base, palette_source, role) {
+            Some(color) => apply_color_field("FillColor", color, Some("Base"), node),
+            // The brand palette may live in an external HUD-style record not loaded
+            // at scene-resolution time (MFD headers); still record the `Base` token
+            // so the render-time colour resolver (which has the effective palette)
+            // tints the glyph brand-orange instead of leaving the SVG's dark fill.
+            None => write_color_token_to_raw("FillColor", Some("Base"), node),
+        }
     }
 }
 

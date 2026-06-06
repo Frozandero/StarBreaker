@@ -396,19 +396,15 @@ fn resolve_canvas_graph_inner(
                 loc_fetcher,
             ),
             Err(e) => {
-                log::debug!(
-                    "bb_resolve: no standard body-background widget '{}': {}",
-                    module_path,
-                    e
-                );
+                log::debug!("bb_resolve: no standard body-background widget '{module_path}': {e}");
             }
         }
     }
 
-    if let Some(brand_style) =
-        bb_brand_style::resolve_brand_style(root_json, manufacturer_id, preferred_brand)
-    {
-        crate::bb_brand_apply::apply_brand_modifiers(&mut scene, &brand_style, loc_fetcher);
+    crate::bb_bindings::resolve_state_tags_into_scene(&mut scene, &Default::default());
+    let brand_style = bb_brand_style::resolve_brand_style(root_json, manufacturer_id, preferred_brand);
+    if let Some(brand_style) = brand_style.as_ref() {
+        crate::bb_brand_apply::apply_brand_modifiers(&mut scene, brand_style, loc_fetcher);
     } else if let Some(style_value) = local_style_value.as_ref() {
         if let Some(entries) = style_value.get("entries").and_then(|v| v.as_array()) {
             let identifier = record_value
@@ -424,7 +420,9 @@ fn resolve_canvas_graph_inner(
             crate::bb_brand_apply::apply_brand_modifiers(&mut scene, &brand, loc_fetcher);
         }
     }
-
+    // Shared ColorStyle roles (Bright/Disabled) resolve against the full brand palette, not the canvas's narrower one.
+    let shared_palette = brand_style.as_ref().map_or(palette_source.unwrap_or(record_value), |b| b.raw);
+    apply_shared_styles(&mut scene, record_value, shared_palette, fetch_by_path, loc_fetcher);
     if let Some(entries) = record_value.get("embeddedStyles").and_then(|v| v.as_array()) {
         let palette_source = palette_source.unwrap_or(record_value);
         let brand = bb_brand_style::BrandStyle {
