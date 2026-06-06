@@ -313,6 +313,29 @@ fn resolver() -> BindingResolver {
     }
 
     #[test]
+    fn integer_component_parameter_override_cycle_terminates() {
+        // A multi-hop `IntegerComponentParameter` override cycle (ParamA→ptr:2,
+        // ParamB→ptr:1) must NOT recurse forever. The per-call `input == current`
+        // check only catches direct self-refs; the `seen` guard breaks longer
+        // cycles. Observed overflowing the stack while exporting the Drake Clipper's
+        // power MFD. With the cycle broken, ptr:1's override resolves ptr:2, whose
+        // override loops back to ptr:1 (now seen) → ptr:2 falls to its default 9.
+        let resolver = BindingResolver::from_operations(&[
+            json!({ "_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_BindingsIntegerComponentParameter",
+                    "parameter": "ParamA", "defaultValue": 7 }),
+            json!({ "_Type_": "BuildingBlocks_BindingsIntegerField",
+                    "widget": "ptr:100", "field": "ParamA", "input": "ptr:2" }),
+            json!({ "_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_BindingsIntegerComponentParameter",
+                    "parameter": "ParamB", "defaultValue": 9 }),
+            json!({ "_Type_": "BuildingBlocks_BindingsIntegerField",
+                    "widget": "ptr:101", "field": "ParamB", "input": "ptr:1" }),
+        ]);
+        let defaults = DefaultValueRegistry::default();
+        let mut seen = std::collections::HashSet::new();
+        assert_eq!(resolver.eval_integer_ptr(1, &defaults, &mut seen), Some(9));
+    }
+
+    #[test]
     fn synth_string_widget_ptr_string_maps_to_resolved_string() {
         let resolver = BindingResolver::from_operations(&[json!({
             "_Type_": "_SynthStringWidget_",

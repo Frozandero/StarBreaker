@@ -28,13 +28,18 @@ impl BindingResolver {
                     .get("inputR")
                     .and_then(|v| v.as_str())
                     .and_then(parse_points_to_or_ptr_str);
+                // The integer fallback is a separate evaluation domain, so it runs
+                // with a fresh `seen`: the failed `eval_localized_ptr` attempt above
+                // leaves the input ptr on the localized path, which would otherwise
+                // make the integer cycle-guard reject this legitimate re-resolution
+                // (the input is shared, not cyclic).
                 let left = left_ptr
                     .and_then(|p| self.eval_localized_ptr(p, defaults, seen))
-                    .or_else(|| left_ptr.and_then(|p| self.eval_integer_ptr(p, defaults, seen)).map(|v| v.to_string()))
+                    .or_else(|| left_ptr.and_then(|p| self.eval_integer_ptr(p, defaults, &mut std::collections::HashSet::new())).map(|v| v.to_string()))
                     .unwrap_or_default();
                 let right = right_ptr
                     .and_then(|p| self.eval_localized_ptr(p, defaults, seen))
-                    .or_else(|| right_ptr.and_then(|p| self.eval_integer_ptr(p, defaults, seen)).map(|v| v.to_string()))
+                    .or_else(|| right_ptr.and_then(|p| self.eval_integer_ptr(p, defaults, &mut std::collections::HashSet::new())).map(|v| v.to_string()))
                     .unwrap_or_default();
                 let mut out = base.to_string();
                 if out.contains("%d") {
@@ -345,6 +350,31 @@ impl BindingResolver {
     }
 
     pub(super) fn eval_integer_ptr(
+        &self,
+        ptr: BbNodeId,
+        defaults: &DefaultValueRegistry,
+        seen: &mut std::collections::HashSet<BbNodeId>,
+    ) -> Option<i64> {
+        // Break reference cycles: an `IntegerComponentParameter` override chain can
+        // loop back on itself across several hops (e.g. 373→372→369→384→373). The
+        // per-call `parameter == current_ptr` check only catches direct self-refs,
+        // so without this the resolver recurses until the stack overflows (observed
+        // exporting the Drake Clipper's power MFD). `seen` tracks the *active*
+        // recursion path: we insert on entry and remove on exit, so a true cycle
+        // (ptr already on the path) is cut while a pointer legitimately shared by
+        // sibling branches (a DAG — e.g. a localization-combine chain) still
+        // resolves on each visit.
+        if !seen.insert(ptr) {
+            return None;
+        }
+        let result = self.eval_integer_ptr_resolved(ptr, defaults, seen);
+        seen.remove(&ptr);
+        result
+    }
+
+    /// Resolve an integer pointer assuming `ptr` is already recorded on the active
+    /// recursion path (see [`Self::eval_integer_ptr`], which owns cycle tracking).
+    fn eval_integer_ptr_resolved(
         &self,
         ptr: BbNodeId,
         defaults: &DefaultValueRegistry,

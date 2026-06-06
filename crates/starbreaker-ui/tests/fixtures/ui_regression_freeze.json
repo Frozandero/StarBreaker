@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "frozen_at": "2026-06-05T13:53:51Z",
+  "frozen_at": "2026-06-06T10:52:46Z",
   "approver": "tom",
-  "reason": "Verify self-generating freeze; baselines aligned to current verified export (medical tint fixes + unchanged door/annunciator)",
+  "reason": "Annunciator baseline refresh: NotTag/AllOfTag condition-matcher fix correctly reveals the Annunciator_On gradient (matches the in-game reference); required for footer LOW POWER/warning hiding. User-approved.",
   "signature": null,
   "manifest_path": "crates/starbreaker-ui/tests/fixtures/ui_ir/ui_snapshot_manifest.json",
   "artifacts": [
@@ -41,7 +41,7 @@
       "tier": "gold",
       "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_h_eng_annunciator_master_left.png",
       "artifact_path": "test-artifacts/ui/eng_annunciator_master_left.png",
-      "sha256": "594e82cc42546560d8889967a2ccc8c860fa1be7e93931dbcb87c9aa0bac1cfc",
+      "sha256": "ff428d3b81b5a2d7bd116646c0875443f98c9feef720a0e1d94269003c13715a",
       "width": 1920,
       "height": 432,
       "channels": "srgba"

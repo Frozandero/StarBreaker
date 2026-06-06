@@ -259,7 +259,7 @@ fn resolve_canvas_graph_inner(
     };
 
     {
-        let canvas_urls = root_canvas_urls;
+        let mut canvas_urls = root_canvas_urls;
 
         // Compute the set of WidgetCanvas node pointers whose `Instantiated`
         // field binding evaluates to `false` under static defaults.  These
@@ -272,14 +272,14 @@ fn resolve_canvas_graph_inner(
             inherited_boolean_bindings,
         );
 
-        // MFD frame content-view selection: the frame embeds every view as
-        // mutually-exclusive WidgetCanvas slots whose `Instantiated` is gated by a
-        // runtime view-selector boolean with no static default. Instantiate the
-        // slot matching the binding's bound content canvas (and skip its peers)
-        // instead of the arbitrary static default, so the bound screen's content
-        // is merged in Pass 2 rather than dropped.
+        // MFD frame content-view selection: the frame embeds a landscape
+        // (full-width) and portrait (narrow) content slot gated by `useportraitview`
+        // and filled from `landscapecanvasguid` / `portraitcanvasguid`. The bound
+        // content is the view's landscape canvas (physical screens are landscape),
+        // so inject it onto the landscape slot at full width and skip the portrait
+        // slot — not whichever slot's authored placeholder matches the content.
         if let Some(bound) = bound_view_canvas {
-            crate::mfd_view::apply_bound_view_instantiation(&scene, bound, &mut instantiated_false);
+            crate::mfd_view::apply_bound_mfd_view(&scene, bound, &mut canvas_urls, &mut instantiated_false);
         }
 
         deactivate_subtrees(&mut scene, &instantiated_false);

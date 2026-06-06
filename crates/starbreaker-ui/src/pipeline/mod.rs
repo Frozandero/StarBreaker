@@ -240,15 +240,10 @@ pub fn compile_ir_for_binding(inputs: &PipelineInputs<'_>) -> Result<UiIrDocumen
         .map(|candidate| candidate.path.clone());
 
     let mut effective_target_size = inputs.target_size;
-    // An MFD binding wraps a content canvas (target/self/power, often authored
-    // 16:9) inside a distinct screen frame canvas that scales the content into
-    // the physical screen. For these the physical screen proportions are
-    // defined by the frame, not the content canvas or a SWF stage, so derive
-    // the render aspect from the frame canvas and let relatively-laid-out
-    // content reflow to the real screen shape. Other binding kinds (e.g.
-    // `physical` annunciators) render their content at its native aspect and
-    // must keep SWF/stage-driven sizing, so this is scoped to the `mfd` kind —
-    // the same structural classification used to pick the MFD target size.
+    // An MFD binding wraps a (often 16:9) content canvas in a distinct screen
+    // frame; the physical screen proportions come from the frame, so derive the
+    // render aspect from it and let relatively-laid-out content reflow. Scoped to
+    // `mfd` — `physical` annunciators keep their native SWF/stage-driven sizing.
     let frame_aspect = if b.binding_kind == Some("mfd") {
         frame_canvas_aspect(b.canvas_guid, b.content_canvas_guid, inputs.canvas_fetcher)
     } else {

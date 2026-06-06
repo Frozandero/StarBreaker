@@ -16,6 +16,35 @@ mod tests_b {
             .unwrap_or_else(|e| panic!("cannot parse fixture {name}: {e}"))
     }
 
+    /// A `WidgetImage` whose size was overridden to a tiny fixed `0.7×0.4`
+    /// placeholder (an authoring artefact — the DRAK target greebles) must expand
+    /// to fill its parent, not collapse to ~0.58px, even under an
+    /// `aspectOverridesWidth` canvas (csx≠csy). Reproduces obs 3's collapsed
+    /// `image_PageGreeblesNoTargetRight`.
+    #[test]
+    fn image_tiny_fixed_placeholder_fills_parent_under_aspect_override() {
+        use crate::bb_scene::{
+            BbCoordinateMethod, BbNode, BbNodeType, BbScene, BbSizing, BbTrbl, BbValue, Vec2, Vec3,
+        };
+        use std::collections::BTreeMap;
+        let mk = |id: BbNodeId, ty: BbNodeType, w: BbValue, h: BbValue, children: Vec<BbNodeId>, parent: Option<BbNodeId>| BbNode {
+            id, parent, children, ty, name: format!("n{id}"), style_tag_uuids: vec![],
+            is_active: true, layer: 0, alpha: 1.0, position: Vec3::default(), position_offset: Vec3::default(),
+            sizing: BbSizing { width: w, height: h }, padding: BbTrbl::default(), margin: BbTrbl::default(),
+            pivot: Vec2::default(), anchor: Vec2::default(), background: None, border: None, radial: None,
+            text: None, icon: None, raw: serde_json::Value::Null,
+        };
+        let root = mk(1, BbNodeType::DisplayWidget, BbValue::Percent(1.0), BbValue::Percent(1.0), vec![2], None);
+        let img = mk(2, BbNodeType::WidgetImage, BbValue::Fixed(0.7), BbValue::Fixed(0.4), vec![], Some(1));
+        let mut nodes = BTreeMap::new();
+        nodes.insert(1, root);
+        nodes.insert(2, img);
+        let scene = BbScene { coordinate_method: BbCoordinateMethod::AspectOverridesWidth, canvas_size: (1920.0, 1080.0), roots: vec![1], nodes, operations: vec![] };
+        let result = layout(&scene, 1600, 1200);
+        let w = result.rects[&2].w;
+        assert!(w > 100.0, "tiny 0.7-fixed placeholder image must fill parent, got w={w}");
+    }
+
     /// R5.I-A: `PercentOfX` height (and `PercentOfY` width) must be evaluated
     /// against THIS NODE's OWN other-axis dimension, not the parent's other
     /// dimension.
