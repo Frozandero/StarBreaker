@@ -208,9 +208,22 @@ fn collect_standard_text_styles(
             .or_insert(style);
     }
 
-    let selected_style_name = selected_style_source
-        .and_then(|source| source.strip_prefix("canvas:"))
-        .map(str::to_ascii_lowercase);
+    // The brand override is keyed by the screen's brand style record name. A
+    // `canvas:`-sourced style names that record directly; a `manufacturer:<mfr>`
+    // source (e.g. ship MFD screens) maps to that manufacturer's environment UI
+    // style `s_<mfr>_env` — the brand the typography record carries per-manufacturer
+    // overrides under (e.g. Drake's H1 → `audimatmono-bold`/`$Low-Bold`, not the
+    // default `blenderpro-thin`/`$Text1Thin`).
+    let selected_style_name = selected_style_source.and_then(|source| {
+        source
+            .strip_prefix("canvas:")
+            .map(str::to_ascii_lowercase)
+            .or_else(|| {
+                source
+                    .strip_prefix("manufacturer:")
+                    .map(|mfr| format!("s_{}_env", mfr.to_ascii_lowercase()))
+            })
+    });
     for entry in record_value
         .get("brandStyles")
         .and_then(|styles| styles.as_array())

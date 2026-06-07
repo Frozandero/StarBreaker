@@ -33,21 +33,15 @@ fn standard_textfield_font_size_from_styles(
         return None;
     }
 
+    // Use the H1/H3/T4 entry's authored FontSize regardless of which font record it
+    // carries: the entry's size is the same whether the (default) `blenderpro-thin`
+    // or a brand-override face (e.g. Drake's `audimatmono-bold`) is selected. The
+    // earlier `blenderpro-thin`-only guard dropped the size whenever a brand override
+    // changed the face, leaving the heading at a fallback size.
     standard_text_style_keys(label_style)
         .into_iter()
         .filter_map(|key| standard_text_styles.get(&key))
-        .find(|standard| {
-            if label_style == "Title4" {
-                return standard.font_size.is_some();
-            }
-            standard
-                .font_record
-                .as_deref()
-                .is_some_and(|record| {
-                    let font_style = crate::record_name::extract_record_name(record);
-                    font_style.eq_ignore_ascii_case("blenderpro-thin")
-                })
-        })
+        .find(|standard| standard.font_size.is_some())
         .and_then(|standard| standard.font_size)
         .filter(|font_size| font_size.is_finite() && *font_size > 0.0)
         .map(|font_size| (font_size * STANDARD_TEXTFIELD_NOMINAL_FONT_SCALE * 10.0).round() / 10.0)
