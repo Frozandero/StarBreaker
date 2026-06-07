@@ -108,6 +108,31 @@ impl TextRenderer {
             .iter()
             .map(|layout| (layout.max_y_units - layout.min_y_units).abs() * scale)
             .fold(0.0f32, f32::max);
+
+        // Font-size audit harness (diagnostic only; no effect unless SB_UI_FONT_DUMP
+        // is set). Emits the final rendered text height in px — which folds in every
+        // render-side scaling factor (calibration + em choice + glyph metrics) — keyed
+        // to the source canvas/node. Compare with `font_size_check.py` against
+        // `font_size_baseline.tsv`. Format:
+        //   FONTDUMP \t canvas \t node \t font \t size_px \t visible_px \t em \t text
+        if std::env::var_os("SB_UI_FONT_DUMP").is_some() {
+            let cap_units = layouts
+                .iter()
+                .map(|layout| (layout.max_y_units - layout.min_y_units).abs())
+                .fold(0.0f32, f32::max);
+            let visible_px = cap_units * scale;
+            let (canvas, node) = super::FONT_DUMP_CTX.with(|c| c.borrow().clone());
+            eprintln!(
+                "FONTDUMP\t{}\t{}\t{}\t{:.2}\t{:.2}\t{:.1}\t{}",
+                canvas,
+                node,
+                swf_font.name,
+                size_px,
+                visible_px,
+                units_per_em,
+                text.chars().take(28).collect::<String>().replace('\t', " "),
+            );
+        }
         let line_step = nominal_line_h.max(measured_line_h.max(1.0));
         let default_interline_px = (size_px * 0.45).max(1.0);
         let interline_px = line_spacing_px

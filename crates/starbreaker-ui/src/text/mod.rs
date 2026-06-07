@@ -9,6 +9,33 @@ mod tests;
 
 pub use ttf_draw::TextRenderer;
 
+use std::cell::RefCell;
+
+thread_local! {
+    /// Per-call (canvas, node) context for the optional `SB_UI_FONT_DUMP` font-size
+    /// audit. Set by the IR text drawer before each `draw_swf_font` call so the dump
+    /// can key each rendered text element to its source node.
+    ///
+    /// Diagnostic tooling only: it has no effect on rendering and emits nothing
+    /// unless the `SB_UI_FONT_DUMP` environment variable is set. Used with
+    /// `font_size_baseline.tsv` / `font_size_check.py` (workspace root) to verify
+    /// per-element rendered font sizes against the frozen platinum/gold baseline.
+    pub(crate) static FONT_DUMP_CTX: RefCell<(String, String)> =
+        const { RefCell::new((String::new(), String::new())) };
+}
+
+/// Record the (canvas, node) for the next `draw_swf_font` font-size dump line.
+/// No-op for rendering; only consumed by the `SB_UI_FONT_DUMP` audit emitter.
+pub(crate) fn set_font_dump_ctx(canvas: &str, node: &str) {
+    FONT_DUMP_CTX.with(|ctx| {
+        let mut c = ctx.borrow_mut();
+        c.0.clear();
+        c.0.push_str(canvas);
+        c.1.clear();
+        c.1.push_str(node);
+    });
+}
+
 static SANS_BYTES: &[u8] = include_bytes!("../../assets/fonts/DejaVuSans.ttf");
 static MONO_BYTES: &[u8] = include_bytes!("../../assets/fonts/DejaVuSansMono.ttf");
 pub(super) const SWF_TEXT_WIDTH_CALIBRATION: f32 = 1.0;

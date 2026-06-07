@@ -349,3 +349,6 @@ the `//!` first line of each file in the module directory.
   troubleshooting flow for source->IR->render drift.
 - `docs/ui-regression-policy.md` — required regression coverage,
   contributor guardrails, and CI checks for UI changes.
+- `docs/ui-font-size-harness.md` — `SB_UI_FONT_DUMP` + `scripts/font_size_check.py`
+  for auditing per-element rendered font sizes against the platinum/gold baseline.
+  Run it whenever you touch anything affecting text size.

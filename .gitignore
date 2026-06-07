@@ -14,6 +14,7 @@ research/
 !/scripts/validate_ui_regression_artifacts.sh
 !/scripts/freeze_ui_regression_artifacts.sh
 !/scripts/unfreeze_ui_regression_artifacts.sh
+!/scripts/font_size_check.py
 test-artifacts/
 docs-local/
 .claude/

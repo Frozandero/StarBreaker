@@ -286,6 +286,11 @@ fn draw_text_node(
         );
         }
     }
+    // Key the optional SB_UI_FONT_DUMP audit line to this element (no-op otherwise).
+    crate::text::set_font_dump_ctx(
+        document.canvas_name.as_deref().unwrap_or("<unnamed>"),
+        &node.name,
+    );
     let used_swf_font = selected_font.as_ref().is_some_and(|selection| {
         if let Some(inline_rect) = inline_nested_textfield_text_rect(
             node,
