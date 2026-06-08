@@ -124,13 +124,15 @@ struct StandardTextStyle {
 /// by the secondary/payload `textfield_fallback_font_size_from_signals` ladder.
 const LONG_HEADING1_PROMPT_FONT_SIZE: f32 = 28.7;
 
-/// Registered fallback (docs/ui-fallback-register.md): pre-caps fraction of a fixed-height
+/// Registered fallback (docs/ui-fallback-register.md): the fraction of a fixed-height
 /// heading band that the heading's design size fills. The engine fits a `Heading1` in a
-/// `Fixed`-height band to the band (a compiled-layout behaviour not in DataCore), so this
-/// is calibrated to the in-game Clipper medical reference. The banner is `caseModifier:
-/// Upper`, so the returned size is further scaled by `CAPS_FORCED_UPPER_FONT_SCALE` (~0.98)
-/// at the call site (0.375 × 0.98 ≈ 0.3675 reaches the measured WelcomeText size).
-const FIXED_BAND_HEADING_FILL: f32 = 0.375;
+/// `Fixed`-height band to the band (a compiled-layout behaviour not in DataCore); attempts
+/// to re-derive it from font/band metrics have been proven to bottom out here, so it stays
+/// a calibrated fallback. Calibrated to the in-game Clipper medical "PLEASE SELECT AN
+/// OPTION…" reference: band height 105 × 0.381 ≈ 40.0 px (the all-caps font-size reduction
+/// that previously also applied to this banner was removed, so the fill is no longer
+/// further scaled at the call site).
+const FIXED_BAND_HEADING_FILL: f32 = 0.381;
 
 /// Reduced "banner prompt" size for a `Heading1` drawn in a fixed-height band. Returns
 /// `None` (full brand FontSize) unless the field is a *tight* fixed band — height set

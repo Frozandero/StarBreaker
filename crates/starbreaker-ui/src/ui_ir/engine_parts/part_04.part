@@ -106,9 +106,11 @@ fn build_ui_ir_nodes(
                     resolved_font_record.as_ref(),
                 )
             };
-            // All-caps display reduction: caseModifier-Upper text renders ~2% smaller than
-            // its nominal size (line spacing, computed below from the size, scales with it).
-            let font_size = scale_ui_ir_font_value(font_size, primary_label_caps_font_scale(node));
+            // Styled text renders at its full brand-table nominal size. (A prior
+            // ~0.98 "all-caps display reduction" was removed: it was a registered
+            // fudge whose stated 2% caps-width-overshoot rationale did not hold up
+            // — the reference in-game RTT capture is uniformly ~2% small, so the
+            // reduction shrank text below its true engine size.)
             Some(UiIrTextStyle {
                 font_record: font_record.clone(),
                 resolved_font_record: resolved_font_record.clone(),
@@ -136,6 +138,16 @@ fn build_ui_ir_nodes(
                 colour: text.colour.or_else(|| fill_colour_from_raw_for_text(&node.raw)),
                 colour_token: text_colour_token_from_raw(&node.raw).or_else(|| {
                     semantic_text_colour_token_from_style_tags(&resolved_style_tags, label_style.as_deref())
+                }).or_else(|| {
+                    // A text field with no per-node style tag inherits its brand text
+                    // style's authored FillColor (the game's per-style colour role, e.g.
+                    // s_bioc H1/H3 = Base light-blue → "Drake Clipper"/tier "T3"). Nodes
+                    // that carry their own style tag have a per-node colour override
+                    // resolved above, so the brand default is not re-applied to them.
+                    own_style_tags
+                        .is_empty()
+                        .then(|| brand_text_style_colour_token(label_style.as_deref(), &standard_text_styles))
+                        .flatten()
                 }).or_else(|| {
                     default_style_text_colour_token_from_raw(&node.raw, &node.ty, false)
                 }),
@@ -191,11 +203,8 @@ fn build_ui_ir_nodes(
                     resolved_font_record.as_ref(),
                 )
             };
-            // A caption-pair label takes its case from `labelProperties.caseModifier`, so
-            // an Upper label (e.g. MEDGELS, PATIENT NAME) gets the same ~2% caps reduction.
-            let font_size_value =
-                scale_ui_ir_font_value(font_size_value, primary_label_caps_font_scale(node));
-
+            // A caption-pair label (MEDGELS, PATIENT NAME) renders at its full brand
+            // nominal — no all-caps size reduction (see the primary-text note above).
             Some(UiIrTextStyle {
                 font_record: font_record.clone(),
                 resolved_font_record: resolved_font_record.clone(),

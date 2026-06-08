@@ -264,13 +264,13 @@ mod tests_b {
             Some(&UiIrValue::Fixed { value: 30.0 })
         );
 
-        // H1 brand FontSize = 57, but `caseModifier: Upper` applies the ~2% all-caps
-        // display reduction → 57 × CAPS_FORCED_UPPER_FONT_SCALE ≈ 55.86.
+        // H1 brand FontSize = 57, used verbatim. `caseModifier: Upper` no longer applies
+        // an all-caps size reduction (the ~0.98 fudge was removed), so the size is 57.
         let node = ir.nodes.iter().find(|node| node.name == "machine_type").expect("machine_type node");
         let style = node.text_style.as_ref().expect("machine_type text style");
         assert!(
-            matches!(style.font_size, UiIrValue::Fixed { value } if (value - 57.0 * 0.98).abs() < 0.02),
-            "caseModifier Upper caps-reduces H1 57: {:?}",
+            matches!(style.font_size, UiIrValue::Fixed { value } if (value - 57.0).abs() < 0.02),
+            "caseModifier Upper uses full H1 57 (no caps reduction): {:?}",
             style.font_size,
         );
     }

@@ -173,13 +173,13 @@ fn text_origin_in_rect(
     (x, y)
 }
 
-/// Registered fallback (docs/ui-fallback-register.md): the caption-pair component's flex
-/// Column stack spacing, `Root: FlexRowSpacing = -5`, from
-/// `labelcaptionpaircomponentstandard.json`. The decompiled flex carries `rowSpacing = 0`
-/// and this modifier separately, so the layout/compose pass must apply it; without it the
-/// label→value handoff is ~5px too loose vs the in-game reference. Design-space pixels
-/// (≈1:1 for full-screen canvases).
-const LABEL_CAPTION_PAIR_FLEX_ROW_SPACING: f32 = -5.0;
+/// Registered fallback (docs/ui-fallback-register.md): the compose-time overlap that
+/// stands in for the engine's line-box stacking of the caption-pair flex Column. The
+/// decompiled flex carries `rowSpacing = 0`, so the visible label→value handoff comes
+/// entirely from the engine's own line-box geometry (which lives in engine code, not
+/// DataCore). Calibrated to the in-game Clipper medical reference: MEDGELS→200/200
+/// top-to-top ≈ 28px. Design-space pixels (≈1:1 for full-screen canvases).
+const LABEL_CAPTION_PAIR_FLEX_ROW_SPACING: f32 = -8.0;
 
 fn stacked_label_caption_pair_text_rects(
     rect: Rect,

@@ -39,9 +39,17 @@ fn resolved_linear_progress_meter_rect(node: &UiIrNode, document: &UiIrDocument)
         text_rects.secondary.map(|secondary_rect| secondary_rect.h),
     );
     rect.x += pair_offset_x;
-    rect.y = text_rects
-        .secondary
-        .map(|secondary_rect| secondary_rect.y + secondary_rect.h)
+    // Pin the meter to the value text's baseline — the bottom of its drawn glyphs —
+    // rather than the line-box bottom. The value (e.g. "200/200") has no descenders, so
+    // the line box's empty descent space would otherwise push the bar ~1 descent too low.
+    rect.y = debug_text_drawn_bounds(parent)
+        .and_then(|bounds| bounds.secondary)
+        .map(|secondary| secondary.y + secondary.h)
+        .or_else(|| {
+            text_rects
+                .secondary
+                .map(|secondary_rect| secondary_rect.y + secondary_rect.h)
+        })
         .unwrap_or_else(|| text_rects.primary.y + text_rects.primary.h);
     Some(rect)
 }
