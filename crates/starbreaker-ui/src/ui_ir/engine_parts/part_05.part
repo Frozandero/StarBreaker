@@ -15,23 +15,33 @@ fn caption_pair_secondary_text_style(
         .and_then(|v| v.as_str())
         .unwrap_or("Left")
         .to_string();
-    let font_size = node
-        .raw
-        .get("fontSize")
-        .or_else(|| node.raw.get("FontSize"))
-        .and_then(|v| v.as_f64())
-        .map(|value| value as f32)
-        .unwrap_or(18.0);
     let caption_style = node
         .raw
         .get("captionProperties")
         .and_then(|cp| cp.get("style"))
         .and_then(|v| v.as_str())
         .map(str::to_owned);
-    let value_font_size = adjust_ui_ir_font_value_for_font_record_image_percent(
-        UiIrValue::Fixed { value: font_size },
-        resolved_font_record,
-    );
+    // The caption-pair value (e.g. MedGel "200/200", style Heading6) renders at its named
+    // brand style verbatim — like any styled textfield. Prefer that; only fall back to
+    // the node's authored fontSize + imageSizePercent boost when the value's style has no
+    // brand-table entry.
+    let value_font_size = if let Some(size) =
+        brand_style_font_size(caption_style.as_deref(), standard_text_styles)
+    {
+        UiIrValue::Fixed { value: size }
+    } else {
+        let font_size = node
+            .raw
+            .get("fontSize")
+            .or_else(|| node.raw.get("FontSize"))
+            .and_then(|v| v.as_f64())
+            .map(|value| value as f32)
+            .unwrap_or(18.0);
+        adjust_ui_ir_font_value_for_font_record_image_percent(
+            UiIrValue::Fixed { value: font_size },
+            resolved_font_record,
+        )
+    };
     UiIrTextStyle {
         font_record: font_record.clone(),
         resolved_font_record: resolved_font_record.cloned(),

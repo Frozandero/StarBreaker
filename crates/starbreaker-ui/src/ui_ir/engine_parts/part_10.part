@@ -6,13 +6,19 @@ fn standard_textfield_font_size_from_styles(
     if !matches!(node.ty, BbNodeType::WidgetTextField) {
         return None;
     }
+    brand_style_font_size(label_style, standard_text_styles)
+}
 
+/// The authored brand FontSize for a named style (`Heading1`-`6`, `Title1`-`5`, `Body`)
+/// — the engine's em-pixel design size, used verbatim (the SWF renderer maps em→raster
+/// via units_per_em = ascent + descent, so styled text is typographic, no nominal-scale
+/// constant). Node-agnostic so caption-pair label/value styles resolve the same way a
+/// plain `WidgetTextField` does.
+fn brand_style_font_size(
+    label_style: Option<&str>,
+    standard_text_styles: &HashMap<String, StandardTextStyle>,
+) -> Option<f32> {
     let label_style = label_style?;
-
-    // DATA-BACKED MODEL: every named style (Heading1-6, Title1-5) carries its authored
-    // FontSize in the brand table — the engine's em-pixel design size, used verbatim
-    // (the SWF renderer maps em→raster via units_per_em = ascent + descent, so styled
-    // text renders typographically with no nominal-scale constant).
     standard_text_style_keys(label_style)
         .into_iter()
         .filter_map(|key| standard_text_styles.get(&key))

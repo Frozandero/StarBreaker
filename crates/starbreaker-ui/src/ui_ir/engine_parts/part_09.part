@@ -129,7 +129,7 @@ const LONG_HEADING1_PROMPT_FONT_SIZE: f32 = 28.7;
 /// rendered in a `Fixed`-height band to the band rather than drawing it at the full
 /// brand FontSize; that band-fit lives in compiled BuildingBlocks layout, not in
 /// DataCore, so this ratio is calibrated to the in-game Clipper medical reference.
-const FIXED_BAND_HEADING_FILL: f32 = 0.383;
+const FIXED_BAND_HEADING_FILL: f32 = 0.367;
 
 /// Reduced "banner prompt" size for a `Heading1` drawn in a fixed-height band.
 /// Returns `None` (so the full brand FontSize is used) unless the field is a *tight*

@@ -121,20 +121,32 @@ impl TextRenderer {
                 .map(|layout| (layout.max_y_units - layout.min_y_units).abs())
                 .fold(0.0f32, f32::max);
             let visible_px = cap_units * scale;
+            // Widest rendered line (px) — the measure the user compares against the
+            // reference text-block widths. SB_UI_FONT_DUMP-only diagnostic.
+            let width_px = layouts
+                .iter()
+                .map(|layout| (layout.max_x_px - layout.min_x_px).max(0.0))
+                .fold(0.0f32, f32::max);
             let (canvas, node) = super::FONT_DUMP_CTX.with(|c| c.borrow().clone());
             eprintln!(
-                "FONTDUMP\t{}\t{}\t{}\t{:.2}\t{:.2}\t{:.1}\t{}",
+                "FONTDUMP\t{}\t{}\t{}\t{:.2}\t{:.2}\t{:.1}\t{:.2}\t{}",
                 canvas,
                 node,
                 swf_font.name,
                 size_px,
                 visible_px,
                 units_per_em,
+                width_px,
                 text.chars().take(28).collect::<String>().replace('\t', " "),
             );
         }
+        // `line_step` is already the full em line box (≈ size). The default interline is
+        // the small extra gap that brings single-spaced text to ~1.2× the font size
+        // (standard leading); the brand `LineSpacing` (often negative) tightens from
+        // there. The old 0.45 over-led wrapped paragraphs (≈1.45×) — see
+        // docs/clipper-medical-width-targets.md (RC2).
         let line_step = nominal_line_h.max(measured_line_h.max(1.0));
-        let default_interline_px = (size_px * 0.45).max(1.0);
+        let default_interline_px = (size_px * 0.2).max(1.0);
         let interline_px = line_spacing_px
             .filter(|value| value.is_finite())
             .map_or(default_interline_px, |value| default_interline_px + value);

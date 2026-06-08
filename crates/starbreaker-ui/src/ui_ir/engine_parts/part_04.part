@@ -152,37 +152,42 @@ fn build_ui_ir_nodes(
                 .unwrap_or("Left")
                 .to_string();
 
-            let font_size = textfield_fallback_font_size_from_signals(
-                node,
-                layout_rect.h,
-                text_payload.as_ref().and_then(resolved_text_from_payload),
-            )
-                .or_else(|| {
-                    node.raw
-                        .get("fontSize")
-                        .or_else(|| node.raw.get("FontSize"))
-                        .and_then(|v| v.as_f64())
-                        .map(|value| value as f32)
-                })
-                .unwrap_or_else(|| {
-                    if node_type_name(&node.ty)
-                        .eq_ignore_ascii_case("BuildingBlocks_ComponentLabelCaptionPair")
-                    {
-                        21.0
-                    } else {
-                        18.0
-                    }
-                });
-            let font_size_value = adjust_ui_ir_font_value_for_font_record_image_percent(
-                UiIrValue::Fixed { value: font_size },
-                resolved_font_record.as_ref(),
-            );
-            if std::env::var("SB_FS_DEBUG").is_ok() {
-                eprintln!(
-                    "FSDBG\t  node={}\tPAYLOAD_PATH\tladder_or_raw_fs={:.2}\tfinal_ir_fs={:?}\tlabel_style={:?}",
-                    node.name, font_size, font_size_value, label_style
-                );
-            }
+            // A caption-pair label (e.g. MedGel "MEDGELS", style Heading3) renders at its
+            // named brand style verbatim — the same way the plain WidgetTextField path
+            // does (LocationName, also Heading3, matches the reference). Prefer the brand
+            // FontSize; only fall back to the rect ladder + imageSizePercent boost when
+            // the style has no brand-table entry.
+            let font_size_value = if let Some(size) =
+                brand_style_font_size(label_style.as_deref(), &standard_text_styles)
+            {
+                UiIrValue::Fixed { value: size }
+            } else {
+                let font_size = textfield_fallback_font_size_from_signals(
+                    node,
+                    layout_rect.h,
+                    text_payload.as_ref().and_then(resolved_text_from_payload),
+                )
+                    .or_else(|| {
+                        node.raw
+                            .get("fontSize")
+                            .or_else(|| node.raw.get("FontSize"))
+                            .and_then(|v| v.as_f64())
+                            .map(|value| value as f32)
+                    })
+                    .unwrap_or_else(|| {
+                        if node_type_name(&node.ty)
+                            .eq_ignore_ascii_case("BuildingBlocks_ComponentLabelCaptionPair")
+                        {
+                            21.0
+                        } else {
+                            18.0
+                        }
+                    });
+                adjust_ui_ir_font_value_for_font_record_image_percent(
+                    UiIrValue::Fixed { value: font_size },
+                    resolved_font_record.as_ref(),
+                )
+            };
 
             Some(UiIrTextStyle {
                 font_record: font_record.clone(),
