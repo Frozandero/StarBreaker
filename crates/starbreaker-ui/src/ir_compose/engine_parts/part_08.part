@@ -172,6 +172,7 @@ mod tests {
             style_tag_uuids: Vec::new(),
             resolved_style_tags: Vec::new(),
             is_flash_renderer: false,
+            auto_font_size: false,
         }
     }
 
@@ -219,58 +220,6 @@ mod tests {
         assert_eq!(font_style_top_margin_offset_px(Some(&style)), -10.0);
     }
 
-
-    #[test]
-    fn paint_file_font_style_disables_swf_font_path() {
-        let style_with_paint = text_style_with_font_record(serde_json::json!({
-            "_Type_": "BuildingBlocks_FontStyle",
-            "font": "$Low-Reg",
-            "paintFile": "UI/fonts/Install/AUDIMRG.slug"
-        }));
-        let style_without_paint = text_style_with_font_record(serde_json::json!({
-            "_Type_": "BuildingBlocks_FontStyle",
-            "font": "$Text1Book"
-        }));
-
-        assert!(font_style_has_paint_file(Some(&style_with_paint)));
-        assert!(!font_style_has_paint_file(Some(&style_without_paint)));
-    }
-
-
-    #[test]
-    fn non_low_reg_paint_file_swf_font_scale_guard_stays_near_nominal() {
-        let style_with_paint = text_style_with_font_record(serde_json::json!({
-            "_Type_": "BuildingBlocks_FontStyle",
-            "font": "$Text1Book",
-            "paintFile": "UI/fonts/Install/AUDIMRG.slug"
-        }));
-
-        let swf_scale = swf_text_size_calibration_for_style(Some(&style_with_paint));
-        assert!(
-            swf_scale <= 1.5,
-            "paint-file SWF size calibration drifted too high ({swf_scale:.2}); likely text-size regression"
-        );
-    }
-
-
-    #[test]
-    fn low_reg_swf_font_scale_guard_uses_large_override_without_fit() {
-        let low_reg_style = text_style_with_font_record(serde_json::json!({
-            "_Type_": "BuildingBlocks_FontStyle",
-            "font": "$Low-Reg",
-            "paintFile": "UI/fonts/Install/AUDIMRG.slug"
-        }));
-
-        let swf_scale = swf_text_size_calibration_for_style(Some(&low_reg_style));
-        assert!(
-            (swf_scale - LOW_REG_SWF_SIZE_CALIBRATION).abs() < f32::EPSILON,
-            "Low-Reg SWF calibration drifted ({swf_scale:.2})"
-        );
-        assert!(
-            !swf_style_should_fit_to_rect(Some(&low_reg_style)),
-            "Low-Reg style should bypass SWF fit-to-rect to preserve authored large status text"
-        );
-    }
 
 
     #[test]

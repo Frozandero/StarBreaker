@@ -1,24 +1,3 @@
-fn textfield_long_prompt_font_size_from_signals(
-    node: &crate::bb_scene::BbNode,
-    node_rect_h: f32,
-    resolved_text: Option<&str>,
-) -> Option<f32> {
-    if !matches!(node.ty, BbNodeType::WidgetTextField) {
-        return None;
-    }
-
-    let style = label_style_name_from_raw(node)?;
-    let text_len = resolved_text
-        .map(|value| value.trim().chars().count())
-        .unwrap_or(0);
-
-    if style == "Heading1" && text_len >= 32 && node_rect_h <= 120.0 {
-        Some(LONG_HEADING1_PROMPT_FONT_SIZE)
-    } else {
-        None
-    }
-}
-
 fn standard_textfield_font_size_from_styles(
     node: &crate::bb_scene::BbNode,
     label_style: Option<&str>,
@@ -29,22 +8,18 @@ fn standard_textfield_font_size_from_styles(
     }
 
     let label_style = label_style?;
-    if !matches!(label_style, "Heading1" | "Heading3" | "Title4") {
-        return None;
-    }
 
-    // Use the H1/H3/T4 entry's authored FontSize regardless of which font record it
-    // carries: the entry's size is the same whether the (default) `blenderpro-thin`
-    // or a brand-override face (e.g. Drake's `audimatmono-bold`) is selected. The
-    // earlier `blenderpro-thin`-only guard dropped the size whenever a brand override
-    // changed the face, leaving the heading at a fallback size.
+    // DATA-BACKED MODEL: every named style (Heading1-6, Title1-5) carries its authored
+    // FontSize in the brand table — the engine's em-pixel design size, used verbatim
+    // (the SWF renderer maps em→raster via units_per_em = ascent + descent, so styled
+    // text renders typographically with no nominal-scale constant).
     standard_text_style_keys(label_style)
         .into_iter()
         .filter_map(|key| standard_text_styles.get(&key))
         .find(|standard| standard.font_size.is_some())
         .and_then(|standard| standard.font_size)
         .filter(|font_size| font_size.is_finite() && *font_size > 0.0)
-        .map(|font_size| (font_size * STANDARD_TEXTFIELD_NOMINAL_FONT_SCALE * 10.0).round() / 10.0)
+        .map(|font_size| (font_size * 10.0).round() / 10.0)
 }
 
 fn textfield_fallback_font_size_from_signals(

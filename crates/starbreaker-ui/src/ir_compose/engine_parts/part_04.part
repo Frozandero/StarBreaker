@@ -267,23 +267,27 @@ fn draw_text_node(
     // applying style scaleModifier on top of SWF sizing causes undersized text
     // on some screens (for example door status labels). Keep scaleModifier for
     // fallback TTF path only.
-    let primary_swf_font_scale = swf_text_size_calibration_for_style(node.text_style.as_ref());
     let primary_ttf_font_scale = primary_font_style_scale * TEXT_RENDER_SIZE_CALIBRATION;
-    let mut primary_swf_font_size = (nominal_font_size * primary_swf_font_scale).max(1.0);
+    // DATA-BACKED MODEL: IR font size is the authored em-pixel size; the SWF renderer
+    // maps em→raster via the font's own units_per_em (= ascent + descent). No constant.
+    let mut primary_swf_font_size = nominal_font_size.max(1.0);
     let mut primary_rect = apply_font_style_vertical_offset(primary_rect, node.text_style.as_ref());
     if let Some(selection) = selected_font.as_ref() {
-        let should_fit_primary = swf_style_should_fit_to_rect(node.text_style.as_ref());
-        if should_fit_primary {
-        primary_swf_font_size = fit_swf_font_size_to_rect(
-            renderer,
-            text,
-            selection.font,
-            primary_rect,
-            primary_swf_font_size,
-            align,
-            vertical_align,
-            scale_line_spacing(primary_line_spacing, primary_swf_font_scale),
-        );
+        // Only `autoFontSize` text is fit to its rect (the engine grows/shrinks it to
+        // fill the field). Non-auto text renders at its resolved style/brand size and
+        // relies on word-wrap + clipping for overflow — it is never font-scaled, so a
+        // long heading or a wrapped paragraph keeps its authored size.
+        if node.auto_font_size {
+            primary_swf_font_size = fit_swf_font_size_to_rect(
+                renderer,
+                text,
+                selection.font,
+                primary_rect,
+                primary_swf_font_size,
+                align,
+                vertical_align,
+                primary_line_spacing,
+            );
         }
     }
     // Key the optional SB_UI_FONT_DUMP audit line to this element (no-op otherwise).
@@ -312,7 +316,7 @@ fn draw_text_node(
             colour,
             align,
             vertical_align,
-            scale_line_spacing(primary_line_spacing, primary_swf_font_scale),
+            primary_line_spacing,
         )
     });
     if font_telemetry_enabled() {
@@ -393,30 +397,24 @@ fn draw_text_node(
             .as_ref()
             .or(node.text_style.as_ref())
             .and_then(|style| style.line_spacing);
-        let secondary_swf_font_scale = swf_text_size_calibration_for_style(
-            node.secondary_text_style.as_ref().or(node.text_style.as_ref()),
-        );
         let secondary_ttf_font_scale = secondary_font_style_scale * TEXT_RENDER_SIZE_CALIBRATION;
-        let mut secondary_swf_font_size =
-            (secondary_nominal_font_size * secondary_swf_font_scale).max(1.0);
+        let mut secondary_swf_font_size = secondary_nominal_font_size.max(1.0);
         let secondary_rect = apply_font_style_vertical_offset(
             secondary_rect,
             node.secondary_text_style.as_ref().or(node.text_style.as_ref()),
         );
         if let Some(selection) = secondary_selected_font.as_ref() {
-            let secondary_style = node.secondary_text_style.as_ref().or(node.text_style.as_ref());
-            let should_fit_secondary = swf_style_should_fit_to_rect(secondary_style);
-            if should_fit_secondary {
-            secondary_swf_font_size = fit_swf_font_size_to_rect(
-                renderer,
-                secondary,
-                selection.font,
-                secondary_rect,
-                secondary_swf_font_size,
-                secondary_align,
-                secondary_vertical_align,
-                scale_line_spacing(secondary_line_spacing, secondary_swf_font_scale),
-            );
+            if node.auto_font_size {
+                secondary_swf_font_size = fit_swf_font_size_to_rect(
+                    renderer,
+                    secondary,
+                    selection.font,
+                    secondary_rect,
+                    secondary_swf_font_size,
+                    secondary_align,
+                    secondary_vertical_align,
+                    secondary_line_spacing,
+                );
             }
         }
             let secondary_used_swf = secondary_selected_font.as_ref().is_some_and(|selection| {
@@ -430,7 +428,7 @@ fn draw_text_node(
                 secondary_colour,
                 secondary_align,
                 secondary_vertical_align,
-                scale_line_spacing(secondary_line_spacing, secondary_swf_font_scale),
+                secondary_line_spacing,
             )
         });
         if !secondary_used_swf {

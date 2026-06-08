@@ -491,10 +491,9 @@ mod tests_f {
         );
         assert_eq!(style.resolved_font_record, None);
         assert_eq!(style.colour_token.as_deref(), Some("Base"));
-        assert!(
-            matches!(style.font_size, UiIrValue::Fixed { value } if value > 16.0),
-            "auto-sized text should exceed the stale authored font size: {:?}",
-            style.font_size
-        );
+        // Data-backed model: autoFontSize growth is render-side, so the IR carries the
+        // flag and an authored seed size (not a heuristic value).
+        assert!(node.auto_font_size, "autoFontSize node must carry the grow flag");
+        assert!(matches!(style.font_size, UiIrValue::Fixed { .. }));
     }
 }

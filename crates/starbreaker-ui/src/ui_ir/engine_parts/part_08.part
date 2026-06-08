@@ -173,65 +173,6 @@ fn auto_font_size_enabled(raw: &serde_json::Value) -> bool {
         .unwrap_or(false)
 }
 
-fn auto_font_size_from_signals(
-    node: &crate::bb_scene::BbNode,
-    node_rect_h: f32,
-    resolved_text: Option<&str>,
-) -> Option<f32> {
-    if !auto_font_size_enabled(&node.raw) {
-        return None;
-    }
-
-    let text = resolved_text.map(str::trim).filter(|value| !value.is_empty())?;
-    let text_len = text.chars().count();
-    let multiline = text.lines().nth(1).is_some();
-    let base_size = if matches!(node.ty, BbNodeType::WidgetText) {
-        if multiline {
-            (node_rect_h * 0.42).clamp(24.0, 160.0)
-        } else {
-            (node_rect_h * 0.72).clamp(36.0, 220.0)
-        }
-    } else if multiline {
-        (node_rect_h * 0.18).clamp(18.0, 72.0)
-    } else {
-        (node_rect_h * 0.28).clamp(18.0, 96.0)
-    };
-    let overflow_threshold = if multiline {
-        18
-    } else if matches!(node.ty, BbNodeType::WidgetText) {
-        8
-    } else {
-        10
-    };
-    let reduction_per_char = if matches!(node.ty, BbNodeType::WidgetText) {
-        1.2
-    } else {
-        2.0
-    };
-    let reduction_cap = if matches!(node.ty, BbNodeType::WidgetText) {
-        0.2
-    } else {
-        0.35
-    };
-    let overflow = text_len.saturating_sub(overflow_threshold) as f32;
-    let reduction = (overflow * reduction_per_char).min(base_size * reduction_cap);
-    let sized = (base_size - reduction).max(18.0);
-
-    if matches!(node.ty, BbNodeType::WidgetText) {
-        if let Some(authored_font_size) = font_size_fixed_value_from_raw(node) {
-            let short_single_line = !multiline && text_len <= 12;
-            let floor = if short_single_line {
-                (authored_font_size * 4.0).max(18.0)
-            } else {
-                18.0
-            };
-            let ceiling = (authored_font_size * 4.0).max(floor);
-            return Some(sized.clamp(floor, ceiling));
-        }
-    }
-
-    Some(sized)
-}
 
 fn semantic_text_colour_token_from_style_tags(
     tags: &[UiIrStyleTag],

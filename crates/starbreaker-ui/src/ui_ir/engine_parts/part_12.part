@@ -253,12 +253,15 @@ mod tests_b {
             100,
         );
 
+        // Data-backed model: a styled textfield renders at its named style's authored
+        // brand FontSize verbatim (no nominal-scale constant). H3 brand FontSize = 30.
         let node = ir.nodes.iter().find(|node| node.name == "location").expect("location node");
         assert_eq!(
             node.text_style.as_ref().map(|style| &style.font_size),
-            Some(&UiIrValue::Fixed { value: 21.6 })
+            Some(&UiIrValue::Fixed { value: 30.0 })
         );
 
+        // H1 brand FontSize = 57, used verbatim.
         let node = ir
             .nodes
             .iter()
@@ -266,7 +269,7 @@ mod tests_b {
             .expect("machine_type node");
         assert_eq!(
             node.text_style.as_ref().map(|style| &style.font_size),
-            Some(&UiIrValue::Fixed { value: 41.0 })
+            Some(&UiIrValue::Fixed { value: 57.0 })
         );
     }
 
@@ -363,6 +366,8 @@ mod tests_b {
             100,
         );
 
+        // Data-backed model: the named style's brand FontSize is used verbatim. The
+        // `Title4` style maps to the `T4` brand entry (FontSize 75).
         let node = ir
             .nodes
             .iter()
@@ -370,7 +375,7 @@ mod tests_b {
             .expect("standard title node");
         assert_eq!(
             node.text_style.as_ref().map(|style| &style.font_size),
-            Some(&UiIrValue::Fixed { value: 54.0 })
+            Some(&UiIrValue::Fixed { value: 75.0 })
         );
     }
 

@@ -361,25 +361,5 @@ fn font_symbol_from_text_style(style: Option<&UiIrTextStyle>) -> Option<&str> {
         .filter(|symbol| !symbol.is_empty())
 }
 
-fn font_style_has_paint_file(style: Option<&UiIrTextStyle>) -> bool {
-    resolved_font_record_value(style)
-        .and_then(|value| value.get("paintFile"))
-        .and_then(|value| value.as_str())
-        .is_some_and(|paint_file| !paint_file.trim().is_empty())
-}
 
-fn swf_text_size_calibration_for_style(style: Option<&UiIrTextStyle>) -> f32 {
-    if font_symbol_from_text_style(style).is_some_and(|symbol| symbol.eq_ignore_ascii_case("$Low-Reg")) {
-        return LOW_REG_SWF_SIZE_CALIBRATION;
-    }
-    if font_style_has_paint_file(style) {
-        PAINT_FILE_SWF_SIZE_CALIBRATION
-    } else {
-        SWF_TEXT_RENDER_SIZE_CALIBRATION
-    }
-}
-
-fn swf_style_should_fit_to_rect(style: Option<&UiIrTextStyle>) -> bool {
-    !font_symbol_from_text_style(style).is_some_and(|symbol| symbol.eq_ignore_ascii_case("$Low-Reg"))
-}
 

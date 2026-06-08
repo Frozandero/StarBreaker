@@ -66,18 +66,21 @@ mod tests_g {
     }
 
     #[test]
-    fn image_size_percent_compensation_does_not_apply_for_other_fonts() {
+    fn image_size_percent_compensation_applies_for_any_font_with_percent() {
+        // Data-backed model: the imageSizePercent boost is per-font (it is how the
+        // engine renders plain text larger than its nominal), not gated to one font.
+        // Any font carrying `imageSizePercent` is compensated: 64 / 0.75 = 85.33.
         let record = font_record_with_percent("$Text1Thin", 0.75);
         let adjusted = adjust_ui_ir_font_value_for_font_record_image_percent(
             UiIrValue::Fixed { value: 64.0 },
             Some(&record),
         );
-        assert_eq!(adjusted, UiIrValue::Fixed { value: 64.0 });
+        assert!(matches!(adjusted, UiIrValue::Fixed { value } if (value - 85.333336).abs() < 0.001));
     }
 
 
     #[test]
-    fn compile_ir_widget_text_auto_font_size_caps_runaway_growth_on_large_slots() {
+    fn compile_ir_widget_text_auto_font_size_defers_growth_to_renderer() {
         let canvas = serde_json::json!({
             "_RecordName_": "BuildingBlocks_Canvas.WidgetTextLargeSlot",
             "_RecordValue_": {
@@ -140,11 +143,17 @@ mod tests_g {
             100,
         );
 
+        // Data-backed model: the IR no longer applies a heuristic growth/cap to
+        // autoFontSize text — it carries the `auto_font_size` flag and the authored
+        // seed size (16, no font record here to boost), and the renderer fits the
+        // glyphs to the rect with real metrics. Runaway growth is bounded there by the
+        // rect, so the IR value stays the authored size.
         let node = &ir.nodes[0];
         let style = node.text_style.as_ref().expect("text style");
+        assert!(node.auto_font_size, "autoFontSize node must carry the grow flag");
         assert!(
-            matches!(style.font_size, UiIrValue::Fixed { value } if (63.9..=64.1).contains(&value)),
-            "auto-sized widget text should stay within the short-status authored-size band: {:?}",
+            matches!(style.font_size, UiIrValue::Fixed { value } if (15.9..=16.1).contains(&value)),
+            "autoFontSize IR keeps the authored seed size, growth is render-side: {:?}",
             style.font_size
         );
     }
@@ -375,7 +384,7 @@ mod tests_g {
     }
 
     #[test]
-    fn compile_ir_applies_hardcoded_textfield_font_size_exception() {
+    fn compile_ir_unsized_textfield_without_brand_table_falls_through_to_parsed_size() {
         let canvas = serde_json::json!({
             "_RecordName_": "BuildingBlocks_Canvas.FontSizeException",
             "_RecordValue_": {
@@ -413,9 +422,13 @@ mod tests_g {
             100,
         );
 
+        // Data-backed model: with no brand-style table available (no fetcher) for this
+        // Heading3 textfield, there is no hard-coded font-size exception any more — it
+        // falls through to the size parsed from the widget itself (12.0). In a real
+        // render the fetcher supplies the Heading3 brand FontSize via the STYLE branch.
         let node = &ir.nodes[0];
         let style = node.text_style.as_ref().expect("text style");
-        assert_eq!(style.font_size, UiIrValue::Fixed { value: 21.0 });
+        assert_eq!(style.font_size, UiIrValue::Fixed { value: 12.0 });
     }
 
     #[test]

@@ -94,6 +94,7 @@ fn minimal_node(
         style_tag_uuids: vec![],
         resolved_style_tags: vec![],
         is_flash_renderer: is_flash,
+        auto_font_size: false,
     }
 }
 

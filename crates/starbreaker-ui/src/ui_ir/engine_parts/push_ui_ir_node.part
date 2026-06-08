@@ -65,5 +65,6 @@
                 .get("rendererType")
                 .and_then(|v| v.as_str())
                 .is_some_and(|s| s.eq_ignore_ascii_case("Flash")),
+            auto_font_size: auto_font_size_enabled(&node.raw),
         });
     }

@@ -108,6 +108,13 @@ pub struct UiIrNode {
     /// the resolved SWF stage content.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub is_flash_renderer: bool,
+    /// `true` when this node's source BB text widget has `autoFontSize == true`.
+    /// The engine grows/shrinks such text so it fills its container rect; the
+    /// renderer's fit-to-rect uses this as the "grow" signal (otherwise it only
+    /// shrinks on overflow). Render-only hint — skipped in the serialized IR so it
+    /// does not perturb snapshot/freeze hashes.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub auto_font_size: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

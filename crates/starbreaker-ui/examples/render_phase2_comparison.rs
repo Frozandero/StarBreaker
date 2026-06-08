@@ -125,6 +125,7 @@ fn synthetic_hybrid_document() -> UiIrDocument {
             style_tag_uuids: Vec::new(),
             resolved_style_tags: Vec::new(),
             is_flash_renderer: false,
+            auto_font_size: false,
         }],
     }
 }

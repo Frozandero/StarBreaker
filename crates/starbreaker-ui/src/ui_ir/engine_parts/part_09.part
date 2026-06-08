@@ -11,17 +11,12 @@ fn adjust_ui_ir_font_value_for_font_record_image_percent(
     value: UiIrValue,
     resolved_font_record: Option<&serde_json::Value>,
 ) -> UiIrValue {
+    // DATA-BACKED MODEL: applied by the caller to plain/raw text only (the engine
+    // renders plain text larger than a named style of the same nominal). Was
+    // previously gated to `$Med-Heavy`; now divides by the font's imageSizePercent
+    // for any font that carries it.
     let record_value = resolved_font_record
         .and_then(|record| record.get("_RecordValue_").or(Some(record)));
-    let should_adjust = record_value
-        .and_then(|value| value.get("font"))
-        .and_then(|value| value.as_str())
-        .is_some_and(|font| font.eq_ignore_ascii_case("$Med-Heavy"));
-
-    if !should_adjust {
-        return value;
-    }
-
     let image_size_percent = record_value
         .and_then(|record_value| record_value.get("imageSizePercent"))
         .and_then(|value| value.as_f64())
@@ -45,105 +40,73 @@ fn resolve_effective_font_size(
     node: &crate::bb_scene::BbNode,
     text: &crate::bb_scene::BbText,
     node_rect_h: f32,
-    resolved_text: Option<&str>,
+    _resolved_text: Option<&str>,
     scene: &BbScene,
     binding_resolver: &BindingResolver,
     defaults: &DefaultValueRegistry,
     style_font_sizes: &HashMap<String, f32>,
     standard_text_styles: &HashMap<String, StandardTextStyle>,
-) -> UiIrValue {
+) -> (UiIrValue, bool) {
+    // DATA-BACKED MODEL. Returns (size, is_styled). `is_styled` = the size came from a
+    // named brand style (the engine's em-pixel design size) and is used verbatim;
+    // otherwise it's a plain/raw/auto value the caller boosts by the font's
+    // imageSizePercent. The SWF renderer maps em→raster via units_per_em
+    // (ascent+descent), so styled text renders typographically (no nominal-scale
+    // constant). autoFontSize text is fit to its rect render-side.
     let label_style = label_style_name_from_node_or_ancestors(node_id, node, scene);
 
-    let standard_font_size =
-        standard_textfield_font_size_from_styles(node, label_style.as_deref(), standard_text_styles);
-
-    if matches!(label_style.as_deref(), Some("Title4")) {
-        if let Some(size) = standard_font_size {
-            return apply_label_style_font_scale(
-                UiIrValue::Fixed { value: size },
-                label_style.as_deref(),
-            );
-        }
+    // Data-gated engine auto-fit (`autoFontSize`): the renderer grows/shrinks the
+    // glyphs to fill the node's container rect using real glyph metrics, so the size
+    // resolved here is just a non-zero starting point (the linear fit is independent
+    // of it). Return the node's authored default rather than a heuristic visible-size.
+    if auto_font_size_enabled(&node.raw) {
+        let raw = font_size_from_raw(node).unwrap_or(UiIrValue::Fixed { value: 16.0 });
+        return (raw, false);
     }
 
-    if let Some(size) = auto_font_size_from_signals(node, node_rect_h, resolved_text) {
-        return apply_label_style_font_scale(
-            UiIrValue::Fixed { value: size },
-            label_style.as_deref(),
-        );
-    }
-
-    // Prefer the latest raw font size because direct style/brand modifiers are
-    // applied after parse_text and can update FontSize without mutating BbText.
-    if let Some(raw_font_size) = font_size_from_raw(node) {
-        return apply_label_style_font_scale(raw_font_size, label_style.as_deref());
-    }
-
-    // Numeric binding operations can drive FontSize without mutating node.raw.
+    // Numeric binding operations can drive FontSize without mutating node.raw — a
+    // runtime override that takes precedence over the static brand style.
     if let Some(bound_font_size) = binding_resolver.resolve_field_number(node_id, "FontSize", defaults) {
         if bound_font_size.is_finite() && bound_font_size > 0.0 {
-            return apply_label_style_font_scale(
-                UiIrValue::Fixed {
-                    value: bound_font_size as f32,
-                },
-                label_style.as_deref(),
-            );
+            return (UiIrValue::Fixed { value: bound_font_size as f32 }, false);
         }
     }
 
-    // If this node has no explicit size, borrow the scene-derived size for its
-    // label style (when any sibling with the same style has an authored FontSize).
+    // Engine-faithful default: a styled textfield renders at its named style's
+    // authored brand-table FontSize. The BuildingBlocks style FontSize modifier is
+    // applied *after* the widget's default `fontSize`, so it overrides the node's raw
+    // size — hence STYLE precedes the raw/authored branch below.
+    if let Some(size) =
+        standard_textfield_font_size_from_styles(node, label_style.as_deref(), standard_text_styles)
+    {
+        // Documented fallback (docs/ui-fallback-register.md): a heading rendered in a
+        // FIXED-height band (its `sizing.height.behavior == "Fixed"`, vs the `Auto`
+        // content-sizing every full-size heading uses) is fit to that band by the
+        // engine at a reduced "banner prompt" size — a layout behavior not carried in
+        // DataCore. Without it, long welcome/prompt headings render at the full title
+        // size (e.g. the Clipper medical "PLEASE SELECT AN OPTION…").
+        if let Some(reduced) = fixed_band_heading_prompt_size(node, label_style.as_deref(), node_rect_h, size) {
+            return (UiIrValue::Fixed { value: reduced }, true);
+        }
+        return (UiIrValue::Fixed { value: size }, true);
+    }
+
+    // Explicit per-node authored size (raw FontSize / direct modifier) for nodes
+    // whose style has no brand-table FontSize entry.
+    if let Some(raw_font_size) = font_size_from_raw(node) {
+        return (raw_font_size, false);
+    }
+
+    // Borrow a scene-derived size for the style when a sibling carries an authored
+    // FontSize and the brand table has no entry for it.
     if let Some(style_name) = label_style.as_deref() {
         if let Some(size) = style_font_sizes.get(style_name) {
-            return apply_label_style_font_scale(
-                UiIrValue::Fixed { value: *size },
-                Some(style_name),
-            );
+            return (UiIrValue::Fixed { value: *size }, false);
         }
-    }
-
-    if let Some(size) = textfield_long_prompt_font_size_from_signals(node, node_rect_h, resolved_text) {
-        return apply_label_style_font_scale(
-            UiIrValue::Fixed { value: size },
-            label_style.as_deref(),
-        );
-    }
-
-    if let Some(size) = standard_font_size {
-        return apply_label_style_font_scale(
-            UiIrValue::Fixed { value: size },
-            label_style.as_deref(),
-        );
-    }
-
-    if let Some(size) = textfield_fallback_font_size_from_signals(node, node_rect_h, resolved_text) {
-        return apply_label_style_font_scale(
-            UiIrValue::Fixed { value: size },
-            label_style.as_deref(),
-        );
     }
 
     // Fall through to whatever parse_text stored.
-    apply_label_style_font_scale(convert_bb_value(&text.font_size), label_style.as_deref())
-}
-
-fn apply_label_style_font_scale(value: UiIrValue, label_style: Option<&str>) -> UiIrValue {
-    let scale: f32 = match label_style {
-        Some("Title3") => 1.15,
-        Some("Heading2") => 0.77,
-        _ => 1.0,
-    };
-
-    if (scale - 1.0).abs() <= f32::EPSILON {
-        return value;
-    }
-
-    match value {
-        UiIrValue::Fixed { value } => UiIrValue::Fixed {
-            value: value * scale,
-        },
-        other => other,
-    }
+    (convert_bb_value(&text.font_size), false)
 }
 
 #[derive(Debug, Clone, Default)]
@@ -151,15 +114,53 @@ struct StandardTextStyle {
     line_spacing: Option<f32>,
     font_size: Option<f32>,
     font_record: Option<String>,
-    /// Authoritative text colour role for this named style, taken from the
-    /// brand text-style entry's `FillColor` modifier (e.g. `Heading6`/`H6`
-    /// → `Bright`). This is the game's own per-style colour and is preferred
-    /// over derived/heuristic colour-token guesses.
+    /// Authoritative text colour role for this named style, from the brand text-style
+    /// entry's `FillColor` modifier (e.g. `Heading6`/`H6` → `Bright`) — the game's own
+    /// per-style colour, preferred over derived/heuristic colour-token guesses.
     fill_colour_token: Option<String>,
 }
 
-const STANDARD_TEXTFIELD_NOMINAL_FONT_SCALE: f32 = 0.72;
+/// Fallback font size for a long Heading1 prompt that overflows a short field — used
+/// by the secondary/payload `textfield_fallback_font_size_from_signals` ladder.
 const LONG_HEADING1_PROMPT_FONT_SIZE: f32 = 28.7;
+
+/// Registered fallback (docs/ui-fallback-register.md): fraction of a fixed-height
+/// heading band that the heading's design size fills. The engine fits a `Heading1`
+/// rendered in a `Fixed`-height band to the band rather than drawing it at the full
+/// brand FontSize; that band-fit lives in compiled BuildingBlocks layout, not in
+/// DataCore, so this ratio is calibrated to the in-game Clipper medical reference.
+const FIXED_BAND_HEADING_FILL: f32 = 0.383;
+
+/// Reduced "banner prompt" size for a `Heading1` drawn in a fixed-height band.
+/// Returns `None` (so the full brand FontSize is used) unless the field is a *tight*
+/// fixed band — i.e. its height is set explicitly (`Fixed`, not the `Auto`
+/// content-sizing full-size headings use) and is short relative to the heading size.
+/// See `FIXED_BAND_HEADING_FILL`.
+fn fixed_band_heading_prompt_size(
+    node: &crate::bb_scene::BbNode,
+    label_style: Option<&str>,
+    node_rect_h: f32,
+    style_size: f32,
+) -> Option<f32> {
+    if !matches!(label_style, Some("Heading1")) {
+        return None;
+    }
+    let height_behavior = node
+        .raw
+        .get("sizing")
+        .and_then(|sizing| sizing.get("height"))
+        .and_then(|height| height.get("behavior"))
+        .and_then(|behavior| behavior.as_str())?;
+    if !height_behavior.eq_ignore_ascii_case("Fixed") {
+        return None;
+    }
+    // Only reduce a genuinely tight band (a prompt/subtitle strip); a large fixed area
+    // keeps the full heading size.
+    if node_rect_h <= 1.0 || node_rect_h >= style_size * 2.5 {
+        return None;
+    }
+    Some((node_rect_h * FIXED_BAND_HEADING_FILL).max(1.0))
+}
 
 fn standard_text_field_widget_path() -> &'static str {
     "file://./../../../../../../../libs/foundry/records/ui/buildingblocks/modularkit/standard/widgets/textfieldwidgetstandard.json"

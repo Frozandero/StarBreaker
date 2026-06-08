@@ -172,6 +172,7 @@ mod tests_e {
             style_tag_uuids: Vec::new(),
             resolved_style_tags: Vec::new(),
             is_flash_renderer: false,
+            auto_font_size: false,
         }
     }
 
@@ -256,6 +257,7 @@ mod tests_e {
             style_tag_uuids: vec![],
             resolved_style_tags: vec![],
             is_flash_renderer: false,
+            auto_font_size: false,
         };
         let meter = UiIrNode {
             id: 2,
@@ -301,6 +303,7 @@ mod tests_e {
             style_tag_uuids: vec![],
             resolved_style_tags: vec![],
             is_flash_renderer: false,
+            auto_font_size: false,
         };
         let document = UiIrDocument {
             schema_version: 1,

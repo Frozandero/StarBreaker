@@ -28,12 +28,12 @@ impl TextRenderer {
         let ascent = swf_font.ascent.map(|v| v as f32).unwrap_or(820.0);
         let descent = swf_font.descent.map(|v| v as f32).unwrap_or(-204.0);
         let line_gap = swf_font.leading.map(|v| v as f32).unwrap_or(0.0);
-        let units_per_em = (ascent - descent).abs().max(1.0);
+        let units_per_em = (ascent.abs() + descent.abs()).max(1.0);
         if units_per_em <= 0.0 {
             return false;
         }
 
-        let nominal_line_h = (((ascent - descent + line_gap) / units_per_em) * size_px).max(1.0);
+        let nominal_line_h = (((units_per_em + line_gap) / units_per_em) * size_px).max(1.0);
         let lines = swf_wrap_lines(swf_font, text, units_per_em, size_px, rect.w);
 
         struct GlyphRun {
@@ -209,9 +209,10 @@ impl TextRenderer {
         }
         let ascent = swf_font.ascent.map(|v| v as f32).unwrap_or(820.0);
         let descent = swf_font.descent.map(|v| v as f32).unwrap_or(-204.0);
-        let units_per_em = (ascent - descent).abs().max(1.0);
+        let units_per_em = (ascent.abs() + descent.abs()).max(1.0);
         (units_per_em > 0.0).then(|| swf_line_width(text, swf_font, units_per_em, size_px))
     }
+
 }
 
 fn swf_lookup_glyph(swf_font: &FontGlyphSet, ch: char) -> Option<(usize, &FontGlyph)> {

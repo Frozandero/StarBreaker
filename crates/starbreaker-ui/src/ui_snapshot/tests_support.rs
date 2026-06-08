@@ -66,6 +66,7 @@ pub(super) fn base_node(id: u32, layer: i32) -> UiIrNode {
         style_tag_uuids: vec![],
         resolved_style_tags: vec![],
         is_flash_renderer: false,
+        auto_font_size: false,
     }
 }
 
