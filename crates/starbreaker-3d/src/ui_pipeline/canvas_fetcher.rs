@@ -62,18 +62,20 @@ impl CanvasNameIndex {
 // ── Fetcher ───────────────────────────────────────────────────────────────────
 
 /// Canvas fetcher backed by a DataCore [`Database`] with an O(1) name index and a
-/// per-binding memoising cache of compact-JSON bytes (B2a).
+/// per-binding memoising cache of parsed JSON values (B2a).
 ///
-/// The cache stores `to_json_compact` output keyed by GUID and re-parses it with
-/// `serde_json::from_slice` on every fetch, so callers still receive a freshly
-/// constructed `Value` while the expensive DataCore traversal runs at most once
-/// per record per binding render.
+/// The cache stores the parsed [`serde_json::Value`] keyed by GUID, so the
+/// expensive DataCore traversal (`to_json_compact`) *and* the JSON parse each run
+/// at most once per record per binding render. Hits return a deep clone, so
+/// callers still receive an independently-owned `Value` (the same contract as an
+/// uncached fetcher), and tag resolution — which fetches the large `TagDatabase`
+/// thousands of times per heavy binding — avoids re-parsing it on every hit.
 pub(super) struct DatacoreCanvasFetcher<'a> {
     db: &'a Database<'a>,
     name_index: CanvasNameIndex,
-    /// GUID → compact-JSON bytes, memoised for the lifetime of one fetcher
-    /// (one binding render). The fetcher is never shared across threads.
-    by_guid: RefCell<HashMap<CigGuid, Vec<u8>>>,
+    /// GUID → parsed JSON value, memoised for the lifetime of one fetcher (one
+    /// binding render). The fetcher is never shared across threads.
+    by_guid: RefCell<HashMap<CigGuid, serde_json::Value>>,
 }
 
 impl<'a> DatacoreCanvasFetcher<'a> {
@@ -86,11 +88,8 @@ impl<'a> DatacoreCanvasFetcher<'a> {
     }
 
     fn fetch_by_guid(&self, cig_guid: CigGuid, lookup_key: &str) -> Result<serde_json::Value, UiError> {
-        if let Some(bytes) = self.by_guid.borrow().get(&cig_guid).cloned() {
-            return serde_json::from_slice(&bytes).map_err(|e| UiError::FetchFailed {
-                guid: lookup_key.to_string(),
-                source: Box::new(e),
-            });
+        if let Some(value) = self.by_guid.borrow().get(&cig_guid) {
+            return Ok(value.clone());
         }
         let record = self.db.record_by_id(&cig_guid).ok_or_else(|| UiError::FetchFailed {
             guid: lookup_key.to_string(),
@@ -102,11 +101,11 @@ impl<'a> DatacoreCanvasFetcher<'a> {
                 source: Box::new(e),
             }
         })?;
-        let value = serde_json::from_slice(&bytes).map_err(|e| UiError::FetchFailed {
+        let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|e| UiError::FetchFailed {
             guid: lookup_key.to_string(),
             source: Box::new(e),
         })?;
-        self.by_guid.borrow_mut().insert(cig_guid, bytes);
+        self.by_guid.borrow_mut().insert(cig_guid, value.clone());
         Ok(value)
     }
 }
