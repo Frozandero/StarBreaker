@@ -125,6 +125,7 @@ fn run_render(
             if prefix.is_empty() { None } else { Some(prefix) }
         });
 
+    let loc_data = starbreaker_3d::ui_pipeline::UiLocData::load(&p4k);
     let mut rendered = 0usize;
     let mut failed = 0usize;
 
@@ -139,7 +140,7 @@ fn run_render(
             continue;
         }
 
-        match starbreaker_3d::ui_pipeline::render_ui_binding_png(&binding, &db, &p4k, texture_mip, manufacturer_id.as_deref()) {
+        match starbreaker_3d::ui_pipeline::render_ui_binding_png(&binding, &db, &p4k, texture_mip, manufacturer_id.as_deref(), &loc_data) {
             Ok(png_bytes) => {
                 let file_name = png_name_for_binding(binding, texture_mip);
                 let dest = out_dir.join(&file_name);
@@ -152,6 +153,7 @@ fn run_render(
                         &p4k,
                         texture_mip,
                         manufacturer_id.as_deref(),
+                        &loc_data,
                     )
                     .map_err(CliError::MissingRequirement)?;
                     let ir_dest = dump_ir_dir.join(format!("{}.ir.json", file_name.trim_end_matches(".png")));

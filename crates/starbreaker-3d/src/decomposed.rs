@@ -2659,6 +2659,7 @@ fn generated_ui_binding_record(
     root_geometry_path: &str,
     scene_manifest_path: &str,
     root_manufacturer_id: Option<&str>,
+    loc_data: &crate::ui_pipeline::UiLocData,
 ) -> (UiBinding, Option<(String, Vec<u8>)>) {
     let mut binding = binding.clone();
     match crate::ui_pipeline::render_ui_binding_png(
@@ -2667,6 +2668,7 @@ fn generated_ui_binding_record(
         p4k,
         texture_mip,
         root_manufacturer_id,
+        loc_data,
     ) {
         Ok(png_bytes) => {
             let export_path = generated_ui_binding_path(
@@ -2779,6 +2781,7 @@ fn generate_ui_binding_records_detached(
     scene_manifest_path: &str,
     root_manufacturer_id: Option<&str>,
 ) -> (Vec<UiBinding>, Vec<(String, Vec<u8>)>) {
+    let loc_data = crate::ui_pipeline::UiLocData::load(p4k);
     let mut generated = bindings
         .par_iter()
         .enumerate()
@@ -2792,6 +2795,7 @@ fn generate_ui_binding_records_detached(
                 root_geometry_path,
                 scene_manifest_path,
                 root_manufacturer_id,
+                &loc_data,
             );
             (idx, binding, file_record)
         })

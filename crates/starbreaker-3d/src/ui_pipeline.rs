@@ -2,9 +2,10 @@
 //!
 //! Sub-modules: `canvas_fetcher` — [`CanvasFetcher`] with O(1) name index (B2b);
 //! `p4k_fetchers` — P4K-backed [`SwfFetcher`] and [`AssetFetcher`]; `style_fetcher` —
-//! manufacturer style resolution. Exposes [`render_ui_binding_png`] as the single
-//! call-site for `decomposed.rs`.
+//! manufacturer style resolution. Exposes [`render_ui_binding_png`] and
+//! [`UiLocData`] as the call-sites for `decomposed.rs`.
 
+use std::collections::HashMap;
 use std::str::FromStr;
 
 use starbreaker_datacore::Database;
@@ -34,10 +35,38 @@ pub(super) fn datacore_ui_lookup_type_names() -> &'static [&'static str] {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Public entry point
+// Shared per-export state (B2d)
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Localization data loaded once per export and shared across all binding renders.
+///
+/// Both fields are `Send + Sync`, so a reference can be borrowed from a `par_iter`
+/// closure without cloning the underlying data.
+pub struct UiLocData {
+    /// Localization key→display-string map from `global.ini`.
+    pub map: HashMap<String, String>,
+    /// INI-backed loc fetcher, used as `Option<&dyn LocFetcher>`.
+    pub ini: starbreaker_ui::bb_loc_p4k::IniLocFetcher,
+}
+
+impl UiLocData {
+    /// Load localization from the P4K once; pass to every [`render_ui_binding_png`] call.
+    pub fn load(p4k: &MappedP4k) -> Self {
+        Self {
+            map: crate::pipeline::load_localization_map(p4k),
+            ini: starbreaker_ui::bb_loc_p4k::load_global_ini(|path| p4k.read_file(path).ok()),
+        }
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Public entry points
 // ──────────────────────────────────────────────────────────────────────────────
 
 /// Render `binding` to a PNG byte vector using live DataCore + P4K access.
+///
+/// `loc_data` must be pre-loaded with [`UiLocData::load`] once per export and
+/// reused across bindings — loading it per-binding is wasteful but not wrong.
 ///
 /// Returns the PNG bytes on success, or a descriptive error string on failure.
 /// Callers should log the error and set `generated_image_path = None` rather
@@ -48,6 +77,7 @@ pub fn render_ui_binding_png(
     p4k: &MappedP4k,
     texture_mip: u32,
     root_manufacturer_id: Option<&str>,
+    loc_data: &UiLocData,
 ) -> Result<Vec<u8>, String> {
     let t_ui = std::env::var("SB_UI_TIMING").ok().map(|_| std::time::Instant::now());
     let canvas_fetcher = DatacoreCanvasFetcher::new(db);
@@ -75,8 +105,6 @@ pub fn render_ui_binding_png(
     } else {
         Some(starbreaker_ui::pipeline::DEFAULT_STATIC_ANIMATION_SAMPLE_PERCENT)
     };
-    let localization_map = crate::pipeline::load_localization_map(p4k);
-    let ini_loc_fetcher = starbreaker_ui::bb_loc_p4k::load_global_ini(|path| p4k.read_file(path).ok());
     let inputs = PipelineInputs {
         binding: &view,
         canvas_fetcher: &canvas_fetcher,
@@ -91,8 +119,8 @@ pub fn render_ui_binding_png(
         // once the paint engine produces real content.
         apply_postprocess: false,
         animation_sample_percent,
-        localization_map: Some(localization_map),
-        loc_fetcher: Some(&ini_loc_fetcher),
+        localization_map: Some(loc_data.map.clone()),
+        loc_fetcher: Some(&loc_data.ini),
     };
     let _ = texture_mip; // size is fixed per binding_kind; mip is applied at texture level
     let result = starbreaker_ui::pipeline::render_for_binding(&inputs).map_err(|e| e.to_string());
@@ -115,6 +143,7 @@ pub fn compile_ui_binding_ir_json(
     p4k: &MappedP4k,
     texture_mip: u32,
     root_manufacturer_id: Option<&str>,
+    loc_data: &UiLocData,
 ) -> Result<String, String> {
     let canvas_fetcher = DatacoreCanvasFetcher::new(db);
     let view = UiBindingView {
@@ -141,8 +170,6 @@ pub fn compile_ui_binding_ir_json(
     } else {
         Some(starbreaker_ui::pipeline::DEFAULT_STATIC_ANIMATION_SAMPLE_PERCENT)
     };
-    let localization_map = crate::pipeline::load_localization_map(p4k);
-    let ini_loc_fetcher = starbreaker_ui::bb_loc_p4k::load_global_ini(|path| p4k.read_file(path).ok());
     let inputs = PipelineInputs {
         binding: &view,
         canvas_fetcher: &canvas_fetcher,
@@ -152,8 +179,8 @@ pub fn compile_ui_binding_ir_json(
         target_size,
         apply_postprocess: false,
         animation_sample_percent,
-        localization_map: Some(localization_map),
-        loc_fetcher: Some(&ini_loc_fetcher),
+        localization_map: Some(loc_data.map.clone()),
+        loc_fetcher: Some(&loc_data.ini),
     };
     let _ = texture_mip;
     let ir = starbreaker_ui::pipeline::compile_ir_for_binding(&inputs).map_err(|e| e.to_string())?;
