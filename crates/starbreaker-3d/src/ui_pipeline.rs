@@ -1,85 +1,26 @@
 //! Bridge between the decomposed export pipeline and `starbreaker-ui`.
 //!
-//! Implements [`CanvasFetcher`] and [`StyleFetcher`] over the live DataCore
-//! database; P4K-backed [`SwfFetcher`] and [`AssetFetcher`] live in
-//! `p4k_fetchers`. Exposes [`render_ui_binding_png`] as the single call-site
-//! for `decomposed.rs`.
+//! Sub-modules: `canvas_fetcher` — [`CanvasFetcher`] with O(1) name index (B2b);
+//! `p4k_fetchers` — P4K-backed [`SwfFetcher`] and [`AssetFetcher`]; `style_fetcher` —
+//! manufacturer style resolution. Exposes [`render_ui_binding_png`] as the single
+//! call-site for `decomposed.rs`.
 
 use std::str::FromStr;
 
-use log::warn;
 use starbreaker_datacore::Database;
 use starbreaker_p4k::MappedP4k;
-use starbreaker_ui::{
-    UiError,
-    pipeline::{CanvasFetcher, PipelineInputs, UiBindingView},
-};
+use starbreaker_ui::pipeline::{CanvasFetcher, PipelineInputs, UiBindingView};
 
 use crate::types::UiBinding;
 
+mod canvas_fetcher;
 mod p4k_fetchers;
 mod style_fetcher;
+use canvas_fetcher::DatacoreCanvasFetcher;
 use p4k_fetchers::{P4kAssetFetcher, P4kSwfFetcher};
 use style_fetcher::ManufacturerStyleFetcher;
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Fetcher implementations
-// ──────────────────────────────────────────────────────────────────────────────
-
-struct DatacoreCanvasFetcher<'a> {
-    db: &'a Database<'a>,
-}
-
-impl<'a> CanvasFetcher for DatacoreCanvasFetcher<'a> {
-    fn fetch_canvas_json(&self, guid: &str) -> Result<serde_json::Value, UiError> {
-        let cig_guid = parse_guid(guid).ok_or_else(|| UiError::FetchFailed {
-            guid: guid.to_string(),
-            source: "invalid GUID format".into(),
-        })?;
-        let record = self.db.record_by_id(&cig_guid).ok_or_else(|| UiError::FetchFailed {
-            guid: guid.to_string(),
-            source: format!("record not found in DataCore for GUID {guid}").into(),
-        })?;
-        export_canvas_record(self.db, record, guid)
-    }
-
-    fn fetch_canvas_by_name(&self, record_name: &str) -> Result<serde_json::Value, UiError> {
-        for type_name in datacore_ui_lookup_type_names() {
-            let matches: Vec<_> = self
-                .db
-                .records_by_type_name(type_name)
-                .filter(|record| {
-                    let full_name = self.db.resolve_string2(record.name_offset);
-                    let stem = full_name.rsplit('.').next().unwrap_or(full_name);
-                    stem.eq_ignore_ascii_case(record_name)
-                        || full_name.eq_ignore_ascii_case(record_name)
-                })
-                .collect();
-
-            if let Some(record) = matches.first().copied() {
-                if matches.len() > 1 {
-                    warn!(
-                        "ui_pipeline: found {} {} records named '{}'; using first",
-                        matches.len(),
-                        type_name,
-                        record_name
-                    );
-                }
-                return export_canvas_record(self.db, record, record_name);
-            }
-        }
-
-        Err(UiError::FetchFailed {
-            guid: record_name.to_string(),
-            source: format!(
-                "no UI-support record found by name: {record_name}"
-            )
-            .into(),
-        })
-    }
-}
-
-fn datacore_ui_lookup_type_names() -> &'static [&'static str] {
+pub(super) fn datacore_ui_lookup_type_names() -> &'static [&'static str] {
     &[
         // DataCore stores the full name as "<Type>.<Stem>" in name_offset
         // (e.g. "BuildingBlocks_Canvas.M_Eng_MFDContent").  These are all
@@ -90,26 +31,6 @@ fn datacore_ui_lookup_type_names() -> &'static [&'static str] {
         "BuildingBlocks_Timeline",
         "TagDatabase",
     ]
-}
-
-fn export_canvas_record(
-    db: &Database<'_>,
-    record: &starbreaker_datacore::types::Record,
-    lookup_key: &str,
-) -> Result<serde_json::Value, UiError> {
-    let bytes = starbreaker_datacore::export::to_json_compact(db, record).map_err(|e| {
-        UiError::FetchFailed {
-            guid: lookup_key.to_string(),
-            source: Box::new(e),
-        }
-    })?;
-    let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|e| {
-        UiError::FetchFailed {
-            guid: lookup_key.to_string(),
-            source: Box::new(e),
-        }
-    })?;
-    Ok(value)
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -129,7 +50,7 @@ pub fn render_ui_binding_png(
     root_manufacturer_id: Option<&str>,
 ) -> Result<Vec<u8>, String> {
     let t_ui = std::env::var("SB_UI_TIMING").ok().map(|_| std::time::Instant::now());
-    let canvas_fetcher = DatacoreCanvasFetcher { db };
+    let canvas_fetcher = DatacoreCanvasFetcher::new(db);
     let view = UiBindingView {
         canvas_guid: binding.canvas_guid.as_deref(),
         content_canvas_guid: binding.content_canvas_guid.as_deref(),
@@ -195,7 +116,7 @@ pub fn compile_ui_binding_ir_json(
     texture_mip: u32,
     root_manufacturer_id: Option<&str>,
 ) -> Result<String, String> {
-    let canvas_fetcher = DatacoreCanvasFetcher { db };
+    let canvas_fetcher = DatacoreCanvasFetcher::new(db);
     let view = UiBindingView {
         canvas_guid: binding.canvas_guid.as_deref(),
         content_canvas_guid: binding.content_canvas_guid.as_deref(),
@@ -269,7 +190,7 @@ fn authored_canvas_size(canvas_json: &serde_json::Value) -> Option<(u32, u32)> {
 }
 
 /// Parse a GUID string, tolerating surrounding braces and optional hyphens.
-fn parse_guid(value: &str) -> Option<starbreaker_datacore::starbreaker_common::CigGuid> {
+pub(super) fn parse_guid(value: &str) -> Option<starbreaker_datacore::starbreaker_common::CigGuid> {
     use starbreaker_datacore::starbreaker_common::CigGuid;
     let trimmed = value.trim().trim_matches('{').trim_matches('}');
     CigGuid::from_str(trimmed).ok()
