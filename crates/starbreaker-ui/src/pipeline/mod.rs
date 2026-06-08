@@ -19,14 +19,18 @@ use crate::style::{ManufacturerStyle, StyleLoader};
 use crate::ui_ir::{UiIrDocument, UiIrTextPayload, UiRendererHint};
 
 mod asset_manifest;
+mod canvas_aspect;
 mod style_selection;
 mod swf_selection;
+mod timing;
 #[cfg(test)]
 mod tests;
 
 use asset_manifest::build_asset_reference_manifest;
+use canvas_aspect::frame_canvas_aspect;
 use style_selection::{build_style_selection_manifest, load_style_for_ir};
 use swf_selection::{build_swf_selection_manifest, load_first_swf};
+use timing::timed;
 
 pub use crate::bb_atlas::AssetFetcher;
 pub use swf_selection::flash_swf_candidates;
@@ -151,11 +155,11 @@ pub fn compile_ir_for_binding(inputs: &PipelineInputs<'_>) -> Result<UiIrDocumen
         ))
     })?;
 
-    let raw_root_json = inputs.canvas_fetcher.fetch_canvas_json(effective_guid)?;
+    let raw_root_json = timed("fetch", || inputs.canvas_fetcher.fetch_canvas_json(effective_guid))?;
     let resolver = CanvasWidgetTreeResolver::new();
-    let resolved = resolver.resolve(effective_guid, |guid| {
+    let resolved = timed("graph1", || resolver.resolve(effective_guid, |guid| {
         inputs.canvas_fetcher.fetch_canvas_json(guid)
-    })?;
+    }))?;
     let canvas_name = raw_root_json
         .get("_RecordName_")
         .and_then(|v| v.as_str());
@@ -207,19 +211,21 @@ pub fn compile_ir_for_binding(inputs: &PipelineInputs<'_>) -> Result<UiIrDocumen
         None
     };
 
-    let mut scene = crate::bb_resolve::resolve_canvas_graph_with_loc_and_bound_view(
-        &raw_root_json,
-        effective_manufacturer_id,
-        &|p| {
-            inputs
-                .canvas_fetcher
-                .fetch_canvas_by_path(p)
-                .map_err(|e| e.to_string())
-        },
-        inputs.loc_fetcher,
-        bound_view_record_name.as_deref(),
-    )
-    .map_err(UiError::RenderError)?;
+    let mut scene = timed("graph2", || {
+        crate::bb_resolve::resolve_canvas_graph_with_loc_and_bound_view(
+            &raw_root_json,
+            effective_manufacturer_id,
+            &|p| {
+                inputs
+                    .canvas_fetcher
+                    .fetch_canvas_by_path(p)
+                    .map_err(|e| e.to_string())
+            },
+            inputs.loc_fetcher,
+            bound_view_record_name.as_deref(),
+        )
+        .map_err(UiError::RenderError)
+    })?;
 
     project_canvas_style_entries(
         &mut scene,
@@ -286,9 +292,9 @@ pub fn compile_ir_for_binding(inputs: &PipelineInputs<'_>) -> Result<UiIrDocumen
     }
 
     let defaults = DefaultValueRegistry::with_pipeline_defaults(inputs.localization_map.clone());
-    let asset_manifest = build_asset_reference_manifest(&scene, inputs.asset_fetcher);
+    let asset_manifest = timed("manifest", || build_asset_reference_manifest(&scene, inputs.asset_fetcher));
 
-    let mut ir = crate::ui_ir::compile_ui_ir_from_scene_with_animation_sample(
+    let mut ir = timed("ir_compile", || crate::ui_ir::compile_ui_ir_from_scene_with_animation_sample(
         &scene,
         Some(inputs.canvas_fetcher),
         effective_guid,
@@ -302,7 +308,7 @@ pub fn compile_ir_for_binding(inputs: &PipelineInputs<'_>) -> Result<UiIrDocumen
         asset_manifest.missing_asset_refs,
         inputs.animation_sample_percent,
         100,
-    );
+    ));
     ir.warnings.extend(fallback_counter_warnings(
         style_manifest
             .fallback_counters
@@ -350,38 +356,6 @@ pub fn compile_ir_for_binding(inputs: &PipelineInputs<'_>) -> Result<UiIrDocumen
     Ok(ir)
 }
 
-/// Aspect (height / width) of the frame canvas referenced by `frame_guid`.
-///
-/// Used to size render targets to the physical screen proportions when a
-/// binding wraps a content canvas inside a distinct frame canvas (e.g. an MFD
-/// screen frame). Returns `None` when there is no distinct frame canvas (frame
-/// absent, or identical to the content canvas) or the frame has no usable
-/// authored size, so callers fall back to SWF/stage-driven sizing.
-fn frame_canvas_aspect(
-    frame_guid: Option<&str>,
-    content_guid: Option<&str>,
-    fetcher: &dyn CanvasFetcher,
-) -> Option<f32> {
-    let frame = frame_guid.filter(|g| !g.is_empty())?;
-    // Only a frame that differs from the rendered content canvas defines a
-    // separate screen shape; a single-canvas binding has no wrapping frame.
-    if content_guid.filter(|g| !g.is_empty()) == Some(frame) {
-        return None;
-    }
-    let json = fetcher.fetch_canvas_json(frame).ok()?;
-    let size = json
-        .get("_RecordValue_")
-        .and_then(|rv| rv.get("size"))
-        .or_else(|| json.get("size"))?;
-    let w = size.get("x").and_then(|v| v.as_f64())? as f32;
-    let h = size.get("y").and_then(|v| v.as_f64())? as f32;
-    if w.is_finite() && h.is_finite() && w > 0.0 && h > 0.0 {
-        Some(h / w)
-    } else {
-        None
-    }
-}
-
 fn project_canvas_style_entries(
     scene: &mut crate::bb_scene::BbScene,
     raw_root_json: &serde_json::Value,
@@ -407,9 +381,9 @@ fn project_canvas_style_entries(
 
 /// Render via IR compilation and IR-only rendering.
 pub fn render_for_binding_ir(inputs: &PipelineInputs<'_>) -> Result<Vec<u8>, UiError> {
-    let ir = compile_ir_for_binding(inputs)?;
+    let ir = timed("compile", || compile_ir_for_binding(inputs))?;
 
-    let mut style = load_style_for_ir(&ir, inputs)?;
+    let mut style = timed("style_load", || load_style_for_ir(&ir, inputs))?;
     let suppresses_placeholder_screen_background = ir.selected_swf_source.is_some()
         && ir.nodes.iter().any(|node| {
             node.node_type.eq_ignore_ascii_case("widget_image")
@@ -435,7 +409,7 @@ pub fn render_for_binding_ir(inputs: &PipelineInputs<'_>) -> Result<Vec<u8>, UiE
         .iter()
         .cloned()
         .collect::<Vec<_>>();
-    let assets = load_first_swf(&swf_paths, inputs.swf_fetcher);
+    let assets = timed("swf_load", || load_first_swf(&swf_paths, inputs.swf_fetcher));
     let ctx = ComposeContext {
         style: &style,
         defaults: &defaults,
@@ -448,16 +422,18 @@ pub fn render_for_binding_ir(inputs: &PipelineInputs<'_>) -> Result<Vec<u8>, UiE
     });
     let atlas = crate::bb_atlas::AtlasLibrary::new(inputs.asset_fetcher, atlas_manufacturer_id);
 
-    let image = match ir.renderer_hint {
-        UiRendererHint::Bb => render_ui_ir_document(&ir, &ctx, &atlas)?,
-        UiRendererHint::Swf | UiRendererHint::Hybrid => render_ui_ir_with_swf_overlay(
-            &ir,
-            &ctx,
-            &atlas,
-            &|key| inputs.loc_fetcher.and_then(|f| f.fetch_loc(key)),
-        )?,
-    };
-    encode_png(&image)
+    let image = timed("render", || -> Result<_, UiError> {
+        match ir.renderer_hint {
+            UiRendererHint::Bb => render_ui_ir_document(&ir, &ctx, &atlas),
+            UiRendererHint::Swf | UiRendererHint::Hybrid => render_ui_ir_with_swf_overlay(
+                &ir,
+                &ctx,
+                &atlas,
+                &|key| inputs.loc_fetcher.and_then(|f| f.fetch_loc(key)),
+            ),
+        }
+    })?;
+    timed("encode", || encode_png(&image))
 }
 
 /// Main entrypoint for rendering a UI binding to PNG bytes.

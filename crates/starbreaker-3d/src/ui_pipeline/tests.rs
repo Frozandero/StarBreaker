@@ -1,9 +1,9 @@
 //! Tests for the ui_pipeline bridge module.
 
 use crate::ui_pipeline::{
-    authored_canvas_size, binding_target_size, datacore_ui_lookup_type_names, p4k_swf_candidates,
-    swf_immediate_subdirs,
+    authored_canvas_size, binding_target_size, datacore_ui_lookup_type_names,
 };
+use crate::ui_pipeline::p4k_fetchers::{p4k_swf_candidates, swf_immediate_subdirs};
 use serde_json::json;
 
 #[test]

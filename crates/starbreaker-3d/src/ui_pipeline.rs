@@ -1,9 +1,9 @@
 //! Bridge between the decomposed export pipeline and `starbreaker-ui`.
 //!
-//! Implements the [`CanvasFetcher`], [`SwfFetcher`], [`StyleFetcher`], and
-//! atlas asset-fetcher traits over the live DataCore database and P4K archive,
-//! then exposes [`render_ui_binding_png`] as the single call-site for
-//! `decomposed.rs`.
+//! Implements [`CanvasFetcher`] and [`StyleFetcher`] over the live DataCore
+//! database; P4K-backed [`SwfFetcher`] and [`AssetFetcher`] live in
+//! `p4k_fetchers`. Exposes [`render_ui_binding_png`] as the single call-site
+//! for `decomposed.rs`.
 
 use std::str::FromStr;
 
@@ -12,12 +12,14 @@ use starbreaker_datacore::Database;
 use starbreaker_p4k::MappedP4k;
 use starbreaker_ui::{
     UiError,
-    pipeline::{CanvasFetcher, PipelineInputs, SwfFetcher, UiBindingView},
+    pipeline::{CanvasFetcher, PipelineInputs, UiBindingView},
 };
 
 use crate::types::UiBinding;
 
+mod p4k_fetchers;
 mod style_fetcher;
+use p4k_fetchers::{P4kAssetFetcher, P4kSwfFetcher};
 use style_fetcher::ManufacturerStyleFetcher;
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -110,139 +112,6 @@ fn export_canvas_record(
     Ok(value)
 }
 
-struct P4kSwfFetcher<'a> {
-    p4k: &'a MappedP4k,
-}
-
-impl<'a> SwfFetcher for P4kSwfFetcher<'a> {
-    fn fetch_swf_bytes(&self, p4k_path: &str) -> Result<Vec<u8>, UiError> {
-        let candidates = p4k_swf_candidates(p4k_path);
-        let entry = self
-            .p4k
-            .entries()
-            .iter()
-            .find(|entry| candidates.iter().any(|candidate| entry.name.eq_ignore_ascii_case(candidate)))
-            .ok_or_else(|| UiError::FetchFailed {
-                guid: p4k_path.to_string(),
-                source: format!("SWF not found in P4K: {p4k_path}").into(),
-            })?;
-        self.p4k.read(entry).map_err(|e| UiError::FetchFailed {
-            guid: p4k_path.to_string(),
-            source: Box::new(e),
-        })
-    }
-
-    /// Enumerate immediate child directory names under `prefix` from the live
-    /// P4K entry list.  This is what makes the Phase-1 deterministic SWF
-    /// resolver work in production: without it the default empty implementation
-    /// would yield no ship-subdir candidates and every ship-subdir SWF (target
-    /// MFD, annunciators) would be unfindable.
-    fn list_swf_dirs(&self, prefix: &str) -> Vec<String> {
-        swf_immediate_subdirs(self.p4k.entries().iter().map(|entry| entry.name.as_str()), prefix)
-    }
-}
-
-/// Immediate child directory names directly under `prefix`, matched
-/// case-insensitively against native (`\`-separated) P4K entry names.
-///
-/// Returned names preserve their original casing and are deduped + sorted.
-/// `prefix` is expected to end with a `\` (the directory whose children are
-/// listed, e.g. `Data\UI\ShipInterface\assets\SWF\DRA\`).  Entries that are
-/// direct files of `prefix` (no further separator) are not directories and are
-/// skipped.  Matching is case-insensitive because P4K entry casing is not
-/// guaranteed to match the resolver's constructed prefix (the same reason
-/// `fetch_swf_bytes` compares with `eq_ignore_ascii_case`).
-fn swf_immediate_subdirs<'a>(names: impl Iterator<Item = &'a str>, prefix: &str) -> Vec<String> {
-    // An empty prefix would match every entry and enumerate the whole archive's
-    // top-level directories; callers always pass a concrete directory path.
-    if prefix.is_empty() {
-        return Vec::new();
-    }
-    let plen = prefix.len();
-    let mut seen = std::collections::BTreeSet::new();
-    for name in names {
-        if name.len() <= plen {
-            continue;
-        }
-        if !name.as_bytes()[..plen].eq_ignore_ascii_case(prefix.as_bytes()) {
-            continue;
-        }
-        let rest = &name[plen..];
-        // A subdirectory child has at least one further separator after its name;
-        // an entry with no further `\` is a direct file, not a directory.
-        if let Some(sep) = rest.find('\\') {
-            let subdir = &rest[..sep];
-            if !subdir.is_empty() {
-                seen.insert(subdir.to_string());
-            }
-        }
-    }
-    seen.into_iter().collect()
-}
-
-fn p4k_swf_candidates(path: &str) -> Vec<String> {
-    let native = path.replace('/', "\\");
-    let mut candidates = vec![native.clone()];
-    let lower = path.to_ascii_lowercase();
-    if !lower.starts_with("data/") && !lower.starts_with("data\\") {
-        candidates.push(format!("Data\\{native}"));
-    }
-    candidates
-}
-
-struct P4kAssetFetcher<'a> {
-    p4k: &'a MappedP4k,
-}
-
-impl<'a> starbreaker_ui::bb_atlas::AssetFetcher for P4kAssetFetcher<'a> {
-    fn fetch_image_bytes(&self, p4k_path: &str) -> Option<Vec<u8>> {
-        read_p4k_asset(self.p4k, p4k_path)
-    }
-}
-
-fn read_p4k_asset(p4k: &MappedP4k, p4k_path: &str) -> Option<Vec<u8>> {
-    for candidate in p4k_asset_candidates(p4k_path) {
-        if let Ok(bytes) = p4k.read_file(&candidate) {
-            return Some(bytes);
-        }
-    }
-    None
-}
-
-fn p4k_asset_candidates(path: &str) -> Vec<String> {
-    fn push_with_data_prefix(candidates: &mut Vec<String>, candidate: String) {
-        if !candidates.iter().any(|existing| existing.eq_ignore_ascii_case(&candidate)) {
-            candidates.push(candidate.clone());
-        }
-        let lower = candidate.to_ascii_lowercase();
-        if !lower.starts_with("data\\") {
-            let prefixed = format!("Data\\{candidate}");
-            if !candidates
-                .iter()
-                .any(|existing| existing.eq_ignore_ascii_case(&prefixed))
-            {
-                candidates.push(prefixed);
-            }
-        }
-    }
-
-    let native = path.replace('/', "\\");
-    let normalised = starbreaker_ui::bb_assets::UiAssetResolver::normalise_path(path)
-        .replace('/', "\\");
-    let mut candidates = Vec::new();
-    for seed in [native, normalised] {
-        push_with_data_prefix(&mut candidates, seed.clone());
-        if seed.to_ascii_lowercase().ends_with(".tif") {
-            if let Some(stem) = seed.strip_suffix(".tif") {
-                push_with_data_prefix(&mut candidates, format!("{stem}.dds"));
-            } else if let Some(stem) = seed.strip_suffix(".TIF") {
-                push_with_data_prefix(&mut candidates, format!("{stem}.dds"));
-            }
-        }
-    }
-    candidates
-}
-
 // ──────────────────────────────────────────────────────────────────────────────
 // Public entry point
 // ──────────────────────────────────────────────────────────────────────────────
@@ -259,6 +128,7 @@ pub fn render_ui_binding_png(
     texture_mip: u32,
     root_manufacturer_id: Option<&str>,
 ) -> Result<Vec<u8>, String> {
+    let t_ui = std::env::var("SB_UI_TIMING").ok().map(|_| std::time::Instant::now());
     let canvas_fetcher = DatacoreCanvasFetcher { db };
     let view = UiBindingView {
         canvas_guid: binding.canvas_guid.as_deref(),
@@ -304,7 +174,16 @@ pub fn render_ui_binding_png(
         loc_fetcher: Some(&ini_loc_fetcher),
     };
     let _ = texture_mip; // size is fixed per binding_kind; mip is applied at texture level
-    starbreaker_ui::pipeline::render_for_binding(&inputs).map_err(|e| e.to_string())
+    let result = starbreaker_ui::pipeline::render_for_binding(&inputs).map_err(|e| e.to_string());
+    if let Some(t) = t_ui {
+        log::info!(
+            "[timing][ui] binding={} kind={} total={:.3}s",
+            binding.helper_name.as_deref().unwrap_or("?"),
+            binding.binding_kind,
+            t.elapsed().as_secs_f32(),
+        );
+    }
+    result
 }
 
 /// Compile `binding` to canonical UI IR JSON using the same live DataCore + P4K
