@@ -150,7 +150,16 @@ impl BindingResolver {
         let mut widget_field_to_input_ptrs: HashMap<(BbNodeId, String), Vec<BbNodeId>> =
             HashMap::new();
         let mut field_name_to_input_ptrs: HashMap<String, Vec<BbNodeId>> = HashMap::new();
-        for (key, mut pairs) in widget_field_to_input_prio_ptrs {
+        // Iterate in a deterministic key order. `widget_field_to_input_prio_ptrs`
+        // is a `HashMap`, so iterating it directly merges per-field input pointers
+        // into `field_name_to_input_ptrs` in a per-process-random order. Binding
+        // evaluation later takes the first input for a field name, so that random
+        // order made bound field values (e.g. an MFD power readout digit)
+        // non-deterministic across renders. Sorting by key restores determinism.
+        let mut widget_field_entries: Vec<((BbNodeId, String), Vec<(u8, BbNodeId)>)> =
+            widget_field_to_input_prio_ptrs.into_iter().collect();
+        widget_field_entries.sort_by(|a, b| a.0.cmp(&b.0));
+        for (key, mut pairs) in widget_field_entries {
             let field_name = key.1.clone();
             pairs.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
             let mut ordered: Vec<BbNodeId> = Vec::new();

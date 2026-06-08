@@ -19,9 +19,13 @@ fn strip_custom_shape_uniform_matte(img: &RgbaImage) -> RgbaImage {
         return img.clone();
     }
 
+    // Pick the dominant opaque colour as the matte candidate. `opaque_counts` is
+    // a `HashMap`, so iteration order is non-deterministic; break count ties by
+    // the colour value itself (largest RGBA wins) so the chosen matte — and the
+    // resulting flood-fill — is reproducible across renders.
     let Some((matte_px, matte_count)) = opaque_counts
         .iter()
-        .max_by_key(|(_, count)| *count)
+        .max_by(|(px_a, count_a), (px_b, count_b)| count_a.cmp(count_b).then_with(|| px_a.cmp(px_b)))
         .map(|(px, count)| (*px, *count))
     else {
         return img.clone();

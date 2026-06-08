@@ -187,7 +187,11 @@ pub fn draw_swf_visual_exports(
     // Do NOT add stage IDs to `seen` — some stage characters are also exported
     // symbols that we DO want to draw at their canonical (identity) position.
 
-    let char_ids: Vec<CharacterId> = assets.visual_exports().collect();
+    // Sort by ascending CharacterId (SWF definition order) so overlapping
+    // exports composite in a deterministic order; `visual_exports()` iterates a
+    // `HashMap` whose order varies per process.
+    let mut char_ids: Vec<CharacterId> = assets.visual_exports().collect();
+    char_ids.sort_unstable();
     for char_id in char_ids {
         if !seen.insert(char_id) {
             continue;

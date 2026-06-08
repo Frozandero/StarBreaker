@@ -98,7 +98,15 @@ impl SwfAssetLibrary {
 
     pub fn find_font_by_name(&self, query: &str) -> Option<&FontGlyphSet> {
         let q = query.to_ascii_lowercase();
-        self.fonts.values().find(|font| {
+        // Iterate fonts by ascending CharacterId (their SWF definition order)
+        // rather than `HashMap` iteration order, which varies per process.
+        // Multiple embedded font subsets can share a logical name; HashMap order
+        // made the choice — and therefore which glyphs were available — non-
+        // deterministic across renders, flipping glyph-missing digits between
+        // values. Matching rule is unchanged (exact or substring, first wins).
+        let mut ids: Vec<CharacterId> = self.fonts.keys().copied().collect();
+        ids.sort_unstable();
+        ids.into_iter().map(|id| &self.fonts[&id]).find(|font| {
             font.name.eq_ignore_ascii_case(&q) || font.name.to_ascii_lowercase().contains(&q)
         })
     }
