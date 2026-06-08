@@ -60,11 +60,14 @@ impl TextRenderer {
             let mut min_y_units = f32::INFINITY;
             let mut max_y_units = f32::NEG_INFINITY;
             for ch in line.chars() {
+                // The space uses 0.33×em, NOT the font's space-glyph advance (≈0.225×em):
+                // the engine renders spaces ~0.1×em wider (word spacing that is not in the
+                // font/DataCore), and the tuned 0.33 matches the in-game reference where
+                // the font advance does not. See docs/clipper-medical-width-targets.md.
                 if ch == ' ' {
                     pen_x += (size_px * 0.33).max(1.0);
                     continue;
                 }
-
                 let Some((glyph_idx, glyph)) = swf_lookup_glyph(swf_font, ch) else {
                     pen_x += (size_px * 0.5).max(1.0);
                     continue;
@@ -140,16 +143,16 @@ impl TextRenderer {
                 text.chars().take(28).collect::<String>().replace('\t', " "),
             );
         }
-        // `line_step` is already the full em line box (≈ size). The default interline is
-        // the small extra gap that brings single-spaced text to ~1.2× the font size
-        // (standard leading); the brand `LineSpacing` (often negative) tightens from
-        // there. The old 0.45 over-led wrapped paragraphs (≈1.45×) — see
+        // `line_step` is the full em line box (≈ size) — the engine's single-spacing line
+        // advance is exactly that box, with NO default extra leading. The brand
+        // `LineSpacing` modifier (often negative) tightens from there. Verified against the
+        // Clipper medical card descriptions: line-to-line advance == font size (a 25px H6
+        // paragraph steps 25px, not the 30px an added 0.2×size interline produced). See
         // docs/clipper-medical-width-targets.md (RC2).
         let line_step = nominal_line_h.max(measured_line_h.max(1.0));
-        let default_interline_px = (size_px * 0.2).max(1.0);
         let interline_px = line_spacing_px
             .filter(|value| value.is_finite())
-            .map_or(default_interline_px, |value| default_interline_px + value);
+            .unwrap_or(0.0);
         let baseline_step = (line_step + interline_px).max(1.0);
         let mut min_y_px = f32::INFINITY;
         let mut max_y_px = f32::NEG_INFINITY;
@@ -253,6 +256,8 @@ fn swf_glyph_advance_px(
 fn swf_line_width(text: &str, swf_font: &FontGlyphSet, units_per_em: f32, size_px: f32) -> f32 {
     text.chars().fold(0.0, |acc, ch| {
         if ch == ' ' {
+            // 0.33×em (engine word-spacing), not the narrower font space advance — see
+            // the draw loop above and docs/clipper-medical-width-targets.md.
             acc + (size_px * 0.33).max(1.0)
         } else if let Some((idx, _)) = swf_lookup_glyph(swf_font, ch) {
             acc + swf_glyph_advance_px(swf_font, idx, units_per_em, size_px).max(1.0)

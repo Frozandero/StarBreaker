@@ -106,6 +106,9 @@ fn build_ui_ir_nodes(
                     resolved_font_record.as_ref(),
                 )
             };
+            // All-caps display reduction: caseModifier-Upper text renders ~2% smaller than
+            // its nominal size (line spacing, computed below from the size, scales with it).
+            let font_size = scale_ui_ir_font_value(font_size, primary_label_caps_font_scale(node));
             Some(UiIrTextStyle {
                 font_record: font_record.clone(),
                 resolved_font_record: resolved_font_record.clone(),
@@ -188,6 +191,10 @@ fn build_ui_ir_nodes(
                     resolved_font_record.as_ref(),
                 )
             };
+            // A caption-pair label takes its case from `labelProperties.caseModifier`, so
+            // an Upper label (e.g. MEDGELS, PATIENT NAME) gets the same ~2% caps reduction.
+            let font_size_value =
+                scale_ui_ir_font_value(font_size_value, primary_label_caps_font_scale(node));
 
             Some(UiIrTextStyle {
                 font_record: font_record.clone(),

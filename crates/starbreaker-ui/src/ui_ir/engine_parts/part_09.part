@@ -124,18 +124,18 @@ struct StandardTextStyle {
 /// by the secondary/payload `textfield_fallback_font_size_from_signals` ladder.
 const LONG_HEADING1_PROMPT_FONT_SIZE: f32 = 28.7;
 
-/// Registered fallback (docs/ui-fallback-register.md): fraction of a fixed-height
-/// heading band that the heading's design size fills. The engine fits a `Heading1`
-/// rendered in a `Fixed`-height band to the band rather than drawing it at the full
-/// brand FontSize; that band-fit lives in compiled BuildingBlocks layout, not in
-/// DataCore, so this ratio is calibrated to the in-game Clipper medical reference.
-const FIXED_BAND_HEADING_FILL: f32 = 0.367;
+/// Registered fallback (docs/ui-fallback-register.md): pre-caps fraction of a fixed-height
+/// heading band that the heading's design size fills. The engine fits a `Heading1` in a
+/// `Fixed`-height band to the band (a compiled-layout behaviour not in DataCore), so this
+/// is calibrated to the in-game Clipper medical reference. The banner is `caseModifier:
+/// Upper`, so the returned size is further scaled by `CAPS_FORCED_UPPER_FONT_SCALE` (~0.98)
+/// at the call site (0.375 × 0.98 ≈ 0.3675 reaches the measured WelcomeText size).
+const FIXED_BAND_HEADING_FILL: f32 = 0.375;
 
-/// Reduced "banner prompt" size for a `Heading1` drawn in a fixed-height band.
-/// Returns `None` (so the full brand FontSize is used) unless the field is a *tight*
-/// fixed band — i.e. its height is set explicitly (`Fixed`, not the `Auto`
-/// content-sizing full-size headings use) and is short relative to the heading size.
-/// See `FIXED_BAND_HEADING_FILL`.
+/// Reduced "banner prompt" size for a `Heading1` drawn in a fixed-height band. Returns
+/// `None` (full brand FontSize) unless the field is a *tight* fixed band — height set
+/// explicitly (`Fixed`, not the `Auto` full-size headings use) and short relative to the
+/// heading size. See `FIXED_BAND_HEADING_FILL`.
 fn fixed_band_heading_prompt_size(
     node: &crate::bb_scene::BbNode,
     label_style: Option<&str>,

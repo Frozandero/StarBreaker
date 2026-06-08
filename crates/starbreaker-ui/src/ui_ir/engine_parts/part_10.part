@@ -28,6 +28,72 @@ fn brand_style_font_size(
         .map(|font_size| (font_size * 10.0).round() / 10.0)
 }
 
+/// Registered fallback (docs/ui-fallback-register.md): the engine renders text whose
+/// `caseModifier` forces upper-case (`Upper`/`AllCaps`) ~2% smaller than its nominal
+/// brand/authored size — an all-caps display reduction the game applies in layout that is
+/// not a numeric field in DataCore. Verified against the Clipper medical header: every
+/// `caseModifier: Upper` element (MEDICAL ASSISTANT, T3, the menu-card titles/descriptions,
+/// PATIENT NAME, MEDGELS) reads ~98% of the renderer's nominal width, while the only
+/// mixed-case element (`caseModifier: None` "Drake Clipper") is exact. `T3` — unchanged by
+/// an upper-case transform yet still in the reduced set — proves the gate is the
+/// `caseModifier` itself, not whether the transform changes any glyph.
+const CAPS_FORCED_UPPER_FONT_SCALE: f32 = 0.98;
+
+/// Multiplicative font-size scale for force-uppercased text. `1.0` unless the
+/// `caseModifier` is `Upper`/`AllCaps`. See `CAPS_FORCED_UPPER_FONT_SCALE`.
+fn forced_upper_font_scale(case_modifier: Option<&str>) -> f32 {
+    match case_modifier {
+        Some(modifier)
+            if modifier.eq_ignore_ascii_case("Upper")
+                || modifier.eq_ignore_ascii_case("AllCaps") =>
+        {
+            CAPS_FORCED_UPPER_FONT_SCALE
+        }
+        _ => 1.0,
+    }
+}
+
+/// Caps scale for a node's primary/label text: the node's top-level `caseModifier`, else
+/// its `labelProperties.caseModifier`. Excludes `autoFontSize` text — that is fit to its
+/// rect render-side, so the nominal-size reduction does not apply.
+fn primary_label_caps_font_scale(node: &crate::bb_scene::BbNode) -> f32 {
+    if auto_font_size_enabled(&node.raw) {
+        return 1.0;
+    }
+    let case_modifier = node
+        .raw
+        .get("caseModifier")
+        .and_then(|value| value.as_str())
+        .or_else(|| {
+            node.raw
+                .get("labelProperties")
+                .and_then(|properties| properties.get("caseModifier"))
+                .and_then(|value| value.as_str())
+        });
+    forced_upper_font_scale(case_modifier)
+}
+
+/// Caps scale for a caption-pair's value text (`captionProperties.caseModifier`).
+fn caption_value_caps_font_scale(node: &crate::bb_scene::BbNode) -> f32 {
+    let case_modifier = node
+        .raw
+        .get("captionProperties")
+        .and_then(|properties| properties.get("caseModifier"))
+        .and_then(|value| value.as_str());
+    forced_upper_font_scale(case_modifier)
+}
+
+/// Apply a caps font scale to a `Fixed` size; pass other (percent/auto) variants through.
+fn scale_ui_ir_font_value(value: UiIrValue, scale: f32) -> UiIrValue {
+    if (scale - 1.0).abs() <= f32::EPSILON {
+        return value;
+    }
+    match value {
+        UiIrValue::Fixed { value } => UiIrValue::Fixed { value: value * scale },
+        other => other,
+    }
+}
+
 fn textfield_fallback_font_size_from_signals(
     node: &crate::bb_scene::BbNode,
     node_rect_h: f32,

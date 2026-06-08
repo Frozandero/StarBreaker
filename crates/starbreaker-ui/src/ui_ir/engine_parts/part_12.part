@@ -161,6 +161,7 @@ mod tests_b {
                         "text": "Drake Clipper",
                         "labelProperties": {
                             "style": "Heading3",
+                            "caseModifier": "None",
                             "anchorToParentX": 0.5,
                             "anchorToParentY": 0.5
                         },
@@ -177,6 +178,7 @@ mod tests_b {
                         "text": "MEDICAL ASSISTANT",
                         "labelProperties": {
                             "style": "Heading1",
+                            "caseModifier": "Upper",
                             "anchorToParentX": 0.5,
                             "anchorToParentY": 0.5
                         },
@@ -254,22 +256,22 @@ mod tests_b {
         );
 
         // Data-backed model: a styled textfield renders at its named style's authored
-        // brand FontSize verbatim (no nominal-scale constant). H3 brand FontSize = 30.
+        // brand FontSize verbatim (no nominal-scale constant). `caseModifier: None`, so the
+        // H3 brand FontSize = 30 is used exactly (no caps reduction).
         let node = ir.nodes.iter().find(|node| node.name == "location").expect("location node");
         assert_eq!(
             node.text_style.as_ref().map(|style| &style.font_size),
             Some(&UiIrValue::Fixed { value: 30.0 })
         );
 
-        // H1 brand FontSize = 57, used verbatim.
-        let node = ir
-            .nodes
-            .iter()
-            .find(|node| node.name == "machine_type")
-            .expect("machine_type node");
-        assert_eq!(
-            node.text_style.as_ref().map(|style| &style.font_size),
-            Some(&UiIrValue::Fixed { value: 57.0 })
+        // H1 brand FontSize = 57, but `caseModifier: Upper` applies the ~2% all-caps
+        // display reduction → 57 × CAPS_FORCED_UPPER_FONT_SCALE ≈ 55.86.
+        let node = ir.nodes.iter().find(|node| node.name == "machine_type").expect("machine_type node");
+        let style = node.text_style.as_ref().expect("machine_type text style");
+        assert!(
+            matches!(style.font_size, UiIrValue::Fixed { value } if (value - 57.0 * 0.98).abs() < 0.02),
+            "caseModifier Upper caps-reduces H1 57: {:?}",
+            style.font_size,
         );
     }
 

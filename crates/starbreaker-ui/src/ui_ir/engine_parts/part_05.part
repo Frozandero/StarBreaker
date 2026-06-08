@@ -42,6 +42,9 @@ fn caption_pair_secondary_text_style(
             resolved_font_record,
         )
     };
+    // The value's case comes from `captionProperties.caseModifier`; an Upper value gets the
+    // same ~2% caps reduction (the medical MedGel/Patient values are `None`, so unaffected).
+    let value_font_size = scale_ui_ir_font_value(value_font_size, caption_value_caps_font_scale(node));
     UiIrTextStyle {
         font_record: font_record.clone(),
         resolved_font_record: resolved_font_record.cloned(),
