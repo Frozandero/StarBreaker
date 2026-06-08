@@ -2781,6 +2781,12 @@ fn generate_ui_binding_records_detached(
     scene_manifest_path: &str,
     root_manufacturer_id: Option<&str>,
 ) -> (Vec<UiBinding>, Vec<(String, Vec<u8>)>) {
+    // Most interior placements carry no UI bindings; skip the (expensive)
+    // localization load entirely for them rather than parsing global.ini once
+    // per placement across the whole interior.
+    if bindings.is_empty() {
+        return (Vec::new(), Vec::new());
+    }
     let loc_data = crate::ui_pipeline::UiLocData::load(p4k);
     let mut generated = bindings
         .par_iter()
