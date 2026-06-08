@@ -8,11 +8,12 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use log::warn;
 use starbreaker_datacore::Database;
 use starbreaker_datacore::starbreaker_common::CigGuid;
-use starbreaker_ui::{UiError, pipeline::CanvasFetcher};
+use starbreaker_ui::{UiError, pipeline::CanvasFetcher, record_name::extract_record_name};
 
 use super::{datacore_ui_lookup_type_names, parse_guid};
 
@@ -64,18 +65,19 @@ impl CanvasNameIndex {
 /// Canvas fetcher backed by a DataCore [`Database`] with an O(1) name index and a
 /// per-binding memoising cache of parsed JSON values (B2a).
 ///
-/// The cache stores the parsed [`serde_json::Value`] keyed by GUID, so the
-/// expensive DataCore traversal (`to_json_compact`) *and* the JSON parse each run
-/// at most once per record per binding render. Hits return a deep clone, so
-/// callers still receive an independently-owned `Value` (the same contract as an
-/// uncached fetcher), and tag resolution — which fetches the large `TagDatabase`
-/// thousands of times per heavy binding — avoids re-parsing it on every hit.
+/// The cache stores each record's parsed [`serde_json::Value`] behind an [`Rc`]
+/// keyed by GUID, so the expensive DataCore traversal (`to_json_compact`) *and*
+/// the JSON parse each run at most once per record per binding render. The owned
+/// `fetch_canvas_*` methods deep-clone on hit (the trait's owned-`Value` contract);
+/// [`CanvasFetcher::fetch_canvas_by_path_shared`] returns the `Rc` directly, so
+/// tag resolution — which fetches the large `TagDatabase` thousands of times per
+/// heavy binding — pays only a refcount bump instead of a deep clone.
 pub(super) struct DatacoreCanvasFetcher<'a> {
     db: &'a Database<'a>,
     name_index: CanvasNameIndex,
     /// GUID → parsed JSON value, memoised for the lifetime of one fetcher (one
     /// binding render). The fetcher is never shared across threads.
-    by_guid: RefCell<HashMap<CigGuid, serde_json::Value>>,
+    by_guid: RefCell<HashMap<CigGuid, Rc<serde_json::Value>>>,
 }
 
 impl<'a> DatacoreCanvasFetcher<'a> {
@@ -87,9 +89,9 @@ impl<'a> DatacoreCanvasFetcher<'a> {
         }
     }
 
-    fn fetch_by_guid(&self, cig_guid: CigGuid, lookup_key: &str) -> Result<serde_json::Value, UiError> {
+    fn fetch_by_guid_rc(&self, cig_guid: CigGuid, lookup_key: &str) -> Result<Rc<serde_json::Value>, UiError> {
         if let Some(value) = self.by_guid.borrow().get(&cig_guid) {
-            return Ok(value.clone());
+            return Ok(Rc::clone(value));
         }
         let record = self.db.record_by_id(&cig_guid).ok_or_else(|| UiError::FetchFailed {
             guid: lookup_key.to_string(),
@@ -105,8 +107,13 @@ impl<'a> DatacoreCanvasFetcher<'a> {
             guid: lookup_key.to_string(),
             source: Box::new(e),
         })?;
-        self.by_guid.borrow_mut().insert(cig_guid, value.clone());
-        Ok(value)
+        let rc = Rc::new(value);
+        self.by_guid.borrow_mut().insert(cig_guid, Rc::clone(&rc));
+        Ok(rc)
+    }
+
+    fn fetch_by_guid(&self, cig_guid: CigGuid, lookup_key: &str) -> Result<serde_json::Value, UiError> {
+        self.fetch_by_guid_rc(cig_guid, lookup_key).map(|rc| (*rc).clone())
     }
 }
 
@@ -125,5 +132,17 @@ impl<'a> CanvasFetcher for DatacoreCanvasFetcher<'a> {
             source: format!("no UI-support record found by name: {record_name}").into(),
         })?;
         self.fetch_by_guid(cig_guid, record_name)
+    }
+
+    fn fetch_canvas_by_path_shared(&self, path_or_name: &str) -> Result<Rc<serde_json::Value>, UiError> {
+        // Mirror the trait default `fetch_canvas_by_path` resolution
+        // (extract_record_name → name index) but return the cached `Rc` directly,
+        // so repeated `TagDatabase` fetches in tag resolution are a refcount bump.
+        let name = extract_record_name(path_or_name);
+        let cig_guid = self.name_index.lookup(&name).ok_or_else(|| UiError::FetchFailed {
+            guid: path_or_name.to_string(),
+            source: format!("no UI-support record found by name: {name}").into(),
+        })?;
+        self.fetch_by_guid_rc(cig_guid, path_or_name)
     }
 }

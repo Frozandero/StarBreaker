@@ -227,7 +227,11 @@ fn resolve_style_tag_record(
         return None;
     }
 
-    let tag_db = fetcher.fetch_canvas_by_path(tag_db_path).ok()?;
+    // Shared fetch: the `TagDatabase` is large and re-fetched per style-tag per
+    // node (thousands of times per heavy binding). `fetch_canvas_by_path_shared`
+    // returns the memoising fetcher's cached `Rc` so this is a refcount bump
+    // rather than a deep clone of the whole database on every call.
+    let tag_db = fetcher.fetch_canvas_by_path_shared(tag_db_path).ok()?;
     let tags = tag_db
         .get("_RecordValue_")
         .and_then(|rv| rv.get("tags"))

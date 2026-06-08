@@ -58,6 +58,18 @@ pub trait CanvasFetcher {
             source: "fetch_canvas_by_name not implemented".into(),
         })
     }
+
+    /// Fetch a record as a shared [`Rc`], for read-only consumers that would
+    /// otherwise force a deep clone of a large record on every call (e.g. tag
+    /// resolution re-fetching the whole `TagDatabase` per style-tag). The default
+    /// wraps [`Self::fetch_canvas_by_path`]; a memoising fetcher can return its
+    /// cached `Rc` directly so repeated fetches are a refcount bump, not a clone.
+    fn fetch_canvas_by_path_shared(
+        &self,
+        path_or_name: &str,
+    ) -> Result<std::rc::Rc<serde_json::Value>, UiError> {
+        self.fetch_canvas_by_path(path_or_name).map(std::rc::Rc::new)
+    }
 }
 
 /// Fetch raw SWF bytes by P4K path and enumerate P4K SWF directories.
