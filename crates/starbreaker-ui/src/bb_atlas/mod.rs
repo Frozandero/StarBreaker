@@ -26,6 +26,13 @@ pub trait AssetFetcher: Send + Sync {
     fn fetch_svg_bytes(&self, p4k_path: &str) -> Option<Vec<u8>> {
         self.fetch_image_bytes(p4k_path)
     }
+
+    /// Return `true` if the asset at `p4k_path` exists without reading or
+    /// decompressing it. Defaults to `fetch_image_bytes(…).is_some()` for
+    /// impls that cannot do better.
+    fn asset_exists(&self, p4k_path: &str) -> bool {
+        self.fetch_image_bytes(p4k_path).is_some()
+    }
 }
 
 type CacheKey = (String, u32, u32);

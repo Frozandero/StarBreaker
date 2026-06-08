@@ -22,8 +22,7 @@ pub(super) fn build_asset_reference_manifest(
                 continue;
             }
             all_asset_refs.push(asset_ref.clone());
-            let resolved = asset_fetcher.fetch_image_bytes(&asset_ref).is_some()
-                || asset_fetcher.fetch_svg_bytes(&asset_ref).is_some();
+            let resolved = asset_fetcher.asset_exists(&asset_ref);
             if resolved {
                 resolved_asset_refs.push(asset_ref);
             } else {

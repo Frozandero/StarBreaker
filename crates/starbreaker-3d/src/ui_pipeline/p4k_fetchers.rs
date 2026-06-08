@@ -95,6 +95,12 @@ impl<'a> starbreaker_ui::bb_atlas::AssetFetcher for P4kAssetFetcher<'a> {
     fn fetch_image_bytes(&self, p4k_path: &str) -> Option<Vec<u8>> {
         read_p4k_asset(self.p4k, p4k_path)
     }
+
+    fn asset_exists(&self, p4k_path: &str) -> bool {
+        p4k_asset_candidates(p4k_path)
+            .iter()
+            .any(|candidate| self.p4k.entry_case_insensitive(candidate).is_some())
+    }
 }
 
 pub(super) fn read_p4k_asset(p4k: &MappedP4k, p4k_path: &str) -> Option<Vec<u8>> {
