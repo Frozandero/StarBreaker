@@ -60,12 +60,10 @@ impl TextRenderer {
             let mut min_y_units = f32::INFINITY;
             let mut max_y_units = f32::NEG_INFINITY;
             for ch in line.chars() {
-                // The space uses 0.33×em, NOT the font's space-glyph advance (≈0.225×em):
-                // the engine renders spaces ~0.1×em wider (word spacing that is not in the
-                // font/DataCore), and the tuned 0.33 matches the in-game reference where
-                // the font advance does not. See docs/clipper-medical-width-targets.md.
+                // Word-space advance = the font's own space-glyph advance (data-backed;
+                // see swf_space_advance_px). Re-derived against the reference.
                 if ch == ' ' {
-                    pen_x += (size_px * 0.33).max(1.0);
+                    pen_x += swf_space_advance_px(swf_font, units_per_em, size_px);
                     continue;
                 }
                 let Some((glyph_idx, glyph)) = swf_lookup_glyph(swf_font, ch) else {
@@ -253,12 +251,22 @@ fn swf_glyph_advance_px(
     (units / units_per_em) * size_px * SWF_TEXT_WIDTH_CALIBRATION
 }
 
+/// Word-space advance for SWF text. Data-backed: the font's own space-glyph advance
+/// (re-derived against the in-game reference — the Clipper medical header space matches
+/// the font advance, ~0.22×em, not the previously-tuned 0.33×em which rendered ~50% too
+/// wide). Falls back to 0.33×em only when the font carries no space glyph/advance.
+fn swf_space_advance_px(swf_font: &FontGlyphSet, units_per_em: f32, size_px: f32) -> f32 {
+    swf_lookup_glyph(swf_font, ' ')
+        .map(|(idx, _)| swf_glyph_advance_px(swf_font, idx, units_per_em, size_px))
+        .filter(|advance| *advance > 0.0)
+        .unwrap_or(size_px * 0.33)
+        .max(1.0)
+}
+
 fn swf_line_width(text: &str, swf_font: &FontGlyphSet, units_per_em: f32, size_px: f32) -> f32 {
     text.chars().fold(0.0, |acc, ch| {
         if ch == ' ' {
-            // 0.33×em (engine word-spacing), not the narrower font space advance — see
-            // the draw loop above and docs/clipper-medical-width-targets.md.
-            acc + (size_px * 0.33).max(1.0)
+            acc + swf_space_advance_px(swf_font, units_per_em, size_px)
         } else if let Some((idx, _)) = swf_lookup_glyph(swf_font, ch) {
             acc + swf_glyph_advance_px(swf_font, idx, units_per_em, size_px).max(1.0)
         } else {

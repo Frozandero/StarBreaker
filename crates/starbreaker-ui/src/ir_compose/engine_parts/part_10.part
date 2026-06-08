@@ -328,7 +328,9 @@ mod tests_d {
 
         assert_eq!(primary_rect.y, 47.0);
         assert_eq!(primary_rect.h, 32.0);
-        assert_eq!(secondary_rect.y, 74.0);
+        // 47 + 32 (primary_h) - 5 (line_box_overlap 32-27) - 5 (caption-pair
+        // FlexRowSpacing) = 69. The -5 row spacing tightens the label→value handoff.
+        assert_eq!(secondary_rect.y, 69.0);
         assert_eq!(secondary_rect.h, 27.0);
     }
 
