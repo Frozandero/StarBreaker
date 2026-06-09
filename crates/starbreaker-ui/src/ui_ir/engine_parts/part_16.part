@@ -46,7 +46,6 @@ mod tests_f {
         crate::defaults::DefaultValueRegistry::with_well_known_path_defaults()
     }
 
-
     #[test]
     fn compile_ir_resolves_primary_state_tag_from_integer_switch_binding() {
         let canvas = serde_json::json!({

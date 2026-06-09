@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "frozen_at": "2026-06-09T16:36:02Z",
-  "approver": "claude+tom",
-  "reason": "re-freeze: snapshot schema v2 (rendered text-top fields) + post-2694202e8 MEDGELS partial fix; medical2 MEDGELS registered as known outlier",
+  "frozen_at": "2026-06-09T17:25:56Z",
+  "approver": "tom",
+  "reason": "Graduate MEDGELS outlier: anchor_y^2 blend fix in right_edge_auto_hint (part_04) moves primary_text_top 39->29 (target 27), within confidence 2.0 -- strict-freeze",
   "signature": null,
   "manifest_path": "/home/tom/projects/scorg_tools/StarBreaker/crates/starbreaker-ui/tests/fixtures/ui_ir/ui_snapshot_manifest.json",
   "targets": [
@@ -1180,7 +1180,7 @@
             "node_type": "BuildingBlocks_ComponentLabelCaptionPair",
             "visible": true,
             "x": 1748.9667,
-            "y": -5.4820795,
+            "y": -15.228002,
             "w": 115.0,
             "h": 64.0,
             "alpha": 1.0,
@@ -1202,9 +1202,9 @@
             "text_font_identity": "file://./../../../../../../../../libs/foundry/records/ui/buildingblocks/fontstyles/blenderpro-thin.json",
             "text_font_size": 30.0,
             "line_spacing": 0.0,
-            "primary_text_top": 39.0,
+            "primary_text_top": 29.0,
             "primary_text_left": 1743.0,
-            "secondary_text_top": 68.0,
+            "secondary_text_top": 58.0,
             "secondary_text_left": 1742.0
           },
           {

@@ -324,13 +324,17 @@ mod tests_e {
 
         let rect = debug_linear_progress_meter_rect(&meter, &document).expect("meter rect");
         let parent_text_rects = debug_text_rects(&document.nodes[0]).expect("parent text rects");
-        let expected_y = parent_text_rects
+        let parent_drawn_bounds_early = debug_text_drawn_bounds(&document.nodes[0]).expect("parent drawn bounds");
+        // The meter pins to drawn glyph bottom (not line-box bottom) to avoid
+        // pushing the bar down by the empty descent space on non-descender text.
+        let expected_y = parent_drawn_bounds_early
             .secondary
-            .map(|secondary_rect| secondary_rect.y + secondary_rect.h)
+            .map(|secondary_drawn| secondary_drawn.y + secondary_drawn.h)
+            .or_else(|| parent_text_rects.secondary.map(|r| r.y + r.h))
             .unwrap_or_else(|| parent_text_rects.primary.y + parent_text_rects.primary.h);
         assert!(
             (rect.y - expected_y).abs() < 0.1,
-            "expected meter to attach to text-band bottom {}, got {}",
+            "expected meter to attach to drawn secondary bottom {}, got {}",
             expected_y,
             rect.y
         );

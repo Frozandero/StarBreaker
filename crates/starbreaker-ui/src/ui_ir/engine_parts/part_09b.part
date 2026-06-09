@@ -1,0 +1,60 @@
+fn classify_text_payload(
+    resolved_text: Option<&str>,
+    raw: &serde_json::Value,
+    defaults: &DefaultValueRegistry,
+) -> UiIrTextPayload {
+    let Some(text) = resolved_text.map(str::trim) else {
+        return UiIrTextPayload::Empty;
+    };
+
+    if !text.is_empty() {
+        return classify_literal_or_localized_text(text, defaults);
+    }
+
+    if let Some(unresolved_key) = unresolved_text_key_from_raw(raw) {
+        if let Some(localized) = defaults.lookup_localization(&unresolved_key) {
+            if localized.trim().is_empty() {
+                UiIrTextPayload::IntentionallyEmpty {
+                    key: Some(unresolved_key),
+                }
+            } else {
+                UiIrTextPayload::Resolved {
+                    text: localized.trim().to_string(),
+                }
+            }
+        } else {
+            UiIrTextPayload::UnresolvedKey {
+                key: unresolved_key,
+            }
+        }
+    } else {
+        UiIrTextPayload::Empty
+    }
+}
+
+fn classify_literal_or_localized_text(
+    text: &str,
+    defaults: &DefaultValueRegistry,
+) -> UiIrTextPayload {
+    if text.starts_with('@') {
+        if let Some(localized) = defaults.lookup_localization(text) {
+            if localized.trim().is_empty() {
+                UiIrTextPayload::IntentionallyEmpty {
+                    key: Some(text.to_string()),
+                }
+            } else {
+                UiIrTextPayload::Resolved {
+                    text: localized.trim().to_string(),
+                }
+            }
+        } else {
+            UiIrTextPayload::UnresolvedKey {
+                key: text.to_string(),
+            }
+        }
+    } else {
+        UiIrTextPayload::Resolved {
+            text: text.to_string(),
+        }
+    }
+}

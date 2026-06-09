@@ -347,15 +347,13 @@ fn layout_flex_no_grow_children(
                         } if behavior == "Auto" && value > 0.0 && value < 1.0
                     );
                 if right_edge_auto_hint {
-                    let pos_y = (node.position.y + node.position_offset.y) * csy;
-                    let anchor_world_y = container.y + container.h * node.anchor.y + pos_y;
-                    let intrinsic_y = anchor_world_y - h * node.pivot.y + node.margin.top * csy;
                     let slot_x = container.x + (container.w - w).max(0.0);
                     let slot_y = cursor;
                     let anchor_x = node.anchor.x.clamp(0.0, 1.0);
-                    let anchor_y = node.anchor.y.clamp(0.0, 1.0);
+                    // Y is the main axis of this column: follow the flex cursor.
+                    // anchor.y belongs to overlay/non-flex positioning only.
                     let resolved_x = container.x + (slot_x - container.x) * (1.0 - anchor_x);
-                    let resolved_y = slot_y + (intrinsic_y - slot_y) * (anchor_y * anchor_y);
+                    let resolved_y = slot_y;
                     let rect = Rect {
                         x: resolved_x,
                         y: resolved_y,
