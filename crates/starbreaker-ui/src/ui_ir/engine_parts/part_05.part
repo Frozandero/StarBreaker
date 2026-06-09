@@ -7,6 +7,7 @@ fn caption_pair_secondary_text_style(
     font_record: &Option<String>,
     standard_text_styles: &HashMap<String, StandardTextStyle>,
     resolved_style_tags: &[UiIrStyleTag],
+    design_text_scale: f32,
 ) -> UiIrTextStyle {
     let alignment = node
         .raw
@@ -28,7 +29,7 @@ fn caption_pair_secondary_text_style(
     let value_font_size = if let Some(size) =
         brand_style_font_size(caption_style.as_deref(), standard_text_styles)
     {
-        UiIrValue::Fixed { value: size }
+        UiIrValue::Fixed { value: size * design_text_scale }
     } else {
         let font_size = node
             .raw
@@ -37,9 +38,12 @@ fn caption_pair_secondary_text_style(
             .and_then(|v| v.as_f64())
             .map(|value| value as f32)
             .unwrap_or(18.0);
-        adjust_ui_ir_font_value_for_font_record_image_percent(
-            UiIrValue::Fixed { value: font_size },
-            resolved_font_record,
+        scale_design_font_value(
+            adjust_ui_ir_font_value_for_font_record_image_percent(
+                UiIrValue::Fixed { value: font_size },
+                resolved_font_record,
+            ),
+            design_text_scale,
         )
     };
     // The caption value renders at its full nominal size (no all-caps reduction).
@@ -47,7 +51,7 @@ fn caption_pair_secondary_text_style(
         font_record: font_record.clone(),
         resolved_font_record: resolved_font_record.cloned(),
         font_size: value_font_size.clone(),
-        line_spacing: resolve_effective_line_spacing(node, &value_font_size, standard_text_styles),
+        line_spacing: resolve_effective_line_spacing(node, &value_font_size, standard_text_styles, design_text_scale),
         alignment,
         vertical_alignment: node
             .raw

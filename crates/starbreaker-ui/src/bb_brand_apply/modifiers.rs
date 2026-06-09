@@ -1,6 +1,7 @@
 use crate::bb_loc::LocFetcher;
 use crate::bb_scene::{BbNode, BbNodeType, BbValue};
 use super::colors::{
+    PaletteSources,
     color_style_role_for_field,
     color_style_token,
     ensure_border,
@@ -59,6 +60,7 @@ pub(super) fn apply_inline_color_overlay(node: &mut BbNode, palette_source: &ser
     }
 }
 
+
 /// Apply a single modifier to a node.
 ///
 /// Parses the `field._Type_` discriminator and `field.field` name, then updates
@@ -66,7 +68,7 @@ pub(super) fn apply_inline_color_overlay(node: &mut BbNode, palette_source: &ser
 pub(super) fn apply_modifier(
     modifier: &serde_json::Value,
     node: &mut BbNode,
-    palette_source: &serde_json::Value,
+    palettes: &PaletteSources<'_>,
     loc_fetcher: Option<&dyn LocFetcher>,
 ) {
     let Some((type_str, field_name, value)) = modifier_parts(modifier) else {
@@ -93,8 +95,24 @@ pub(super) fn apply_modifier(
             if let Some(value) = value {
                 let token = color_style_token(value).map(str::to_owned);
                 let role = color_style_role_for_field(field_name, node);
-                if let Some(color) = parse_color_value(value, palette_source, role) {
+                if let Some(color) = parse_color_value(value, palettes.for_field(field_name), role) {
                     apply_color_field(field_name, color, token.as_deref(), node);
+                    // A styled BackgroundColor replaces the node's authored
+                    // at-rest `background.color` (e.g. the MFD footer's
+                    // authored Base@0.3 → styled Disabled@0.1), so downstream
+                    // fill token/alpha readers see the styled value.
+                    // An unconfigured `color: null` block is left untouched —
+                    // its null-ness distinguishes an editor-default background
+                    // from a configured-but-disabled one.
+                    if field_name == "BackgroundColor"
+                        && let Some(background) = node
+                            .raw
+                            .get_mut("background")
+                            .and_then(|bg| bg.as_object_mut())
+                        && background.get("color").is_some_and(|colour| !colour.is_null())
+                    {
+                        background.insert("color".to_string(), value.clone());
+                    }
                 }
             }
         }

@@ -35,6 +35,21 @@ fn adjust_ui_ir_font_value_for_font_record_image_percent(
     }
 }
 
+/// Multiply a design-unit font size by the host-stage view scale. Percent /
+/// behavioural values resolve against already-scaled rects, so only `Fixed`
+/// design sizes scale.
+fn scale_design_font_value(value: UiIrValue, design_text_scale: f32) -> UiIrValue {
+    if (design_text_scale - 1.0).abs() <= f32::EPSILON {
+        return value;
+    }
+    match value {
+        UiIrValue::Fixed { value } => UiIrValue::Fixed {
+            value: value * design_text_scale,
+        },
+        other => other,
+    }
+}
+
 fn resolve_effective_font_size(
     node_id: BbNodeId,
     node: &crate::bb_scene::BbNode,
@@ -46,6 +61,7 @@ fn resolve_effective_font_size(
     defaults: &DefaultValueRegistry,
     style_font_sizes: &HashMap<String, f32>,
     standard_text_styles: &HashMap<String, StandardTextStyle>,
+    design_text_scale: f32,
 ) -> (UiIrValue, bool) {
     // DATA-BACKED MODEL. Returns (size, is_styled). `is_styled` = the size came from a
     // named brand style (the engine's em-pixel design size) and is used verbatim;
@@ -53,6 +69,11 @@ fn resolve_effective_font_size(
     // imageSizePercent. The SWF renderer maps em→raster via units_per_em
     // (ascent+descent), so styled text renders typographically (no nominal-scale
     // constant). autoFontSize text is fit to its rect render-side.
+    //
+    // `design_text_scale` is the host Flash stage→target view scale (1.0 outside
+    // the MFD frame path): design-unit sizes (brand table, raw authored, bound)
+    // multiply by it; rect-derived sizes (auto-fit, fixed-band prompt) are already
+    // in target pixels and do not.
     let label_style = label_style_name_from_node_or_ancestors(node_id, node, scene);
 
     // Data-gated engine auto-fit (`autoFontSize`): the renderer grows/shrinks the
@@ -68,7 +89,10 @@ fn resolve_effective_font_size(
     // runtime override that takes precedence over the static brand style.
     if let Some(bound_font_size) = binding_resolver.resolve_field_number(node_id, "FontSize", defaults) {
         if bound_font_size.is_finite() && bound_font_size > 0.0 {
-            return (UiIrValue::Fixed { value: bound_font_size as f32 }, false);
+            return (
+                UiIrValue::Fixed { value: bound_font_size as f32 * design_text_scale },
+                false,
+            );
         }
     }
 
@@ -79,6 +103,7 @@ fn resolve_effective_font_size(
     if let Some(size) =
         standard_textfield_font_size_from_styles(node, label_style.as_deref(), standard_text_styles)
     {
+        let size = size * design_text_scale;
         // Documented fallback (docs/ui-fallback-register.md): a heading rendered in a
         // FIXED-height band (its `sizing.height.behavior == "Fixed"`, vs the `Auto`
         // content-sizing every full-size heading uses) is fit to that band by the
@@ -94,19 +119,22 @@ fn resolve_effective_font_size(
     // Explicit per-node authored size (raw FontSize / direct modifier) for nodes
     // whose style has no brand-table FontSize entry.
     if let Some(raw_font_size) = font_size_from_raw(node) {
-        return (raw_font_size, false);
+        return (scale_design_font_value(raw_font_size, design_text_scale), false);
     }
 
     // Borrow a scene-derived size for the style when a sibling carries an authored
     // FontSize and the brand table has no entry for it.
     if let Some(style_name) = label_style.as_deref() {
         if let Some(size) = style_font_sizes.get(style_name) {
-            return (UiIrValue::Fixed { value: *size }, false);
+            return (UiIrValue::Fixed { value: *size * design_text_scale }, false);
         }
     }
 
     // Fall through to whatever parse_text stored.
-    (convert_bb_value(&text.font_size), false)
+    (
+        scale_design_font_value(convert_bb_value(&text.font_size), design_text_scale),
+        false,
+    )
 }
 
 #[derive(Debug, Clone, Default)]
@@ -310,8 +338,11 @@ fn resolve_effective_line_spacing(
     node: &crate::bb_scene::BbNode,
     effective_font_size: &UiIrValue,
     standard_text_styles: &HashMap<String, StandardTextStyle>,
+    design_text_scale: f32,
 ) -> Option<f32> {
-    line_spacing_from_raw(node).or_else(|| {
+    // Authored line spacing is in design units like the font size; the standard
+    // brand-table branch self-scales through the effective/standard size ratio.
+    line_spacing_from_raw(node).map(|spacing| spacing * design_text_scale).or_else(|| {
         label_style_name_from_raw(node).and_then(|style| {
             standard_text_style_keys(&style)
                 .into_iter()

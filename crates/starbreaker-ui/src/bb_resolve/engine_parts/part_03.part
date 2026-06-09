@@ -374,16 +374,11 @@ fn resolve_canvas_graph_inner(
         }
     }
 
-    // Apply brand modifiers after scene resolution is complete.
-    // This is the R2 phase — mutate node fields based on brand-style modifiers.
-    //
-    // Resolution order:
-    //   1. `brandStyles[]` on the canvas (per-brand override for MC_*, single-entry
-    //      for IC_*). Resolved by `resolve_brand_style`.
-    //   2. Canvas-level `style` field (a file:// URL pointing to a
-    //      `BuildingBlocks_Style` record — e.g. `s_bioc` on medical canvases).
-    //      The linked Style record has the same `entries[]` (StyleEntry) shape
-    //      as a brandStyles entry, so we can apply it identically.
+    // Apply style modifiers after scene resolution is complete (the R2 phase).
+    // Cascade order mirrors the engine: generic sharedStyles base first, then
+    // the selected brand's `brandStyles[]` entries (per-brand override for MC_*,
+    // single-entry for IC_*) or the canvas-level `style` record (e.g. `s_bioc`
+    // on medical canvases) override it, then canvas embeddedStyles.
     let preferred_brand = local_style_identifier.as_deref();
     if scene.nodes.values().any(body_background_uses_texture) {
         let module_path = standard_body_background_widget_path();
@@ -402,36 +397,17 @@ fn resolve_canvas_graph_inner(
     }
 
     crate::bb_bindings::resolve_state_tags_into_scene(&mut scene, &Default::default());
-    let brand_style = bb_brand_style::resolve_brand_style(root_json, manufacturer_id, preferred_brand);
-    if let Some(brand_style) = brand_style.as_ref() {
-        crate::bb_brand_apply::apply_brand_modifiers(&mut scene, brand_style, loc_fetcher);
-    } else if let Some(style_value) = local_style_value.as_ref() {
-        if let Some(entries) = style_value.get("entries").and_then(|v| v.as_array()) {
-            let identifier = record_value
-                .get("style")
-                .and_then(|v| v.as_str())
-                .map(crate::record_name::extract_record_name)
-                .unwrap_or_else(|| "linked_style".to_string());
-            let brand = bb_brand_style::BrandStyle {
-                identifier,
-                entries: entries.as_slice(),
-                raw: style_value,
-            };
-            crate::bb_brand_apply::apply_brand_modifiers(&mut scene, &brand, loc_fetcher);
-        }
-    }
-    // Shared ColorStyle roles (Bright/Disabled) resolve against the full brand palette, not the canvas's narrower one.
-    let shared_palette = brand_style.as_ref().map_or(palette_source.unwrap_or(record_value), |b| b.raw);
-    apply_shared_styles(&mut scene, record_value, shared_palette, fetch_by_path, loc_fetcher);
-    if let Some(entries) = record_value.get("embeddedStyles").and_then(|v| v.as_array()) {
-        let palette_source = palette_source.unwrap_or(record_value);
-        let brand = bb_brand_style::BrandStyle {
-            identifier: "embeddedStyles".to_string(),
-            entries: entries.as_slice(),
-            raw: palette_source,
-        };
-        crate::bb_brand_apply::apply_brand_modifiers(&mut scene, &brand, loc_fetcher);
-    }
+    apply_canvas_style_cascade(
+        &mut scene,
+        root_json,
+        record_value,
+        manufacturer_id,
+        preferred_brand,
+        local_style_value.as_ref(),
+        palette_source,
+        fetch_by_path,
+        loc_fetcher,
+    );
 
     if let Some(style_id) = local_style_identifier.as_deref() {
         let module_paths = [

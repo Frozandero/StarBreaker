@@ -273,10 +273,14 @@ fn is_footer_brand_label_context(scene: &BbScene, mut parent_id: BbNodeId) -> bo
     }
 }
 
-fn background_fill_colour_token_from_raw(raw: &serde_json::Value, allow_fill_colour: bool) -> Option<String> {
-    let background_enabled = raw_background_enabled(raw);
-
-    raw.get("BackgroundColorToken")
+fn background_fill_colour_token_from_raw(
+    raw: &serde_json::Value,
+    background_enabled: bool,
+    allow_fill_colour: bool,
+) -> Option<String> {
+    background_enabled
+        .then(|| raw.get("BackgroundColorToken"))
+        .flatten()
         .and_then(|value| value.as_str())
         .map(str::trim)
         .filter(|token| !token.is_empty())
@@ -369,9 +373,11 @@ fn colour_style_alpha(value: &serde_json::Value) -> Option<f32> {
         .map(|value| (value as f32).clamp(0.0, 1.0))
 }
 
-fn background_fill_alpha_from_raw(raw: &serde_json::Value, allow_fill_colour: bool) -> Option<f32> {
-    let background_enabled = raw_background_enabled(raw);
-
+fn background_fill_alpha_from_raw(
+    raw: &serde_json::Value,
+    background_enabled: bool,
+    allow_fill_colour: bool,
+) -> Option<f32> {
     if background_enabled {
         raw.get("background")
             .and_then(|background| background.get("color"))
@@ -389,12 +395,36 @@ fn background_fill_alpha_from_raw(raw: &serde_json::Value, allow_fill_colour: bo
         })
 }
 
+/// Whether `node` draws a background fill.
+///
+/// GFx text fields draw no background unless explicitly enabled: a style
+/// entry's `BackgroundColor` restyles that (off) background rather than
+/// enabling it (the MFD footer screen-name text carries `Bright@1.0` from the
+/// shared `UnSelectedName` entry yet draws no bar in-game). Container widgets
+/// are enabled by a supplied colour (`raw_background_enabled`).
+fn node_background_enabled(node: &crate::bb_scene::BbNode) -> bool {
+    if matches!(node.ty, BbNodeType::WidgetTextField | BbNodeType::WidgetText) {
+        let explicit = node
+            .raw
+            .get("EnableBackground")
+            .and_then(|enable| enable.as_bool())
+            .or_else(|| {
+                node.raw
+                    .get("background")
+                    .and_then(|background| background.get("enable"))
+                    .and_then(|enable| enable.as_bool())
+            });
+        return explicit == Some(true);
+    }
+    raw_background_enabled(&node.raw)
+}
+
 fn raw_background_enabled(raw: &serde_json::Value) -> bool {
-    // An explicit EnableBackground: false must win over any BackgroundColor
-    // that may also be present (style entries sometimes set both; the disable
-    // flag is the authoritative gate).
-    if raw.get("EnableBackground").and_then(|e| e.as_bool()) == Some(false) {
-        return false;
+    // An explicit EnableBackground modifier is the authoritative gate in either
+    // direction (style entries sometimes set both it and a colour).
+    match raw.get("EnableBackground").and_then(|e| e.as_bool()) {
+        Some(enabled) => return enabled,
+        None => {}
     }
 
     if raw.get("BackgroundColor").is_some()
@@ -402,14 +432,6 @@ fn raw_background_enabled(raw: &serde_json::Value) -> bool {
             .get("BackgroundColorToken")
             .and_then(|token| token.as_str())
             .is_some_and(|token| !token.trim().is_empty())
-    {
-        return true;
-    }
-
-    if raw
-        .get("EnableBackground")
-        .and_then(|enable| enable.as_bool())
-        .unwrap_or(false)
     {
         return true;
     }

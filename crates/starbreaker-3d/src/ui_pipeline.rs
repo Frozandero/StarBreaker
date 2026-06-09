@@ -90,6 +90,7 @@ pub fn render_ui_binding_png(
         default_view_index: binding.dashboard_view_index,
         default_screen_slot: binding.dashboard_screen_slot,
         screen_name_loc_key: binding.screen_name_loc_key.as_deref(),
+        host_swf_path: binding.owner_source_file.as_deref(),
     };
     let effective_guid = binding
         .content_canvas_guid
@@ -155,6 +156,7 @@ pub fn compile_ui_binding_ir_json(
         default_view_index: binding.dashboard_view_index,
         default_screen_slot: binding.dashboard_screen_slot,
         screen_name_loc_key: binding.screen_name_loc_key.as_deref(),
+        host_swf_path: binding.owner_source_file.as_deref(),
     };
     let effective_guid = binding
         .content_canvas_guid

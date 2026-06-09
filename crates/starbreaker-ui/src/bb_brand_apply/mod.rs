@@ -36,6 +36,7 @@ mod tests_scene_styles;
 mod tests_support;
 
 use self::colors::{parse_color_value, ColorStyleRole};
+use self::colors::PaletteSources;
 use self::modifiers::{apply_inline_color_overlay, apply_modifier};
 
 /// Apply brand-style modifiers to a scene.
@@ -55,7 +56,29 @@ pub fn apply_brand_modifiers(
     brand: &BrandStyle<'_>,
     loc_fetcher: Option<&dyn LocFetcher>,
 ) {
-    apply_style_entries(scene, brand.entries, brand.raw, Some(&brand.identifier), loc_fetcher);
+    let palettes = PaletteSources::uniform(brand.raw);
+    apply_style_entries(scene, brand.entries, &palettes, Some(&brand.identifier), loc_fetcher);
+}
+
+/// Like [`apply_brand_modifiers`], but resolving named colour roles against an
+/// explicit palette record. A canvas's `brandStyles[]` container carries only
+/// `entries`; the colour palette lives on the `BuildingBlocks_Style` record its
+/// `brandIdentifier` names (e.g. `s_drak_hud`). Callers that can fetch that
+/// record pass it here so colour modifiers (`BackgroundColor = Disabled@0.1`,
+/// `BorderColorTop = Base@1.0`, …) resolve instead of being dropped.
+pub fn apply_brand_modifiers_with_palette(
+    scene: &mut BbScene,
+    brand: &BrandStyle<'_>,
+    palette_source: &serde_json::Value,
+    loc_fetcher: Option<&dyn LocFetcher>,
+) {
+    // Chrome fields resolve against the fetched brand palette; fill fields keep
+    // the container-only behaviour (see `PaletteSources`).
+    let palettes = PaletteSources {
+        fills: brand.raw,
+        chrome: palette_source,
+    };
+    apply_style_entries(scene, brand.entries, &palettes, Some(&brand.identifier), loc_fetcher);
 }
 
 /// Apply arbitrary canvas style entries (for example `defaultStyles.entries`) to a scene.
@@ -65,13 +88,14 @@ pub fn apply_scene_style_entries(
     palette_source: &serde_json::Value,
     loc_fetcher: Option<&dyn LocFetcher>,
 ) {
-    apply_style_entries(scene, entries, palette_source, None, loc_fetcher);
+    let palettes = PaletteSources::uniform(palette_source);
+    apply_style_entries(scene, entries, &palettes, None, loc_fetcher);
 }
 
 fn apply_style_entries(
     scene: &mut BbScene,
     entries: &[serde_json::Value],
-    palette_source: &serde_json::Value,
+    palettes: &PaletteSources<'_>,
     style_identifier: Option<&str>,
     loc_fetcher: Option<&dyn LocFetcher>,
 ) {
@@ -113,10 +137,10 @@ fn apply_style_entries(
                 )
             });
         }
-        apply_inline_color_overlay(node, palette_source);
-        resolve_node_background_color(node, palette_source);
+        apply_inline_color_overlay(node, palettes.fills);
+        resolve_node_background_color(node, palettes.fills);
         for entry in &matching_entries {
-            apply_entry_modifiers(entry, node, palette_source, loc_fetcher);
+            apply_entry_modifiers(entry, node, palettes, loc_fetcher);
             record_applied_style_entry(node, entry);
         }
     }
@@ -379,7 +403,7 @@ fn node_type_matches(type_str: &str, ty: &BbNodeType) -> bool {
 fn apply_entry_modifiers(
     entry: &serde_json::Value,
     node: &mut BbNode,
-    palette_source: &serde_json::Value,
+    palettes: &PaletteSources<'_>,
     loc_fetcher: Option<&dyn LocFetcher>,
 ) {
     let modifiers = match entry.get("modifiers").and_then(|v| v.as_array()) {
@@ -388,7 +412,7 @@ fn apply_entry_modifiers(
     };
 
     for modifier in modifiers {
-        apply_modifier(modifier, node, palette_source, loc_fetcher);
+        apply_modifier(modifier, node, palettes, loc_fetcher);
     }
 }
 

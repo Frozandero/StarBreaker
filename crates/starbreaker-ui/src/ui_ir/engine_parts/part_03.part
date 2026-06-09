@@ -12,6 +12,7 @@ pub fn compile_ui_ir_from_scene_with_animation_sample(
     missing_asset_refs: Vec<String>,
     animation_sample_percent: Option<f32>,
     confidence: u8,
+    design_text_scale: f32,
 ) -> UiIrDocument {
     let mut layout_scene = scene.clone();
     if let Some(root_annunciator_items) = layout_scene
@@ -104,6 +105,7 @@ pub fn compile_ui_ir_from_scene_with_animation_sample(
         defaults,
         animation_sample_percent,
         selected_style_source.as_deref(),
+        design_text_scale,
     );
     let unresolved_count = nodes
         .iter()

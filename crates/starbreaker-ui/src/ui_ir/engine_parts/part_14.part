@@ -100,6 +100,7 @@ mod tests_d {
             Vec::new(),
             Some(50.0),
             100,
+            1.0,
         );
 
         let node = ir.nodes.iter().find(|node| node.name == "fingerprint_like").expect("sample node");

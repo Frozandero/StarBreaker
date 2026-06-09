@@ -27,7 +27,7 @@ use serde_json::json;
 
         let mut scene = make_test_scene();
         let node = scene.nodes.get_mut(&1).expect("test node");
-        apply_modifier(&modifier, node, &palette, None);
+        apply_modifier(&modifier, node, &PaletteSources::uniform(&palette), None);
 
         assert_eq!(
             node.raw.get("FillColorToken").and_then(|value| value.as_str()),
@@ -115,7 +115,7 @@ use serde_json::json;
         });
         let mut scene = make_test_scene();
         let node = scene.nodes.get_mut(&1).expect("test node");
-        apply_modifier(&modifier, node, &palette, None);
+        apply_modifier(&modifier, node, &PaletteSources::uniform(&palette), None);
         let node = scene.nodes.get(&1).unwrap();
         assert!(
             raw_color_channel(node, "BackgroundColor", "r") < 0.15,
@@ -139,7 +139,7 @@ use serde_json::json;
         });
         let mut scene = make_test_scene();
         let node = scene.nodes.get_mut(&1).expect("test node");
-        apply_modifier(&modifier, node, &palette, None);
+        apply_modifier(&modifier, node, &PaletteSources::uniform(&palette), None);
         let node = scene.nodes.get(&1).unwrap();
         // Orange slot 0: red ≈ 1.0, blue ≈ 0.22. Cream slot 6: blue ≈ 0.88.
         assert!(
@@ -191,7 +191,7 @@ use serde_json::json;
 
         let mut scene = make_test_scene();
         let node = scene.nodes.get_mut(&1).expect("test node");
-        apply_modifier(&modifier, node, &palette, None);
+        apply_modifier(&modifier, node, &PaletteSources::uniform(&palette), None);
 
         assert_eq!(
             node.raw

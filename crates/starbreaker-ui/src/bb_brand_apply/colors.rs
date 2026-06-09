@@ -200,3 +200,32 @@ pub(super) fn write_color_token_to_raw(field_name: &str, token: Option<&str>, no
     });
 }
 
+/// Palettes for resolving named colour roles in style modifiers.
+///
+/// `chrome` covers `Background*` / `Border*` fields and may be the brand's
+/// `BuildingBlocks_Style` record when the entry's own container carries no
+/// `colorStyles` (verified against the MFD footer reference). `fills` covers
+/// `FillColor`/`StrokeColor`/other fields and keeps the container-only
+/// behaviour: the medical platinum references show authored Fill roles do NOT
+/// map 1:1 onto the compose slot resolvers (e.g. the BIOC bottom-bar's
+/// authored `Base` renders the darker surface slot), so widening fills to the
+/// fetched palette is deferred until that mapping is reference-verified.
+pub struct PaletteSources<'a> {
+    pub fills: &'a serde_json::Value,
+    pub chrome: &'a serde_json::Value,
+}
+
+impl<'a> PaletteSources<'a> {
+    /// Both field classes resolve against the same palette.
+    pub fn uniform(palette: &'a serde_json::Value) -> Self {
+        Self { fills: palette, chrome: palette }
+    }
+
+    pub(super) fn for_field(&self, field_name: &str) -> &'a serde_json::Value {
+        if field_name.starts_with("Background") || field_name.starts_with("Border") {
+            self.chrome
+        } else {
+            self.fills
+        }
+    }
+}

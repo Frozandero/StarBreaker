@@ -305,6 +305,7 @@ fn main() -> Result<(), String> {
         default_view_index: None,
         default_screen_slot: None,
         screen_name_loc_key: None,
+        host_swf_path: None,
     };
 
     let inputs = PipelineInputs {

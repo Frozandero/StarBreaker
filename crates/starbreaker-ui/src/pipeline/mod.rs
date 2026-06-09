@@ -20,6 +20,7 @@ use crate::ui_ir::{UiIrDocument, UiIrTextPayload, UiRendererHint};
 
 mod asset_manifest;
 mod canvas_aspect;
+mod host_stage;
 mod style_selection;
 mod swf_selection;
 mod timing;
@@ -28,6 +29,7 @@ mod tests;
 
 use asset_manifest::build_asset_reference_manifest;
 use canvas_aspect::frame_canvas_aspect;
+use host_stage::host_stage_text_scale;
 use style_selection::{build_style_selection_manifest, load_style_for_ir};
 use swf_selection::{build_swf_selection_manifest, load_first_swf};
 use timing::timed;
@@ -105,6 +107,13 @@ pub struct UiBindingView<'a> {
     /// Localization key for the MFD screen name (e.g. `"@ui_MFD_View_TargetStatus"`).
     /// Injected into `text_ScreenName` nodes when rendering the MFD frame canvas.
     pub screen_name_loc_key: Option<&'a str>,
+    /// P4K path of the Flash movie hosting this screen's render-target (the
+    /// binding's `owner_source_file`, e.g.
+    /// `UI/BuildingBlocks/assets/SWF/BuildingBlocks_root.swf`). The engine
+    /// renders BB canvases inside this GFx stage; textfield font sizes are in
+    /// stage units, so the stage→target view scale applies to text. `None` when
+    /// the binding has no recorded host movie (text renders unscaled).
+    pub host_swf_path: Option<&'a str>,
 }
 
 /// All inputs required by pipeline entrypoints.
@@ -306,6 +315,14 @@ pub fn compile_ir_for_binding(inputs: &PipelineInputs<'_>) -> Result<UiIrDocumen
     let defaults = DefaultValueRegistry::with_pipeline_defaults(inputs.localization_map.clone());
     let asset_manifest = timed("manifest", || build_asset_reference_manifest(&scene, inputs.asset_fetcher));
 
+    // Textfield font sizes are host-stage units on the MFD frame path; see
+    // `host_stage::host_stage_text_scale` for the engine model.
+    let design_text_scale = if use_frame_canvas {
+        host_stage_text_scale(b.host_swf_path, inputs.swf_fetcher, effective_target_size)
+    } else {
+        1.0
+    };
+
     let mut ir = timed("ir_compile", || crate::ui_ir::compile_ui_ir_from_scene_with_animation_sample(
         &scene,
         Some(inputs.canvas_fetcher),
@@ -320,6 +337,7 @@ pub fn compile_ir_for_binding(inputs: &PipelineInputs<'_>) -> Result<UiIrDocumen
         asset_manifest.missing_asset_refs,
         inputs.animation_sample_percent,
         100,
+        design_text_scale,
     ));
     ir.warnings.extend(fallback_counter_warnings(
         style_manifest

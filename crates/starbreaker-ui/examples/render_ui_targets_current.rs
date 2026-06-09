@@ -275,6 +275,7 @@ fn render_target(
         default_view_index: None,
         default_screen_slot: None,
         screen_name_loc_key: None,
+        host_swf_path: None,
     };
 
     let inputs = PipelineInputs {
@@ -453,6 +454,7 @@ fn main() -> Result<(), String> {
             default_view_index: None,
             default_screen_slot: None,
             screen_name_loc_key: None,
+        host_swf_path: None,
         };
         let ui_target_a_inputs = PipelineInputs {
             binding: &ui_target_a_binding,
@@ -477,6 +479,7 @@ fn main() -> Result<(), String> {
             default_view_index: None,
             default_screen_slot: None,
             screen_name_loc_key: None,
+        host_swf_path: None,
         };
         let ui_target_b_inputs = PipelineInputs {
             binding: &ui_target_b_binding,

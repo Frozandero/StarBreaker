@@ -99,6 +99,7 @@ pub fn compile_ui_ir_from_scene(
         missing_asset_refs,
         None,
         confidence,
+        1.0,
     )
 }
 

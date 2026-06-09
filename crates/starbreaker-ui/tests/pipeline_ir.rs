@@ -113,6 +113,7 @@ fn compile_ir_for_binding_uses_content_canvas_guid() {
         default_view_index: None,
         default_screen_slot: None,
         screen_name_loc_key: None,
+        host_swf_path: None,
     };
 
     let inputs = PipelineInputs {
@@ -178,6 +179,7 @@ fn compile_ir_for_binding_matches_golden_fixture() {
         default_view_index: None,
         default_screen_slot: None,
         screen_name_loc_key: None,
+        host_swf_path: None,
     };
 
     let inputs = PipelineInputs {
@@ -244,6 +246,7 @@ fn render_for_binding_ir_produces_nonempty_png() {
         default_view_index: None,
         default_screen_slot: None,
         screen_name_loc_key: None,
+        host_swf_path: None,
     };
 
     let inputs = PipelineInputs {
@@ -319,6 +322,7 @@ fn render_for_binding_matches_ir_entrypoint_for_bb_canvas() {
         default_view_index: None,
         default_screen_slot: None,
         screen_name_loc_key: None,
+        host_swf_path: None,
     };
 
     let inputs = PipelineInputs {
@@ -397,6 +401,7 @@ fn render_for_binding_ir_honours_canvas_style_override() {
         default_view_index: None,
         default_screen_slot: None,
         screen_name_loc_key: None,
+        host_swf_path: None,
     };
 
     let inputs = PipelineInputs {

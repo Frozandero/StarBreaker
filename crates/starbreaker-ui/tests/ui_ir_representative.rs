@@ -117,6 +117,7 @@ fn compile_ir_for_representative_fixtures_validates() {
             default_view_index: None,
             default_screen_slot: None,
             screen_name_loc_key: None,
+        host_swf_path: None,
         };
 
         let inputs = PipelineInputs {
@@ -158,6 +159,7 @@ fn stable_hash_is_repeatable_for_representative_fixture() {
         default_view_index: None,
         default_screen_slot: None,
         screen_name_loc_key: None,
+        host_swf_path: None,
     };
 
     let inputs = PipelineInputs {

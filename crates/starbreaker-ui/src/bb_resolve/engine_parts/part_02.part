@@ -183,7 +183,8 @@ pub fn resolve_canvas_graph_with_loc_and_bound_view(
 fn apply_shared_styles(
     scene: &mut BbScene,
     record_value: &serde_json::Value,
-    palette: &serde_json::Value,
+    fills_palette: &serde_json::Value,
+    chrome_palette: &serde_json::Value,
     fetch_by_path: &dyn Fn(&str) -> Result<serde_json::Value, String>,
     loc_fetcher: Option<&dyn LocFetcher>,
 ) {
@@ -201,16 +202,109 @@ fn apply_shared_styles(
             if let Some(entries) = shared_value.get("entries").and_then(|v| v.as_array()) {
                 // The shared style's own `colorStyles` are null placeholders; its
                 // `ColorStyle` roles resolve against the canvas's effective brand
-                // palette, so pass that as the palette source.
+                // palette. Chrome (Background*/Border*) roles may resolve via the
+                // fetched brand Style record; fill roles keep the container-only
+                // behaviour (see `PaletteSources`).
                 let brand = bb_brand_style::BrandStyle {
                     identifier: extract_record_name(shared_url),
                     entries: entries.as_slice(),
-                    raw: palette,
+                    raw: fills_palette,
                 };
-                crate::bb_brand_apply::apply_brand_modifiers(scene, &brand, loc_fetcher);
+                crate::bb_brand_apply::apply_brand_modifiers_with_palette(
+                    scene,
+                    &brand,
+                    chrome_palette,
+                    loc_fetcher,
+                );
             }
         }
         Err(e) => log::warn!("bb_resolve: failed to load sharedStyles {shared_url}: {e}"),
     }
 }
 
+/// The `BuildingBlocks_Style` record carrying the brand's colour palette.
+///
+/// A canvas's `brandStyles[]` container carries only `entries`; named colour
+/// roles resolve against the Style record its `brandIdentifier` names (e.g.
+/// `s_drak_hud` → `colorStyles`). Fetch that record so colour modifiers are not
+/// dropped for palette-less containers. `None` when the container already
+/// carries a palette or the record is unavailable.
+fn brand_palette_record(
+    brand_style: Option<&bb_brand_style::BrandStyle<'_>>,
+    fetch_by_path: &dyn Fn(&str) -> Result<serde_json::Value, String>,
+) -> Option<serde_json::Value> {
+    let brand = brand_style?;
+    if brand.raw.get("colorStyles").is_some() {
+        return None;
+    }
+    let identifier_url = brand.raw.get("brandIdentifier").and_then(|v| v.as_str())?;
+    match fetch_by_path(identifier_url) {
+        Ok(record) => Some(record),
+        Err(e) => {
+            log::debug!(
+                "bb_resolve: brand palette record '{}' not fetchable: {e}",
+                identifier_url
+            );
+            None
+        }
+    }
+}
+
+/// Apply the canvas's style cascade to the resolved scene.
+///
+/// Priority (lowest first): the canvas-level `style` record link, then
+/// sharedStyles, then the selected brand's `brandStyles[]` entries, then the
+/// canvas's own embeddedStyles. Verified against the medical (s_bioc style link
+/// under shared) and MFD footer (s_drak_hud brand over the generic shared
+/// `ScreenNameBackground`) references.
+#[allow(clippy::too_many_arguments)]
+fn apply_canvas_style_cascade(
+    scene: &mut BbScene,
+    root_json: &serde_json::Value,
+    record_value: &serde_json::Value,
+    manufacturer_id: Option<&str>,
+    preferred_brand: Option<&str>,
+    local_style_value: Option<&serde_json::Value>,
+    palette_source: Option<&serde_json::Value>,
+    fetch_by_path: &dyn Fn(&str) -> Result<serde_json::Value, String>,
+    loc_fetcher: Option<&dyn LocFetcher>,
+) {
+    let brand_style = bb_brand_style::resolve_brand_style(root_json, manufacturer_id, preferred_brand);
+    let brand_palette_record = brand_palette_record(brand_style.as_ref(), fetch_by_path);
+    if brand_style.is_none()
+        && let Some(style_value) = local_style_value
+        && let Some(entries) = style_value.get("entries").and_then(|v| v.as_array())
+    {
+        let identifier = record_value
+            .get("style")
+            .and_then(|v| v.as_str())
+            .map(crate::record_name::extract_record_name)
+            .unwrap_or_else(|| "linked_style".to_string());
+        let brand = bb_brand_style::BrandStyle {
+            identifier,
+            entries: entries.as_slice(),
+            raw: style_value,
+        };
+        crate::bb_brand_apply::apply_brand_modifiers(scene, &brand, loc_fetcher);
+    }
+    // Shared ColorStyle roles (Bright/Disabled) resolve against the full brand palette, not the canvas's narrower one.
+    let shared_fills = brand_style
+        .as_ref()
+        .map(|b| b.raw)
+        .unwrap_or(palette_source.unwrap_or(record_value));
+    let shared_chrome = brand_palette_record.as_ref().unwrap_or(shared_fills);
+    apply_shared_styles(scene, record_value, shared_fills, shared_chrome, fetch_by_path, loc_fetcher);
+    if let Some(brand_style) = brand_style.as_ref() {
+        let palette = brand_palette_record.as_ref().unwrap_or(brand_style.raw);
+        crate::bb_brand_apply::apply_brand_modifiers_with_palette(scene, brand_style, palette, loc_fetcher);
+    }
+    if let Some(entries) = record_value.get("embeddedStyles").and_then(|v| v.as_array()) {
+        let palette_source = palette_source.unwrap_or(record_value);
+        let brand = bb_brand_style::BrandStyle {
+            identifier: "embeddedStyles".to_string(),
+            entries: entries.as_slice(),
+            raw: palette_source,
+        };
+        crate::bb_brand_apply::apply_brand_modifiers(scene, &brand, loc_fetcher);
+    }
+}
