@@ -1,23 +1,28 @@
-fn border_from_node(node: &BbNode) -> Option<UiIrBorder> {
+fn border_from_node(node: &BbNode, design_text_scale: f32) -> Option<UiIrBorder> {
     let border = node.border.as_ref()?;
+    // Border widths are stage-unit properties like font sizes: on the MFD
+    // frame path they pick up the host-stage view scale (the footer's 2px
+    // Base rule renders ~3.3px on the 1600×1200 RTT); elsewhere the scale is
+    // 1.0. Geometry rects reflow through the layout and are unscaled.
+    let width = |value: f32| value * design_text_scale;
     Some(UiIrBorder {
         top: UiIrBorderSide {
-            width: border.top.width,
+            width: width(border.top.width),
             colour: border.top.colour,
             colour_token: border_colour_token_from_raw(&node.raw, "Top"),
         },
         right: UiIrBorderSide {
-            width: border.right.width,
+            width: width(border.right.width),
             colour: border.right.colour,
             colour_token: border_colour_token_from_raw(&node.raw, "Right"),
         },
         bottom: UiIrBorderSide {
-            width: border.bottom.width,
+            width: width(border.bottom.width),
             colour: border.bottom.colour,
             colour_token: border_colour_token_from_raw(&node.raw, "Bottom"),
         },
         left: UiIrBorderSide {
-            width: border.left.width,
+            width: width(border.left.width),
             colour: border.left.colour,
             colour_token: border_colour_token_from_raw(&node.raw, "Left"),
         },

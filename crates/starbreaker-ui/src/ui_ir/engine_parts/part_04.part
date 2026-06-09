@@ -117,6 +117,8 @@ fn build_ui_ir_nodes(
                 font_record: font_record.clone(),
                 resolved_font_record: resolved_font_record.clone(),
                 line_spacing: resolve_effective_line_spacing(node, &font_size, &standard_text_styles, design_text_scale),
+                letter_spacing: brand_style_letter_spacing(label_style.as_deref(), &standard_text_styles)
+                    .map(|spacing| spacing * design_text_scale),
                 font_size,
                 alignment: text.alignment.clone(),
                 vertical_alignment: node
@@ -137,7 +139,26 @@ fn build_ui_ir_nodes(
                     .and_then(|lp| lp.get("anchorToParentY"))
                     .and_then(|v| v.as_f64())
                     .map(|value| value as f32),
-                colour: text.colour.or_else(|| fill_colour_from_raw_for_text(&node.raw)),
+                colour: text
+                    .colour
+                    .or_else(|| fill_colour_from_raw_for_text(&node.raw))
+                    .or_else(|| {
+                        // An authored brand FillColor role outside the
+                        // token-stable namespace (e.g. the MFD hud H1's
+                        // `Accent2`) carries its enum-resolved RGBA explicitly;
+                        // a node-level colour/tag token above still wins.
+                        if text_colour_token_from_raw(&node.raw).is_none()
+                            && node_colour_directive_token(
+                                &resolved_style_tags,
+                                label_style.as_deref(),
+                            )
+                            .is_none()
+                        {
+                            brand_text_style_fill_rgba(label_style.as_deref(), &standard_text_styles)
+                        } else {
+                            None
+                        }
+                    }),
                 colour_token: text_colour_token_from_raw(&node.raw).or_else(|| {
                     semantic_text_colour_token_from_style_tags(&resolved_style_tags, label_style.as_deref())
                 }).or_else(|| {
@@ -220,6 +241,8 @@ fn build_ui_ir_nodes(
                     &standard_text_styles,
                     design_text_scale,
                 ),
+                letter_spacing: brand_style_letter_spacing(label_style.as_deref(), &standard_text_styles)
+                    .map(|spacing| spacing * design_text_scale),
                 alignment,
                 vertical_alignment: node
                     .raw
@@ -415,7 +438,7 @@ fn build_ui_ir_nodes(
         let mut border = if should_suppress_annunciator_border(&resolved_style_tags, &node.ty) {
             None
         } else {
-            let base_border = border_from_node(node);
+            let base_border = border_from_node(node, design_text_scale);
             if base_border
                 .as_ref()
                 .is_some_and(border_has_visible_semantics)

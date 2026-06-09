@@ -135,6 +135,7 @@ fn swf_top_alignment_uses_source_edit_text_overscan() {
         TextAlign::Left,
         VerticalAlign::Top,
         None,
+        0.0,
     ));
 
     let metrics = crate::swf_assets::SwfEditTextMetrics {
@@ -154,6 +155,7 @@ fn swf_top_alignment_uses_source_edit_text_overscan() {
         TextAlign::Left,
         VerticalAlign::Top,
         None,
+        0.0,
     ));
 
     let uncorrected_top = first_nonblack_y(&without_metrics).expect("uncorrected pixels");

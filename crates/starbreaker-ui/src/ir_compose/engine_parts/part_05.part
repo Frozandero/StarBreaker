@@ -70,7 +70,18 @@ fn resolved_text_colour(
 
 pub fn debug_text_rects(node: &UiIrNode) -> Option<DebugTextRects> {
     let renderer = TextRenderer::new();
-    debug_text_rects_with_renderer(node, &renderer)
+    debug_text_rects_with_renderer(node, &renderer, None)
+}
+
+/// Like [`debug_text_rects`], with sibling/parent context so relationship-gated
+/// rect models (the nested inline heading pair) resolve exactly as the render
+/// path does.
+pub fn debug_text_rects_in_document(
+    node: &UiIrNode,
+    document: &UiIrDocument,
+) -> Option<DebugTextRects> {
+    let renderer = TextRenderer::new();
+    debug_text_rects_with_renderer(node, &renderer, Some(document))
 }
 
 pub fn debug_text_drawn_bounds(node: &UiIrNode) -> Option<DebugTextDrawnBounds> {
@@ -78,7 +89,11 @@ pub fn debug_text_drawn_bounds(node: &UiIrNode) -> Option<DebugTextDrawnBounds> 
     debug_text_drawn_bounds_with_renderer(node, &renderer)
 }
 
-fn debug_text_rects_with_renderer(node: &UiIrNode, renderer: &TextRenderer) -> Option<DebugTextRects> {
+fn debug_text_rects_with_renderer(
+    node: &UiIrNode,
+    renderer: &TextRenderer,
+    document: Option<&UiIrDocument>,
+) -> Option<DebugTextRects> {
     let text = resolved_text_payload(node)?;
     let rect = ir_rect_to_layout_rect(node.computed_rect);
     if rect.w < 0.5 || rect.h < 0.5 {
@@ -182,7 +197,8 @@ fn debug_text_rects_with_renderer(node: &UiIrNode, renderer: &TextRenderer) -> O
             .as_ref()
             .map(|style| VerticalAlign::from_bb_str(&style.vertical_alignment))
             .unwrap_or(VerticalAlign::Centre);
-        let primary_rect = center_anchored_heading_textfield_text_rect(node, rect).unwrap_or(rect);
+        let primary_rect =
+            center_anchored_heading_textfield_text_rect(node, rect, document).unwrap_or(rect);
         Some(DebugTextRects {
             primary: primary_rect,
             secondary: None,
@@ -192,10 +208,33 @@ fn debug_text_rects_with_renderer(node: &UiIrNode, renderer: &TextRenderer) -> O
     }
 }
 
-fn center_anchored_heading_textfield_text_rect(node: &UiIrNode, rect: Rect) -> Option<Rect> {
+fn center_anchored_heading_textfield_text_rect(
+    node: &UiIrNode,
+    rect: Rect,
+    document: Option<&UiIrDocument>,
+) -> Option<Rect> {
     let style = node.text_style.as_ref()?;
     if !node.node_type.eq_ignore_ascii_case("widget_text_field") {
         return None;
+    }
+    // The anchored half-rect model belongs to the nested inline heading pair
+    // (the medical header: a Heading1 parent text field with a same-style
+    // text-field child sharing its band — both render in the band's lower
+    // half). A lone centre-anchored heading (the MFD footer's screen name)
+    // centres its glyph block ON the anchor line instead — verified against the
+    // Clipper target/power footer captures (cap centre == card midline).
+    if let Some(document) = document {
+        let has_same_style_text_child = document.nodes.iter().any(|candidate| {
+            candidate.parent_id == Some(node.id)
+                && candidate.node_type.eq_ignore_ascii_case("widget_text_field")
+                && candidate
+                    .text_style
+                    .as_ref()
+                    .is_some_and(|child| same_label_style(child, style))
+        });
+        if !has_same_style_text_child {
+            return None;
+        }
     }
     if !style
         .label_style

@@ -204,6 +204,10 @@ pub struct UiIrTextStyle {
     pub font_size: UiIrValue,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub line_spacing: Option<f32>,
+    /// Per-glyph tracking in target px (brand LetterSpacing × the host-stage
+    /// text scale); the renderer adds it to every character advance.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub letter_spacing: Option<f32>,
     pub alignment: String,
     #[serde(default = "default_vertical_alignment")]
     pub vertical_alignment: String,

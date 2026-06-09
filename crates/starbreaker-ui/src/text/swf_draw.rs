@@ -20,6 +20,7 @@ impl TextRenderer {
         align: TextAlign,
         vertical_align: VerticalAlign,
         line_spacing_px: Option<f32>,
+        letter_spacing_px: f32,
     ) -> bool {
         if text.is_empty() || rect.w < 1.0 || rect.h < 1.0 || size_px < 1.0 {
             return false;
@@ -34,7 +35,7 @@ impl TextRenderer {
         }
 
         let nominal_line_h = (((units_per_em + line_gap) / units_per_em) * size_px).max(1.0);
-        let lines = swf_wrap_lines(swf_font, text, units_per_em, size_px, rect.w);
+        let lines = swf_wrap_lines(swf_font, text, units_per_em, size_px, rect.w, letter_spacing_px);
 
         struct GlyphRun {
             path: tiny_skia::Path,
@@ -63,11 +64,11 @@ impl TextRenderer {
                 // Word-space advance = the font's own space-glyph advance (data-backed;
                 // see swf_space_advance_px). Re-derived against the reference.
                 if ch == ' ' {
-                    pen_x += swf_space_advance_px(swf_font, units_per_em, size_px);
+                    pen_x += swf_space_advance_px(swf_font, units_per_em, size_px) + letter_spacing_px;
                     continue;
                 }
                 let Some((glyph_idx, glyph)) = swf_lookup_glyph(swf_font, ch) else {
-                    pen_x += (size_px * 0.5).max(1.0);
+                    pen_x += (size_px * 0.5).max(1.0) + letter_spacing_px;
                     continue;
                 };
 
@@ -84,7 +85,9 @@ impl TextRenderer {
                 }
 
                 let adv = swf_glyph_advance_px(swf_font, glyph_idx, units_per_em, size_px);
-                pen_x += adv.max(1.0);
+                // GFx letterSpacing: a constant per-character tracking added to
+                // every advance (brand LetterSpacing × host-stage scale).
+                pen_x += adv.max(1.0) + letter_spacing_px;
             }
 
             if !min_y_units.is_finite() || !max_y_units.is_finite() || max_y_units <= min_y_units {
@@ -216,6 +219,7 @@ impl TextRenderer {
         text: &str,
         swf_font: &FontGlyphSet,
         size_px: f32,
+        letter_spacing_px: f32,
     ) -> Option<f32> {
         if text.is_empty() || size_px < 1.0 {
             return None;
@@ -223,7 +227,8 @@ impl TextRenderer {
         let ascent = swf_font.ascent.map(|v| v as f32).unwrap_or(820.0);
         let descent = swf_font.descent.map(|v| v as f32).unwrap_or(-204.0);
         let units_per_em = (ascent.abs() + descent.abs()).max(1.0);
-        (units_per_em > 0.0).then(|| swf_line_width(text, swf_font, units_per_em, size_px))
+        (units_per_em > 0.0)
+            .then(|| swf_line_width(text, swf_font, units_per_em, size_px, letter_spacing_px))
     }
 
 }
@@ -263,15 +268,22 @@ fn swf_space_advance_px(swf_font: &FontGlyphSet, units_per_em: f32, size_px: f32
         .max(1.0)
 }
 
-fn swf_line_width(text: &str, swf_font: &FontGlyphSet, units_per_em: f32, size_px: f32) -> f32 {
+fn swf_line_width(
+    text: &str,
+    swf_font: &FontGlyphSet,
+    units_per_em: f32,
+    size_px: f32,
+    letter_spacing_px: f32,
+) -> f32 {
     text.chars().fold(0.0, |acc, ch| {
-        if ch == ' ' {
-            acc + swf_space_advance_px(swf_font, units_per_em, size_px)
+        let advance = if ch == ' ' {
+            swf_space_advance_px(swf_font, units_per_em, size_px)
         } else if let Some((idx, _)) = swf_lookup_glyph(swf_font, ch) {
-            acc + swf_glyph_advance_px(swf_font, idx, units_per_em, size_px).max(1.0)
+            swf_glyph_advance_px(swf_font, idx, units_per_em, size_px).max(1.0)
         } else {
-            acc + (size_px * 0.5).max(1.0)
-        }
+            (size_px * 0.5).max(1.0)
+        };
+        acc + advance + letter_spacing_px
     })
 }
 
@@ -281,6 +293,7 @@ fn swf_wrap_lines(
     units_per_em: f32,
     size_px: f32,
     max_w: f32,
+    letter_spacing_px: f32,
 ) -> Vec<String> {
     let mut result = Vec::new();
     for paragraph in text.split('\n') {
@@ -297,7 +310,7 @@ fn swf_wrap_lines(
                 format!("{current} {word}")
             };
             if !current.is_empty()
-                && swf_line_width(&candidate, swf_font, units_per_em, size_px) > max_w
+                && swf_line_width(&candidate, swf_font, units_per_em, size_px, letter_spacing_px) > max_w
             {
                 result.push(current);
                 current = word.to_owned();

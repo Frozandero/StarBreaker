@@ -52,6 +52,8 @@ fn caption_pair_secondary_text_style(
         resolved_font_record: resolved_font_record.cloned(),
         font_size: value_font_size.clone(),
         line_spacing: resolve_effective_line_spacing(node, &value_font_size, standard_text_styles, design_text_scale),
+        letter_spacing: brand_style_letter_spacing(caption_style.as_deref(), standard_text_styles)
+            .map(|spacing| spacing * design_text_scale),
         alignment,
         vertical_alignment: node
             .raw

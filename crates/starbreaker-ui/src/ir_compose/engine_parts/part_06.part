@@ -35,6 +35,7 @@ fn inline_nested_textfield_text_rect(
     let parent_rect = center_anchored_heading_textfield_text_rect(
         parent,
         ir_rect_to_layout_rect(parent.computed_rect),
+        Some(document),
     )
     .unwrap_or_else(|| ir_rect_to_layout_rect(parent.computed_rect));
     let parent_nominal_size = parent_style_font_size(parent_style);
@@ -42,7 +43,12 @@ fn inline_nested_textfield_text_rect(
     let parent_swf_size = (parent_nominal_size * parent_font_style_scale * SWF_TEXT_RENDER_SIZE_CALIBRATION).max(1.0);
     let parent_width = select_imported_ui_font(ctx, Some(parent_style))
         .and_then(|selection| {
-            renderer.measure_swf_advance_width(parent_text, selection.font, parent_swf_size)
+            renderer.measure_swf_advance_width(
+                parent_text,
+                selection.font,
+                parent_swf_size,
+                parent_style.letter_spacing.unwrap_or(0.0),
+            )
         })
         .unwrap_or_else(|| {
             renderer.measure(
@@ -86,7 +92,7 @@ fn debug_text_drawn_bounds_with_renderer(
     renderer: &TextRenderer,
 ) -> Option<DebugTextDrawnBounds> {
     let text = resolved_text_payload(node)?;
-    let rects = debug_text_rects_with_renderer(node, renderer)?;
+    let rects = debug_text_rects_with_renderer(node, renderer, None)?;
 
     let nominal_font_size = node
         .text_style

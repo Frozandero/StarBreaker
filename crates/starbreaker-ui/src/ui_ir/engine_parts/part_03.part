@@ -66,7 +66,8 @@ pub fn compile_ui_ir_from_scene_with_animation_sample(
 
     let mut warnings = Vec::new();
     let style_font_sizes = collect_style_font_sizes(scene);
-    let standard_text_styles = collect_standard_text_styles(canvas_fetcher, selected_style_source.as_deref());
+    let standard_text_styles =
+        collect_standard_text_styles(canvas_fetcher, selected_style_source.as_deref(), canvas_name);
     if scene.roots.is_empty() {
         warnings.push("scene has no root nodes".to_string());
     }

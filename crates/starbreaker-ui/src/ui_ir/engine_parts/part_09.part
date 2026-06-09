@@ -140,12 +140,22 @@ fn resolve_effective_font_size(
 #[derive(Debug, Clone, Default)]
 struct StandardTextStyle {
     line_spacing: Option<f32>,
+    /// Brand per-glyph tracking (design units; the GFx renderer adds it to every
+    /// character advance, scaled like the font size).
+    letter_spacing: Option<f32>,
     font_size: Option<f32>,
     font_record: Option<String>,
     /// Authoritative text colour role for this named style, from the brand text-style
     /// entry's `FillColor` modifier (e.g. `Heading6`/`H6` → `Bright`) — the game's own
     /// per-style colour, preferred over derived/heuristic colour-token guesses.
     fill_colour_token: Option<String>,
+    /// The `FillColor` modifier's authored alpha (defaults to 1.0).
+    fill_colour_alpha: Option<f32>,
+    /// The fill role resolved against the typography brand record's `colorStyles`
+    /// palette at the authoritative `BB_ColorStyle` enum index. Populated only for
+    /// roles whose compose-token namespace diverges from the enum (see
+    /// `bb_colour_style_enum_index`).
+    fill_colour_rgba: Option<[f32; 4]>,
 }
 
 /// Fallback font size for a long Heading1 prompt that overflows a short field — used
@@ -199,6 +209,7 @@ fn standard_text_field_widget_path() -> &'static str {
 fn collect_standard_text_styles(
     canvas_fetcher: Option<&dyn CanvasFetcher>,
     selected_style_source: Option<&str>,
+    canvas_name: Option<&str>,
 ) -> HashMap<String, StandardTextStyle> {
     let Some(fetcher) = canvas_fetcher else {
         return HashMap::new();
@@ -241,26 +252,35 @@ fn collect_standard_text_styles(
 
     // The brand override is keyed by the screen's brand style record name. A
     // `canvas:`-sourced style names that record directly; a `manufacturer:<mfr>`
-    // source (e.g. ship MFD screens) maps to that manufacturer's environment UI
-    // style `s_<mfr>_env` — the brand the typography record carries per-manufacturer
-    // overrides under (e.g. Drake's H1 → `audimatmono-bold`/`$Low-Bold`, not the
-    // default `blenderpro-thin`/`$Text1Thin`).
+    // source maps to the manufacturer's UI style family: ship MFD canvases
+    // (`MC_*`/`M_*`) carry the HUD typography brand `s_<mfr>_hud` (Drake's H1 →
+    // `audimatmono-regular`, FillColor `Accent2`, LetterSpacing 2 — verified
+    // against the Clipper target/power footer captures), other screens the
+    // environment brand `s_<mfr>_env`.
     let selected_style_name = selected_style_source.and_then(|source| {
         source
             .strip_prefix("canvas:")
             .map(str::to_ascii_lowercase)
             .or_else(|| {
-                source
-                    .strip_prefix("manufacturer:")
-                    .map(|mfr| format!("s_{}_env", mfr.to_ascii_lowercase()))
+                source.strip_prefix("manufacturer:").map(|mfr| {
+                    use crate::bb_brand_style::CanvasFamily;
+                    let family = canvas_name
+                        .map(|name| name.strip_prefix("BuildingBlocks_Canvas.").unwrap_or(name))
+                        .map(crate::bb_brand_style::classify_canvas_family);
+                    let class = match family {
+                        Some(CanvasFamily::Mfd | CanvasFamily::MfdRoot) => "hud",
+                        _ => "env",
+                    };
+                    format!("s_{}_{}", mfr.to_ascii_lowercase(), class)
+                })
             })
     });
-    for entry in record_value
+    let selected_brand = record_value
         .get("brandStyles")
         .and_then(|styles| styles.as_array())
         .into_iter()
         .flatten()
-        .filter(|brand| {
+        .find(|brand| {
             let Some(selected_style_name) = selected_style_name.as_deref() else {
                 return false;
             };
@@ -269,8 +289,16 @@ fn collect_standard_text_styles(
                 .and_then(|identifier| identifier.as_str())
                 .map(crate::record_name::extract_record_name)
                 .is_some_and(|identifier| identifier.eq_ignore_ascii_case(selected_style_name))
-        })
-        .filter_map(|brand| brand.get("entries").and_then(|entries| entries.as_array()))
+        });
+    // The typography brand's colour palette (its Style record `colorStyles`),
+    // for resolving authored FillColor roles at the enum index.
+    let brand_palette = selected_brand
+        .and_then(|brand| brand.get("brandIdentifier"))
+        .and_then(|identifier| identifier.as_str())
+        .and_then(|url| fetcher.fetch_canvas_by_path(url).ok());
+    for entry in selected_brand
+        .and_then(|brand| brand.get("entries").and_then(|entries| entries.as_array()))
+        .into_iter()
         .flatten()
     {
         let Some(name) = entry
@@ -281,7 +309,8 @@ fn collect_standard_text_styles(
         else {
             continue;
         };
-        let style = standard_text_style_from_entry(entry);
+        let mut style = standard_text_style_from_entry(entry);
+        style.fill_colour_rgba = resolve_enum_divergent_fill_rgba(&style, brand_palette.as_ref());
         if style.line_spacing.is_some() || style.font_size.is_some() {
             styles.insert(name.to_string(), style);
         }
@@ -306,10 +335,17 @@ fn standard_text_style_from_entry(entry: &serde_json::Value) -> StandardTextStyl
                 .map(|value| value as f32);
             if field_name.eq_ignore_ascii_case("LineSpacing") {
                 style.line_spacing = value;
+            } else if field_name.eq_ignore_ascii_case("LetterSpacing") {
+                style.letter_spacing = value;
             } else if field_name.eq_ignore_ascii_case("FontSize") {
                 style.font_size = value;
             } else if field_name.eq_ignore_ascii_case("FillColor") {
                 style.fill_colour_token = modifier.get("color").and_then(colour_style_token);
+                style.fill_colour_alpha = modifier
+                    .get("color")
+                    .and_then(|colour| colour.get("alpha"))
+                    .and_then(|value| value.as_f64())
+                    .map(|value| value as f32);
             } else if field_name.eq_ignore_ascii_case("FontStyleRecord") {
                 style.font_record = modifier
                     .get("value")
@@ -384,20 +420,6 @@ fn standard_text_style_keys(style: &str) -> Vec<String> {
     keys
 }
 
-/// The authoritative colour role for a named text style (e.g. `Heading6` →
-/// `Bright`), taken from the active brand's text-style `FillColor` modifier.
-/// Returns `None` when the style is unknown or carries no `FillColor`.
-fn brand_text_style_colour_token(
-    style: Option<&str>,
-    standard_text_styles: &HashMap<String, StandardTextStyle>,
-) -> Option<String> {
-    let style = style.map(str::trim).filter(|name| !name.is_empty())?;
-    standard_text_style_keys(style).into_iter().find_map(|key| {
-        standard_text_styles
-            .get(&key)
-            .and_then(|standard| standard.fill_colour_token.clone())
-    })
-}
 
 fn line_spacing_from_raw(node: &crate::bb_scene::BbNode) -> Option<f32> {
     node.raw

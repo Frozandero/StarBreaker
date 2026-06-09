@@ -47,7 +47,7 @@ fn fit_swf_font_size_to_rect(
     // only acts as a safety bound for an over-long single line.
     let size_for_width = if single_line {
         match renderer
-            .measure_swf_advance_width(text, font, requested_size)
+            .measure_swf_advance_width(text, font, requested_size, 0.0)
             .filter(|value| *value > 0.0)
         {
             Some(advance) => requested_size * rect.w / advance,

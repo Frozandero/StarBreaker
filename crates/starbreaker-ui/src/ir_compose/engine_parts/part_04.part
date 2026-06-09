@@ -191,7 +191,7 @@ fn draw_text_node(
         return;
     }
 
-    let text_rects = debug_text_rects_with_renderer(node, renderer)
+    let text_rects = debug_text_rects_with_renderer(node, renderer, Some(document))
         .unwrap_or(DebugTextRects {
             primary: rect,
             secondary: None,
@@ -325,6 +325,10 @@ fn draw_text_node(
             align,
             vertical_align,
             primary_line_spacing,
+            node.text_style
+                .as_ref()
+                .and_then(|style| style.letter_spacing)
+                .unwrap_or(0.0),
         )
     });
     if font_telemetry_enabled() {
@@ -437,6 +441,11 @@ fn draw_text_node(
                 secondary_align,
                 secondary_vertical_align,
                 secondary_line_spacing,
+                node.secondary_text_style
+                    .as_ref()
+                    .or(node.text_style.as_ref())
+                    .and_then(|style| style.letter_spacing)
+                    .unwrap_or(0.0),
             )
         });
         if !secondary_used_swf {

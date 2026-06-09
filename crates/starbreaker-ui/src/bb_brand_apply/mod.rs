@@ -386,7 +386,14 @@ fn tag_ref_id(tag: &serde_json::Value) -> Option<&str> {
 fn node_type_matches(type_str: &str, ty: &BbNodeType) -> bool {
     match type_str {
         "Image" => matches!(ty, BbNodeType::WidgetImage),
-        "Text" => matches!(ty, BbNodeType::WidgetText | BbNodeType::WidgetTextField),
+        // The game's `Text` widget type is the plain `WidgetText`, NOT a text
+        // FIELD: the MFD footer's `TextSpacing` (LetterSpacing 5) and
+        // `SelectedName`/`UnSelectedName` entries are all `Type(Text)` and none
+        // of their effects appear on the (WidgetTextField) screen-name text in
+        // the in-game reference — its tracking and colour come from the brand
+        // H1 table instead.
+        "Text" => matches!(ty, BbNodeType::WidgetText),
+        "TextField" => matches!(ty, BbNodeType::WidgetTextField),
         "Canvas" => matches!(ty, BbNodeType::WidgetCanvas),
         "Icon" => matches!(ty, BbNodeType::WidgetIcon),
         "Card" => matches!(ty, BbNodeType::WidgetCard),

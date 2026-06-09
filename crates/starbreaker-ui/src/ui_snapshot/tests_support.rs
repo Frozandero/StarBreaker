@@ -52,6 +52,7 @@ pub(super) fn base_node(id: u32, layer: i32) -> UiIrNode {
             resolved_font_record: None,
             font_size: UiIrValue::Fixed { value: 30.0 },
             line_spacing: Some(2.0),
+            letter_spacing: None,
             alignment: "Center".to_string(),
             vertical_alignment: "Center".to_string(),
             anchor_to_parent_x: None,

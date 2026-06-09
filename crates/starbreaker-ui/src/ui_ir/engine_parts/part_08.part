@@ -181,8 +181,44 @@ fn semantic_text_colour_token_from_style_tags(
     let style_name = label_style
         .map(str::trim)
         .unwrap_or_default();
-    let is_title_style = !style_name.is_empty() && style_name.starts_with("Title");
     let is_heading_style = !style_name.is_empty() && style_name.starts_with("Heading");
+
+    if let Some(directive) = node_colour_directive_token(tags, label_style) {
+        return Some(directive);
+    }
+
+    if is_heading_style
+        && tags.iter().any(|tag| {
+            matches!(
+                tag.tag_name.as_deref(),
+                Some("Target") | Some("TargetStatus") | Some("Text_Header")
+            )
+        })
+    {
+        return Some("Base".to_string());
+    }
+
+    if tags.is_empty() && matches!(style_name, "Heading1" | "Heading3") {
+        return Some("Base".to_string());
+    }
+
+    None
+}
+
+/// A node-level colour DIRECTIVE from the node's tags — an authoring-time
+/// colour/state instruction (`Bright`, `StateModerate`, …) that overrides the
+/// brand text-style default. Contextual guesses (a `Text_Header` heading
+/// defaulting to `Base`) are NOT directives: they approximate the brand default
+/// and rank below an authored brand `FillColor`
+/// (`semantic_text_colour_token_from_style_tags` keeps them as fallbacks).
+fn node_colour_directive_token(
+    tags: &[UiIrStyleTag],
+    label_style: Option<&str>,
+) -> Option<String> {
+    let style_name = label_style
+        .map(str::trim)
+        .unwrap_or_default();
+    let is_title_style = !style_name.is_empty() && style_name.starts_with("Title");
 
     if tags.iter().any(|tag| {
         tag.tag_name
@@ -206,21 +242,6 @@ fn semantic_text_colour_token_from_style_tags(
             .is_some_and(|name| name.eq_ignore_ascii_case("StateCritical") || name.eq_ignore_ascii_case("Flashing"))
     }) {
         return Some("Background".to_string());
-    }
-
-    if is_heading_style
-        && tags.iter().any(|tag| {
-            matches!(
-                tag.tag_name.as_deref(),
-                Some("Target") | Some("TargetStatus") | Some("Text_Header")
-            )
-        })
-    {
-        return Some("Base".to_string());
-    }
-
-    if tags.is_empty() && matches!(style_name, "Heading1" | "Heading3") {
-        return Some("Base".to_string());
     }
 
     if !is_title_style {

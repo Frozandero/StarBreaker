@@ -271,7 +271,10 @@ pub(super) fn draw_edit_text(
             colour,
             run.align,
             VerticalAlign::Centre,
-            Some(run.letter_spacing),
+            // The HTML run's letterSpacing is per-glyph tracking, not an
+            // interline value — route it to the tracking parameter.
+            None,
+            run.letter_spacing,
         ) {
             drew_any = true;
         }
