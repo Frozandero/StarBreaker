@@ -249,7 +249,9 @@ fn right_anchored_label_caption_pair_offset(
     let secondary_h = secondary_text_h.unwrap_or(primary_h).max(0.0);
     let line_box_delta = (primary_h - secondary_h).max(0.0);
     let stroke_pair_span = node.stroke_extent.unwrap_or(0.0).max(0.0) * 2.0;
-    (-(line_box_delta + stroke_pair_span), line_box_delta)
+    // EXPERIMENT: zero the vertical offset (keep horizontal). The Y offset pushed
+    // the right-anchored MEDGELS label down a stretched header band.
+    (-(line_box_delta + stroke_pair_span), 0.0)
 }
 
 fn font_telemetry_enabled() -> bool {
