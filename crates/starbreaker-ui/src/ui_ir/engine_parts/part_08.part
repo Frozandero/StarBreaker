@@ -227,8 +227,13 @@ fn semantic_text_colour_token_from_style_tags(
         return None;
     }
 
+    // `Primary` is a colourless state tag (BB `PrimaryStateTag`), not a colour. On a
+    // Title-style node it leaves the brand title FillColor in force, which for the
+    // medical s_bioc brand is `Base` (light-blue) — verified against the in-game
+    // Clipper Medical2 "DIGITAL MEDICAL ASSISTANT" title. (It previously mapped to
+    // `Bright`/grey, which the reference contradicts.)
     tags.iter().find_map(|tag| match tag.tag_name.as_deref() {
-        Some("Primary") => Some("Bright".to_string()),
+        Some("Primary") => Some("Base".to_string()),
         _ => None,
     })
 }
