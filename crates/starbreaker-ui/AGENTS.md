@@ -30,6 +30,37 @@ visual fixes stop converging.
 	- `ir_compose.rs` owns final draw-time rects and renderer-specific adjustments.
 	- `text.rs` owns text metrics, baseline, and rendered glyph bounds.
 
+## Known deviations: register a reference-anchored outlier, do NOT hack
+
+When an element is *knowingly* a few px / one colour-role off the in-game
+reference and the true fix is deferred (e.g. a deep, higher-risk layout change),
+**do not** bake a compensating blend factor, magic offset, or `clamp`/fudge to
+hit the value (that violates Core rules). Equally, **do not** strict-freeze the
+wrong value — that enshrines the miss and later flags the genuine fix as a
+regression.
+
+Instead register the element as a **known-outlier override** in
+`crates/starbreaker-ui/tests/fixtures/ui_ir/ui_known_outliers.json`
+(`{ target, identity, field, frozen_value, reference_target, confidence, reason,
+source }`; numbers only — no reference image enters the repo). The structural
+comparator (`compare_snapshots_with_overrides`, `ui_snapshot/compare.inc`) then
+treats that field one-sided, anchored on the measured reference:
+
+- moving **toward** `reference_target` → passes + a `✅ IMPROVEMENT` note. **This
+  means re-freeze, NOT revert** — the genuine fix is landing.
+- moving **away** → fails as a regression.
+- within `confidence` of the target → graduate: drop the entry, strict-freeze.
+
+Field-generic: any captured snapshot field works (geometry, `alpha`, `font_size`,
+`primary_text_top`/`secondary_text_top`, tint `*_rgba`, tint tokens). The snapshot
+(schema v2) records the rendered glyph cap-top/left, so overrides anchor on the
+*visible* text position. **Gotcha:** the freeze pipeline's font metrics differ
+from a full `ui render`, so absolute text-top values differ between them; the
+container position and any layout-fix delta are font-independent, so a px delta
+measured on the full render still applies in snapshot space (set
+`reference_target = frozen_snapshot_value − measured_render_delta`). Full policy:
+`docs/ui-regression-policy.md` § *Known-Outlier Overrides*.
+
 ## Required validation loop for visual work
 
 For visual/layout tasks in this crate, work in this order:
