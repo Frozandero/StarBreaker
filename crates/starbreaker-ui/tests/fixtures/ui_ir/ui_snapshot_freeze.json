@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "frozen_at": "2026-06-09T17:25:56Z",
+  "frozen_at": "2026-06-09T18:40:31Z",
   "approver": "tom",
-  "reason": "Graduate MEDGELS outlier: anchor_y^2 blend fix in right_edge_auto_hint (part_04) moves primary_text_top 39->29 (target 27), within confidence 2.0 -- strict-freeze",
+  "reason": "Restore T3 Bright: explicit Bright colour tag now takes priority over Primary→Base state mapping on Title-style nodes",
   "signature": null,
   "manifest_path": "/home/tom/projects/scorg_tools/StarBreaker/crates/starbreaker-ui/tests/fixtures/ui_ir/ui_snapshot_manifest.json",
   "targets": [
@@ -1229,7 +1229,7 @@
             "stroke_rgba": null,
             "stroke_tint_token": null,
             "text_rgba": null,
-            "text_tint_token": "Base",
+            "text_tint_token": "Bright",
             "icon_tint_rgba": null,
             "icon_tint_token": null,
             "stroke_extent": 1.0,

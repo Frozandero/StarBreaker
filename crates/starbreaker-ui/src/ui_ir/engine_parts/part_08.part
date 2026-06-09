@@ -227,11 +227,17 @@ fn semantic_text_colour_token_from_style_tags(
         return None;
     }
 
+    // An explicit colour tag (`Bright`) authored on the node is an authoring-time
+    // colour directive that overrides state-tag-derived colours. Check it first so a
+    // node carrying both `Bright` and `Primary` (e.g. TierLevel) renders white, not
+    // the state-active blue.
+    if tags.iter().any(|tag| tag.tag_name.as_deref() == Some("Bright")) {
+        return Some("Bright".to_string());
+    }
     // `Primary` is a colourless state tag (BB `PrimaryStateTag`), not a colour. On a
-    // Title-style node it leaves the brand title FillColor in force, which for the
-    // medical s_bioc brand is `Base` (light-blue) — verified against the in-game
-    // Clipper Medical2 "DIGITAL MEDICAL ASSISTANT" title. (It previously mapped to
-    // `Bright`/grey, which the reference contradicts.)
+    // Title-style node with no explicit colour tag it signals the active/selected state
+    // whose brand colour for medical s_bioc is `Base` (light-blue) — verified against
+    // the in-game Clipper Medical2 "DIGITAL MEDICAL ASSISTANT" title.
     tags.iter().find_map(|tag| match tag.tag_name.as_deref() {
         Some("Primary") => Some("Base".to_string()),
         _ => None,

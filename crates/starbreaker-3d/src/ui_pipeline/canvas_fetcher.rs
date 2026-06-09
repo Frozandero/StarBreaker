@@ -27,6 +27,9 @@ struct CanvasNameIndex {
 impl CanvasNameIndex {
     fn build(db: &Database<'_>) -> Self {
         let mut index: HashMap<String, CigGuid> = HashMap::new();
+        // Track keys already warned about to emit at most one warning per duplicate name,
+        // even when the same name appears in many records of the same type.
+        let mut warned: std::collections::HashSet<String> = std::collections::HashSet::new();
         for type_name in datacore_ui_lookup_type_names() {
             for record in db.records_by_type_name(type_name) {
                 let full_name = db.resolve_string2(record.name_offset);
@@ -42,10 +45,12 @@ impl CanvasNameIndex {
                             e.insert(record.id);
                         }
                         std::collections::hash_map::Entry::Occupied(e) if *e.get() != record.id => {
-                            warn!(
-                                "ui_pipeline: duplicate UI record name '{}' in {}; first wins",
-                                key, type_name
-                            );
+                            if warned.insert(key.clone()) {
+                                warn!(
+                                    "ui_pipeline: duplicate UI record name '{}' in {}; first wins",
+                                    key, type_name
+                                );
+                            }
                         }
                         _ => {}
                     }
