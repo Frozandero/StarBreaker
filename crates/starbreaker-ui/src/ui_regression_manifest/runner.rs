@@ -1,7 +1,8 @@
 //! Manifest comparison runner.
 
 use crate::ui_snapshot::{
-    UiScreenSnapshot, UiSnapshotComparison, UiSnapshotElementCategory, compare_snapshots,
+    UiKnownOutlier, UiScreenSnapshot, UiSnapshotComparison, UiSnapshotElementCategory,
+    compare_snapshots_with_overrides,
 };
 
 use super::types::{
@@ -12,7 +13,22 @@ use super::types::{
 /// Execute generic snapshot comparisons for every target in a manifest.
 pub fn compare_manifest_targets_with_loader<F, E>(
     manifest: &UiRegressionManifest,
+    snapshot_loader: F,
+) -> Result<Vec<UiRegressionTargetResult>, UiRegressionRunError>
+where
+    F: FnMut(&str) -> Result<UiScreenSnapshot, E>,
+    E: std::fmt::Display,
+{
+    compare_manifest_targets_with_loader_and_outliers(manifest, snapshot_loader, &[])
+}
+
+/// Execute generic snapshot comparisons, applying reference-anchored
+/// known-outlier overrides. Each outlier is matched to its target by
+/// [`UiKnownOutlier::target`] == [`UiRegressionTarget::id`].
+pub fn compare_manifest_targets_with_loader_and_outliers<F, E>(
+    manifest: &UiRegressionManifest,
     mut snapshot_loader: F,
+    outliers: &[UiKnownOutlier],
 ) -> Result<Vec<UiRegressionTargetResult>, UiRegressionRunError>
 where
     F: FnMut(&str) -> Result<UiScreenSnapshot, E>,
@@ -31,8 +47,16 @@ where
             path: target.current_path.clone(),
             message: error.to_string(),
         })?;
-        let mut comparison =
-            compare_snapshots(&baseline, &current, target.tier.snapshot_tolerance());
+        let target_outliers: Vec<&UiKnownOutlier> = outliers
+            .iter()
+            .filter(|outlier| outlier.target == target.id)
+            .collect();
+        let mut comparison = compare_snapshots_with_overrides(
+            &baseline,
+            &current,
+            target.tier.snapshot_tolerance(),
+            &target_outliers,
+        );
         apply_target_category_checks(target, &baseline, &current, &mut comparison);
         results.push(UiRegressionTargetResult {
             id: target.id.clone(),

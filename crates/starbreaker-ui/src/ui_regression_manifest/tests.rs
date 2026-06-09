@@ -211,6 +211,10 @@ fn sample_snapshot(x: f32) -> UiScreenSnapshot {
             text_font_identity: Some("font:baseline".to_string()),
             text_font_size: Some(18.0),
             line_spacing: Some(18.0),
+            primary_text_top: None,
+            primary_text_left: None,
+            secondary_text_top: None,
+            secondary_text_left: None,
         }],
     }
 }

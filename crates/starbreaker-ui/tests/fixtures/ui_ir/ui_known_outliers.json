@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "outliers": [
+    {
+      "target": "ui_target_b",
+      "identity": "2147483655:BuildingBlocks_ComponentLabelCaptionPair",
+      "field": "primary_text_top",
+      "frozen_value": 39.0,
+      "reference_target": 27.0,
+      "confidence": 2.0,
+      "reason": "MEDGELS 'MEDGELS' label renders ~12px too low vs the in-game reference. Internal label->value->bar stacking is correct; the whole block is shifted down by the container/top_padding. Root cause: the anchor_y^2 blend in layout_flex_no_grow_children (bb_layout/engine_parts/part_04.part, right_edge_auto branch) positions the TextLayout/MedGel container too high, compensated by the right-anchored caption-pair top_padding (ir_compose/engine_parts/part_06.part). The 12px is a font-independent container/top_padding shift so it applies equally in snapshot space.",
+      "source": "reference/in-game/Clipper/mesh_end_screen_plane-[medical2].png (1920x1080, de-skewed ~1-2px): label cap-top 34 vs current render 46 = -12px. Snapshot-space frozen primary_text_top 39 -> target 27."
+    },
+    {
+      "target": "ui_target_b",
+      "identity": "2147483655:BuildingBlocks_ComponentLabelCaptionPair",
+      "field": "secondary_text_top",
+      "frozen_value": 68.0,
+      "reference_target": 56.0,
+      "confidence": 2.0,
+      "reason": "MEDGELS '200/200' value renders ~12px too low vs the in-game reference (moves with the label; same container/top_padding root cause as primary_text_top).",
+      "source": "reference/in-game/Clipper/mesh_end_screen_plane-[medical2].png: value cap-top 62 vs current render 74 = -12px. Snapshot-space frozen secondary_text_top 68 -> target 56."
+    }
+  ]
+}

@@ -85,14 +85,16 @@ pub use ui_ir::{
 };
 
 pub use ui_snapshot::{
-    UI_SNAPSHOT_SCHEMA_VERSION, UiScreenSnapshot, UiSnapshotComparison, UiSnapshotElement,
-    UiSnapshotElementCategory, UiSnapshotTolerance, UiRendererMetadataElement,
+    UI_KNOWN_OUTLIER_SCHEMA_VERSION, UI_SNAPSHOT_SCHEMA_VERSION, UiKnownOutlier,
+    UiKnownOutlierRegistry, UiOutlierValue, UiScreenSnapshot, UiSnapshotComparison,
+    UiSnapshotElement, UiSnapshotElementCategory, UiSnapshotTolerance, UiRendererMetadataElement,
     UiRendererMetadataSnapshot, compare_renderer_metadata_snapshots, compare_snapshots,
-    renderer_metadata_snapshot_from_ui_ir, snapshot_from_ui_ir,
+    compare_snapshots_with_overrides, renderer_metadata_snapshot_from_ui_ir, snapshot_from_ui_ir,
 };
 
 pub use ui_regression_manifest::{
     UI_REGRESSION_MANIFEST_SCHEMA_VERSION, UiRegressionCategory, UiRegressionManifest,
     UiRegressionRoi, UiRegressionRunError, UiRegressionTarget, UiRegressionTargetResult,
     UiRegressionTier, compare_manifest_targets_with_loader,
+    compare_manifest_targets_with_loader_and_outliers,
 };

@@ -6,9 +6,18 @@ use serde::Deserialize;
 use starbreaker_ui::pipeline::AssetFetcher;
 use starbreaker_ui::{
     CanvasFetcher, PipelineInputs, StyleFetcher, SwfFetcher, UiBindingView, UiError,
-    UiIrDocument, UiRegressionManifest, UiScreenSnapshot, UiSnapshotElement,
-    compare_manifest_targets_with_loader, compile_ir_for_binding, snapshot_from_ui_ir,
+    UiIrDocument, UiKnownOutlier, UiKnownOutlierRegistry, UiRegressionManifest, UiScreenSnapshot,
+    UiSnapshotElement, compare_manifest_targets_with_loader,
+    compare_manifest_targets_with_loader_and_outliers, compile_ir_for_binding, snapshot_from_ui_ir,
 };
+
+/// Reference-anchored known-outlier overrides (committed numbers, no image).
+fn known_outliers() -> Vec<UiKnownOutlier> {
+    let registry: UiKnownOutlierRegistry =
+        serde_json::from_str(include_str!("fixtures/ui_ir/ui_known_outliers.json"))
+            .expect("known-outlier registry fixture should parse");
+    registry.outliers
+}
 
 #[derive(Debug, Deserialize)]
 struct SnapshotFreezeFile {
@@ -460,13 +469,27 @@ fn live_manifest_targets_match_gold_standard_snapshot_geometry() {
     manifest.targets.retain(|target| {
         snapshots.contains_key(&target.baseline_path) && snapshots.contains_key(&target.current_path)
     });
-    let results = compare_manifest_targets_with_loader(&manifest, |path| {
-        snapshots
-            .get(path)
-            .cloned()
-            .ok_or_else(|| format!("missing snapshot fixture for {path}"))
-    })
+    let outliers = known_outliers();
+    let results = compare_manifest_targets_with_loader_and_outliers(
+        &manifest,
+        |path| {
+            snapshots
+                .get(path)
+                .cloned()
+                .ok_or_else(|| format!("missing snapshot fixture for {path}"))
+        },
+        &outliers,
+    )
     .expect("manifest runner should compare live snapshots against baselines");
+
+    // Surface positive reinforcement: a known-outlier field moved closer to its
+    // in-game reference than the frozen baseline. Never fails — signals a genuine
+    // improvement worth re-freezing (do not revert it as a regression).
+    for result in &results {
+        for note in &result.comparison.improvements {
+            eprintln!("[{}] {note}", result.id);
+        }
+    }
 
     let failures: Vec<String> = results
         .into_iter()

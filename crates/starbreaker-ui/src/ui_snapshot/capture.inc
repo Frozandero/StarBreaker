@@ -11,6 +11,10 @@ pub fn snapshot_from_ui_ir(document: &UiIrDocument) -> UiScreenSnapshot {
         let Some(category) = classify_node(node) else {
             continue;
         };
+        // Rendered glyph bounds of the text band(s): the *visible* text position,
+        // used to anchor visible-position known-outlier overrides. `None` for
+        // non-text nodes (cheap early-out in debug_text_drawn_bounds).
+        let text_bounds = crate::ir_compose::debug_text_drawn_bounds(node);
         elements.push(UiSnapshotElement {
             identity: format!("{}:{}", node.id, node.node_type),
             node_id: node.id,
@@ -65,6 +69,14 @@ pub fn snapshot_from_ui_ir(document: &UiIrDocument) -> UiScreenSnapshot {
                 _ => None,
             }),
             line_spacing: node.text_style.as_ref().and_then(|style| style.line_spacing),
+            primary_text_top: text_bounds.as_ref().map(|bounds| bounds.primary.y),
+            primary_text_left: text_bounds.as_ref().map(|bounds| bounds.primary.x),
+            secondary_text_top: text_bounds
+                .as_ref()
+                .and_then(|bounds| bounds.secondary.as_ref().map(|rect| rect.y)),
+            secondary_text_left: text_bounds
+                .as_ref()
+                .and_then(|bounds| bounds.secondary.as_ref().map(|rect| rect.x)),
         });
     }
 

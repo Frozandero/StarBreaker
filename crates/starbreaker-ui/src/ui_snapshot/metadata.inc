@@ -68,7 +68,7 @@ pub fn compare_renderer_metadata_snapshots(
     current: &UiRendererMetadataSnapshot,
     tolerance: UiSnapshotTolerance,
 ) -> UiSnapshotComparison {
-    let mut failures = Vec::new();
+    let mut ctx = CompareCtx::new(&[]);
     let baseline_max_dim = baseline.target_width.max(baseline.target_height) as f32;
 
     let baseline_by_identity: HashMap<&str, &UiRendererMetadataElement> = baseline
@@ -84,12 +84,12 @@ pub fn compare_renderer_metadata_snapshots(
 
     for (identity, _) in &baseline_by_identity {
         if !current_by_identity.contains_key(identity) {
-            failures.push(format!("missing renderer metadata element: {identity}"));
+            ctx.failures.push(format!("missing renderer metadata element: {identity}"));
         }
     }
     for (identity, element) in &current_by_identity {
         if !baseline_by_identity.contains_key(identity) {
-            failures.push(format!(
+            ctx.failures.push(format!(
                 "unexpected renderer metadata element: {identity} ({})",
                 element.node_type
             ));
@@ -101,26 +101,26 @@ pub fn compare_renderer_metadata_snapshots(
             continue;
         };
         if baseline_element.draw_order_index != current_element.draw_order_index {
-            failures.push(format!(
+            ctx.failures.push(format!(
                 "{identity}: renderer draw-order drift baseline={} current={}",
                 baseline_element.draw_order_index, current_element.draw_order_index
             ));
         }
         if baseline_element.blend_mode != current_element.blend_mode {
-            failures.push(format!(
+            ctx.failures.push(format!(
                 "{identity}: renderer blend drift baseline={:?} current={:?}",
                 baseline_element.blend_mode, current_element.blend_mode
             ));
         }
         if baseline_element.asset_identity != current_element.asset_identity {
-            failures.push(format!(
+            ctx.failures.push(format!(
                 "{identity}: renderer asset identity drift baseline={:?} current={:?}",
                 baseline_element.asset_identity, current_element.asset_identity
             ));
         }
 
         compare_geometry_numeric(
-            &mut failures,
+            &mut ctx,
             identity,
             "renderer_rect_x",
             baseline_element.rect[0],
@@ -129,7 +129,7 @@ pub fn compare_renderer_metadata_snapshots(
             tolerance,
         );
         compare_geometry_numeric(
-            &mut failures,
+            &mut ctx,
             identity,
             "renderer_rect_y",
             baseline_element.rect[1],
@@ -138,7 +138,7 @@ pub fn compare_renderer_metadata_snapshots(
             tolerance,
         );
         compare_geometry_numeric(
-            &mut failures,
+            &mut ctx,
             identity,
             "renderer_rect_w",
             baseline_element.rect[2],
@@ -147,7 +147,7 @@ pub fn compare_renderer_metadata_snapshots(
             tolerance,
         );
         compare_geometry_numeric(
-            &mut failures,
+            &mut ctx,
             identity,
             "renderer_rect_h",
             baseline_element.rect[3],
@@ -157,42 +157,43 @@ pub fn compare_renderer_metadata_snapshots(
         );
 
         compare_optional_rgba(
-            &mut failures,
+            &mut ctx,
             identity,
             "renderer_background_rgba",
             baseline_element.background_rgba,
             current_element.background_rgba,
-            tolerance.rgba_channel_abs,
+            tolerance,
         );
         compare_optional_rgba(
-            &mut failures,
+            &mut ctx,
             identity,
             "renderer_stroke_rgba",
             baseline_element.stroke_rgba,
             current_element.stroke_rgba,
-            tolerance.rgba_channel_abs,
+            tolerance,
         );
         compare_optional_rgba(
-            &mut failures,
+            &mut ctx,
             identity,
             "renderer_text_rgba",
             baseline_element.text_rgba,
             current_element.text_rgba,
-            tolerance.rgba_channel_abs,
+            tolerance,
         );
         compare_optional_rgba(
-            &mut failures,
+            &mut ctx,
             identity,
             "renderer_icon_tint_rgba",
             baseline_element.icon_tint_rgba,
             current_element.icon_tint_rgba,
-            tolerance.rgba_channel_abs,
+            tolerance,
         );
     }
 
     UiSnapshotComparison {
-        passed: failures.is_empty(),
-        failures,
+        passed: ctx.failures.is_empty(),
+        failures: ctx.failures,
+        improvements: ctx.improvements,
     }
 }
 

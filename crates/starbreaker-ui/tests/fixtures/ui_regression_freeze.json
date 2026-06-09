@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "frozen_at": "2026-06-06T10:52:46Z",
-  "approver": "tom",
-  "reason": "Annunciator baseline refresh: NotTag/AllOfTag condition-matcher fix correctly reveals the Annunciator_On gradient (matches the in-game reference); required for footer LOW POWER/warning hiding. User-approved.",
+  "frozen_at": "2026-06-09T16:43:58Z",
+  "approver": "claude+tom",
+  "reason": "re-freeze 4 standards (medical1/2 platinum + door/annunciator gold) after MEDGELS partial fix 2694202e8; medical2 MEDGELS registered as known outlier targeting in-game reference",
   "signature": null,
   "manifest_path": "crates/starbreaker-ui/tests/fixtures/ui_ir/ui_snapshot_manifest.json",
   "artifacts": [
@@ -11,7 +11,7 @@
       "tier": "platinum",
       "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_i_med_medicalbed_a.png",
       "artifact_path": "test-artifacts/ui/ui_target_a.png",
-      "sha256": "650c30926a2e0bc831450617f33e6dc3f8d05fc9eea94e6c06c0d2125e13d181",
+      "sha256": "36006838f86f9a1e2bee5983fa40ff9cf4c71c60b0b0b8f8edfc45ac9f82598b",
       "width": 1920,
       "height": 1080,
       "channels": "srgba"
@@ -21,7 +21,7 @@
       "tier": "platinum",
       "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_i_med_medicalendofbed_a.png",
       "artifact_path": "test-artifacts/ui/ui_target_b.png",
-      "sha256": "edd7acacf0df77b767ec16f4643be39cc5a9d66b36767be217a6d62ac3e73198",
+      "sha256": "174a0178a0d39b6ecb4e978a06733718c6c5729f7ecf25f5ff8f53a2f71255b9",
       "width": 1920,
       "height": 1080,
       "channels": "srgba"
@@ -31,7 +31,7 @@
       "tier": "gold",
       "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_i_door_small_drak.png",
       "artifact_path": "test-artifacts/ui/clipper_small_door.png",
-      "sha256": "2dd0115442ed3be39dd7aa10914253dd205876f88e8521dde6b93bc99f8cada8",
+      "sha256": "9146818f161fc4c8b3c26bcca169176332f9cc199f584a44209772ff59e4706d",
       "width": 1920,
       "height": 1080,
       "channels": "srgba"
@@ -41,7 +41,7 @@
       "tier": "gold",
       "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_h_eng_annunciator_master_left.png",
       "artifact_path": "test-artifacts/ui/eng_annunciator_master_left.png",
-      "sha256": "ff428d3b81b5a2d7bd116646c0875443f98c9feef720a0e1d94269003c13715a",
+      "sha256": "601815149ada6788dfc30d378fb8b3a916375f4e60133852ef4d0bb807eb703a",
       "width": 1920,
       "height": 432,
       "channels": "srgba"

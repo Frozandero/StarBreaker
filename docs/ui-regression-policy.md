@@ -47,6 +47,40 @@ still gated separately by `manifest_live_ir_guard`.
 - Source-backed IR fields should be preferred over renderer-time inference.
 - Any snapshot baseline update must be intentional and reviewed.
 
+## Known-Outlier Overrides (reference-anchored)
+
+Some elements are *knowingly* a few pixels (or one colour role, etc.) off the
+in-game reference because the true fix is a deeper, higher-risk change not yet
+landed. Freezing such a value as a strict baseline is harmful: it enshrines the
+miss and later flags the genuine fix as a "regression". Instead, register the
+element as a **known outlier** in
+`crates/starbreaker-ui/tests/fixtures/ui_ir/ui_known_outliers.json`.
+
+Each entry is `{ target, identity, field, frozen_value, reference_target,
+confidence, reason, source }` and is **field-generic** — any captured snapshot
+field (geometry `x/y/w/h`, `alpha`, `primary_text_top`/`secondary_text_top`,
+`font_size`, a tint `*_rgba`, a tint token, ...) can be registered.
+
+The comparator (`compare_snapshots_with_overrides`) then treats that field
+**one-sided**, anchored on the measured in-game reference:
+
+- moving **toward** `reference_target` (closer than `frozen_value`) → **passes**
+  and emits a `✅ IMPROVEMENT …` note (surfaced by the live-IR guard / dashboard).
+  Treat such a change as a genuine improvement: **re-freeze, do not revert it.**
+- moving **away** from the target → **fails** as a regression.
+- reaching within `confidence` of the target → the note suggests graduating:
+  drop the outlier entry and strict-freeze at the reference.
+
+Rules:
+
+- The target is a **number** measured from the in-game reference (no reference
+  image enters the repo; only the recorded value). Record provenance in `source`
+  and the root cause in `reason`.
+- `frozen_value` is validated against the live baseline; a stale entry fails
+  loudly rather than silently masking drift.
+- An override is an explicit, auditable IOU for a real fix — not a way to hide a
+  hardcoded workaround. The hardcoding guard still applies to production code.
+
 ## Review Checklist Addendum
 
 Reviewers should verify:
@@ -55,3 +89,6 @@ Reviewers should verify:
 - Existing certified-family cases do not regress in the dashboard output.
 - No undocumented fallback logic was introduced.
 - Hardcoding guard remains green.
+- A known-outlier `✅ IMPROVEMENT` note means **re-freeze, don't revert**; a new
+  outlier entry is reference-anchored (measured target + provenance), not a
+  cover for a hardcoded workaround.

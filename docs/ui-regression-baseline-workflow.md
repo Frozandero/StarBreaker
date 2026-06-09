@@ -167,9 +167,21 @@ Policy:
 
 The target manifest is intentionally data-driven. Keep examples generic in this guide and use `./scripts/add_ui_regression_target.sh --id <id> ...` to register concrete ids.
 
+## Known outliers vs. strict baselines
+
+When an element is *knowingly* a few px / one colour-role off the in-game
+reference and the real fix is deferred, do **not** strict-freeze the wrong value.
+Register it in `crates/starbreaker-ui/tests/fixtures/ui_ir/ui_known_outliers.json`
+(reference-anchored, one-sided toward the measured target — see
+`docs/ui-regression-policy.md` § *Known-Outlier Overrides*). The structural
+freeze still captures the current value, but the override lets the later genuine
+fix land as a celebrated `✅ IMPROVEMENT` rather than a flagged regression. When
+the fix lands and the field reaches the target, drop the entry and strict-freeze.
+
 ## Review Checklist
 
 - No screen/name-specific production hardcoding was introduced.
 - Drift diagnostics are field-granular and actionable.
 - Manifest snapshot tests fail for controlled drift and pass for expected state.
 - Baseline refresh approval is explicit and recorded; placeholder-text regressions were ruled out before any fixture update.
+- A `✅ IMPROVEMENT` note on a known outlier means re-freeze (not revert); new outlier entries are reference-anchored, not workaround covers.
