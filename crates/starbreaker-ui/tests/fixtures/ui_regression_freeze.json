@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "frozen_at": "2026-06-09T16:43:58Z",
-  "approver": "claude+tom",
-  "reason": "re-freeze 4 standards (medical1/2 platinum + door/annunciator gold) after MEDGELS partial fix 2694202e8; medical2 MEDGELS registered as known outlier targeting in-game reference",
+  "frozen_at": "2026-06-10T01:25:34Z",
+  "approver": "tom",
+  "reason": "A2 widget-standard expansion: medical bed top-strip drift verified improvement vs reference (back button hidden, close button template chrome); other targets pixel-identical",
   "signature": null,
   "manifest_path": "crates/starbreaker-ui/tests/fixtures/ui_ir/ui_snapshot_manifest.json",
   "artifacts": [
@@ -11,7 +11,7 @@
       "tier": "platinum",
       "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_i_med_medicalbed_a.png",
       "artifact_path": "test-artifacts/ui/ui_target_a.png",
-      "sha256": "36006838f86f9a1e2bee5983fa40ff9cf4c71c60b0b0b8f8edfc45ac9f82598b",
+      "sha256": "d274762ff40c570d91b2213b90ee8462cbdcc0f9768628f2c065a51f746b8105",
       "width": 1920,
       "height": 1080,
       "channels": "srgba"
@@ -21,7 +21,7 @@
       "tier": "platinum",
       "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_i_med_medicalendofbed_a.png",
       "artifact_path": "test-artifacts/ui/ui_target_b.png",
-      "sha256": "174a0178a0d39b6ecb4e978a06733718c6c5729f7ecf25f5ff8f53a2f71255b9",
+      "sha256": "6a952bbc9b6e90ece5cd3a7c4d2c5a3c84b0c07da8b1960a2486a05d14da5fee",
       "width": 1920,
       "height": 1080,
       "channels": "srgba"

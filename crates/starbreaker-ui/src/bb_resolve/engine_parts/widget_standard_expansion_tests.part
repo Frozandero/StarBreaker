@@ -1,0 +1,139 @@
+// Tests for widget-standard template expansion (see
+// widget_standard_expansion.part): host icon forwarding into the button
+// template's icon instance and host parse-time fallback clearing.
+#[cfg(test)]
+mod tests_expansion {
+    #![allow(unused_imports, dead_code)]
+
+    use super::*;
+
+    fn tag_database_fixture() -> serde_json::Value {
+        serde_json::json!({
+            "tags": [
+                {"tagName": "canvas-proxy-root", "_RecordId_": "21788313-6aff-45b4-a3ad-fdc62b1cf849"},
+                {"tagName": "general-button-secondary", "_RecordId_": "cf236683-1f17-41ee-a0d2-0e23c5f1c552"},
+                {"tagName": "icon", "_RecordId_": "8b9ef179-0000-0000-0000-000000000000"}
+            ]
+        })
+    }
+
+    /// Minimal stand-in for `buttongeneralsecondarycomponentstandard`:
+    /// ComponentRoot (proxy-root tagged) hosting a `WidgetIcon` instance whose
+    /// authored preset is the template default (`ArrowHollowRight`).
+    fn button_template_fixture() -> serde_json::Value {
+        serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.ButtonGeneralSecondaryComponentStandard",
+            "_RecordId_": "00000000-0000-0000-0000-00000000b001",
+            "_RecordValue_": {
+                "_Type_": "BuildingBlocks_Canvas",
+                "size": {"_Type_": "Vec3", "x": 64.0, "y": 64.0, "z": 0.0},
+                "scene": [
+                    {
+                        "_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                        "name": "ComponentRoot",
+                        "styleTags": [{"_RecordId_": "21788313-6aff-45b4-a3ad-fdc62b1cf849"}]
+                    },
+                    {
+                        "_Pointer_": "ptr:8", "_Type_": "BuildingBlocks_WidgetIcon",
+                        "name": "IconWidgetInstance", "parent": "_PointsTo_:ptr:1",
+                        "iconProperties": {
+                            "_Type_": "BuildingBlocks_ComponentIconProperties",
+                            "show": true, "iconPreset": "ArrowHollowRight", "customIcon": ""
+                        }
+                    }
+                ],
+                "operations": []
+            }
+        })
+    }
+
+    /// Host canvas: a `ComponentGeneralButtonSecondary` authored with the
+    /// medical close button's icon contract (show=true, preset `GeneralX`).
+    fn button_host_scene() -> BbScene {
+        let canvas = serde_json::json!({
+            "_RecordName_": "test_button_host",
+            "_RecordId_": "00000000-0000-0000-0000-00000000c001",
+            "_RecordValue_": {
+                "_Type_": "BuildingBlocks_Canvas",
+                "size": {"_Type_": "Vec3", "x": 1920.0, "y": 1080.0, "z": 0.0},
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget", "name": "root"},
+                    {
+                        "_Pointer_": "ptr:2",
+                        "_Type_": "BuildingBlocks_ComponentGeneralButtonSecondary",
+                        "name": "ExitBed", "parent": "_PointsTo_:ptr:1",
+                        "fillStyle": "Ghost",
+                        "iconProperties": {
+                            "_Type_": "BuildingBlocks_ComponentIconProperties",
+                            "show": true, "iconPreset": "GeneralX", "customIcon": ""
+                        },
+                        "labelProperties": {
+                            "_Type_": "BuildingBlocks_ComponentLabelProperties",
+                            "show": false, "label": "@LOC_PLACEHOLDER"
+                        }
+                    }
+                ],
+                "operations": []
+            }
+        });
+        parse_bb_canvas(&canvas).expect("host canvas should parse")
+    }
+
+    fn expansion_fetcher(path: &str) -> Result<serde_json::Value, String> {
+        if path == tag_database_path() {
+            Ok(tag_database_fixture())
+        } else if path == button_secondary_component_standard_path() {
+            Ok(button_template_fixture())
+        } else {
+            Err(format!("test fetcher: no record for '{path}'"))
+        }
+    }
+
+    /// The engine routes a button's authored `iconProperties` through the
+    /// template's IconPreset/CustomIcon parameters into its icon instance:
+    /// the merged `IconWidgetInstance` must carry the HOST's glyph identity,
+    /// not the template's authored default.
+    #[test]
+    fn button_expansion_forwards_host_icon_identity_to_icon_instance() {
+        let mut scene = button_host_scene();
+        expand_widget_standards(&mut scene, &expansion_fetcher);
+
+        let icon_instance = scene
+            .nodes
+            .values()
+            .find(|n| matches!(n.ty, BbNodeType::WidgetIcon) && n.id >= EXPANSION_ID_BASE)
+            .expect("expansion should merge the template's WidgetIcon instance");
+        assert_eq!(
+            icon_instance
+                .raw
+                .get("iconProperties")
+                .and_then(|p| p.get("iconPreset"))
+                .and_then(|v| v.as_str()),
+            Some("GeneralX"),
+            "icon instance must inherit the host button's authored iconPreset"
+        );
+        assert_eq!(
+            host_icon_path(icon_instance),
+            crate::icon_preset::svg_path_for_preset("GeneralX"),
+            "forwarded preset must resolve to the host glyph's vector asset"
+        );
+    }
+
+    /// The expanded instance renders the glyph; the host's parse-time icon
+    /// fallback must be cleared or the glyph draws twice.
+    #[test]
+    fn button_expansion_clears_host_icon_fallback() {
+        let mut scene = button_host_scene();
+        expand_widget_standards(&mut scene, &expansion_fetcher);
+
+        let host = scene
+            .nodes
+            .values()
+            .find(|n| matches!(n.ty, BbNodeType::ComponentGeneralButtonSecondary))
+            .expect("host should survive expansion");
+        assert!(
+            host.icon.as_ref().is_none_or(|icon| icon.image_record.is_none()),
+            "button host parse-time icon fallback must be cleared after expansion"
+        );
+    }
+}

@@ -1,8 +1,15 @@
+/// Node IDs at or above this value belong to the widget-standard expansion
+/// band. Template nodes injected by `expand_widget_standards` are allocated
+/// here so they never shift the sequential IDs of ordinary merged canvas
+/// nodes (platinum snapshots key elements by node ID).
+const EXPANSION_ID_BASE: BbNodeId = 0xF000_0000;
+
 fn merge_child_scene(
     parent_scene: &mut BbScene,
     child_scene: BbScene,
     match_to: &str,
     host_parent_override: Option<BbNodeId>,
+    reserve_id_band: bool,
 ) {
     let BbScene {
         coordinate_method: child_coordinate_method,
@@ -14,25 +21,45 @@ fn merge_child_scene(
     } = child_scene;
 
     // Build a collision-free mapping from child original IDs to new IDs.
-    // We use a monotonic counter that wraps and skips any ID already present
+    // We use monotonic counters that wrap and skip any ID already present
     // in the parent, so the merge is always safe regardless of the depth to
     // which children have been recursively merged.
-    let mut next: BbNodeId = parent_scene
+    //
+    // Two ID bands keep ordinary canvas-node IDs independent of template
+    // expansion: the low band continues after the largest non-expansion key,
+    // while expansion-band child nodes (and whole expansion merges, flagged
+    // by `reserve_id_band`) re-allocate within the band so injecting template
+    // nodes at any depth never renumbers sibling canvases merged later.
+    let mut next_low: BbNodeId = parent_scene
+        .nodes
+        .keys()
+        .rev()
+        .find(|&&k| k < EXPANSION_ID_BASE)
+        .copied()
+        .unwrap_or(0)
+        .wrapping_add(1);
+    let mut next_high: BbNodeId = parent_scene
         .nodes
         .keys()
         .next_back()
         .copied()
-        .unwrap_or(0)
-        .wrapping_add(1);
+        .filter(|&k| k >= EXPANSION_ID_BASE)
+        .map(|k| k.wrapping_add(1))
+        .unwrap_or(EXPANSION_ID_BASE);
     let mut id_map: HashMap<BbNodeId, BbNodeId> = HashMap::with_capacity(child_nodes.len());
     for &orig_id in child_nodes.keys() {
+        let counter = if reserve_id_band || orig_id >= EXPANSION_ID_BASE {
+            &mut next_high
+        } else {
+            &mut next_low
+        };
         // Advance past any ID already occupied in the parent or already
         // assigned to another child node in this batch.
-        while parent_scene.nodes.contains_key(&next) || id_map.values().any(|&v| v == next) {
-            next = next.wrapping_add(1);
+        while parent_scene.nodes.contains_key(counter) || id_map.values().any(|&v| v == *counter) {
+            *counter = counter.wrapping_add(1);
         }
-        id_map.insert(orig_id, next);
-        next = next.wrapping_add(1);
+        id_map.insert(orig_id, *counter);
+        *counter = counter.wrapping_add(1);
     }
 
     let child_roots_reided: Vec<BbNodeId> = child_roots
@@ -96,6 +123,11 @@ fn merge_child_scene(
     let mut remapped_ops = child_ops;
     for op in &mut remapped_ops {
         remap_ptrs_in_json_map(op, &id_map, &op_id_map);
+        // Mark instance-local operations so the binding resolver's global
+        // by-field-name override scan ignores them (see `bb_bindings::build`).
+        if let Some(map) = op.as_object_mut() {
+            map.insert("_MergedOp_".to_string(), serde_json::Value::Bool(true));
+        }
     }
     parent_scene.operations.extend(remapped_ops);
 

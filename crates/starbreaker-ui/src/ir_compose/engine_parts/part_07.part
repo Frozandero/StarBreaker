@@ -138,7 +138,14 @@ fn draw_ir_border(
     border: &UiIrBorder,
     alpha: f32,
     ctx: &ComposeContext<'_>,
+    corner_radius: Option<f32>,
 ) {
+    if let Some(radius) = corner_radius.filter(|r| *r > 0.0)
+        && draw_rounded_uniform_border(pixmap, rect, border, radius, alpha, ctx)
+    {
+        return;
+    }
+
     let top_colour = border_side_colour(&border.top, ctx);
     draw_border_side(
         pixmap,

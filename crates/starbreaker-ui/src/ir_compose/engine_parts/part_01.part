@@ -11,7 +11,7 @@ use image::RgbaImage;
 use image::imageops;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::OnceLock;
-use tiny_skia::{BlendMode, Color, FillRule, Paint, PathBuilder, Pixmap, PixmapPaint, Rect as TskRect, Stroke, Transform};
+use tiny_skia::{BlendMode, Color, Paint, PathBuilder, Pixmap, PixmapPaint, Rect as TskRect, Stroke, Transform};
 
 use crate::bb_atlas::AtlasLibrary;
 use crate::bb_assets::UiAssetResolver;
@@ -95,7 +95,7 @@ pub fn render_ui_ir_document(
         if rect.w < 0.5 || rect.h < 0.5 {
             continue;
         }
-        draw_ir_border(&mut pixmap, rect, border, node.alpha, ctx);
+        draw_ir_border(&mut pixmap, rect, border, node.alpha, ctx, node.corner_radius);
     }
 
     // Keep progress meters on top of base chrome/background fills.
@@ -196,18 +196,6 @@ fn draw_non_text_node(
 
     if node
         .node_type
-        .eq_ignore_ascii_case("component_general_button_secondary")
-        && node
-            .icon_preset
-            .as_deref()
-            .is_some_and(|preset| preset.eq_ignore_ascii_case("GeneralX"))
-    {
-        draw_secondary_close_button(ctx, pixmap, node, tsk_rect, node.alpha);
-        return;
-    }
-
-    if node
-        .node_type
         .eq_ignore_ascii_case("BuildingBlocks_WidgetManufacturerLogo")
     {
         draw_manufacturer_logo_ir(node, document, ctx, atlas, pixmap);
@@ -300,7 +288,7 @@ fn draw_non_text_node(
     if let Some(border) = &node.border
         && !border_uses_colour_tokens(border)
     {
-        draw_ir_border(pixmap, rect, border, node.alpha, ctx);
+        draw_ir_border(pixmap, rect, border, node.alpha, ctx, node.corner_radius);
     }
 
     if let Some(stroke_colour) = node.stroke_colour

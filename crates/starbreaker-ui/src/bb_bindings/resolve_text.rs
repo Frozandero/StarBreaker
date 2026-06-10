@@ -133,6 +133,26 @@ impl BindingResolver {
         None
     }
 
+    /// Resolve a boolean value for a specific widget field (for example the
+    /// standard templates' `IsActive` / `RenderShape` bindings).
+    pub fn resolve_field_bool(
+        &self,
+        node_id: BbNodeId,
+        field: &str,
+        defaults: &DefaultValueRegistry,
+    ) -> Option<bool> {
+        let input_ptrs = self
+            .widget_field_to_input_ptrs
+            .get(&(node_id, field.to_string()))?;
+        for &input_ptr in input_ptrs {
+            let mut seen = std::collections::HashSet::new();
+            if let Some(value) = self.eval_bool_ptr(input_ptr, defaults, &mut seen) {
+                return Some(value);
+            }
+        }
+        None
+    }
+
     /// Whether `node` is a component-parameter-driven label: a
     /// `ComponentLabelProperties` field fed by a `LocalizedField → ParamInput0`
     /// op. For these the authored `labelProperties.label` is a design-time

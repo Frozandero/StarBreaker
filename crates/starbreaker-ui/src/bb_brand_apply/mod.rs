@@ -24,12 +24,15 @@ use crate::bb_scene::{BbNode, BbNodeId, BbNodeType, BbScene};
 
 mod colors;
 mod modifiers;
+mod modifiers_number;
 #[cfg(test)]
 mod tests_colors;
 #[cfg(test)]
 mod tests_conditions;
 #[cfg(test)]
 mod tests_modifiers;
+#[cfg(test)]
+mod tests_modifiers_number;
 #[cfg(test)]
 mod tests_scene_styles;
 #[cfg(test)]

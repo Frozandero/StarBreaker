@@ -1,4 +1,5 @@
 use crate::bb_loc::LocFetcher;
+use super::modifiers_number::apply_number_field;
 use crate::bb_scene::{BbNode, BbNodeType, BbValue};
 use super::colors::{
     PaletteSources,
@@ -233,82 +234,6 @@ fn apply_string_field(field_name: &str, value: &str, node: &mut BbNode, loc_fetc
     }
 }
 
-/// Apply a number-typed modifier field.
-fn apply_number_field(field_name: &str, value: f64, node: &mut BbNode) {
-    match field_name {
-        "SizeX" => {
-            let v = value as f32;
-            node.sizing.width = bb_value_with_raw_behavior(v, node.raw.get("WidthBehavior"));
-        }
-        "SizeY" => {
-            let v = value as f32;
-            node.sizing.height = bb_value_with_raw_behavior(v, node.raw.get("HeightBehavior"));
-        }
-        "AnchorX" => node.anchor.x = value as f32,
-        "AnchorY" => node.anchor.y = value as f32,
-        "PivotX" => node.pivot.x = value as f32,
-        "PivotY" => node.pivot.y = value as f32,
-        "Alpha" => node.alpha = (value as f32).clamp(0.0, 1.0),
-        "BorderWidth" => {
-            let width = value as f32;
-            ensure_border(node);
-            if let Some(border) = &mut node.border {
-                border.top.width = width;
-                border.right.width = width;
-                border.bottom.width = width;
-                border.left.width = width;
-            }
-        }
-        "BorderWidthTop" | "BorderTopWidth" => {
-            ensure_border(node);
-            if let Some(border) = &mut node.border {
-                border.top.width = value as f32;
-            }
-        }
-        "BorderWidthRight" | "BorderRightWidth" => {
-            ensure_border(node);
-            if let Some(border) = &mut node.border {
-                border.right.width = value as f32;
-            }
-        }
-        "BorderWidthBottom" | "BorderBottomWidth" => {
-            ensure_border(node);
-            if let Some(border) = &mut node.border {
-                border.bottom.width = value as f32;
-            }
-        }
-        "BorderWidthLeft" | "BorderLeftWidth" => {
-            ensure_border(node);
-            if let Some(border) = &mut node.border {
-                border.left.width = value as f32;
-            }
-        }
-        "NineSliceTop" | "NineSliceBottom" | "NineSliceLeft" | "NineSliceRight" => {
-            // Write to raw for renderer.
-            node.raw.as_object_mut().and_then(|obj| {
-                obj.insert(
-                    field_name.to_string(),
-                    serde_json::Value::Number(serde_json::Number::from_f64(value).unwrap()),
-                )
-            });
-        }
-        _ => {
-            // Generic fallback → write to raw.
-            log::debug!(
-                "bb_brand_apply: unrecognised number field '{}' = {}",
-                field_name,
-                value
-            );
-            node.raw.as_object_mut().and_then(|obj| {
-                obj.insert(
-                    field_name.to_string(),
-                    serde_json::Value::Number(serde_json::Number::from_f64(value).unwrap()),
-                )
-            });
-        }
-    }
-}
-
 /// Apply a color-typed modifier field.
 fn apply_color_field(field_name: &str, color: [f32; 4], token: Option<&str>, node: &mut BbNode) {
     match field_name {
@@ -376,6 +301,27 @@ fn apply_color_field(field_name: &str, color: [f32; 4], token: Option<&str>, nod
 fn apply_boolean_field(field_name: &str, value: bool, node: &mut BbNode) {
     match field_name {
         "IsActive" => node.is_active = value,
+        "SvgFlipHorizontal" | "SvgFlipVertical" => {
+            // Write into the authored svgFill structure the IR's asset-layout
+            // reader consumes (the MFD header's "Button Icon Flip" mirrors the
+            // left nav arrow on instances under an h-align-left icon host).
+            let key = if field_name == "SvgFlipHorizontal" {
+                "flipHorizontal"
+            } else {
+                "flipVertical"
+            };
+            if node.raw.is_null() {
+                node.raw = serde_json::Value::Object(serde_json::Map::new());
+            }
+            if let Some(raw_obj) = node.raw.as_object_mut() {
+                let svg_fill = raw_obj
+                    .entry("svgFill".to_string())
+                    .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+                if let Some(svg_obj) = svg_fill.as_object_mut() {
+                    svg_obj.insert(key.to_string(), serde_json::Value::Bool(value));
+                }
+            }
+        }
         "EnableBackground" | "EnableColorOverlay" | "EnableNineSliceRect" => {
             // Write to raw for renderer.
             node.raw.as_object_mut().and_then(|obj| {
@@ -405,7 +351,7 @@ fn apply_boolean_field(field_name: &str, value: bool, node: &mut BbNode) {
 /// Convert a raw `WidthBehavior` / `HeightBehavior` JSON value into the correct
 /// `BbValue` for the given numeric size `v`.  Falls back to `Fixed` when the
 /// behavior field is absent or unrecognised.
-fn bb_value_with_raw_behavior(v: f32, raw_behavior: Option<&serde_json::Value>) -> BbValue {
+pub(super) fn bb_value_with_raw_behavior(v: f32, raw_behavior: Option<&serde_json::Value>) -> BbValue {
     match raw_behavior.and_then(|b| b.as_str()) {
         Some("Percent") => BbValue::Percent(v),
         Some("Fixed") | None => BbValue::Fixed(v),

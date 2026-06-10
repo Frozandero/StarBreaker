@@ -68,6 +68,27 @@ fn layout_flex_no_grow_children(
         {
             h = resolve_value_for_node(node, &node.sizing.height, container.h, w, csy, false);
         }
+        // A padded flex container's content box caps fixed-size items (the
+        // modular-kit ghost button's 64px icon inside the 15px-padded chrome
+        // renders 34px on the medical reference). Twin of the overlay-path
+        // rule in `layout_node`; unpadded containers keep legacy overflow.
+        let parent_padded = node
+            .parent
+            .and_then(|pid| scene.nodes.get(&pid))
+            .is_some_and(|p| {
+                p.padding.top != 0.0
+                    || p.padding.right != 0.0
+                    || p.padding.bottom != 0.0
+                    || p.padding.left != 0.0
+            });
+        if parent_padded {
+            if matches!(node.sizing.width, BbValue::Fixed(_)) {
+                w = w.min(container.w);
+            }
+            if matches!(node.sizing.height, BbValue::Fixed(_)) {
+                h = h.min(container.h);
+            }
+        }
         // In non-grow flex flow, "Auto" on main axis behaves like content-fit.
         // We do not have content measurement here, so treat it as zero so fixed/
         // percent children can still be axis-justified (instead of Auto filling

@@ -31,25 +31,25 @@
     }
 
 
-    #[test]
-    fn secondary_close_button_tint_prefers_source_stroke_over_derived_accent() {
-        let style = stub_style();
-        let defaults = crate::defaults::DefaultValueRegistry::with_well_known_path_defaults();
-        let assets = minimal_swf_assets();
-        let ctx = ComposeContext {
-            style: &style,
-            defaults: &defaults,
-            assets: &assets,
+    fn uniform_test_border(width: f32, colour: [f32; 4]) -> UiIrBorder {
+        let side = crate::ui_ir::UiIrBorderSide {
+            width,
+            colour: Some(colour),
+            colour_token: None,
         };
-        let mut node = blank_node("widget_close_button_secondary");
-        node.stroke_colour = Some([0.3, 0.7, 0.2, 1.0]);
-
-        assert_eq!(secondary_close_button_tint(&node, &ctx), [0.3, 0.7, 0.2, 1.0]);
+        UiIrBorder {
+            top: side.clone(),
+            right: side.clone(),
+            bottom: side.clone(),
+            left: side,
+        }
     }
 
-
+    /// A uniform border with an authored corner radius renders as a rounded
+    /// stroke (the modular-kit ghost button chrome): the square corner pixel
+    /// stays empty while the edge midpoints carry the border colour.
     #[test]
-    fn secondary_close_button_tint_falls_back_to_brand_surface_accent_when_unstyled() {
+    fn uniform_border_with_corner_radius_rounds_the_corners() {
         let style = stub_style();
         let defaults = crate::defaults::DefaultValueRegistry::with_well_known_path_defaults();
         let assets = minimal_swf_assets();
@@ -58,16 +58,20 @@
             defaults: &defaults,
             assets: &assets,
         };
-        let node = blank_node("widget_close_button_secondary");
+        let border = uniform_test_border(3.0, [1.0, 0.0, 0.0, 1.0]);
+        let rect = Rect { x: 0.0, y: 0.0, w: 64.0, h: 64.0 };
 
-        // With no authored colour the close-button frame uses the brand surface
-        // accent (Accent1 → surface slot 4 = darker blue), matching other surface
-        // chrome like the fingerprint, rather than pure white.
-        assert_eq!(
-            secondary_close_button_tint(&node, &ctx),
-            style_colour_slot_rgba(&ctx, 4).expect("stub style has slot 4")
-        );
-        assert_ne!(secondary_close_button_tint(&node, &ctx), [1.0, 1.0, 1.0, 1.0]);
+        let mut rounded = Pixmap::new(64, 64).unwrap();
+        draw_ir_border(&mut rounded, rect, &border, 1.0, &ctx, Some(12.0));
+        let corner = rounded.pixel(1, 1).unwrap();
+        let top_mid = rounded.pixel(32, 1).unwrap();
+        assert_eq!(corner.alpha(), 0, "rounded corner pixel must stay empty");
+        assert!(top_mid.alpha() > 0, "top edge midpoint must carry the border");
+
+        let mut square = Pixmap::new(64, 64).unwrap();
+        draw_ir_border(&mut square, rect, &border, 1.0, &ctx, None);
+        let square_corner = square.pixel(1, 1).unwrap();
+        assert!(square_corner.alpha() > 0, "square border keeps the corner pixel");
     }
 
 

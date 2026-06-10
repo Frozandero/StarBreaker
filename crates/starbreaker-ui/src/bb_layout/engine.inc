@@ -12,3 +12,4 @@ include!("engine_parts/part_08.part");
 include!("engine_parts/part_09.part");
 include!("engine_parts/part_10.part");
 include!("engine_parts/part_11.part");
+include!("engine_parts/part_12.part");

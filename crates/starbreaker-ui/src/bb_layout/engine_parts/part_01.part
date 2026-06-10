@@ -264,8 +264,30 @@ fn layout_node(
         naive_h
     };
     let (scale_x, scale_y) = authored_node_scale(node, scene);
-    let outer_w = base_outer_w * scale_x;
-    let outer_h = base_outer_h * scale_y;
+    let mut outer_w = base_outer_w * scale_x;
+    let mut outer_h = base_outer_h * scale_y;
+
+    // A parent's explicit padding defines its content box and the engine fits
+    // fixed-size children into it (the modular-kit ghost button's 64px icon
+    // instance inside the Root entry's 15px-padded 64px chrome renders 34px on
+    // the medical reference). Unpadded parents keep overlay overflow.
+    let parent_has_padding = node
+        .parent
+        .and_then(|pid| scene.nodes.get(&pid))
+        .is_some_and(|p| {
+            p.padding.top != 0.0
+                || p.padding.right != 0.0
+                || p.padding.bottom != 0.0
+                || p.padding.left != 0.0
+        });
+    if parent_has_padding {
+        if matches!(width_value, BbValue::Fixed(_)) {
+            outer_w = outer_w.min(parent_inner.w);
+        }
+        if matches!(height_value, BbValue::Fixed(_)) {
+            outer_h = outer_h.min(parent_inner.h);
+        }
+    }
 
     // ── 2. Anchor / pivot / position ────────────────────────────────────────
     //

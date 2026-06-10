@@ -101,12 +101,24 @@ impl BindingResolver {
                 }
             }
         }
+        // Field-op inputs originating in merged child canvases / expanded
+        // widget-standard templates. The widget-keyed maps stay (they are
+        // scoped by node id), but the global by-field-NAME map must not see
+        // them: a merged template's own `ParamInputN` wiring is instance-local
+        // and must not become an override candidate for every same-named
+        // component parameter in the scene (e.g. a medical caption pair's
+        // `ParamInput0` picking up an expanded button template's icon path).
+        let mut merged_field_input_ptrs: std::collections::HashSet<BbNodeId> =
+            std::collections::HashSet::new();
         for op in operations {
             let type_str = op.get("_Type_").and_then(|v| v.as_str()).unwrap_or("");
             if type_str.contains("Field") {
                 let widget_ptr = parse_points_to_or_ptr(op.get("widget"));
                 let input_ptr = parse_points_to_or_ptr(op.get("input"));
                 if let (Some(w), Some(inp)) = (widget_ptr, input_ptr) {
+                    if op.get("_MergedOp_").and_then(|v| v.as_bool()) == Some(true) {
+                        merged_field_input_ptrs.insert(inp);
+                    }
                     let field_name = op
                         .get("field")
                         .and_then(|v| v.as_str())
@@ -169,6 +181,9 @@ impl BindingResolver {
                 }
             }
             for ptr in &ordered {
+                if merged_field_input_ptrs.contains(ptr) {
+                    continue;
+                }
                 let entry = field_name_to_input_ptrs
                     .entry(field_name.clone())
                     .or_default();

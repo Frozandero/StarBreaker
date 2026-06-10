@@ -406,11 +406,18 @@ mod tests_e {
 
         let fetch_count = std::cell::Cell::new(0u32);
         let scene = resolve_canvas_graph(&root, None, &|url| {
-            fetch_count.set(fetch_count.get() + 1);
             Ok(match url {
-                "file://./child.json" => child.clone(),
-                "file://./grandchild.json" => grandchild.clone(),
-                _ => return Err(format!("unexpected fetch: {url}")),
+                "file://./child.json" => {
+                    fetch_count.set(fetch_count.get() + 1);
+                    child.clone()
+                }
+                "file://./grandchild.json" => {
+                    fetch_count.set(fetch_count.get() + 1);
+                    grandchild.clone()
+                }
+                // Framework records (tag database / widget standards) probed by
+                // the expansion pass are not canvas follows.
+                _ => return Err(format!("framework record unavailable in fixture: {url}")),
             })
         })
         .expect("resolve failed");

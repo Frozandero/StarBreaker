@@ -196,7 +196,7 @@ fn resolve_canvas_graph_inner(
                         &mut child_scene,
                     );
                 }
-                merge_child_scene(&mut scene, child_scene, match_to, None);
+                merge_child_scene(&mut scene, child_scene, match_to, None, false);
             }
         }
     }
@@ -370,7 +370,7 @@ fn resolve_canvas_graph_inner(
             };
             inject_param_overrides(&param_inputs, &mut child_scene);
             inject_dynamic_param_field_bindings(node_id, &scene.operations, &mut child_scene);
-            merge_child_scene(&mut scene, child_scene, "", Some(node_id));
+            merge_child_scene(&mut scene, child_scene, "", Some(node_id), false);
         }
     }
 
@@ -396,6 +396,7 @@ fn resolve_canvas_graph_inner(
         }
     }
 
+    expand_widget_standards(&mut scene, fetch_by_path);
     crate::bb_bindings::resolve_state_tags_into_scene(&mut scene, &Default::default());
     apply_canvas_style_cascade(
         &mut scene,
@@ -408,8 +409,17 @@ fn resolve_canvas_graph_inner(
         fetch_by_path,
         loc_fetcher,
     );
-
-    if let Some(style_id) = local_style_identifier.as_deref() {
+    // The modular-kit style id comes from the canvas's style link (medical
+    // `s_bioc` → `sk_bioc`) or, for brandStyles-selected canvases (the MFD
+    // header's `s_drak_hud`), from the resolved brand identifier.
+    let modular_style_id = local_style_identifier.clone().or_else(|| {
+        bb_brand_style::resolve_brand_style(root_json, manufacturer_id, preferred_brand)
+            .map(|brand| brand.identifier)
+    });
+    if let Some(style_id) = modular_style_id.as_deref() {
+        // Named colour roles in modular-kit entries resolve against the brand
+        // Style record's palette (the module records carry no `colorStyles`).
+        let module_chrome_palette = fetch_by_path(style_id).ok();
         let module_paths = [
             modular_linearprogress_style_path(style_id),
             modular_buttonsecondary_style_path(style_id),
@@ -438,9 +448,13 @@ fn resolve_canvas_graph_inner(
                             entries: entries.as_slice(),
                             raw: module_style_value,
                         };
-                        crate::bb_brand_apply::apply_brand_modifiers(
+                        let palette = module_chrome_palette
+                            .as_ref()
+                            .unwrap_or(module_style_value);
+                        crate::bb_brand_apply::apply_brand_modifiers_with_palette(
                             &mut scene,
                             &brand,
+                            palette,
                             loc_fetcher,
                         );
                     }
@@ -456,6 +470,7 @@ fn resolve_canvas_graph_inner(
             }
         }
     }
+    finalize_widget_standard_fields(&mut scene, &Default::default());
 
     let animated_roots: std::collections::HashSet<BbNodeId> = scene
         .nodes

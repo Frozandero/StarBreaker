@@ -7,11 +7,14 @@ use crate::bb_scene::BbNodeId;
 mod build;
 mod eval;
 mod eval_bool;
+mod eval_numeric;
 mod eval_string;
 mod param_overrides;
 mod resolve_text;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_state_tags;
 mod util;
 
 /// Resolves text content for `WidgetTextField` and `WidgetText` nodes from operations.

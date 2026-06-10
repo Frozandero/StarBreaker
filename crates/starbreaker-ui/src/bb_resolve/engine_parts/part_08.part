@@ -339,7 +339,11 @@ mod tests_c {
         });
 
         let scene = resolve_canvas_graph(&host, None, &|url| {
-            assert_eq!(url, content_url, "fetcher called with unexpected url");
+            // Framework records (tag database / widget standards) may be probed
+            // by the widget-standard expansion; only the content canvas counts.
+            if url != content_url {
+                return Err(format!("framework record unavailable in fixture: {url}"));
+            }
             Ok(content.clone())
         })
         .expect("resolve failed");
