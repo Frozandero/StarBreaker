@@ -115,6 +115,30 @@
     }
 
     #[test]
+    fn resolve_colour_token_disabled_is_near_black_slot_eight() {
+        // `Disabled` is BB_ColorStyle index 8 (the drak palette's near-black
+        // 20,13,5) — the power screen's unpowered pip hitzones paint it. The
+        // old mapping lumped it onto the LIGHT slot 6, rendering grey pips.
+        let mut style = style_with_seven_slots();
+        style.colour_slots.push(RgbaColor { r: 255, g: 119, b: 0, a: 255 }); // 7 Selected
+        style.colour_slots.push(RgbaColor { r: 20, g: 13, b: 5, a: 255 });   // 8 Disabled
+        let defaults = crate::defaults::DefaultValueRegistry::with_well_known_path_defaults();
+        let assets = minimal_swf_assets();
+        let ctx = ComposeContext {
+            style: &style,
+            defaults: &defaults,
+            assets: &assets,
+        };
+
+        let disabled = resolve_colour_token(&ctx, "Disabled").expect("disabled resolves");
+        assert_eq!(
+            disabled,
+            style_colour_slot_rgba(&ctx, 8).expect("slot 8 exists"),
+            "Disabled is the near-black surface slot"
+        );
+    }
+
+    #[test]
     fn custom_shape_svg_uses_source_over_blend() {
         let mut node = blank_node("widget_custom_shape");
         node.custom_shape = Some(UiIrCustomShape {

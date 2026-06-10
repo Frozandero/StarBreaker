@@ -165,7 +165,11 @@ fn resolve_colour_token(ctx: &ComposeContext<'_>, token: &str) -> Option<[f32; 4
         "accent4" | "critical" | "negative" => style_colour_slot_rgba(ctx, 3),
         "accent5" | "contactunknown" => style_colour_slot_rgba(ctx, 4),
         "mid" | "contactneutral" => style_colour_slot_rgba(ctx, 5),
-        "light" | "disabled" => style_colour_slot_rgba(ctx, 6),
+        "light" => style_colour_slot_rgba(ctx, 6),
+        // `Disabled` is the near-black surface slot (BB_ColorStyle index 8),
+        // not the light slot 6 — same divergence the brand-apply resolver
+        // documents (the power screen's unpowered pip hitzones pin it).
+        "disabled" => style_colour_slot_rgba(ctx, 8),
         "highlight" | "contactpositiverep" => style_colour_slot_rgba(ctx, 7),
         "primarytext" | "text" | "foreground" | "fg" | "white" => Some([1.0, 1.0, 1.0, 1.0]),
         "background" => Some([
