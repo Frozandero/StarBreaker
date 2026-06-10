@@ -68,6 +68,7 @@
                 background_fill_alpha: None,
                 background_fill_colour_token: None,
                 segmented_fill: None,
+            polygon: None,
                 border: Some(UiIrBorder {
                     top: crate::ui_ir::UiIrBorderSide { width: 2.0, colour: Some([1.0, 1.0, 0.0, 1.0]), colour_token: None },
                     right: crate::ui_ir::UiIrBorderSide { width: 2.0, colour: Some([1.0, 1.0, 0.0, 1.0]), colour_token: None },

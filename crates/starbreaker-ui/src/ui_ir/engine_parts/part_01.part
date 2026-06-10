@@ -75,6 +75,8 @@ pub struct UiIrNode {
     pub background_fill_colour_token: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub segmented_fill: Option<UiIrSegmentedFill>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub polygon: Option<UiIrPolygon>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub border: Option<UiIrBorder>,
     pub stroke_colour: Option<[f32; 4]>,
@@ -170,6 +172,20 @@ pub struct UiIrBorderSide {
     pub colour: Option<[f32; 4]>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub colour_token: Option<String>,
+}
+
+/// A `WidgetPolygon`'s regular-polygon shape (the power pip selector arrow:
+/// 3 sides, startAngle 270, orientationOffset.z 90 — a right-pointing
+/// triangle filled with the brand Bright role).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UiIrPolygon {
+    pub sides: u32,
+    pub start_angle_deg: f32,
+    pub rotation_deg: f32,
+    pub do_fill: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fill_colour_token: Option<String>,
+    pub fill_alpha: f32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

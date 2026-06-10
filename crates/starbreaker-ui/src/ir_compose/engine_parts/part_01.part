@@ -21,8 +21,8 @@ use crate::error::UiError;
 use crate::text::{FontKind, TextAlign, TextRenderer, VerticalAlign};
 use crate::swf_assets::FontGlyphSet;
 use crate::ui_ir::{
-    validate_ui_ir_document, UiIrBorder, UiIrColourBlendMode, UiIrDocument, UiIrNode, UiIrRect,
-    UiIrTextPayload, UiIrTextStyle, UiIrValue,
+    validate_ui_ir_document, UiIrBorder, UiIrColourBlendMode, UiIrDocument, UiIrNode, UiIrPolygon,
+    UiIrRect, UiIrTextPayload, UiIrTextStyle, UiIrValue,
 };
 
 // BB/Flash nominal font sizes render visually smaller with the bundled DejaVu
@@ -233,6 +233,10 @@ fn draw_non_text_node(
                 fill_rect_ts_with_mode(pixmap, fill_rect, fill, node.alpha, node_colour_blend_mode(node));
             }
         }
+    }
+
+    if let Some(polygon) = node.polygon.as_ref() {
+        draw_ir_polygon(node, polygon, rect, ctx, pixmap);
     }
 
     if let Some(asset_ref) = node.asset_ref.as_deref() {

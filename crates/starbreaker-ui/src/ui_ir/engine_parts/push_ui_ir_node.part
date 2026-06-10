@@ -42,6 +42,7 @@
             background_fill_alpha,
             background_fill_colour_token,
             segmented_fill: segmented_fill_from_raw(node),
+            polygon: polygon_from_raw(node),
             border,
             stroke_colour,
             stroke_colour_token,

@@ -98,3 +98,69 @@ fn ancestor_condition_stops_at_break_boundary() {
         "the root's Powered tag lies beyond the pip-block break boundary"
     );
 }
+
+
+/// The pip selector arrow's authored entry: `IsActive=true` on Polygon
+/// widgets whose ancestor (within the `general-list-item` break) carries the
+/// `selected` tag, with an empty-conditions negative guard breaking at
+/// `Secondary`.
+#[test]
+fn selector_arrow_entry_activates_polygon_on_selected_pip() {
+    let mut scene = pip_scene();
+    {
+        let pip = scene.nodes.get_mut(&2).unwrap();
+        pip.style_tag_uuids = vec![
+            "tag-list-item".to_string(),
+            "tag-selected".to_string(),
+        ];
+    }
+    {
+        let selecter = scene.nodes.get_mut(&3).unwrap();
+        selecter.style_tag_uuids = vec!["tag-secondary".to_string()];
+    }
+    let mut arrow = scene.nodes.get(&1).unwrap().clone();
+    arrow.id = 4;
+    arrow.parent = Some(3);
+    arrow.children = vec![];
+    arrow.name = "arrow".to_string();
+    arrow.style_tag_uuids = vec![];
+    arrow.is_active = false;
+    arrow.ty = crate::bb_scene::BbNodeType::Other("BuildingBlocks_WidgetPolygon".to_string());
+    scene.nodes.insert(4, arrow);
+    scene.nodes.get_mut(&3).unwrap().children = vec![4];
+
+    let entries = [serde_json::json!({
+        "name": "PipBox_Selector_Arrow_Visibility",
+        "conditionsList": [
+            {"conditions": [
+                {"_Type_": "BuildingBlocks_StyleSelectorConditionAncestor",
+                 "breakConditions": [
+                    {"_Type_": "BuildingBlocks_StyleSelectorConditionTag",
+                     "tag": {"_RecordId_": "tag-list-item"}}],
+                 "conditions": [
+                    {"_Type_": "BuildingBlocks_StyleSelectorConditionTag",
+                     "tag": {"_RecordId_": "tag-selected"}}]},
+                {"_Type_": "BuildingBlocks_StyleSelectorConditionAncestor",
+                 "breakConditions": [
+                    {"_Type_": "BuildingBlocks_StyleSelectorConditionTag",
+                     "tag": {"_RecordId_": "tag-secondary"}}],
+                 "conditions": []},
+                {"_Type_": "BuildingBlocks_StyleSelectorConditionType", "type": "Polygon"}
+            ]}
+        ],
+        "modifiers": [
+            {"_Type_": "BuildingBlocks_FieldModifierBoolean",
+             "field": "IsActive", "value": true}
+        ]
+    })];
+    let brand = BrandStyle {
+        identifier: "test_brand".to_string(),
+        entries: &entries,
+        raw: &serde_json::json!({}),
+    };
+    apply_brand_modifiers(&mut scene, &brand, None);
+    assert!(
+        scene.nodes.get(&4).unwrap().is_active,
+        "the selected pip's arrow must activate"
+    );
+}

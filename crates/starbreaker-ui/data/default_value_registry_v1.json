@@ -102,7 +102,10 @@
     "piplist/[0002]/tempindicator/mintemp": 273.0,
     "piplist/[0002]/tempindicator/overheattemp": 372.0,
     "piplist/[0002]/tempindicator/maxtemp": 440.0,
-    "piplist/[0002]/tempindicator/tempdirection": 0
+    "piplist/[0002]/tempindicator/tempdirection": 0,
+    "piplist/[0000]/piplist/selectedindex": 1,
+    "piplist/[0001]/piplist/selectedindex": 2,
+    "piplist/[0002]/piplist/selectedindex": 1
   },
   "localization": {
     "hud_notarget": "NO TARGET",

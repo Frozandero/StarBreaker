@@ -338,10 +338,12 @@ fn condition_matches_node(
         // pip's fill must not match the column root's Powered tag), and the
         // boundary node itself is tested match-before-break (it carries both
         // the `general-list-item` break tag and its own state tag). An EMPTY
-        // conditions list inside such an entry is a negative guard (true
-        // unless an ancestor matches the breaks). Outside materialised
-        // entries the long-verified semantics the medical baselines pin
-        // apply: breaks are ignored and empty conditions match trivially.
+        // conditions list with breaks is a CONTAINMENT test: true when an
+        // ancestor matches the breaks (the pip selector arrow's entry
+        // requires living inside the Secondary-tagged `PipBox_Selecter`
+        // slot). Outside materialised entries the long-verified semantics the
+        // medical baselines pin apply: breaks are ignored and empty
+        // conditions match at the first resolvable ancestor.
         let break_conditions = condition
             .get("breakConditions")
             .and_then(|v| v.as_array())
@@ -372,11 +374,14 @@ fn condition_matches_node(
                     .iter()
                     .all(|child| condition_matches_node(child, ancestor_id, ancestor, scene))
             {
-                return false;
+                // The walk stops at the boundary: positive conditions beyond
+                // it never match; an empty-conditions containment test is
+                // satisfied by reaching it.
+                return conditions.is_empty();
             }
             current = ancestor.parent;
         }
-        return conditions.is_empty();
+        return false;
     }
 
     if cond_type.ends_with("ConditionAnyOfTag") {
@@ -468,6 +473,8 @@ fn node_type_matches(type_str: &str, ty: &BbNodeType) -> bool {
         // `ScreenNameBackground` style gates on `AllOf(Type=Base, Tag …)`).
         "Base" | "DisplayWidget" => matches!(ty, BbNodeType::DisplayWidget),
         "CustomShape" => matches!(ty, BbNodeType::WidgetCustomShape),
+        "Polygon" => matches!(ty, BbNodeType::Other(kind)
+            if kind.eq_ignore_ascii_case("BuildingBlocks_WidgetPolygon")),
         _ => false,
     }
 }

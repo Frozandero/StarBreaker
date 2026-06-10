@@ -33,6 +33,7 @@ pub(super) fn base_node(id: u32, layer: i32) -> UiIrNode {
         background_fill_alpha: None,
         background_fill_colour_token: None,
         segmented_fill: None,
+            polygon: None,
         border: None,
         stroke_colour: None,
         stroke_colour_token: None,

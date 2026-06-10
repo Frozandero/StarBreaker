@@ -59,6 +59,45 @@ fn stroke_colour_from_raw(raw: &serde_json::Value) -> Option<[f32; 4]> {
     Some([r, g, b, a])
 }
 
+/// Extract a `WidgetPolygon`'s regular-polygon shape.
+fn polygon_from_raw(node: &crate::bb_scene::BbNode) -> Option<UiIrPolygon> {
+    if !matches!(&node.ty, crate::bb_scene::BbNodeType::Other(kind)
+        if kind.eq_ignore_ascii_case("BuildingBlocks_WidgetPolygon"))
+    {
+        return None;
+    }
+    let raw = &node.raw;
+    let sides = raw.get("sides").and_then(|v| v.as_u64()).unwrap_or(3) as u32;
+    let start_angle_deg = raw
+        .get("startAngle")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0) as f32;
+    let rotation_deg = raw
+        .get("orientationOffset")
+        .and_then(|o| o.get("z"))
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0) as f32;
+    let do_fill = raw.get("doFill").and_then(|v| v.as_bool()).unwrap_or(true);
+    let fill = raw.get("fillColor");
+    let fill_colour_token = fill
+        .and_then(|c| c.get("color"))
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned);
+    let fill_alpha = fill
+        .and_then(|c| c.get("alpha"))
+        .and_then(|v| v.as_f64())
+        .unwrap_or(1.0) as f32;
+    Some(UiIrPolygon {
+        sides,
+        start_angle_deg,
+        rotation_deg,
+        do_fill,
+        fill_colour_token,
+        fill_alpha,
+    })
+}
+
 fn segmented_fill_from_raw(node: &crate::bb_scene::BbNode) -> Option<UiIrSegmentedFill> {
     let raw = &node.raw;
     let segmented_raw = raw.get("segmentedFill");

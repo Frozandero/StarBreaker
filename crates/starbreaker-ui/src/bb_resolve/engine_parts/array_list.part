@@ -16,6 +16,12 @@
 // `piplist/[0000]/pipList = 4`, `piplist/[0001]/pipList = 6`, …). A relative
 // path with no namespace in scope cannot be resolved and is skipped.
 
+/// The engine-wide 'selected' tag (TagDatabase
+/// `797684dc-56d9-452f-9496-e0b7a2ae8dac`), applied by list selection
+/// machinery to the selected entry; style entries (the pip selector arrow's
+/// `PipBox_Selector_Arrow_Visibility`) condition on it.
+const LIST_SELECTED_TAG_UUID: &str = "797684dc-56d9-452f-9496-e0b7a2ae8dac";
+
 /// Materialise arrayVariable-bound WidgetLists in `scene` from the defaults
 /// registry. `namespace` is the instance namespace assigned to this scene by
 /// the outer list materialisation ("" when none).
@@ -70,6 +76,16 @@ fn apply_array_variable_lists(
         };
         let template = *template;
 
+        // Engine list machinery rests its selection on one entry (the power
+        // pip stacks park the cursor on the assignment-boundary pip, which
+        // shows the selector arrow via the 'selected'-tag style conditions).
+        let selected_index = defaults
+            .lookup_path(&format!("{path}/selectedindex"))
+            .and_then(|value| match value {
+                crate::canvas::Value::Int(i) => Some(*i),
+                crate::canvas::Value::Float(f) => Some(*f as i64),
+                _ => None,
+            });
         for index in 0..count.max(0) {
             let Some((clone_root, node_map)) = clone_subtree_as_sibling_with_map(scene, template)
             else {
@@ -81,6 +97,15 @@ fn apply_array_variable_lists(
                 && let Some(map) = root.raw.as_object_mut()
             {
                 map.insert("_MaterialisedEntry_".to_string(), serde_json::Value::Bool(true));
+            }
+            if selected_index == Some(index)
+                && let Some(root) = scene.nodes.get_mut(&clone_root)
+                && !root
+                    .style_tag_uuids
+                    .iter()
+                    .any(|t| t.eq_ignore_ascii_case(LIST_SELECTED_TAG_UUID))
+            {
+                root.style_tag_uuids.push(LIST_SELECTED_TAG_UUID.to_string());
             }
             let entry_namespace = format!("{path}/[{index:04}]");
             clone_subtree_field_ops(scene, &node_map, namespace, &entry_namespace);
