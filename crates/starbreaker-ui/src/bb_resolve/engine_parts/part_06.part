@@ -311,6 +311,21 @@ fn child_component_parameter_targets(
         let key = (parameter.to_ascii_lowercase(), kind);
         if op.get("_ParamRelay_").and_then(|v| v.as_bool()) == Some(true) {
             relays.entry(key.clone()).or_default().push(ptr);
+            continue;
+        }
+        // A `_MergedOp_` def belongs to one of the child's own descendants
+        // and was already wired during the child's resolve; only relays may
+        // re-receive a parent's wiring. Without this, the power master's
+        // integer ParamInput0 (`pipsLengthMax`) lands on the battery card's
+        // merged `batteryremaining` def (same slot + kind) as a stray "6".
+        // Expansion-band defs (`_ExpansionOp_`, widget-standard templates)
+        // stay candidates: templates merge un-wired and the host's parent
+        // wiring legitimately targets them (the medical close button's
+        // icon-path ParamInput0).
+        if op.get("_MergedOp_").and_then(|v| v.as_bool()) == Some(true)
+            && op.get("_ExpansionOp_").and_then(|v| v.as_bool()) != Some(true)
+        {
+            continue;
         }
         primary.insert(key, ptr);
     }

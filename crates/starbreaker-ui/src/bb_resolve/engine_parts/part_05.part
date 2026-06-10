@@ -125,8 +125,14 @@ fn merge_child_scene(
         remap_ptrs_in_json_map(op, &id_map, &op_id_map);
         // Mark instance-local operations so the binding resolver's global
         // by-field-name override scan ignores them (see `bb_bindings::build`).
+        // Expansion merges (widget-standard templates) are additionally
+        // flagged: unlike canvas-reference merges they never received a
+        // parent's parameter wiring, so injection may still target them.
         if let Some(map) = op.as_object_mut() {
             map.insert("_MergedOp_".to_string(), serde_json::Value::Bool(true));
+            if reserve_id_band {
+                map.insert("_ExpansionOp_".to_string(), serde_json::Value::Bool(true));
+            }
         }
     }
     parent_scene.operations.extend(remapped_ops);
