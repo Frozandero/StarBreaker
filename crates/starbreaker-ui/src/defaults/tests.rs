@@ -178,3 +178,22 @@ fn pipeline_defaults_merge_localization_without_losing_sentinels() {
     assert_eq!(reg.lookup_localization("@LOC_PLACEHOLDER"), Some(""));
     assert_eq!(reg.lookup_localization("@LOC_EMPTY"), Some(""));
 }
+
+#[test]
+fn pipeline_defaults_apply_derived_values_over_well_known_paths() {
+    let overrides = HashMap::from([
+        // Overrides a compiled-in well-known path (the power pip count).
+        ("piplist".to_string(), crate::canvas::Value::Int(5)),
+        // Adds a path absent from the compiled-in registry.
+        ("piplist/[0004]/itemicon".to_string(), crate::canvas::Value::Str("a.svg".into())),
+    ]);
+    let reg = DefaultValueRegistry::with_pipeline_defaults_and_derived_values(None, Some(&overrides));
+
+    assert_eq!(reg.lookup_path("piplist"), Some(&crate::canvas::Value::Int(5)));
+    assert_eq!(
+        reg.lookup_path("piplist/[0004]/itemicon"),
+        Some(&crate::canvas::Value::Str("a.svg".into()))
+    );
+    // Non-overridden well-known paths survive.
+    assert!(reg.lookup_path("resourcenetworkui/powermanagement/pipsLengthMax").is_some());
+}

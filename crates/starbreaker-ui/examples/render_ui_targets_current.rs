@@ -289,6 +289,7 @@ fn render_target(
         animation_sample_percent,
         localization_map,
         loc_fetcher,
+        derived_values: None,
     };
 
     let png = render_for_binding(&inputs).map_err(|e| {
@@ -467,6 +468,7 @@ fn main() -> Result<(), String> {
             animation_sample_percent,
             localization_map: load_localization_map(&workspace),
             loc_fetcher: None,
+            derived_values: None,
         };
         print_layout_locations(&ui_target_a_inputs, "ui_target_a", query)?;
 
@@ -492,6 +494,7 @@ fn main() -> Result<(), String> {
             animation_sample_percent,
             localization_map: load_localization_map(&workspace),
             loc_fetcher: None,
+            derived_values: None,
         };
         print_layout_locations(&ui_target_b_inputs, "ui_target_b", query)?;
     }

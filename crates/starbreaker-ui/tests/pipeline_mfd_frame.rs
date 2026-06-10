@@ -175,6 +175,7 @@ fn inputs_with_binding<'a>(
         animation_sample_percent: None,
         localization_map: None,
         loc_fetcher,
+        derived_values: None,
     }
 }
 
@@ -410,6 +411,7 @@ fn stage_scaled_font_size(host_swf_path: Option<&str>) -> f32 {
         animation_sample_percent: None,
         localization_map: None,
         loc_fetcher: None,
+        derived_values: None,
     };
     let ir = compile_ir_for_binding(&inputs).expect("compile should succeed");
     let node = ir

@@ -127,6 +127,7 @@ fn compile_ir_for_binding_uses_content_canvas_guid() {
         animation_sample_percent: None,
         localization_map: None,
         loc_fetcher: None,
+        derived_values: None,
     };
 
     let ir = compile_ir_for_binding(&inputs).expect("IR should compile");
@@ -193,6 +194,7 @@ fn compile_ir_for_binding_matches_golden_fixture() {
         animation_sample_percent: None,
         localization_map: None,
         loc_fetcher: None,
+        derived_values: None,
     };
 
     let ir = compile_ir_for_binding(&inputs).expect("IR should compile");
@@ -260,6 +262,7 @@ fn render_for_binding_ir_produces_nonempty_png() {
         animation_sample_percent: None,
         localization_map: None,
         loc_fetcher: None,
+        derived_values: None,
     };
 
     let png = render_for_binding_ir(&inputs).expect("IR render should succeed");
@@ -336,6 +339,7 @@ fn render_for_binding_matches_ir_entrypoint_for_bb_canvas() {
         animation_sample_percent: None,
         localization_map: None,
         loc_fetcher: None,
+        derived_values: None,
     };
 
     let production = render_for_binding(&inputs).expect("production render should succeed");
@@ -415,6 +419,7 @@ fn render_for_binding_ir_honours_canvas_style_override() {
         animation_sample_percent: None,
         localization_map: None,
         loc_fetcher: None,
+        derived_values: None,
     };
 
     let png = render_for_binding_ir(&inputs).expect("IR render should succeed");

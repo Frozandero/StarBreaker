@@ -146,6 +146,7 @@ fn main() {
         animation_sample_percent: Some(0.0),
         localization_map: None,
         loc_fetcher: None,
+        derived_values: None,
     };
     let ir = starbreaker_ui::compile_ir_for_binding(&inputs).expect("compile");
     println!("nodes: {}", ir.nodes.len());

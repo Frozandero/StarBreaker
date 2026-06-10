@@ -126,6 +126,18 @@ fn run_render(
         });
 
     let loc_data = starbreaker_3d::ui_pipeline::UiLocData::load(&p4k);
+    // Replay derives the same per-ship UI values the export pipeline feeds
+    // (power pools → pip stacks, temps) from the scene's root entity, so a
+    // re-render matches the exported PNGs.
+    let root_entity_name: Option<String> = scene
+        .get("root_entity")
+        .and_then(|re| re.get("entity_name"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.rsplit_once('.').map(|(_, r)| r).unwrap_or(s).to_string());
+    let ship_data = match root_entity_name.as_deref() {
+        Some(name) => starbreaker_3d::ui_pipeline::UiShipData::derive(&db, name),
+        None => starbreaker_3d::ui_pipeline::UiShipData::none(),
+    };
     let mut rendered = 0usize;
     let mut failed = 0usize;
 
@@ -140,7 +152,7 @@ fn run_render(
             continue;
         }
 
-        match starbreaker_3d::ui_pipeline::render_ui_binding_png(&binding, &db, &p4k, texture_mip, manufacturer_id.as_deref(), &loc_data) {
+        match starbreaker_3d::ui_pipeline::render_ui_binding_png(&binding, &db, &p4k, texture_mip, manufacturer_id.as_deref(), &loc_data, &ship_data) {
             Ok(png_bytes) => {
                 let file_name = png_name_for_binding(binding, texture_mip);
                 let dest = out_dir.join(&file_name);
@@ -154,6 +166,7 @@ fn run_render(
                         texture_mip,
                         manufacturer_id.as_deref(),
                         &loc_data,
+                        &ship_data,
                     )
                     .map_err(CliError::MissingRequirement)?;
                     let ir_dest = dump_ir_dir.join(format!("{}.ir.json", file_name.trim_end_matches(".png")));

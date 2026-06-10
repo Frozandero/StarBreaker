@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "frozen_at": "2026-06-10T09:44:34Z",
+  "frozen_at": "2026-06-10T22:48:40Z",
   "approver": "tom",
-  "reason": "A6+A8: EmBaseline heading placement (NO TARGET to chevron band per in-game capture) and icon-element-instance contain-fit (footer pixel arrows 30x52 per reference aspect); medical bed 1px AA delta, end-of-bed/door/annunciator unchanged",
+  "reason": "Add Drake Clipper target screen (mc_s_target_master) gold artifact baseline",
   "signature": null,
   "manifest_path": "crates/starbreaker-ui/tests/fixtures/ui_ir/ui_snapshot_manifest.json",
   "artifacts": [
@@ -44,6 +44,16 @@
       "sha256": "601815149ada6788dfc30d378fb8b3a916375f4e60133852ef4d0bb807eb703a",
       "width": 1920,
       "height": 432,
+      "channels": "srgba"
+    },
+    {
+      "id": "clipper_target_master",
+      "tier": "gold",
+      "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_mc_s_target_master.png",
+      "artifact_path": "test-artifacts/ui/clipper_target_master.png",
+      "sha256": "387645105976dae30586595e000e1ba74a600fc58bbafd9ca81cc8c11ecb0132",
+      "width": 1600,
+      "height": 1200,
       "channels": "srgba"
     }
   ]

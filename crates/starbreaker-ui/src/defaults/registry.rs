@@ -36,11 +36,27 @@ impl DefaultValueRegistry {
 
     /// Create a registry by combining well-known defaults and optional live localization.
     pub fn with_pipeline_defaults(localization_map: Option<HashMap<String, String>>) -> Self {
+        Self::with_pipeline_defaults_and_derived_values(localization_map, None)
+    }
+
+    /// Like [`Self::with_pipeline_defaults`], additionally applying caller
+    /// value overrides over the compiled-in well-known paths. This is how
+    /// per-ship data DERIVED from DataCore by the export pipeline (power pip
+    /// pools, temps, emissions) replaces the static at-rest defaults.
+    pub fn with_pipeline_defaults_and_derived_values(
+        localization_map: Option<HashMap<String, String>>,
+        derived_values: Option<&HashMap<String, Value>>,
+    ) -> Self {
         let mut reg = Self::with_well_known_path_defaults();
         if let Some(loc_map) = localization_map
             && !loc_map.is_empty()
         {
             reg.merge_localization(loc_map);
+        }
+        if let Some(overrides) = derived_values {
+            for (path, value) in overrides {
+                reg.insert_path(path, value.clone());
+            }
         }
         reg
     }

@@ -16,9 +16,11 @@ use crate::types::UiBinding;
 
 mod canvas_fetcher;
 mod p4k_fetchers;
+mod ship_values;
 mod style_fetcher;
 use canvas_fetcher::DatacoreCanvasFetcher;
 use p4k_fetchers::{P4kAssetFetcher, P4kSwfFetcher};
+pub use ship_values::UiShipData;
 use style_fetcher::ManufacturerStyleFetcher;
 
 pub(super) fn datacore_ui_lookup_type_names() -> &'static [&'static str] {
@@ -78,6 +80,7 @@ pub fn render_ui_binding_png(
     texture_mip: u32,
     root_manufacturer_id: Option<&str>,
     loc_data: &UiLocData,
+    ship_data: &UiShipData,
 ) -> Result<Vec<u8>, String> {
     let t_ui = std::env::var("SB_UI_TIMING").ok().map(|_| std::time::Instant::now());
     let canvas_fetcher = DatacoreCanvasFetcher::new(db);
@@ -122,6 +125,7 @@ pub fn render_ui_binding_png(
         animation_sample_percent,
         localization_map: Some(loc_data.map.clone()),
         loc_fetcher: Some(&loc_data.ini),
+        derived_values: ship_data.derived_values.clone(),
     };
     let _ = texture_mip; // size is fixed per binding_kind; mip is applied at texture level
     let result = starbreaker_ui::pipeline::render_for_binding(&inputs).map_err(|e| e.to_string());
@@ -145,6 +149,7 @@ pub fn compile_ui_binding_ir_json(
     texture_mip: u32,
     root_manufacturer_id: Option<&str>,
     loc_data: &UiLocData,
+    ship_data: &UiShipData,
 ) -> Result<String, String> {
     let canvas_fetcher = DatacoreCanvasFetcher::new(db);
     let view = UiBindingView {
@@ -183,6 +188,7 @@ pub fn compile_ui_binding_ir_json(
         animation_sample_percent,
         localization_map: Some(loc_data.map.clone()),
         loc_fetcher: Some(&loc_data.ini),
+        derived_values: ship_data.derived_values.clone(),
     };
     let _ = texture_mip;
     let ir = starbreaker_ui::pipeline::compile_ir_for_binding(&inputs).map_err(|e| e.to_string())?;

@@ -128,6 +128,11 @@ pub struct PipelineInputs<'a> {
     pub animation_sample_percent: Option<f32>,
     pub localization_map: Option<std::collections::HashMap<String, String>>,
     pub loc_fetcher: Option<&'a dyn crate::bb_loc::LocFetcher>,
+    /// Per-ship binding-path values DERIVED from game data by the caller (the
+    /// export pipeline's DataCore derivation — power pools, temps, emissions).
+    /// Applied over the compiled-in well-known defaults; `None` keeps the
+    /// static at-rest registry.
+    pub derived_values: Option<std::collections::HashMap<String, crate::canvas::Value>>,
 }
 
 /// Diagnostics captured while rendering a UI image.
@@ -232,7 +237,10 @@ pub fn compile_ir_for_binding(inputs: &PipelineInputs<'_>) -> Result<UiIrDocumen
         None
     };
 
-    let defaults = DefaultValueRegistry::with_pipeline_defaults(inputs.localization_map.clone());
+    let defaults = DefaultValueRegistry::with_pipeline_defaults_and_derived_values(
+        inputs.localization_map.clone(),
+        inputs.derived_values.as_ref(),
+    );
     let mut scene = timed("graph2", || {
         crate::bb_resolve::resolve_canvas_graph_with_defaults(
             &raw_root_json,
@@ -410,7 +418,10 @@ pub fn render_for_binding_ir(inputs: &PipelineInputs<'_>) -> Result<Vec<u8>, UiE
             a: 255,
         };
     }
-    let defaults = DefaultValueRegistry::with_pipeline_defaults(inputs.localization_map.clone());
+    let defaults = DefaultValueRegistry::with_pipeline_defaults_and_derived_values(
+        inputs.localization_map.clone(),
+        inputs.derived_values.as_ref(),
+    );
 
     let swf_paths = ir
         .selected_swf_source

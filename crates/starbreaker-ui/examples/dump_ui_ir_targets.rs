@@ -214,6 +214,7 @@ fn dump_one(
         animation_sample_percent: None,
         localization_map: localization_map.cloned(),
         loc_fetcher: None,
+        derived_values: None,
     };
 
     let ir = compile_ir_for_binding(&inputs)

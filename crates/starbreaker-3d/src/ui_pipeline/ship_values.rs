@@ -1,0 +1,357 @@
+//! Per-ship UI binding values derived from DataCore (power-screen data).
+//!
+//! [`UiShipData`] is per-export shared state (like `UiLocData`): built once
+//! from the root vehicle's records and passed to every UI binding render as
+//! `PipelineInputs::derived_values`. It derives the power-management screen's
+//! at-rest model from game data instead of the static registry pins:
+//!
+//! - pools → pip stacks: `Components[SItemPortContainerComponentParams]
+//!   .resourceNetworkPowerPools.itemPools`; a `FixedPowerPool` contributes
+//!   `poolSize` pips, a `DynamicPowerPool` the sum of its fitted items'
+//!   Online-state `SPowerSegmentResourceUnit.units` power consumption;
+//! - in-use pips: pool total × `ItemResourceNetworkGlobal
+//!   .defaultPowerDistributionParams.poolDefault{Weapons,Engines,Shields}`;
+//! - per-pool icons: pool `itemType` → MFD vector asset (the power screen's
+//!   `MFD-Icon-*` set, visually verified against the in-game reference; the
+//!   engineering-screen icons in `uiParams.typeData` are a different set);
+//! - heat gauge: shown for pools whose fitted items model temperature;
+//!   `overheatTemperature` comes from the item's
+//!   `EntityTemperatureItemResource`, the remaining scale values are
+//!   documented at-rest constants (see `AMBIENT_TEMP_K` etc.).
+//!
+//! NOT yet derived (static registry pins remain authoritative): OUTPUT
+//! `availablePower`/`totalPossiblePower` (the 2/16 formula is unresearched —
+//! the two fitted plants generate 2×14=28 units ≠ 16) and the IR/EM/CS
+//! emissions header values.
+
+use std::collections::HashMap;
+
+use serde_json::Value as Json;
+use starbreaker_datacore::loadout::{resolve_loadout_indexed, EntityIndex};
+use starbreaker_datacore::Database;
+use starbreaker_ui::canvas::Value as UiValue;
+
+/// At-rest ambient temperature shown on heat gauges (Kelvin). The engine
+/// feeds live entity temperature here; statically the reference screenshot's
+/// gauges sit at ambient.
+const AMBIENT_TEMP_K: f64 = 290.0;
+/// Heat-gauge scale floor (0 °C) — engine gauge minimum, not in item data.
+const MIN_TEMP_K: f64 = 273.0;
+/// Heat-gauge scale headroom above the overheat threshold (the critical
+/// band). Calibrated from the reference shield gauge (scale top 440 K for
+/// the 372 K overheat item); the engine's actual scale rule is unresearched,
+/// so the ceiling tracks each item's real overheat coherently.
+const OVERHEAT_HEADROOM_K: f64 = 68.0;
+/// Overheat threshold fallback when a pool's items carry no temperature
+/// model (matches the small-component `overheatTemperature` family).
+const OVERHEAT_TEMP_K: f64 = 372.0;
+
+/// Per-export UI values derived from the root vehicle's DataCore records.
+pub struct UiShipData {
+    /// Binding-path overrides for `PipelineInputs::derived_values`. `None`
+    /// when the root entity has no resource-network power pools (non-vehicle
+    /// exports keep the static registry).
+    pub derived_values: Option<HashMap<String, UiValue>>,
+}
+
+impl UiShipData {
+    /// No derived data (static registry defaults apply).
+    pub fn none() -> Self {
+        Self { derived_values: None }
+    }
+
+    /// Derive per-ship UI values from `root_entity_name`'s records.
+    pub fn derive(db: &Database<'_>, root_entity_name: &str) -> Self {
+        let idx = EntityIndex::new(db);
+        let stem = root_entity_name.rsplit('.').next().unwrap_or(root_entity_name);
+        let Some(record) = idx.find_record(stem) else {
+            return Self::none();
+        };
+        let Some(vehicle_json) = record_json(db, record) else {
+            return Self::none();
+        };
+        let pools = power_pools_from_vehicle(&vehicle_json);
+        if pools.is_empty() {
+            return Self::none();
+        }
+
+        // Top-level fitted items (controllers, shields, plants …), each
+        // materialised once: dynamic pools consume their power units.
+        let tree = resolve_loadout_indexed(&idx, record);
+        let mut item_cache: HashMap<String, Option<Json>> = HashMap::new();
+        let mut fitted_items: Vec<Json> = Vec::new();
+        for child in &tree.root.children {
+            let entry = item_cache
+                .entry(child.entity_name.to_ascii_lowercase())
+                .or_insert_with(|| record_json(db, &child.record));
+            if let Some(json) = entry.clone() {
+                fitted_items.push(json);
+            }
+        }
+
+        let pool_defaults = pool_defaults_from_global(db);
+        let overrides = derive_power_paths(&pools, &fitted_items, &pool_defaults);
+        if std::env::var("SB_SHIP_VALUES_DUMP").as_deref() == Ok("1") {
+            let mut entries: Vec<_> = overrides.iter().collect();
+            entries.sort_by(|a, b| a.0.cmp(b.0));
+            for (path, value) in entries {
+                eprintln!("[ship-values] {path} = {value:?}");
+            }
+        }
+        Self { derived_values: Some(overrides) }
+    }
+}
+
+/// A vehicle power pool: `FixedPowerPool` carries an authored size, a
+/// `DynamicPowerPool` is sized by its fitted items' consumption.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct PowerPool {
+    pub item_type: String,
+    pub fixed_size: Option<u32>,
+}
+
+/// Default at-rest power assignment fractions
+/// (`ItemResourceNetworkGlobal.defaultPowerDistributionParams`).
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct PoolDefaults {
+    pub weapons: f64,
+    pub engines: f64,
+    pub shields: f64,
+}
+
+impl Default for PoolDefaults {
+    fn default() -> Self {
+        Self { weapons: 0.5, engines: 0.5, shields: 0.5 }
+    }
+}
+
+fn record_json(db: &Database<'_>, record: &starbreaker_datacore::types::Record) -> Option<Json> {
+    let bytes = starbreaker_datacore::export::to_json_compact(db, record).ok()?;
+    serde_json::from_slice(&bytes).ok()
+}
+
+/// Component entry of `_Type_` `ty` from a record JSON (`_RecordValue_`
+/// wrapper tolerated).
+fn component<'a>(record_json: &'a Json, ty: &str) -> Option<&'a Json> {
+    record_json
+        .get("_RecordValue_")
+        .unwrap_or(record_json)
+        .get("Components")?
+        .as_array()?
+        .iter()
+        .find(|c| c.get("_Type_").and_then(|v| v.as_str()) == Some(ty))
+}
+
+pub(crate) fn power_pools_from_vehicle(vehicle_json: &Json) -> Vec<PowerPool> {
+    let Some(pools) = component(vehicle_json, "SItemPortContainerComponentParams")
+        .and_then(|c| c.get("resourceNetworkPowerPools"))
+        .and_then(|p| p.get("itemPools"))
+        .and_then(|p| p.as_array())
+    else {
+        return Vec::new();
+    };
+    pools
+        .iter()
+        .filter_map(|pool| {
+            let item_type = pool.get("itemType")?.as_str()?.to_string();
+            let fixed_size = (pool.get("_Type_").and_then(|v| v.as_str())
+                == Some("FixedPowerPool"))
+            .then(|| pool.get("poolSize").and_then(|v| v.as_u64()).unwrap_or(0) as u32);
+            Some(PowerPool { item_type, fixed_size })
+        })
+        .collect()
+}
+
+/// `AttachDef.Type` of a fitted item.
+pub(crate) fn item_attach_type(item_json: &Json) -> Option<String> {
+    component(item_json, "SAttachableComponentParams")?
+        .get("AttachDef")?
+        .get("Type")?
+        .as_str()
+        .map(str::to_string)
+}
+
+/// Online-state power consumption in `SPowerSegmentResourceUnit` units.
+pub(crate) fn item_power_units(item_json: &Json) -> u32 {
+    let Some(states) = component(item_json, "ItemResourceComponentParams")
+        .and_then(|c| c.get("states"))
+        .and_then(|s| s.as_array())
+    else {
+        return 0;
+    };
+    states
+        .iter()
+        .filter(|state| state.get("name").and_then(|v| v.as_str()) == Some("Online"))
+        .flat_map(|state| state.get("deltas").and_then(|d| d.as_array()).into_iter().flatten())
+        .filter_map(|delta| {
+            let consumption = delta.get("consumption")?;
+            if consumption.get("resource")?.as_str()? != "Power" {
+                return None;
+            }
+            let amount = consumption.get("resourceAmountPerSecond")?;
+            if amount.get("_Type_")?.as_str()? != "SPowerSegmentResourceUnit" {
+                return None;
+            }
+            amount.get("units")?.as_u64()
+        })
+        .sum::<u64>() as u32
+}
+
+/// The item's overheat threshold from its entity temperature model.
+pub(crate) fn item_overheat_temperature(item_json: &Json) -> Option<f64> {
+    component(item_json, "SEntityPhysicsControllerParams")?
+        .get("PhysType")?
+        .get("temperature")?
+        .get("itemResourceParams")?
+        .get("overheatTemperature")?
+        .as_f64()
+}
+
+fn pool_defaults_from_global(db: &Database<'_>) -> PoolDefaults {
+    let Some(si) = db.struct_id("ItemResourceNetworkGlobal") else {
+        return PoolDefaults::default();
+    };
+    let Some(json) = db
+        .records_of_type(si)
+        .next()
+        .and_then(|record| record_json(db, record))
+    else {
+        return PoolDefaults::default();
+    };
+    let params = json
+        .get("_RecordValue_")
+        .unwrap_or(&json)
+        .get("defaultPowerDistributionParams");
+    let field = |name: &str, fallback: f64| {
+        params
+            .and_then(|p| p.get(name))
+            .and_then(|v| v.as_f64())
+            .unwrap_or(fallback)
+    };
+    PoolDefaults {
+        weapons: field("poolDefaultWeapons", 0.5),
+        engines: field("poolDefaultEngines", 0.5),
+        shields: field("poolDefaultShields", 0.5),
+    }
+}
+
+/// Canonical display order of the power-screen system list: the engine
+/// presents weapons, engines, shields first (the
+/// `defaultPowerDistributionParams` W/E/S order, matching the in-game
+/// reference), then the remaining pools in authored order.
+fn pool_display_rank(item_type: &str) -> u8 {
+    match item_type {
+        "WeaponGun" => 0,
+        "FlightController" => 1,
+        "Shield" => 2,
+        _ => 3,
+    }
+}
+
+fn pool_default_fraction(item_type: &str, defaults: &PoolDefaults) -> f64 {
+    match item_type {
+        "WeaponGun" => defaults.weapons,
+        "FlightController" => defaults.engines,
+        "Shield" => defaults.shields,
+        _ => 0.0,
+    }
+}
+
+/// The power screen's per-pool MFD glyphs (`UI/Textures/Vector/Ships/General`
+/// + the common-icon set for utility beams), keyed by pool `itemType`.
+/// Visually verified against the in-game reference; this is the MFD set, not
+/// the engineering-screen `uiParams.typeData` set.
+fn pool_type_icon(item_type: &str) -> &'static str {
+    match item_type {
+        "WeaponGun" => "UI/Textures/Vector/Ships/General/MFD-Icon-Weapons.svg",
+        "FlightController" => "UI/Textures/Vector/Ships/General/MFD-Icon-Thrust.svg",
+        "Shield" => "UI/Textures/Vector/Ships/General/MFD-Icon-Shield.svg",
+        "TractorBeam" | "TowingBeam" => {
+            "UI/Textures/Vector/General/CommonIcons/icon_common_tractor beam.svg"
+        }
+        "WeaponMining" => "UI/Textures/Vector/General/CommonIcons/icon_common_mining.svg",
+        "SalvageHead" => "UI/Textures/Vector/General/CommonIcons/icon_common_salvage.svg",
+        _ => "",
+    }
+}
+
+/// Build the power-screen binding-path overrides from the vehicle's pools and
+/// its top-level fitted item records.
+pub(crate) fn derive_power_paths(
+    pools: &[PowerPool],
+    fitted_items: &[Json],
+    pool_defaults: &PoolDefaults,
+) -> HashMap<String, UiValue> {
+    // Per pool: (total pips, overheat temperature of its consumers).
+    let mut sized: Vec<(&PowerPool, u32, Option<f64>)> = pools
+        .iter()
+        .map(|pool| {
+            if let Some(fixed) = pool.fixed_size {
+                return (pool, fixed, None);
+            }
+            let mut units = 0u32;
+            let mut overheat: Option<f64> = None;
+            for item in fitted_items {
+                if item_attach_type(item).as_deref() != Some(pool.item_type.as_str()) {
+                    continue;
+                }
+                units += item_power_units(item);
+                overheat = overheat.or_else(|| item_overheat_temperature(item));
+            }
+            (pool, units, overheat)
+        })
+        .collect();
+    sized.sort_by_key(|(pool, _, _)| pool_display_rank(&pool.item_type));
+
+    let mut paths: HashMap<String, UiValue> = HashMap::new();
+    paths.insert("piplist".into(), UiValue::Int(sized.len() as i64));
+    let max_total = sized.iter().map(|(_, total, _)| *total).max().unwrap_or(0);
+    paths.insert(
+        "resourcenetworkui/powermanagement/pipsLengthMax".into(),
+        UiValue::Int(max_total as i64),
+    );
+
+    for (i, (pool, total, overheat)) in sized.iter().enumerate() {
+        let base = format!("piplist/[{i:04}]");
+        paths.insert(format!("{base}/itemicon"), UiValue::Str(pool_type_icon(&pool.item_type).into()));
+        paths.insert(format!("{base}/piplinkamount"), UiValue::Int(1));
+        paths.insert(format!("{base}/ispoweredoff"), UiValue::Bool(false));
+        paths.insert(format!("{base}/piplist"), UiValue::Int(*total as i64));
+
+        let in_use = (f64::from(*total) * pool_default_fraction(&pool.item_type, pool_defaults))
+            .round() as u32;
+        if in_use > 0 {
+            paths.insert(
+                format!("{base}/piplist/selectedindex"),
+                UiValue::Int(i64::from(in_use) - 1),
+            );
+        }
+        for j in 0..*total {
+            let pip = format!("{base}/piplist/[{j:04}]");
+            paths.insert(format!("{pip}/pipstate"), UiValue::Int(i64::from(j < in_use)));
+            paths.insert(format!("{pip}/pipamount"), UiValue::Float(1.0));
+            paths.insert(format!("{pip}/piplinkamount"), UiValue::Int(1));
+        }
+
+        // Heat gauge: only pools with a fitted consumer carrying a
+        // temperature model show it (the reference hides the weapons gauge).
+        let temp = format!("{base}/tempindicator");
+        if pool.fixed_size.is_none() && *total > 0 {
+            let overheat = overheat.unwrap_or(OVERHEAT_TEMP_K);
+            paths.insert(format!("{temp}/currenttemp"), UiValue::Float(AMBIENT_TEMP_K));
+            paths.insert(format!("{temp}/mintemp"), UiValue::Float(MIN_TEMP_K));
+            paths.insert(format!("{temp}/overheattemp"), UiValue::Float(overheat));
+            paths.insert(
+                format!("{temp}/maxtemp"),
+                UiValue::Float(overheat + OVERHEAT_HEADROOM_K),
+            );
+            paths.insert(format!("{temp}/tempdirection"), UiValue::Int(0));
+        } else {
+            paths.insert(format!("{temp}/maxtemp"), UiValue::Float(0.0));
+        }
+    }
+    paths
+}
+
+#[cfg(test)]
+mod tests;

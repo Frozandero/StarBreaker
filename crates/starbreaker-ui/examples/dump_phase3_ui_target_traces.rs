@@ -242,6 +242,7 @@ fn trace_for_canvas(
         animation_sample_percent: Some(starbreaker_ui::pipeline::DEFAULT_STATIC_ANIMATION_SAMPLE_PERCENT),
         localization_map,
         loc_fetcher: None,
+        derived_values: None,
     };
 
     let ir = compile_ir_for_binding(&inputs)

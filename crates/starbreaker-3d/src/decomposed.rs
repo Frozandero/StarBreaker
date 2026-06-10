@@ -946,6 +946,10 @@ pub(crate) fn write_decomposed_export(
     let mut files = BTreeMap::new();
     let root_manufacturer_id: Option<String> =
         derive_manufacturer_id(export_entity_basename(&input.entity_name));
+    // Per-ship UI values derived once from the root vehicle's DataCore
+    // records (power pools → pip stacks, temps); every binding render below
+    // receives them so screens show this ship's data, not static defaults.
+    let ui_ship_data = crate::ui_pipeline::UiShipData::derive(db, &input.entity_name);
     let mut texture_cache: HashMap<(String, TextureFlavor), String> = HashMap::new();
     let mut mtl_cache: HashMap<String, Option<MtlFile>> = HashMap::new();
     let mut png_cache = PngCache::new();
@@ -1183,6 +1187,7 @@ pub(crate) fn write_decomposed_export(
             &input.geometry_path,
             &scene_manifest_path,
             root_manufacturer_id.as_deref(),
+            &ui_ship_data,
         );
 
         let resolved_transform = resolved_child_transforms[index];
@@ -1271,6 +1276,7 @@ pub(crate) fn write_decomposed_export(
                     &input.geometry_path,
                     &scene_manifest_path,
                     root_manufacturer_id.as_deref(),
+                    &ui_ship_data,
                 )
             })
             .collect::<Vec<_>>();
@@ -2660,6 +2666,7 @@ fn generated_ui_binding_record(
     scene_manifest_path: &str,
     root_manufacturer_id: Option<&str>,
     loc_data: &crate::ui_pipeline::UiLocData,
+    ship_data: &crate::ui_pipeline::UiShipData,
 ) -> (UiBinding, Option<(String, Vec<u8>)>) {
     let mut binding = binding.clone();
     match crate::ui_pipeline::render_ui_binding_png(
@@ -2669,6 +2676,7 @@ fn generated_ui_binding_record(
         texture_mip,
         root_manufacturer_id,
         loc_data,
+        ship_data,
     ) {
         Ok(png_bytes) => {
             let export_path = generated_ui_binding_path(
@@ -2780,6 +2788,7 @@ fn generate_ui_binding_records_detached(
     root_geometry_path: &str,
     scene_manifest_path: &str,
     root_manufacturer_id: Option<&str>,
+    ship_data: &crate::ui_pipeline::UiShipData,
 ) -> (Vec<UiBinding>, Vec<(String, Vec<u8>)>) {
     // Most interior placements carry no UI bindings; skip the (expensive)
     // localization load entirely for them rather than parsing global.ini once
@@ -2802,6 +2811,7 @@ fn generate_ui_binding_records_detached(
                 scene_manifest_path,
                 root_manufacturer_id,
                 &loc_data,
+                ship_data,
             );
             (idx, binding, file_record)
         })
@@ -2830,6 +2840,7 @@ fn generate_ui_binding_records(
     root_geometry_path: &str,
     scene_manifest_path: &str,
     root_manufacturer_id: Option<&str>,
+    ship_data: &crate::ui_pipeline::UiShipData,
 ) -> Vec<UiBinding> {
     let (ui_bindings, file_records) = generate_ui_binding_records_detached(
         bindings,
@@ -2840,6 +2851,7 @@ fn generate_ui_binding_records(
         root_geometry_path,
         scene_manifest_path,
         root_manufacturer_id,
+        ship_data,
     );
 
     for (export_path, png_bytes) in file_records {

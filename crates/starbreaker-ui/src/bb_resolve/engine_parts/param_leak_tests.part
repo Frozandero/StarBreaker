@@ -1,0 +1,177 @@
+// Tests for parent param wiring target selection vs merged descendant defs
+// (part_06's `child_component_parameter_targets`): a same-slot/same-kind
+// ComponentParameter merged from the child's own descendants was already
+// wired during the child's resolve and must not steal the value (the power
+// master's pipsLengthMax ParamInput0 leaking into the battery card's
+// batteryremaining as a stray "6"). The frame canvas above the wiring root
+// mirrors the real MFD: the master's field ops are merged (`_MergedOp_`) so
+// the global by-field-name parameter fallback cannot see them.
+#[cfg(test)]
+mod tests_param_leak {
+    #![allow(unused_imports, dead_code)]
+
+    use super::*;
+    use crate::defaults::DefaultValueRegistry;
+
+    /// A canvas's parameter wiring targets the child's OWN authored defs:
+    /// a same-slot/same-kind parameter merged from the child's own
+    /// descendant (already wired during the child's resolve) must not steal
+    /// the value (the power master's `pipsLengthMax` ParamInput0 leaking
+    /// into the battery card's `batteryremaining` ParamInput0 as a "6").
+    fn leak_grandchild_canvas() -> serde_json::Value {
+        serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.Test_LeakGrandchild",
+            "_RecordId_": "00000000-0000-0000-0000-0000000r0011",
+            "_RecordValue_": {
+                "_Type_": "BuildingBlocks_Canvas",
+                "size": {"_Type_": "Vec3", "x": 100.0, "y": 100.0, "z": 0.0},
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "grandchild_widget", "isActive": true,
+                     "sizing": {"_Type_": "BuildingBlocks_Size",
+                       "width": {"_Type_": "BuildingBlocks_FixedOrRelativeValue", "value": 1.0, "behavior": "Percent"},
+                       "height": {"_Type_": "BuildingBlocks_FixedOrRelativeValue", "value": 0.05, "behavior": "Percent"}}}
+                ],
+                "operations": [
+                    {"_Type_": "BuildingBlocks_BindingsNumberField",
+                     "widget": "_PointsTo_:ptr:1", "field": "SizeY", "input": "_PointsTo_:ptr:10"},
+                    {"_Pointer_": "ptr:10", "_Type_": "BuildingBlocks_BindingsNumberFromInteger",
+                     "asSeconds": false, "input": "_PointsTo_:ptr:11"},
+                    {"_Pointer_": "ptr:11", "_Type_": "BuildingBlocks_BindingsIntegerComponentParameter",
+                     "name": "batteryremaining", "parameter": "ParamInput0", "defaultValue": 0}
+                ]
+            }
+        })
+    }
+
+    fn leak_middle_canvas() -> serde_json::Value {
+        serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.Test_LeakMiddle",
+            "_RecordId_": "00000000-0000-0000-0000-0000000r0012",
+            "_RecordValue_": {
+                "_Type_": "BuildingBlocks_Canvas",
+                "size": {"_Type_": "Vec3", "x": 100.0, "y": 100.0, "z": 0.0},
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "middle_root", "isActive": true},
+                    {"_Pointer_": "ptr:3", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "middle_widget", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "sizing": {"_Type_": "BuildingBlocks_Size",
+                       "width": {"_Type_": "BuildingBlocks_FixedOrRelativeValue", "value": 1.0, "behavior": "Percent"},
+                       "height": {"_Type_": "BuildingBlocks_FixedOrRelativeValue", "value": 0.05, "behavior": "Percent"}}},
+                    {"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_WidgetCanvas",
+                     "name": "canvas_grandchild", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "instantiated": true,
+                     "canvas": "file://./test_leakgrandchild.json"}
+                ],
+                "operations": [
+                    {"_Type_": "BuildingBlocks_BindingsNumberField",
+                     "widget": "_PointsTo_:ptr:3", "field": "SizeY", "input": "_PointsTo_:ptr:10"},
+                    {"_Pointer_": "ptr:10", "_Type_": "BuildingBlocks_BindingsNumberFromInteger",
+                     "asSeconds": false, "input": "_PointsTo_:ptr:11"},
+                    {"_Pointer_": "ptr:11", "_Type_": "BuildingBlocks_BindingsIntegerComponentParameter",
+                     "name": "pips length max", "parameter": "ParamInput0", "defaultValue": 0}
+                ]
+            }
+        })
+    }
+
+    fn leak_root_canvas() -> serde_json::Value {
+        serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.Test_LeakRoot",
+            "_RecordId_": "00000000-0000-0000-0000-0000000r0013",
+            "_RecordValue_": {
+                "_Type_": "BuildingBlocks_Canvas",
+                "size": {"_Type_": "Vec3", "x": 100.0, "y": 100.0, "z": 0.0},
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "root", "isActive": true},
+                    {"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_WidgetCanvas",
+                     "name": "canvas_middle", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "instantiated": true,
+                     "canvas": "file://./test_leakmiddle.json"}
+                ],
+                "operations": [
+                    {"_Type_": "BuildingBlocks_BindingsIntegerField",
+                     "widget": "_PointsTo_:ptr:2", "field": "ParamInput0", "input": "_PointsTo_:ptr:10"},
+                    {"_Pointer_": "ptr:10", "_Type_": "BuildingBlocks_BindingsIntegerVariable",
+                     "path": [], "binding": "maxpips", "inheritsNamespace": true}
+                ]
+            }
+        })
+    }
+
+    /// Frame above the wiring root, mirroring the real MFD: the master's
+    /// field ops are merged (`_MergedOp_`) so the global by-field-name
+    /// parameter fallback cannot see them — the leak under test is the
+    /// injection path's target selection.
+    fn leak_frame_canvas() -> serde_json::Value {
+        serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.Test_LeakFrame",
+            "_RecordId_": "00000000-0000-0000-0000-0000000r0014",
+            "_RecordValue_": {
+                "_Type_": "BuildingBlocks_Canvas",
+                "size": {"_Type_": "Vec3", "x": 100.0, "y": 100.0, "z": 0.0},
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "frame_root", "isActive": true},
+                    {"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_WidgetCanvas",
+                     "name": "canvas_content", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "instantiated": true,
+                     "canvas": "file://./test_leakroot.json"}
+                ],
+                "operations": []
+            }
+        })
+    }
+
+    fn leak_fetcher(path: &str) -> Result<serde_json::Value, String> {
+        let p = path.to_ascii_lowercase();
+        if p.contains("test_leakgrandchild") {
+            Ok(leak_grandchild_canvas())
+        } else if p.contains("test_leakmiddle") {
+            Ok(leak_middle_canvas())
+        } else if p.contains("test_leakroot") {
+            Ok(leak_root_canvas())
+        } else {
+            Err(format!("no record for '{path}'"))
+        }
+    }
+
+    #[test]
+    fn parameter_wiring_skips_merged_descendant_defs() {
+        let mut defaults = DefaultValueRegistry::default();
+        defaults.insert_path("maxpips", crate::canvas::Value::Int(6));
+        let scene = resolve_canvas_graph_with_defaults(
+            &leak_frame_canvas(),
+            Some("drak"),
+            &leak_fetcher,
+            None,
+            None,
+            &defaults,
+        )
+        .expect("resolve");
+
+        let height = |name: &str| {
+            scene
+                .nodes
+                .values()
+                .find(|n| n.name == name)
+                .map(|n| match n.sizing.height {
+                    crate::bb_scene::BbValue::Percent(v) => v,
+                    ref other => panic!("expected Percent height, got {other:?}"),
+                })
+                .unwrap_or_else(|| panic!("node '{name}' missing"))
+        };
+        assert!(
+            (height("middle_widget") - 6.0).abs() < 1e-6,
+            "the child's OWN param must receive the wired value, got {}",
+            height("middle_widget")
+        );
+        assert!(
+            (height("grandchild_widget") - 0.05).abs() < 1e-6,
+            "a merged descendant's same-slot param must NOT receive the value, got {}",
+            height("grandchild_widget")
+        );
+    }
+}

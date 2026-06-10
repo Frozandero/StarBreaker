@@ -207,6 +207,7 @@ fn compile_target_ir(
         animation_sample_percent: None,
         localization_map,
         loc_fetcher: None,
+        derived_values: None,
     };
 
     compile_ir_for_binding(&inputs).expect("target IR compile should succeed")

@@ -1521,6 +1521,7 @@ impl StarBreakerMcp {
             animation_sample_percent: None,
             localization_map: None,
             loc_fetcher: None,
+            derived_values: None,
         };
         let ir = match starbreaker_ui::compile_ir_for_binding(&inputs) {
             Ok(ir) => ir,
@@ -2896,13 +2897,13 @@ mod ui_regression_registry_tests {
             json.get("summary")
                 .and_then(|v| v.get("total_targets"))
                 .and_then(|v| v.as_u64()),
-            Some(4)
+            Some(5)
         );
         assert_eq!(
             json.get("summary")
                 .and_then(|v| v.get("matched"))
                 .and_then(|v| v.as_u64()),
-            Some(4)
+            Some(5)
         );
     }
 
