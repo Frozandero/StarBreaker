@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "frozen_at": "2026-06-10T01:25:34Z",
+  "frozen_at": "2026-06-10T09:44:34Z",
   "approver": "tom",
-  "reason": "A2 widget-standard expansion: medical bed top-strip drift verified improvement vs reference (back button hidden, close button template chrome); other targets pixel-identical",
+  "reason": "A6+A8: EmBaseline heading placement (NO TARGET to chevron band per in-game capture) and icon-element-instance contain-fit (footer pixel arrows 30x52 per reference aspect); medical bed 1px AA delta, end-of-bed/door/annunciator unchanged",
   "signature": null,
   "manifest_path": "crates/starbreaker-ui/tests/fixtures/ui_ir/ui_snapshot_manifest.json",
   "artifacts": [
@@ -11,7 +11,7 @@
       "tier": "platinum",
       "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_i_med_medicalbed_a.png",
       "artifact_path": "test-artifacts/ui/ui_target_a.png",
-      "sha256": "d274762ff40c570d91b2213b90ee8462cbdcc0f9768628f2c065a51f746b8105",
+      "sha256": "e5948f0f42707f0035c65a50b187d4e9a9665ecba1b38bb041c6afb29c9809eb",
       "width": 1920,
       "height": 1080,
       "channels": "srgba"
