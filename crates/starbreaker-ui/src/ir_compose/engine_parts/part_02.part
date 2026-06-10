@@ -345,10 +345,23 @@ fn rasterize_svg_for_node(
     target_h: u32,
     fill_override: Option<[f32; 4]>,
 ) -> Option<RgbaImage> {
-    // Keep custom-shape SVGs on the custom-shape pipeline so nine-slice and
-    // authored shape behavior stay stable. Contain scaling is only used for
-    // regular asset-backed widgets.
-    if node.custom_shape.is_none()
+    // `scalingBehavior: Contain` is the universal authored default on
+    // `svgFill`, but the engine's rendering differs by widget role:
+    // icon-element instances (the expanded icon-widget glyph, framework tag
+    // "icon-element-instance") render aspect-preserved — the MFD footer's
+    // 7.3×12.8 pixel arrow draws 31×48 in-game, not stretched to its square
+    // icon box — while plain custom shapes keep the nine-slice/stretch
+    // pipeline (the medical menu cards' thin edge-line svgs stretch to full
+    // card height in-game despite the same authored Contain).
+    let is_icon_element_instance = node
+        .resolved_style_tags
+        .iter()
+        .any(|tag| {
+            tag.tag_name
+                .as_deref()
+                .is_some_and(|name| name.eq_ignore_ascii_case("icon-element-instance"))
+        });
+    if (node.custom_shape.is_none() || is_icon_element_instance)
         && node
             .asset_layout
             .as_ref()

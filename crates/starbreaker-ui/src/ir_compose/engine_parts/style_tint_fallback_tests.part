@@ -136,3 +136,73 @@
             BlendMode::Plus
         );
     }
+
+    /// A custom-shape SVG whose authored `scalingBehavior` is `Contain` must
+    /// rasterize aspect-preserved (the universal authored default; the MFD
+    /// footer's 7.3×12.8 pixel arrow renders 31×48 in-game, not stretched to
+    /// its square icon box). Nine-slice stays for non-Contain shapes.
+    #[test]
+    fn contain_custom_shape_svg_preserves_aspect() {
+        let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 20"><rect width="10" height="20" fill="#ffffff"/></svg>"##;
+        let mut node = blank_node("widget_custom_shape");
+        node.custom_shape = Some(UiIrCustomShape {
+            shape_type: None,
+            shape: None,
+            svg_path: None,
+            render_shape: Some(true),
+            enable_nine_slice_rect: Some(true),
+            nine_slice_rect: Some([0.25, 0.25, 0.75, 0.75]),
+            nine_slice_scale: Some(1.0),
+        });
+        node.asset_layout = Some(UiIrAssetLayout {
+            scaling_behavior: Some("Contain".to_string()),
+            contain_position_x: Some(0.5),
+            contain_position_y: Some(0.5),
+            flip_horizontal: None,
+            flip_vertical: None,
+        });
+        node.resolved_style_tags = vec![crate::ui_ir::UiIrStyleTag {
+            uuid: "f530a994-2947-4fba-bd86-c4046c471ba2".to_string(),
+            tag_name: Some("icon-element-instance".to_string()),
+        }];
+
+        let img = rasterize_svg_for_node(&node, svg, 80, 40, None).expect("raster");
+        assert_eq!((img.width(), img.height()), (80, 40));
+        // Contained 10:20 into 80×40 → drawn width = 20px, centred (x 30..50);
+        // the left margin must be fully transparent, the centre opaque.
+        let left_margin_opaque = (0..40).any(|y| img.get_pixel(5, y)[3] > 0);
+        let centre_opaque = (0..40).any(|y| img.get_pixel(40, y)[3] > 0);
+        assert!(!left_margin_opaque, "left margin must be transparent under Contain");
+        assert!(centre_opaque, "glyph must draw in the centre");
+    }
+
+    /// A plain custom shape (no icon-element-instance tag) keeps the
+    /// nine-slice/stretch pipeline even though `Contain` is its authored
+    /// default — the medical menu cards' thin edge-line svgs stretch to full
+    /// card height in-game.
+    #[test]
+    fn plain_custom_shape_svg_keeps_stretch_despite_authored_contain() {
+        let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 20"><rect width="10" height="20" fill="#ffffff"/></svg>"##;
+        let mut node = blank_node("widget_custom_shape");
+        node.custom_shape = Some(UiIrCustomShape {
+            shape_type: None,
+            shape: None,
+            svg_path: None,
+            render_shape: Some(true),
+            enable_nine_slice_rect: None,
+            nine_slice_rect: None,
+            nine_slice_scale: None,
+        });
+        node.asset_layout = Some(UiIrAssetLayout {
+            scaling_behavior: Some("Contain".to_string()),
+            contain_position_x: Some(0.5),
+            contain_position_y: Some(0.5),
+            flip_horizontal: None,
+            flip_vertical: None,
+        });
+
+        let img = rasterize_svg_for_node(&node, svg, 80, 40, None).expect("raster");
+        // Stretched: the left edge stays opaque (the rect fills the width).
+        let left_opaque = (0..40).any(|y| img.get_pixel(2, y)[3] > 0);
+        assert!(left_opaque, "plain custom shape must stretch to the rect");
+    }
