@@ -69,6 +69,11 @@ fn apply_list_slot_bindings(
                 else {
                     break;
                 };
+                if let Some(root) = scene.nodes.get_mut(&cloned_root)
+                    && let Some(map) = root.raw.as_object_mut()
+                {
+                    map.insert("_MaterialisedEntry_".to_string(), serde_json::Value::Bool(true));
+                }
                 // Register every cloned slot canvas for Pass-2 follow with the
                 // instance namespace.
                 let mut stack = vec![cloned_root];
@@ -378,12 +383,6 @@ fn nearest_gated_ancestor(
         cursor = scene.nodes.get(&current).and_then(|n| n.parent);
     }
     None
-}
-
-/// Deep-clone `root`'s subtree with fresh ids and attach the clone as a
-/// sibling of `root` (same parent). Returns the cloned root's id.
-fn clone_subtree_as_sibling(scene: &mut BbScene, root: BbNodeId) -> Option<BbNodeId> {
-    clone_subtree_as_sibling_with_map(scene, root).map(|(cloned_root, _)| cloned_root)
 }
 
 /// Next unused low-band node id that is also not pending in `reserved`.

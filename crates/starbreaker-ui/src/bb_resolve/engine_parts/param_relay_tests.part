@@ -41,8 +41,9 @@ mod tests_param_relay {
     }
 
     /// Middle canvas: declares its own integer parameter (ParamInput0) and
-    /// relays it to TWO leaf instances' ParamInput1 (the power screen's
-    /// materialised system columns all receive the same 'Max Piplist').
+    /// relays it to a list-MATERIALISED leaf slot's ParamInput1 (the power
+    /// screen's system columns all receive the same 'Max Piplist'; relays
+    /// only arise on materialised-instance hops).
     fn middle_canvas() -> serde_json::Value {
         serde_json::json!({
             "_RecordName_": "BuildingBlocks_Canvas.Test_RelayMiddle",
@@ -53,20 +54,25 @@ mod tests_param_relay {
                 "scene": [
                     {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
                      "name": "middle_root", "isActive": true},
+                    {"_Pointer_": "ptr:4", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "list_container", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "layoutPolicy": {"_Type_": "BuildingBlocks_LayoutPolicyFlexContainer", "direction": "Row"}},
                     {"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_WidgetCanvas",
-                     "name": "canvas_leaf_a", "parent": "_PointsTo_:ptr:1", "isActive": true,
-                     "instantiated": true,
-                     "canvas": "file://./test_relayleaf.json"},
-                    {"_Pointer_": "ptr:3", "_Type_": "BuildingBlocks_WidgetCanvas",
-                     "name": "canvas_leaf_b", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "name": "canvas_leaf", "parent": "_PointsTo_:ptr:4", "isActive": true,
                      "instantiated": true,
                      "canvas": "file://./test_relayleaf.json"}
                 ],
                 "operations": [
+                    {"_Type_": "BuildingBlocks_BindingsBooleanField",
+                     "widget": "_PointsTo_:ptr:4", "field": "Instantiated", "input": "_PointsTo_:ptr:11"},
+                    {"_Pointer_": "ptr:11", "_Type_": "BuildingBlocks_BindingsBooleanFromInteger",
+                     "type": "Greater", "inputL": "_PointsTo_:ptr:12", "inputR": null, "value": 0},
+                    {"_Pointer_": "ptr:12", "_Type_": "BuildingBlocks_BindingsIntegerVariable",
+                     "path": [], "binding": "items", "inheritsNamespace": true},
+                    {"_Pointer_": "ptr:13", "_Type_": "BuildingBlocks_BindingsIntegerVariable",
+                     "path": [], "binding": "items/[0000]/flag", "inheritsNamespace": true},
                     {"_Type_": "BuildingBlocks_BindingsIntegerField",
                      "widget": "_PointsTo_:ptr:2", "field": "ParamInput1", "input": "_PointsTo_:ptr:10"},
-                    {"_Type_": "BuildingBlocks_BindingsIntegerField",
-                     "widget": "_PointsTo_:ptr:3", "field": "ParamInput1", "input": "_PointsTo_:ptr:10"},
                     {"_Pointer_": "ptr:10", "_Type_": "BuildingBlocks_BindingsIntegerComponentParameter",
                      "name": "Middle Max", "parameter": "ParamInput0", "defaultValue": 0}
                 ]
@@ -145,6 +151,7 @@ mod tests_param_relay {
     fn parameter_relays_across_two_canvas_hops_to_all_instances() {
         let mut defaults = DefaultValueRegistry::default();
         defaults.insert_path("maxpips", crate::canvas::Value::Int(6));
+        defaults.insert_path("items", crate::canvas::Value::Int(2));
         let scene = resolve_canvas_graph_with_defaults(
             &frame_canvas(),
             Some("drak"),
@@ -232,6 +239,7 @@ mod tests_param_relay {
     fn parameter_relays_through_pass1_conditional_canvas_reference() {
         let mut defaults = DefaultValueRegistry::default();
         defaults.insert_path("maxpips", crate::canvas::Value::Int(6));
+        defaults.insert_path("items", crate::canvas::Value::Int(2));
         let scene = resolve_canvas_graph_with_defaults(
             &frame_canvas(),
             Some("drak"),
@@ -305,6 +313,129 @@ mod tests_param_relay {
         } else {
             Err(format!("no record for '{path}'"))
         }
+    }
+
+    /// Child canvas whose content merges via a Pass-1 `Set Canvas` entry.
+    fn pass1_content_child() -> serde_json::Value {
+        serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.Test_Pass1Child",
+            "_RecordId_": "00000000-0000-0000-0000-0000000r0006",
+            "_RecordValue_": {
+                "_Type_": "BuildingBlocks_Canvas",
+                "size": {"_Type_": "Vec3", "x": 100.0, "y": 100.0, "z": 0.0},
+                "defaultStyles": {
+                    "_Type_": "BuildingBlocks_CanvasStyles",
+                    "entries": [
+                        {"_Type_": "BuildingBlocks_StyleEntry", "name": "Set Canvas",
+                         "conditionsList": [
+                            {"_Type_": "BuildingBlocks_StyleConditionList", "name": "cl",
+                             "conditions": [
+                                {"_Type_": "BuildingBlocks_StyleSelectorConditionType", "type": "Canvas"}
+                             ]}
+                         ],
+                         "modifiers": [
+                            {"_Type_": "BuildingBlocks_FieldModifierRecordRef",
+                             "field": {"_Type_": "BuildingBlocks_FieldModifierRecordRefTypeCanvasReferenceRecord",
+                                       "value": "file://./test_pass1deep.json"}}
+                         ],
+                         "transitions": []}
+                    ]
+                },
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "child_root", "isActive": true},
+                    {"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_WidgetCanvas",
+                     "name": "canvas_inner", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "instantiated": true, "canvas": ""}
+                ],
+                "operations": []
+            }
+        })
+    }
+
+    fn pass1_deep_canvas() -> serde_json::Value {
+        serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.Test_Pass1Deep",
+            "_RecordId_": "00000000-0000-0000-0000-0000000r0007",
+            "_RecordValue_": {
+                "_Type_": "BuildingBlocks_Canvas",
+                "size": {"_Type_": "Vec3", "x": 100.0, "y": 100.0, "z": 0.0},
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "deep_marker", "isActive": true}
+                ],
+                "operations": []
+            }
+        })
+    }
+
+    /// Parent whose Pass-1-content child is MATERIALISED twice from a list
+    /// count (the power columns): per-instance namespaces re-merge the
+    /// per-instance content; un-namespaced canvases stay once-only.
+    fn pass1_parent_canvas() -> serde_json::Value {
+        serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.Test_Pass1Parent",
+            "_RecordId_": "00000000-0000-0000-0000-0000000r0008",
+            "_RecordValue_": {
+                "_Type_": "BuildingBlocks_Canvas",
+                "size": {"_Type_": "Vec3", "x": 200.0, "y": 100.0, "z": 0.0},
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "root", "isActive": true},
+                    {"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "list_container", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "layoutPolicy": {"_Type_": "BuildingBlocks_LayoutPolicyFlexContainer", "direction": "Row"}},
+                    {"_Pointer_": "ptr:5", "_Type_": "BuildingBlocks_WidgetCanvas",
+                     "name": "canvas_listItem", "parent": "_PointsTo_:ptr:2", "isActive": true,
+                     "instantiated": true, "canvas": "file://./test_pass1child.json"}
+                ],
+                "operations": [
+                    {"_Type_": "BuildingBlocks_BindingsBooleanField",
+                     "widget": "_PointsTo_:ptr:2", "field": "Instantiated", "input": "_PointsTo_:ptr:11"},
+                    {"_Pointer_": "ptr:11", "_Type_": "BuildingBlocks_BindingsBooleanFromInteger",
+                     "type": "Greater", "inputL": "_PointsTo_:ptr:12", "inputR": null, "value": 0},
+                    {"_Pointer_": "ptr:12", "_Type_": "BuildingBlocks_BindingsIntegerVariable",
+                     "path": [], "binding": "items", "inheritsNamespace": true},
+                    {"_Pointer_": "ptr:13", "_Type_": "BuildingBlocks_BindingsIntegerVariable",
+                     "path": [], "binding": "items/[0000]/flag", "inheritsNamespace": true}
+                ]
+            }
+        })
+    }
+
+    fn fetcher_pass1_content(path: &str) -> Result<serde_json::Value, String> {
+        let p = path.to_ascii_lowercase();
+        if p.contains("test_pass1child") {
+            Ok(pass1_content_child())
+        } else if p.contains("test_pass1deep") {
+            Ok(pass1_deep_canvas())
+        } else {
+            Err(format!("no record for '{path}'"))
+        }
+    }
+
+    /// EVERY materialised instance of a child canvas merges its Pass-1
+    /// content (the power columns' OffPanel/heat-bar canvases): the
+    /// once-only set is scoped by the instance namespace.
+    #[test]
+    fn repeated_child_instances_each_merge_pass1_content() {
+        let mut defaults = DefaultValueRegistry::default();
+        defaults.insert_path("items", crate::canvas::Value::Int(2));
+        let scene = resolve_canvas_graph_with_defaults(
+            &pass1_parent_canvas(),
+            Some("drak"),
+            &fetcher_pass1_content,
+            None,
+            None,
+            &defaults,
+        )
+        .expect("resolve");
+        let markers = scene
+            .nodes
+            .values()
+            .filter(|n| n.name == "deep_marker")
+            .count();
+        assert_eq!(markers, 2, "both slot instances must carry the Pass-1 content");
     }
 
     /// Every list-materialised slot instance receives the relayed parameter

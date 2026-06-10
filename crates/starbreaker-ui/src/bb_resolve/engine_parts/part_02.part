@@ -199,6 +199,8 @@ pub fn resolve_canvas_graph_with_defaults(
     // sizing's component-parameter chain crosses canvas levels), so apply it
     // once over the final scene.
     crate::bb_bindings::resolve_geometry_fields_into_scene(&mut scene, defaults);
+    // Registry-backed direct visibility gates (the power columns' off panels).
+    apply_registry_direct_gates(&mut scene, defaults);
     Ok(scene)
 }
 

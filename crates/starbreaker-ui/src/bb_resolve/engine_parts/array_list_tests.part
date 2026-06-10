@@ -212,6 +212,64 @@ mod tests_array_list {
         assert_eq!(templates, vec![true], "no registry count: template stays as authored");
     }
 
+    /// A DIRECT BooleanVariable IsActive gate with a registry value applies
+    /// it (the power columns' `canvas_OffPanel.IsActive ← ispoweredoff` with
+    /// registry `false` hides the panel). Unresolved gates stay untouched —
+    /// the medical capture states rely on at-rest heuristics, not this rule.
+    #[test]
+    fn direct_boolean_variable_gate_applies_registry_value() {
+        let canvas = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.Test_DirectGate",
+            "_RecordId_": "00000000-0000-0000-0000-0000000a0009",
+            "_RecordValue_": {
+                "_Type_": "BuildingBlocks_Canvas",
+                "size": {"_Type_": "Vec3", "x": 100.0, "y": 100.0, "z": 0.0},
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "root", "isActive": true},
+                    {"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "off_panel", "parent": "_PointsTo_:ptr:1", "isActive": true},
+                    {"_Pointer_": "ptr:3", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "off_panel_child", "parent": "_PointsTo_:ptr:2", "isActive": true},
+                    {"_Pointer_": "ptr:4", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "ungated", "parent": "_PointsTo_:ptr:1", "isActive": true}
+                ],
+                "operations": [
+                    {"_Type_": "BuildingBlocks_BindingsBooleanField",
+                     "widget": "_PointsTo_:ptr:2", "field": "IsActive", "input": "_PointsTo_:ptr:10"},
+                    {"_Pointer_": "ptr:10", "_Type_": "BuildingBlocks_BindingsBooleanVariable",
+                     "path": [], "binding": "ispoweredoff", "inheritsNamespace": true},
+                    {"_Type_": "BuildingBlocks_BindingsBooleanField",
+                     "widget": "_PointsTo_:ptr:4", "field": "IsActive", "input": "_PointsTo_:ptr:11"},
+                    {"_Pointer_": "ptr:11", "_Type_": "BuildingBlocks_BindingsBooleanVariable",
+                     "path": [], "binding": "someunboundthing", "inheritsNamespace": true}
+                ]
+            }
+        });
+        let mut defaults = DefaultValueRegistry::default();
+        defaults.insert_path("ispoweredoff", crate::canvas::Value::Bool(false));
+        let scene = resolve_canvas_graph_with_defaults(
+            &canvas,
+            Some("drak"),
+            &|p| Err(format!("no record for '{p}'")),
+            None,
+            None,
+            &defaults,
+        )
+        .expect("resolve");
+        let by_name = |name: &str| {
+            scene
+                .nodes
+                .values()
+                .find(|n| n.name == name)
+                .map(|n| n.is_active)
+                .expect(name)
+        };
+        assert!(!by_name("off_panel"), "registry false must hide the gated panel");
+        assert!(!by_name("off_panel_child"), "the gated subtree hides with it");
+        assert!(by_name("ungated"), "an unresolved gate stays as authored");
+    }
+
     /// A zero registry count means an empty array at rest: the template hides.
     #[test]
     fn array_list_zero_count_hides_template() {

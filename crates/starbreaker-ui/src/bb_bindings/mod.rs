@@ -62,27 +62,9 @@ pub fn resolve_state_tags_into_scene(
         "QuinaryStateTag",
     ];
     let resolver = BindingResolver::from_operations(&scene.operations);
-    let probe = std::env::var("SB_UI_GEOM_PROBE").as_deref() == Ok("1");
     let node_ids: Vec<BbNodeId> = scene.nodes.keys().copied().collect();
     for node_id in node_ids {
         for field in STATE_TAG_FIELDS {
-            if probe
-                && *field == "PrimaryStateTag"
-                && scene
-                    .nodes
-                    .get(&node_id)
-                    .is_some_and(|n| n.name == "base_PipListItem")
-            {
-                eprintln!(
-                    "tag-probe: node={} field={} inputs={:?} resolved={:?}",
-                    node_id,
-                    field,
-                    resolver
-                        .widget_field_to_input_ptrs
-                        .get(&(node_id, field.to_string())),
-                    resolver.resolve_field_text(node_id, field, defaults),
-                );
-            }
             let Some(tag_ref) = resolver.resolve_field_text(node_id, field, defaults) else {
                 continue;
             };
@@ -125,28 +107,6 @@ pub fn resolve_geometry_fields_into_scene(
 
     let resolver = BindingResolver::from_operations(&scene.operations);
     let probe = std::env::var("SB_UI_GEOM_PROBE").as_deref() == Ok("1");
-    if probe {
-        for node in scene.nodes.values() {
-            if node.name == "base_PipListItem" && node.is_active {
-                eprintln!("final-tags-probe: node={} tags={:?}", node.id, node.style_tag_uuids);
-            }
-        }
-        for (ptr, op) in &resolver.ptr_to_op {
-            let ty = op.get("_Type_").and_then(|v| v.as_str()).unwrap_or("");
-            if ty.ends_with("IntegerComponentParameter") {
-                let mut seen = std::collections::HashSet::new();
-                eprintln!(
-                    "param-probe: ptr:{} name={:?} parameter={:?} relay={:?} merged={:?} eval={:?}",
-                    ptr,
-                    op.get("name").and_then(|v| v.as_str()),
-                    op.get("parameter").and_then(|v| v.as_str()),
-                    op.get("_ParamRelay_").and_then(|v| v.as_bool()),
-                    op.get("_MergedOp_").and_then(|v| v.as_bool()),
-                    resolver.eval_integer_ptr(*ptr, defaults, &mut seen),
-                );
-            }
-        }
-    }
     let node_ids: Vec<BbNodeId> = scene.nodes.keys().copied().collect();
     for node_id in node_ids {
         for (field, horizontal) in [("SizeX", true), ("SizeY", false)] {
@@ -180,7 +140,11 @@ pub fn resolve_geometry_fields_into_scene(
             let Some(value) = resolver.resolve_field_number(node_id, field, defaults) else {
                 continue;
             };
-            if !value.is_finite() {
+            // A non-positive size is a half-resolved chain (an unwired
+            // component parameter's default 0, a guarded divide-by-zero):
+            // keep the authored sizing rather than collapsing the widget
+            // (widget-standard expansion icons size from ParamInputs).
+            if !value.is_finite() || value <= 0.0 {
                 continue;
             }
             let Some(node) = scene.nodes.get_mut(&node_id) else {

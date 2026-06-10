@@ -1,0 +1,153 @@
+/// Pass 1 of the recursive resolver: follow the selected default-state
+/// canvas-reference modifier (see `pick_default_entry_decision`), recursively
+/// resolving and merging the referenced canvas. Only ONE style entry is
+/// selected to keep mode-switching canvases (GunsMode / NavMode / TurretMode)
+/// from merging together. Returns the canvas norms merged at this level;
+/// cycle protection is call-path-scoped (`visited` entries added here are
+/// removed once the child resolve returns) so a REPEATED child canvas (the
+/// power columns' per-instance OffPanel) re-merges its own Pass-1 content
+/// for every instance.
+#[allow(clippy::too_many_arguments)]
+fn run_pass1_canvas_references(
+    scene: &mut BbScene,
+    record_value: &serde_json::Value,
+    root_json: &serde_json::Value,
+    manufacturer_id: Option<&str>,
+    fetch_by_path: &dyn Fn(&str) -> Result<serde_json::Value, String>,
+    loc_fetcher: Option<&dyn LocFetcher>,
+    depth: u8,
+    visited: &mut HashSet<String>,
+    palette_source: Option<&serde_json::Value>,
+    local_style_identifier: Option<&str>,
+    local_boolean_bindings: &HashMap<String, bool>,
+    bound_view_canvas: Option<&str>,
+    defaults: &crate::defaults::DefaultValueRegistry,
+    instance_namespace: Option<&str>,
+    debug_trace: bool,
+) -> std::collections::HashSet<String> {
+    let mut pass1_merged_norms: std::collections::HashSet<String> = std::collections::HashSet::new();
+    if let Some(selection) = pick_default_entry_decision(record_value, root_json, manufacturer_id) {
+        let entry = selection.entry;
+        let entry_name = entry.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+        let match_to = entry.get("matchTo").and_then(|v| v.as_str()).unwrap_or("");
+
+        if debug_trace {
+            log::info!(
+                "bb_resolve[depth={}]: default entry decision={} entry={:?} score={}",
+                depth,
+                selection.reason.as_str(),
+                entry_name,
+                selection.score.unwrap_or(0),
+            );
+        }
+
+        if let Some(modifiers) = entry.get("modifiers").and_then(|v| v.as_array()) {
+            for modifier in modifiers {
+                let Some(field) = modifier.get("field") else {
+                    continue;
+                };
+                let is_canvas_ref = field
+                    .get("_Type_")
+                    .and_then(|v| v.as_str())
+                    == Some("BuildingBlocks_FieldModifierRecordRefTypeCanvasReferenceRecord");
+                if !is_canvas_ref {
+                    continue;
+                }
+                let Some(path) = field.get("value").and_then(|v| v.as_str()) else {
+                    continue;
+                };
+
+                // Normalise path to a record name for once-only/cycle
+                // detection. The key is scoped by the instance namespace:
+                // materialised list instances (the power columns) each
+                // re-merge their own copy of per-instance content (OffPanel,
+                // heat bars), while un-namespaced canvases keep the global
+                // once-only semantics the verified baselines pin.
+                let norm = match instance_namespace {
+                    Some(ns) => format!("{ns}|{}", extract_record_name(path).to_ascii_lowercase()),
+                    None => extract_record_name(path).to_ascii_lowercase(),
+                };
+                if !visited.insert(norm.clone()) {
+                    log::debug!("bb_resolve: skipping already-visited child canvas '{}'", path);
+                    continue;
+                }
+
+                if debug_trace {
+                    log::info!(
+                        "bb_resolve[depth={}]: Pass1 following entry {:?} -> {}",
+                        depth,
+                        entry_name,
+                        norm,
+                    );
+                }
+
+                let child_json = match fetch_by_path(path) {
+                    Ok(json) => json,
+                    Err(e) => {
+                        log::warn!("bb_resolve: failed to fetch child canvas '{}': {}", path, e);
+                        continue;
+                    }
+                };
+                let match_to_param_inputs = if match_to.is_empty() {
+                    None
+                } else {
+                    param_inputs_for_match_to(scene, match_to)
+                };
+                // Recurse: resolve the child's own style-references and WidgetCanvas URLs.
+                let child_result = resolve_canvas_graph_inner(
+                    &child_json,
+                    manufacturer_id,
+                    fetch_by_path,
+                    loc_fetcher,
+                    depth + 1,
+                    visited,
+                    palette_source,
+                    local_style_identifier,
+                    match_to_param_inputs.as_deref(),
+                    local_boolean_bindings,
+                    bound_view_canvas,
+                    defaults,
+                    instance_namespace,
+                );
+                let mut child_scene = match child_result {
+                    Ok(scene) => scene,
+                    Err(e) => {
+                        log::warn!(
+                            "bb_resolve: failed to resolve child canvas '{}': {}",
+                            path,
+                            e
+                        );
+                        continue;
+                    }
+                };
+                pass1_merged_norms.insert(norm.clone());
+                // Pass1 canvas-reference merges can also carry localized
+                // paramInputValues on the matched host node (same mechanism as
+                // Pass2 WidgetCanvas.canvas references). Inject those overrides
+                // so localized component-parameter defaults resolve correctly.
+                if let Some(param_inputs) = match_to_param_inputs.as_ref() {
+                    inject_param_overrides(param_inputs, &mut child_scene);
+                }
+                // Without a matchTo name the entry's style conditions select
+                // the host canvas slot (the power master's `Set Canvas`, the
+                // power item's OffPanel slot): wire its parameters AND merge
+                // the content under it, so slot-level gates (`IsActive ←
+                // ispoweredoff`) govern the merged subtree.
+                let host_node_id = host_node_for_match_to(scene, match_to)
+                    .or_else(|| host_canvas_node_for_entry(scene, entry));
+                if let Some(host_node_id) = host_node_id {
+                    inject_dynamic_param_field_bindings(
+                        host_node_id,
+                        &scene.operations,
+                        &mut child_scene,
+                        instance_namespace.is_some(),
+                    );
+                }
+                let host_override: Option<BbNodeId> = if std::env::var("SB_NO_HOSTOVR").as_deref() == Ok("1") { None } else if match_to.is_empty() { host_node_id } else { None };
+                merge_child_scene(scene, child_scene, match_to, host_override, false);
+            }
+        }
+    }
+
+    pass1_merged_norms
+}

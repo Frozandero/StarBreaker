@@ -1,7 +1,6 @@
 use serde_json::json;
 
 use super::*;
-use crate::canvas::Value;
 use crate::defaults::DefaultValueRegistry;
 
 fn resolver() -> BindingResolver {

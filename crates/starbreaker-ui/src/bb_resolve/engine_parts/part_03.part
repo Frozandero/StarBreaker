@@ -101,121 +101,26 @@ fn resolve_canvas_graph_inner(
     });
     let palette_source = local_style_value.as_ref().or(inherited_style);
 
-    // Pass 1: follow the default-state canvas-reference modifier.
-    //
-    // Only ONE style entry is selected (see `pick_default_entry`) to prevent
-    // mode-switching canvases (e.g. GunsMode / NavMode / TurretMode on
-    // MC_S_Self_Master) from all being merged together into the static render.
-    //
-    // The selected child canvas is resolved recursively so multi-level
-    // hierarchies (master → gen → leaf) are fully expanded.
-    if let Some(selection) = pick_default_entry_decision(record_value, root_json, manufacturer_id) {
-        let entry = selection.entry;
-        let entry_name = entry.get("name").and_then(|v| v.as_str()).unwrap_or("?");
-        let match_to = entry.get("matchTo").and_then(|v| v.as_str()).unwrap_or("");
-
-        if debug_trace {
-            log::info!(
-                "bb_resolve[depth={}]: default entry decision={} entry={:?} score={}",
-                depth,
-                selection.reason.as_str(),
-                entry_name,
-                selection.score.unwrap_or(0),
-            );
-        }
-
-        if let Some(modifiers) = entry.get("modifiers").and_then(|v| v.as_array()) {
-            for modifier in modifiers {
-                let Some(field) = modifier.get("field") else {
-                    continue;
-                };
-                let is_canvas_ref = field
-                    .get("_Type_")
-                    .and_then(|v| v.as_str())
-                    == Some("BuildingBlocks_FieldModifierRecordRefTypeCanvasReferenceRecord");
-                if !is_canvas_ref {
-                    continue;
-                }
-                let Some(path) = field.get("value").and_then(|v| v.as_str()) else {
-                    continue;
-                };
-
-                // Normalise path to a record name for cycle detection.
-                let norm = extract_record_name(path).to_ascii_lowercase();
-                if !visited.insert(norm.clone()) {
-                    log::debug!("bb_resolve: skipping already-visited child canvas '{}'", path);
-                    continue;
-                }
-
-                if debug_trace {
-                    log::info!(
-                        "bb_resolve[depth={}]: Pass1 following entry {:?} -> {}",
-                        depth,
-                        entry_name,
-                        norm,
-                    );
-                }
-
-                let child_json = match fetch_by_path(path) {
-                    Ok(json) => json,
-                    Err(e) => {
-                        log::warn!("bb_resolve: failed to fetch child canvas '{}': {}", path, e);
-                        continue;
-                    }
-                };
-                let match_to_param_inputs = if match_to.is_empty() {
-                    None
-                } else {
-                    param_inputs_for_match_to(&scene, match_to)
-                };
-                // Recurse: resolve the child's own style-references and WidgetCanvas URLs.
-                let mut child_scene = match resolve_canvas_graph_inner(
-                    &child_json,
-                    manufacturer_id,
-                    fetch_by_path,
-                    loc_fetcher,
-                    depth + 1,
-                    visited,
-                    palette_source,
-                    local_style_identifier.as_deref(),
-                    match_to_param_inputs.as_deref(),
-                    &local_boolean_bindings,
-                    bound_view_canvas,
-                    defaults,
-                    instance_namespace,
-                ) {
-                    Ok(scene) => scene,
-                    Err(e) => {
-                        log::warn!(
-                            "bb_resolve: failed to resolve child canvas '{}': {}",
-                            path,
-                            e
-                        );
-                        continue;
-                    }
-                };
-                // Pass1 canvas-reference merges can also carry localized
-                // paramInputValues on the matched host node (same mechanism as
-                // Pass2 WidgetCanvas.canvas references). Inject those overrides
-                // so localized component-parameter defaults resolve correctly.
-                if let Some(param_inputs) = match_to_param_inputs.as_ref() {
-                    inject_param_overrides(param_inputs, &mut child_scene);
-                }
-                // Without a matchTo name the entry's style conditions select
-                // the host canvas slot (the power master's `Set Canvas`).
-                let host_node_id = host_node_for_match_to(&scene, match_to)
-                    .or_else(|| host_canvas_node_for_entry(&scene, entry));
-                if let Some(host_node_id) = host_node_id {
-                    inject_dynamic_param_field_bindings(
-                        host_node_id,
-                        &scene.operations,
-                        &mut child_scene,
-                    );
-                }
-                merge_child_scene(&mut scene, child_scene, match_to, None, false);
-            }
-        }
-    }
+    // Pass 1: follow the default-state canvas-reference modifier (extracted
+    // to pass1.part for the line cap). Returns the canvas norms merged at
+    // THIS level, consumed by the Pass-2 skip logic below.
+    let pass1_merged_norms = run_pass1_canvas_references(
+        &mut scene,
+        record_value,
+        root_json,
+        manufacturer_id,
+        fetch_by_path,
+        loc_fetcher,
+        depth,
+        visited,
+        palette_source,
+        local_style_identifier.as_deref(),
+        &local_boolean_bindings,
+        bound_view_canvas,
+        defaults,
+        instance_namespace,
+        debug_trace,
+    );
 
     // Pass 2: follow WidgetCanvas.canvas field references.
     //
@@ -311,6 +216,8 @@ fn resolve_canvas_graph_inner(
         // below to test "was this canvas already merged by Pass 1?" without
         // modifying the set (so the same URL may appear multiple times in the
         // loop with different paramInputValues and each instance is processed).
+        // Keys are instance-namespace-scoped like Pass 1's (see pass1.part).
+        let _ = &pass1_merged_norms;
         let post_pass1_visited: std::collections::HashSet<String> = visited.clone();
 
         for (node_id, url, param_inputs) in canvas_urls {
@@ -326,7 +233,10 @@ fn resolve_canvas_graph_inner(
                 }
                 continue;
             }
-            let norm = extract_record_name(&url).to_ascii_lowercase();
+            let norm = match instance_namespace {
+                Some(ns) => format!("{ns}|{}", extract_record_name(&url).to_ascii_lowercase()),
+                None => extract_record_name(&url).to_ascii_lowercase(),
+            };
             // If this canvas URL appears in ANY conditional entry but was NOT
             // selected in Pass 1 (not present in the post-Pass-1 snapshot),
             // skip it.  It is the default canvas for a mode-switchable slot,
@@ -401,7 +311,12 @@ fn resolve_canvas_graph_inner(
                 }
             };
             inject_param_overrides(&param_inputs, &mut child_scene);
-            inject_dynamic_param_field_bindings(node_id, &scene.operations, &mut child_scene);
+            inject_dynamic_param_field_bindings(
+                node_id,
+                &scene.operations,
+                &mut child_scene,
+                child_namespace.is_some(),
+            );
             merge_child_scene(&mut scene, child_scene, "", Some(node_id), false);
         }
     }
@@ -435,7 +350,11 @@ fn resolve_canvas_graph_inner(
     }
 
     expand_widget_standards(&mut scene, fetch_by_path);
-    crate::bb_bindings::resolve_state_tags_into_scene(&mut scene, defaults);
+    if std::env::var("SB_TAGS_NO_DEFAULTS").as_deref() == Ok("1") {
+        crate::bb_bindings::resolve_state_tags_into_scene(&mut scene, &Default::default());
+    } else {
+        crate::bb_bindings::resolve_state_tags_into_scene(&mut scene, defaults);
+    }
     apply_canvas_style_cascade(
         &mut scene,
         root_json,

@@ -30,6 +30,8 @@ mod tests_colors;
 #[cfg(test)]
 mod tests_conditions;
 #[cfg(test)]
+mod tests_conditions_ancestor;
+#[cfg(test)]
 mod tests_modifiers;
 #[cfg(test)]
 mod tests_modifiers_number;
@@ -206,6 +208,36 @@ fn resolve_node_background_color(node: &mut BbNode, palette_source: &serde_json:
 ///   `conditions[j]` items pass. Conditions may be nested (`AllOf`, `AnyOf`,
 ///   `Parent`), and parent conditions are evaluated against the node's direct
 ///   parent in the parsed BB scene hierarchy.
+/// Whether `node` lies inside a materialised list-entry subtree (self or any
+/// ancestor carries the `_MaterialisedEntry_` marker set by the list/array
+/// materialisation machinery).
+fn within_materialised_entry(node: &BbNode, scene: &BbScene) -> bool {
+    if node
+        .raw
+        .get("_MaterialisedEntry_")
+        .and_then(|v| v.as_bool())
+        == Some(true)
+    {
+        return true;
+    }
+    let mut current = node.parent;
+    while let Some(ancestor_id) = current {
+        let Some(ancestor) = scene.nodes.get(&ancestor_id) else {
+            return false;
+        };
+        if ancestor
+            .raw
+            .get("_MaterialisedEntry_")
+            .and_then(|v| v.as_bool())
+            == Some(true)
+        {
+            return true;
+        }
+        current = ancestor.parent;
+    }
+    false
+}
+
 pub(crate) fn entry_matches_scene(
     entry: &serde_json::Value,
     node_id: BbNodeId,
@@ -300,20 +332,51 @@ fn condition_matches_node(
         let Some(conditions) = condition.get("conditions").and_then(|v| v.as_array()) else {
             return false;
         };
+        // `breakConditions` bound the walk, but only within MATERIALISED list
+        // entries (`_MaterialisedEntry_`, the power pip stacks): per-entry
+        // state tags must not leak across entry boundaries (an Unpowered
+        // pip's fill must not match the column root's Powered tag), and the
+        // boundary node itself is tested match-before-break (it carries both
+        // the `general-list-item` break tag and its own state tag). An EMPTY
+        // conditions list inside such an entry is a negative guard (true
+        // unless an ancestor matches the breaks). Outside materialised
+        // entries the long-verified semantics the medical baselines pin
+        // apply: breaks are ignored and empty conditions match trivially.
+        let break_conditions = condition
+            .get("breakConditions")
+            .and_then(|v| v.as_array())
+            .map(|a| a.as_slice())
+            .unwrap_or(&[]);
+        let scoped_breaks = !break_conditions.is_empty() && within_materialised_entry(node, scene);
+        if conditions.is_empty() && !scoped_breaks {
+            // Legacy semantics: an empty conditions list matches at the first
+            // resolvable ancestor (a parentless node has none and fails).
+            return node
+                .parent
+                .is_some_and(|parent| scene.nodes.contains_key(&parent));
+        }
         let mut current = node.parent;
         while let Some(ancestor_id) = current {
             let Some(ancestor) = scene.nodes.get(&ancestor_id) else {
                 break;
             };
-            if conditions
-                .iter()
-                .all(|child| condition_matches_node(child, ancestor_id, ancestor, scene))
+            if !conditions.is_empty()
+                && conditions
+                    .iter()
+                    .all(|child| condition_matches_node(child, ancestor_id, ancestor, scene))
             {
                 return true;
             }
+            if scoped_breaks
+                && break_conditions
+                    .iter()
+                    .all(|child| condition_matches_node(child, ancestor_id, ancestor, scene))
+            {
+                return false;
+            }
             current = ancestor.parent;
         }
-        return false;
+        return conditions.is_empty();
     }
 
     if cond_type.ends_with("ConditionAnyOfTag") {

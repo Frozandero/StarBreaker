@@ -66,7 +66,27 @@ fn collect(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
+/// Minimal stderr logger so library `log::` probes (e.g. `BB_A3_STYLE_PROBE`)
+/// are visible from this debug helper. Enabled via `MFD_IR_DUMP_LOG=1`.
+struct StderrLogger;
+impl log::Log for StderrLogger {
+    fn enabled(&self, metadata: &log::Metadata) -> bool {
+        metadata.level() <= log::Level::Info
+    }
+    fn log(&self, record: &log::Record) {
+        if self.enabled(record.metadata()) {
+            eprintln!("[{}] {}", record.level(), record.args());
+        }
+    }
+    fn flush(&self) {}
+}
+static LOGGER: StderrLogger = StderrLogger;
+
 fn main() {
+    if std::env::var("MFD_IR_DUMP_LOG").as_deref() == Ok("1") {
+        let _ = log::set_logger(&LOGGER);
+        log::set_max_level(log::LevelFilter::Info);
+    }
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../../ships/dcb_canvas/libs/foundry/records")
         .canonicalize()
@@ -149,6 +169,9 @@ fn main() {
             n.background_fill_colour,
             n.background_fill_colour_token,
         );
+        if n.background_fill_alpha.is_some() {
+            println!("    bg_alpha={:?}", n.background_fill_alpha);
+        }
         if n.asset_ref.is_some() {
             println!("    asset={:?}", n.asset_ref);
         }

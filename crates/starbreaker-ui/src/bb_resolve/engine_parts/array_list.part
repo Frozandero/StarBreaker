@@ -75,11 +75,89 @@ fn apply_array_variable_lists(
             else {
                 break;
             };
-            let _ = clone_root;
+            // Mark materialised entries: scoped style semantics (ancestor
+            // break conditions) apply within these subtrees only.
+            if let Some(root) = scene.nodes.get_mut(&clone_root)
+                && let Some(map) = root.raw.as_object_mut()
+            {
+                map.insert("_MaterialisedEntry_".to_string(), serde_json::Value::Bool(true));
+            }
             let entry_namespace = format!("{path}/[{index:04}]");
             clone_subtree_field_ops(scene, &node_map, namespace, &entry_namespace);
         }
         deactivate_subtrees(scene, &std::collections::HashSet::from([template]));
+    }
+}
+
+/// Apply registry-backed DIRECT boolean-variable visibility gates: a node
+/// whose `IsActive`/`Instantiated` field binds STRAIGHT to a
+/// `Bindings*BooleanVariable` with a registry value takes that value when it
+/// is `false` (the power columns' `canvas_OffPanel.IsActive ← ispoweredoff`).
+/// Chains, parameters and unresolved variables are left to the at-rest
+/// heuristics in `bb_state_filter` — the medical capture baselines depend on
+/// those staying untouched (deactivation-only, direct-binding-only on
+/// purpose).
+fn apply_registry_direct_gates(
+    scene: &mut BbScene,
+    defaults: &crate::defaults::DefaultValueRegistry,
+) {
+    let ptr_to_op: std::collections::HashMap<String, &serde_json::Value> = scene
+        .operations
+        .iter()
+        .filter_map(|op| {
+            op.get("_Pointer_")
+                .and_then(|v| v.as_str())
+                .map(|p| (p.to_owned(), op))
+        })
+        .collect();
+    let mut gated_off: std::collections::HashSet<BbNodeId> = std::collections::HashSet::new();
+    for op in &scene.operations {
+        let ty = op.get("_Type_").and_then(|v| v.as_str()).unwrap_or("");
+        if !ty.ends_with("BooleanField") {
+            continue;
+        }
+        let field = op.get("field").and_then(|v| v.as_str()).unwrap_or("");
+        if !matches!(field, "IsActive" | "Instantiated") {
+            continue;
+        }
+        let Some(widget) = op
+            .get("widget")
+            .and_then(|v| v.as_str())
+            .and_then(parse_points_to_or_ptr)
+        else {
+            continue;
+        };
+        let Some(input) = op
+            .get("input")
+            .and_then(|v| v.as_str())
+            .map(|s| s.strip_prefix("_PointsTo_:").unwrap_or(s))
+        else {
+            continue;
+        };
+        let Some(input_op) = ptr_to_op.get(input) else {
+            continue;
+        };
+        let input_ty = input_op.get("_Type_").and_then(|v| v.as_str()).unwrap_or("");
+        if !(input_ty.starts_with("BuildingBlocks_Bindings") && input_ty.ends_with("BooleanVariable")) {
+            continue;
+        }
+        let Some(binding) = input_op.get("binding").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let resolved = defaults.lookup_path(binding).map(|value| match value {
+            crate::canvas::Value::Bool(b) => *b,
+            crate::canvas::Value::Int(i) => *i != 0,
+            crate::canvas::Value::Float(f) => *f != 0.0,
+            crate::canvas::Value::Str(s) | crate::canvas::Value::Guid(s) => {
+                matches!(s.to_ascii_lowercase().as_str(), "1" | "true" | "yes")
+            }
+        });
+        if resolved == Some(false) {
+            gated_off.insert(widget);
+        }
+    }
+    if !gated_off.is_empty() {
+        deactivate_subtrees(scene, &gated_off);
     }
 }
 

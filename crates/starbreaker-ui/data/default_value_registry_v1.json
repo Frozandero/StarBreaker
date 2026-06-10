@@ -88,7 +88,10 @@
     "piplist/[0002]/piplist/[0002]/piplinkamount": 1,
     "piplist/[0002]/piplist/[0003]/pipstate": 0,
     "piplist/[0002]/piplist/[0003]/pipamount": 1.0,
-    "piplist/[0002]/piplist/[0003]/piplinkamount": 1
+    "piplist/[0002]/piplist/[0003]/piplinkamount": 1,
+    "piplist/[0000]/ispoweredoff": false,
+    "piplist/[0001]/ispoweredoff": false,
+    "piplist/[0002]/ispoweredoff": false
   },
   "localization": {
     "hud_notarget": "NO TARGET",

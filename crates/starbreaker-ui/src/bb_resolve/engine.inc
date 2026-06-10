@@ -4,6 +4,7 @@
 include!("engine_parts/part_01.part");
 include!("engine_parts/part_02.part");
 include!("engine_parts/part_03.part");
+include!("engine_parts/pass1.part");
 include!("engine_parts/part_04.part");
 include!("engine_parts/part_05.part");
 include!("engine_parts/part_06.part");
