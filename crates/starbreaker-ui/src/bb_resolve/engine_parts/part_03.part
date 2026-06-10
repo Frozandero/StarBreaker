@@ -279,7 +279,7 @@ fn resolve_canvas_graph_inner(
         // so inject it onto the landscape slot at full width and skip the portrait
         // slot — not whichever slot's authored placeholder matches the content.
         if let Some(bound) = bound_view_canvas {
-            crate::mfd_view::apply_bound_mfd_view(&scene, bound, &mut canvas_urls, &mut instantiated_false);
+            crate::mfd_view::apply_bound_mfd_view(&mut scene, bound, &mut canvas_urls, &mut instantiated_false);
         }
 
         deactivate_subtrees(&mut scene, &instantiated_false);

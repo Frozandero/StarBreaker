@@ -13,5 +13,5 @@ pub use extract::{
     extract_font_edit_text_metrics, extract_fonts, extract_shapes,
 };
 pub use library::SwfAssetLibrary;
-pub use stage::{extract_sprite_first_frame, extract_stage_frame, extract_stage_size};
+pub use stage::{extract_all_sprite_first_frames, extract_sprite_first_frame, extract_stage_frame, extract_stage_size};
 pub use types::{EditTextRecord, FontGlyph, FontGlyphSet, PlaceRecord, ShapeRecord, SwfEditTextMetrics};
