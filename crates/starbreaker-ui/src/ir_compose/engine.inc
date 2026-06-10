@@ -8,6 +8,7 @@ include!("engine_parts/part_04.part");
 include!("engine_parts/part_05.part");
 include!("engine_parts/part_06.part");
 include!("engine_parts/part_07.part");
+include!("engine_parts/polygon_draw.part");
 include!("engine_parts/part_08.part");
 include!("engine_parts/part_09.part");
 include!("engine_parts/part_10.part");

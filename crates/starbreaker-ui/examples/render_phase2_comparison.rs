@@ -101,6 +101,7 @@ fn synthetic_hybrid_document() -> UiIrDocument {
             background_fill_alpha: None,
             background_fill_colour_token: Some("Accent2".to_string()),
             segmented_fill: None,
+        polygon: None,
             border: Some(UiIrBorder {
                 top: UiIrBorderSide { width: 2.0, colour: Some([1.0, 1.0, 0.0, 1.0]), colour_token: Some("Accent1".to_string()) },
                 right: UiIrBorderSide { width: 2.0, colour: Some([1.0, 1.0, 0.0, 1.0]), colour_token: Some("Accent1".to_string()) },
