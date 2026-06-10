@@ -108,6 +108,20 @@ MCP-first policy for UI matching:
 
 - Prefer StarBreaker MCP query tools first when investigating assets, style records, DataCore values, and chunk/material semantics.
 - Use CLI export commands for end-to-end render generation and regression artifact production, not for exploratory data archaeology that MCP can answer faster.
+- For render ITERATION, replay an existing decomposed export instead of
+  re-exporting (renders every UI binding through the live DataCore/P4K
+  fetchers in ~1 minute vs ~6 for a full export):
+  `target/release/starbreaker ui render --scene "<ships>/Packages/<Ship>_LOD0_TEX0/scene.json" --out-dir /tmp/ui_replay`
+  Only run the full export to refresh the canonical
+  `ships/Data/UI/Generated/...` PNGs before freezing regression
+  artifacts. Trap: the full export writes those PNGs near the END of its
+  run — never diff them until the export process has exited.
+- The MFD frame geometry model (host-stage text scale, the GFx
+  content-view stage sub-rect, at-rest binding semantics, the
+  widget-standard expansion mechanism, and the reference-capture
+  measurement methodology) is documented in
+  `docs/ui-architecture-runbook.md` — read it before touching MFD
+  layout or visibility gating.
 
 UI-specific MCP diagnostics to run before ad-hoc shell probes or temporary logging:
 
