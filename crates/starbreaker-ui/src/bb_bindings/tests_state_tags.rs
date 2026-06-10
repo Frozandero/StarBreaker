@@ -360,3 +360,74 @@ use crate::defaults::DefaultValueRegistry;
             Some("Tag.308bf0ed-0000-0000-0000-000000000000"),
         );
     }
+
+    /// A component parameter WIRED to an engine variable that is unbound at
+    /// rest resolves to the variable's type default, not the authored editor
+    /// `defaultValue`. The power screen's notification overlays
+    /// (`engineeringoverride`/`presetnotification`, authored default `true`)
+    /// are bound from unbound `BooleanVariable`s and must be hidden at rest.
+    #[test]
+    fn wired_unbound_variable_param_resolves_type_default_not_authored() {
+        let ops = vec![
+            // gen canvas: overlay IsActive <- engineeringoverride param.
+            json!({
+                "_Type_": "BuildingBlocks_BindingsBooleanField",
+                "widget": "ptr:4", "field": "IsActive", "input": "_PointsTo_:ptr:5"
+            }),
+            json!({
+                "_Pointer_": "ptr:5",
+                "_Type_": "BuildingBlocks_BindingsBooleanComponentParameter",
+                "name": "engineeringoverride", "parameter": "ParamInput3", "defaultValue": true
+            }),
+            // master canvas: ParamInput3 <- BooleanVariable "engineeringoverride".
+            json!({
+                "_Type_": "BuildingBlocks_BindingsBooleanField",
+                "widget": "ptr:1", "field": "ParamInput3", "input": "_PointsTo_:ptr:9"
+            }),
+            json!({
+                "_Pointer_": "ptr:9",
+                "_Type_": "BuildingBlocks_BindingsBooleanVariable",
+                "path": [], "binding": "engineeringoverride"
+            }),
+        ];
+        let resolver = BindingResolver::from_operations(&ops);
+        let defaults = DefaultValueRegistry::default();
+        assert_eq!(
+            resolver.resolve_field_bool(4, "IsActive", &defaults),
+            Some(false),
+            "wired-to-unbound-variable must be the type default (false), not authored true"
+        );
+
+        // A bound variable still wins.
+        let mut bound = DefaultValueRegistry::default();
+        bound.insert_path("engineeringoverride", Value::Bool(true));
+        assert_eq!(
+            resolver.resolve_field_bool(4, "IsActive", &bound),
+            Some(true),
+            "a bound variable value must resolve normally"
+        );
+    }
+
+    /// An UNWIRED parameter (no host ParamInput ops at all) keeps the authored
+    /// `defaultValue` — editor semantics (e.g. `iscast` defaulting true).
+    #[test]
+    fn unwired_param_keeps_authored_default() {
+        let ops = vec![
+            json!({
+                "_Type_": "BuildingBlocks_BindingsBooleanField",
+                "widget": "ptr:4", "field": "IsActive", "input": "_PointsTo_:ptr:5"
+            }),
+            json!({
+                "_Pointer_": "ptr:5",
+                "_Type_": "BuildingBlocks_BindingsBooleanComponentParameter",
+                "name": "iscast", "parameter": "ParamInput0", "defaultValue": true
+            }),
+        ];
+        let resolver = BindingResolver::from_operations(&ops);
+        let defaults = DefaultValueRegistry::default();
+        assert_eq!(
+            resolver.resolve_field_bool(4, "IsActive", &defaults),
+            Some(true),
+            "no wiring at all keeps the authored default"
+        );
+    }

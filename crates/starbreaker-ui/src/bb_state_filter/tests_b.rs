@@ -383,3 +383,66 @@
             "non-state sensor variables without static defaults should not hide ptr:7"
         );
     }
+
+    /// A boolean component parameter NAMED after an authored static variable
+    /// takes the variable's authored static value over its editor
+    /// `defaultValue` — the power screen's notification overlays
+    /// (`engineeringoverride`/`presetnotification`, editor default `true`)
+    /// are authored `staticVariables = false` for the at-rest state.
+    #[test]
+    fn boolean_component_parameter_takes_static_variable_named_default() {
+        let rv = make_record_value(
+            vec![json!({
+                "_Type_": "BuildingBlocks_StaticVariableBoolean",
+                "name": "engineeringoverride",
+                "value": false
+            })],
+            vec![json!({
+                "_Type_": "BuildingBlocks_BindingsBooleanField",
+                "widget": "_PointsTo_:ptr:5",
+                "field": "IsActive",
+                "input": {
+                    "_Pointer_": "ptr:9",
+                    "_Type_": "BuildingBlocks_BindingsBooleanComponentParameter",
+                    "name": "engineeringoverride",
+                    "parameter": "ParamInput3",
+                    "defaultValue": true
+                }
+            })],
+        );
+
+        let false_set = instantiated_false_widgets_with_param_inputs(&rv, &[]);
+        assert!(
+            false_set.contains(&5),
+            "static variable false must gate the overlay despite editor defaultValue true"
+        );
+    }
+
+    /// The static-variable name match is case-insensitive (gen params are
+    /// lower-cased `presetnotification` while the master variable is
+    /// `PresetNotification`).
+    #[test]
+    fn boolean_component_parameter_static_variable_match_is_case_insensitive() {
+        let rv = make_record_value(
+            vec![json!({
+                "_Type_": "BuildingBlocks_StaticVariableBoolean",
+                "name": "PresetNotification",
+                "value": false
+            })],
+            vec![json!({
+                "_Type_": "BuildingBlocks_BindingsBooleanField",
+                "widget": "_PointsTo_:ptr:6",
+                "field": "Instantiated",
+                "input": {
+                    "_Pointer_": "ptr:9",
+                    "_Type_": "BuildingBlocks_BindingsBooleanComponentParameter",
+                    "name": "presetnotification",
+                    "parameter": "ParamInput2",
+                    "defaultValue": true
+                }
+            })],
+        );
+
+        let false_set = instantiated_false_widgets_with_param_inputs(&rv, &[]);
+        assert!(false_set.contains(&6), "case-insensitive name match must apply");
+    }

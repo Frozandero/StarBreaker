@@ -180,6 +180,23 @@ pub(super) fn eval_bool_ref(
                     param_overrides
                         .get(&param_name)
                         .copied()
+                        // The parameter's `name` is its source-variable
+                        // identity: an authored staticVariable of that name
+                        // carries the canvas's static default and wins over
+                        // the editor `defaultValue` (the power screen's
+                        // notification overlays are authored
+                        // `engineeringoverride`/`PresetNotification = false`
+                        // but default `true` for editor preview). Names are
+                        // matched case-insensitively: gen-level parameter
+                        // names are lower-cased while master staticVariables
+                        // keep authored casing.
+                        .or_else(|| {
+                            let name = obj.get("name").and_then(|v| v.as_str())?;
+                            static_vals
+                                .iter()
+                                .find(|(k, _)| k.eq_ignore_ascii_case(name))
+                                .map(|(_, v)| *v)
+                        })
                         .or_else(|| obj.get("defaultValue").and_then(|v| v.as_bool()))
                         .or(Some(true))
                 }

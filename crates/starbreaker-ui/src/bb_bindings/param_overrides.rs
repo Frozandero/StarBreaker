@@ -56,7 +56,36 @@ impl BindingResolver {
                 return Some(value);
             }
         }
+        // A parameter WIRED to an engine variable that is unbound in a static
+        // render takes the variable's at-rest type default (`false`), not the
+        // authored editor `defaultValue` (the power screen's notification
+        // overlays are authored `true` for editor preview but bound from
+        // unbound `BooleanVariable`s). Unwired parameters (no host ParamInput
+        // ops at all) keep editor semantics: authored default applies.
+        if input_ptrs
+            .iter()
+            .any(|&p| p != current_ptr && self.input_is_unbound_variable(p, defaults))
+        {
+            return Some(false);
+        }
         None
+    }
+
+    /// True when `ptr` is a `Bindings*Variable` op whose binding path has no
+    /// default-registry entry — wired to an engine variable that is unbound in
+    /// a static render.
+    fn input_is_unbound_variable(&self, ptr: BbNodeId, defaults: &DefaultValueRegistry) -> bool {
+        let Some(op) = self.ptr_to_op.get(&ptr) else {
+            return false;
+        };
+        let ty = op.get("_Type_").and_then(|v| v.as_str()).unwrap_or("");
+        if !(ty.starts_with("BuildingBlocks_Bindings") && ty.ends_with("Variable")) {
+            return false;
+        }
+        match self.ptr_to_path.get(&ptr) {
+            Some(path) => defaults.lookup_path(path).is_none(),
+            None => true,
+        }
     }
 
     pub(super) fn eval_integer_component_parameter_override(
