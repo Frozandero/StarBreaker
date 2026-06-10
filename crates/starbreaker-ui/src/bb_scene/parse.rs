@@ -33,6 +33,28 @@ pub fn parse_bb_canvas(json: &serde_json::Value) -> Result<BbScene, String> {
         .cloned()
         .unwrap_or_default();
 
+    // Authored `staticVariables[]` are the canvas's at-rest variable values.
+    // Carry them as `_SynthStaticVariable_` ops so child-canvas merges inherit
+    // them and the binding resolver can back otherwise-unbound
+    // `Bindings*Variable` evaluation (e.g. the power screen's `_pipHeight` /
+    // `PresetNotification`). First occurrence wins downstream, so a parent
+    // canvas's value takes precedence over a merged child re-declaring it.
+    if let Some(static_vars) = record_value.get("staticVariables").and_then(|v| v.as_array()) {
+        for var in static_vars {
+            let (Some(name), Some(value)) = (
+                var.get("name").and_then(|v| v.as_str()),
+                var.get("value"),
+            ) else {
+                continue;
+            };
+            operations.push(serde_json::json!({
+                "_Type_": "_SynthStaticVariable_",
+                "name": name,
+                "value": value,
+            }));
+        }
+    }
+
     // ── First pass: parse each node (without children populated yet). ────────
     // Nodes without a `_Pointer_` field get a synthetic ID derived from their
     // array index so they are still represented in the scene.  Synthetic IDs

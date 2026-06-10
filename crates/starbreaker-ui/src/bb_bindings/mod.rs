@@ -27,6 +27,10 @@ pub struct BindingResolver {
     pub(super) ptr_to_op: HashMap<BbNodeId, serde_json::Value>,
     pub(super) ptr_to_path: HashMap<BbNodeId, String>,
     pub(super) widget_to_string: HashMap<BbNodeId, String>,
+    /// Authored `staticVariables[]` values (lower-cased name → raw value),
+    /// carried through merges as `_SynthStaticVariable_` ops. Consulted by
+    /// `Bindings*Variable` evaluation after the defaults registry.
+    pub(super) static_variable_values: HashMap<String, serde_json::Value>,
 }
 
 /// Outcome of [`BindingResolver::resolve_text_detailed`].

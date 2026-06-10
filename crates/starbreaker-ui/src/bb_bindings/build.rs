@@ -14,6 +14,22 @@ impl BindingResolver {
         // Pass 1: variable ops → ptr → binding path.
         let mut ptr_to_path: HashMap<BbNodeId, String> = HashMap::new();
         let mut ptr_to_op: HashMap<BbNodeId, serde_json::Value> = HashMap::new();
+        // Authored staticVariables (parsed into `_SynthStaticVariable_` ops by
+        // `parse_bb_canvas`): first occurrence wins, so the outermost canvas's
+        // authored value takes precedence over merged children re-declaring it.
+        let mut static_variable_values: HashMap<String, serde_json::Value> = HashMap::new();
+        for op in operations {
+            if op.get("_Type_").and_then(|v| v.as_str()) == Some("_SynthStaticVariable_")
+                && let (Some(name), Some(value)) = (
+                    op.get("name").and_then(|v| v.as_str()),
+                    op.get("value"),
+                )
+            {
+                static_variable_values
+                    .entry(name.to_ascii_lowercase())
+                    .or_insert_with(|| value.clone());
+            }
+        }
         for op in operations {
             if let Some(ptr) = op
                 .get("_Pointer_")
@@ -226,6 +242,7 @@ impl BindingResolver {
             field_name_to_input_ptrs,
             ptr_to_op,
             ptr_to_path,
+            static_variable_values,
             widget_to_string,
         }
     }

@@ -231,7 +231,12 @@ impl BindingResolver {
                     return None;
                 };
                 let Some(val) = defaults.lookup_path(path) else {
-                    return None;
+                    // Unbound engine variable: the canvas's authored
+                    // staticVariables value is its at-rest default.
+                    return self
+                        .static_variable_values
+                        .get(&path.to_ascii_lowercase())
+                        .and_then(|v| v.as_bool());
                 };
                 match val {
                     Value::Bool(b) => Some(*b),

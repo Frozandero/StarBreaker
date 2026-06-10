@@ -14,6 +14,7 @@ fn resolver() -> BindingResolver {
         ptr_to_op: Default::default(),
         ptr_to_path: Default::default(),
         widget_to_string: Default::default(),
+        static_variable_values: Default::default(),
     }
 }
 

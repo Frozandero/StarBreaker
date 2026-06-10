@@ -57,7 +57,11 @@ impl BindingResolver {
                     return None;
                 };
                 let Some(val) = defaults.lookup_path(path) else {
-                    return None;
+                    // Unbound engine variable: authored staticVariables default.
+                    return self
+                        .static_variable_values
+                        .get(&path.to_ascii_lowercase())
+                        .and_then(|v| v.as_i64());
                 };
                 match val {
                     Value::Int(i) => Some(*i as i64),
@@ -130,7 +134,13 @@ impl BindingResolver {
         match ty {
             "BuildingBlocks_BindingsNumberVariable" => {
                 let path = self.ptr_to_path.get(&ptr)?;
-                let val = defaults.lookup_path(path)?;
+                let Some(val) = defaults.lookup_path(path) else {
+                    // Unbound engine variable: authored staticVariables default.
+                    return self
+                        .static_variable_values
+                        .get(&path.to_ascii_lowercase())
+                        .and_then(|v| v.as_f64());
+                };
                 match val {
                     Value::Int(i) => Some(*i as f64),
                     Value::Float(f) => Some(*f as f64),

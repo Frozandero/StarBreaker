@@ -431,3 +431,54 @@ use crate::defaults::DefaultValueRegistry;
             "no wiring at all keeps the authored default"
         );
     }
+
+    /// Authored `staticVariables[]` are the engine's per-canvas at-rest
+    /// values; the resolver consults them (after the defaults registry) when
+    /// a `Bindings*Variable` is otherwise unbound. The power screen's
+    /// `_pipHeight`/`_pipSpacing` (0.0667) and `PresetNotification=false`
+    /// flow this way. They are carried as `_SynthStaticVariable_` ops so
+    /// child-canvas merges inherit them; the FIRST occurrence (outermost
+    /// canvas) wins.
+    #[test]
+    fn static_variables_back_unbound_variable_evaluation() {
+        let ops = vec![
+            json!({"_Type_": "_SynthStaticVariable_", "name": "_pipHeight", "value": 0.06666667}),
+            json!({"_Type_": "_SynthStaticVariable_", "name": "PresetNotification", "value": false}),
+            json!({
+                "_Type_": "BuildingBlocks_BindingsNumberField",
+                "widget": "ptr:8", "field": "ParamInput1", "input": "_PointsTo_:ptr:5"
+            }),
+            json!({
+                "_Pointer_": "ptr:5", "_Type_": "BuildingBlocks_BindingsNumberVariable",
+                "path": [], "binding": "_pipHeight"
+            }),
+            json!({
+                "_Type_": "BuildingBlocks_BindingsBooleanField",
+                "widget": "ptr:6", "field": "Instantiated", "input": "_PointsTo_:ptr:7"
+            }),
+            json!({
+                "_Pointer_": "ptr:7", "_Type_": "BuildingBlocks_BindingsBooleanVariable",
+                "path": [], "binding": "PresetNotification"
+            }),
+        ];
+        let resolver = BindingResolver::from_operations(&ops);
+        let defaults = DefaultValueRegistry::default();
+        let height = resolver
+            .resolve_field_number(8, "ParamInput1", &defaults)
+            .expect("static number must resolve");
+        assert!((height - 0.06666667).abs() < 1e-6, "got {height}");
+        assert_eq!(
+            resolver.resolve_field_bool(6, "Instantiated", &defaults),
+            Some(false),
+            "static boolean must resolve"
+        );
+
+        // The defaults registry still wins over the authored static.
+        let mut bound = DefaultValueRegistry::default();
+        bound.insert_path("PresetNotification", Value::Bool(true));
+        assert_eq!(
+            resolver.resolve_field_bool(6, "Instantiated", &bound),
+            Some(true),
+            "a bound engine value overrides the authored static"
+        );
+    }
