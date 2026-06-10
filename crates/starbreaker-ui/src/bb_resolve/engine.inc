@@ -14,5 +14,7 @@ include!("engine_parts/part_10.part");
 include!("engine_parts/part_11.part");
 include!("engine_parts/part_12.part");
 include!("engine_parts/part_13.part");
+include!("engine_parts/list_binding.part");
+include!("engine_parts/list_binding_tests.part");
 include!("engine_parts/widget_standard_expansion.part");
 include!("engine_parts/widget_standard_expansion_tests.part");

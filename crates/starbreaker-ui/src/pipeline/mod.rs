@@ -21,6 +21,8 @@ use crate::ui_ir::{UiIrDocument, UiIrTextPayload, UiRendererHint};
 mod asset_manifest;
 mod canvas_aspect;
 mod host_stage;
+mod style_projection;
+use style_projection::project_canvas_style_entries;
 mod style_selection;
 mod swf_selection;
 mod timing;
@@ -232,8 +234,9 @@ pub fn compile_ir_for_binding(inputs: &PipelineInputs<'_>) -> Result<UiIrDocumen
         None
     };
 
+    let defaults = DefaultValueRegistry::with_pipeline_defaults(inputs.localization_map.clone());
     let mut scene = timed("graph2", || {
-        crate::bb_resolve::resolve_canvas_graph_with_loc_and_bound_view(
+        crate::bb_resolve::resolve_canvas_graph_with_defaults(
             &raw_root_json,
             effective_manufacturer_id,
             &|p| {
@@ -244,6 +247,7 @@ pub fn compile_ir_for_binding(inputs: &PipelineInputs<'_>) -> Result<UiIrDocumen
             },
             inputs.loc_fetcher,
             bound_view_record_name.as_deref(),
+            &defaults,
         )
         .map_err(UiError::RenderError)
     })?;
@@ -312,7 +316,6 @@ pub fn compile_ir_for_binding(inputs: &PipelineInputs<'_>) -> Result<UiIrDocumen
         }
     }
 
-    let defaults = DefaultValueRegistry::with_pipeline_defaults(inputs.localization_map.clone());
     let asset_manifest = timed("manifest", || build_asset_reference_manifest(&scene, inputs.asset_fetcher));
 
     // Textfield font sizes are host-stage units on the MFD frame path; see
@@ -384,29 +387,6 @@ pub fn compile_ir_for_binding(inputs: &PipelineInputs<'_>) -> Result<UiIrDocumen
     }
 
     Ok(ir)
-}
-
-fn project_canvas_style_entries(
-    scene: &mut crate::bb_scene::BbScene,
-    raw_root_json: &serde_json::Value,
-    manufacturer_id: Option<&str>,
-    loc_fetcher: Option<&dyn crate::bb_loc::LocFetcher>,
-) {
-    let record_value = raw_root_json.get("_RecordValue_").unwrap_or(raw_root_json);
-    let selected_brand = resolve_brand_style(raw_root_json, manufacturer_id, None);
-    let palette_source = selected_brand.map(|brand| brand.raw).unwrap_or(record_value);
-
-    if let Some(default_entries) = record_value
-        .get("defaultStyles")
-        .and_then(|styles| styles.get("entries"))
-        .and_then(|entries| entries.as_array())
-    {
-        apply_scene_style_entries(scene, default_entries, palette_source, loc_fetcher);
-    }
-
-    if let Some(brand) = resolve_brand_style(raw_root_json, manufacturer_id, None) {
-        apply_brand_modifiers(scene, &brand, loc_fetcher);
-    }
 }
 
 /// Render via IR compilation and IR-only rendering.

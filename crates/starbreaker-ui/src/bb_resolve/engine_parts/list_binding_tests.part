@@ -1,0 +1,147 @@
+// Tests for list-binding slot materialisation (see list_binding.part): the
+// power screen's `piplist` pattern — count-gated container, slot cloned per
+// entry, per-instance namespaced bindings, hidden at rest.
+#[cfg(test)]
+mod tests_list_binding {
+    #![allow(unused_imports, dead_code)]
+
+    use super::*;
+    use crate::defaults::DefaultValueRegistry;
+
+    fn item_canvas() -> serde_json::Value {
+        serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.Test_ListItem",
+            "_RecordId_": "00000000-0000-0000-0000-0000000l0001",
+            "_RecordValue_": {
+                "_Type_": "BuildingBlocks_Canvas",
+                "size": {"_Type_": "Vec3", "x": 100.0, "y": 100.0, "z": 0.0},
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "item_marker", "isActive": true}
+                ],
+                "operations": [
+                    {"_Type_": "BuildingBlocks_BindingsNumberField",
+                     "widget": "_PointsTo_:ptr:1", "field": "SizeX", "input": "_PointsTo_:ptr:2"},
+                    {"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_BindingsNumberVariable",
+                     "path": [], "binding": "value", "inheritsNamespace": true}
+                ]
+            }
+        })
+    }
+
+    /// Parent canvas wired like `gen_mc_s_powerlists`: a count variable
+    /// (`items`), an indexed sibling reference (`items/[0000]/flag`), a
+    /// container gated `Instantiated ← items > 0`, and a WidgetCanvas slot
+    /// under it referencing the item canvas.
+    fn list_parent_canvas() -> serde_json::Value {
+        serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.Test_ListParent",
+            "_RecordId_": "00000000-0000-0000-0000-0000000l0002",
+            "_RecordValue_": {
+                "_Type_": "BuildingBlocks_Canvas",
+                "size": {"_Type_": "Vec3", "x": 400.0, "y": 100.0, "z": 0.0},
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "root", "isActive": true},
+                    {"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "list_container", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "layoutPolicy": {"_Type_": "BuildingBlocks_LayoutPolicyFlexContainer", "direction": "Row"}},
+                    {"_Pointer_": "ptr:5", "_Type_": "BuildingBlocks_WidgetCanvas",
+                     "name": "canvas_listItem", "parent": "_PointsTo_:ptr:2", "isActive": true,
+                     "instantiated": true,
+                     "canvas": "file://./test_listitem.json"}
+                ],
+                "operations": [
+                    {"_Type_": "BuildingBlocks_BindingsBooleanField",
+                     "widget": "_PointsTo_:ptr:2", "field": "Instantiated", "input": "_PointsTo_:ptr:11"},
+                    {"_Pointer_": "ptr:11", "_Type_": "BuildingBlocks_BindingsBooleanFromInteger",
+                     "type": "Greater", "inputL": "_PointsTo_:ptr:12", "inputR": null, "value": 0},
+                    {"_Pointer_": "ptr:12", "_Type_": "BuildingBlocks_BindingsIntegerVariable",
+                     "path": [], "binding": "items", "inheritsNamespace": true},
+                    {"_Pointer_": "ptr:13", "_Type_": "BuildingBlocks_BindingsIntegerVariable",
+                     "path": [], "binding": "items/[0000]/flag", "inheritsNamespace": true}
+                ]
+            }
+        })
+    }
+
+    fn fetcher(path: &str) -> Result<serde_json::Value, String> {
+        if path.to_ascii_lowercase().contains("test_listitem") {
+            Ok(item_canvas())
+        } else {
+            Err(format!("no record for '{path}'"))
+        }
+    }
+
+    /// At rest (no list data) the count variable is 0 and the gated container
+    /// must resolve inactive — the engine's `items > 0` gate.
+    #[test]
+    fn list_container_hides_when_count_is_unbound() {
+        let scene = resolve_canvas_graph_with_defaults(
+            &list_parent_canvas(),
+            Some("drak"),
+            &fetcher,
+            None,
+            None,
+            &DefaultValueRegistry::default(),
+        )
+        .expect("resolve");
+        let container = scene
+            .nodes
+            .values()
+            .find(|n| n.name == "list_container")
+            .expect("container");
+        assert!(!container.is_active, "unbound count must hide the list container");
+    }
+
+    /// With `items = 2` bound, the slot materialises two instances and each
+    /// instance's inheriting variable bindings are namespaced per index.
+    #[test]
+    fn list_slot_materialises_per_count_with_namespaced_bindings() {
+        let mut defaults = DefaultValueRegistry::default();
+        defaults.insert_path("items", crate::canvas::Value::Int(2));
+        let scene = resolve_canvas_graph_with_defaults(
+            &list_parent_canvas(),
+            Some("drak"),
+            &fetcher,
+            None,
+            None,
+            &defaults,
+        )
+        .expect("resolve");
+
+        let container = scene
+            .nodes
+            .values()
+            .find(|n| n.name == "list_container")
+            .expect("container");
+        assert!(container.is_active, "bound count must keep the container active");
+
+        let markers = scene
+            .nodes
+            .values()
+            .filter(|n| n.name == "item_marker")
+            .count();
+        assert_eq!(markers, 2, "two item instances must merge");
+
+        let bindings: Vec<String> = scene
+            .operations
+            .iter()
+            .filter_map(|op| {
+                let ty = op.get("_Type_").and_then(|v| v.as_str())?;
+                if !(ty.starts_with("BuildingBlocks_Bindings") && ty.ends_with("Variable")) {
+                    return None;
+                }
+                op.get("binding").and_then(|v| v.as_str()).map(str::to_owned)
+            })
+            .collect();
+        assert!(
+            bindings.iter().any(|b| b == "items/[0000]/value"),
+            "instance 0 binding must be namespaced; got {bindings:?}"
+        );
+        assert!(
+            bindings.iter().any(|b| b == "items/[0001]/value"),
+            "instance 1 binding must be namespaced; got {bindings:?}"
+        );
+    }
+}

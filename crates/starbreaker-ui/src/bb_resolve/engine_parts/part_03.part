@@ -14,6 +14,7 @@ fn resolve_canvas_graph_inner(
     inherited_param_inputs: Option<&[serde_json::Value]>,
     inherited_boolean_bindings: &HashMap<String, bool>,
     bound_view_canvas: Option<&str>,
+    defaults: &crate::defaults::DefaultValueRegistry,
 ) -> Result<BbScene, String> {
     let mut scene = parse_bb_canvas(root_json)?;
     inline_animation_timeline_references(&mut scene, fetch_by_path);
@@ -171,6 +172,7 @@ fn resolve_canvas_graph_inner(
                     match_to_param_inputs.as_deref(),
                     &local_boolean_bindings,
                     bound_view_canvas,
+                    defaults,
                 ) {
                     Ok(scene) => scene,
                     Err(e) => {
@@ -282,6 +284,13 @@ fn resolve_canvas_graph_inner(
             crate::mfd_view::apply_bound_mfd_view(&mut scene, bound, &mut canvas_urls, &mut instantiated_false);
         }
 
+        let list_namespaces = apply_list_slot_bindings(
+            &mut scene,
+            &mut canvas_urls,
+            &mut instantiated_false,
+            defaults,
+        );
+
         deactivate_subtrees(&mut scene, &instantiated_false);
 
         // Snapshot the visited set as it stands right after Pass 1.  Used
@@ -357,6 +366,7 @@ fn resolve_canvas_graph_inner(
                 Some(param_inputs.as_slice()),
                 &local_boolean_bindings,
                 bound_view_canvas,
+                defaults,
             ) {
                 Ok(s) => s,
                 Err(e) => {
@@ -370,6 +380,9 @@ fn resolve_canvas_graph_inner(
             };
             inject_param_overrides(&param_inputs, &mut child_scene);
             inject_dynamic_param_field_bindings(node_id, &scene.operations, &mut child_scene);
+            if let Some(namespace) = list_namespaces.get(&node_id) {
+                namespace_child_scene_bindings(&mut child_scene, namespace);
+            }
             merge_child_scene(&mut scene, child_scene, "", Some(node_id), false);
         }
     }

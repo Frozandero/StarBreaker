@@ -201,7 +201,14 @@ fn draw_non_text_node(
         draw_manufacturer_logo_ir(node, document, ctx, atlas, pixmap);
     }
 
-    let skip_background_fill = node.custom_shape.is_some() && node.asset_ref.is_some();
+    // A `WidgetList` is a pure layout container in the engine: it renders its
+    // items, never its own authored background (the power screen's
+    // `list_PowerAssignmentList` carries an enabled editor-yellow ColorSolid
+    // that does not appear in-game).
+    let is_list_container = node.node_type.eq_ignore_ascii_case("BuildingBlocks_WidgetList")
+        || node.node_type.eq_ignore_ascii_case("widget_list");
+    let skip_background_fill =
+        (node.custom_shape.is_some() && node.asset_ref.is_some()) || is_list_container;
     if !skip_background_fill {
         let resolved_background_fill = node.background_fill_colour.or_else(|| {
             node.background_fill_colour_token

@@ -1,0 +1,391 @@
+// List-binding slot materialisation.
+//
+// The engine instantiates a list-driven `WidgetCanvas` slot once per entry of
+// a runtime list (e.g. the power screen's `piplist`: a Scrollview hosting one
+// `canvas_assignmentListItem` per power system, each instance's variables
+// namespaced `piplist/[000N]/…`). The data signature, all authored:
+//   - an integer count variable `<B>` plus sibling variable bindings of the
+//     form `<B>/[0000]/…` in the same canvas,
+//   - a widget gated `IsActive`/`Instantiated` on a boolean chain over `<B>`
+//     (authored `<B> > 0`),
+//   - a `WidgetCanvas` slot at/under the gated widget.
+//
+// A static render materialises from the defaults registry: `<B> = N` clones
+// the slot into N flex siblings, each instance's inheriting variable bindings
+// rewritten under `<B>/[000i]/`; an absent/zero count hides the gated
+// container — the engine's at-rest state (count variables default 0).
+
+/// Per-slot-instance binding namespace (`<count>/[000i]`), keyed by slot node.
+type ListNamespaces = std::collections::HashMap<BbNodeId, String>;
+
+struct ListSlotBinding {
+    count_binding: String,
+    gated_widgets: Vec<BbNodeId>,
+    slots: Vec<BbNodeId>,
+}
+
+/// Detect and materialise list-bound slots. Returns the per-instance binding
+/// namespaces for the Pass-2 merge loop to apply to each instance's resolved
+/// child scene.
+fn apply_list_slot_bindings(
+    scene: &mut BbScene,
+    canvas_urls: &mut Vec<(BbNodeId, String, Vec<serde_json::Value>)>,
+    instantiated_false: &mut std::collections::HashSet<BbNodeId>,
+    defaults: &crate::defaults::DefaultValueRegistry,
+) -> ListNamespaces {
+    let mut namespaces = ListNamespaces::new();
+    for list in detect_list_slot_bindings(scene) {
+        let count = defaults
+            .lookup_path(&list.count_binding)
+            .and_then(|value| match value {
+                crate::canvas::Value::Int(i) => Some(*i),
+                crate::canvas::Value::Float(f) => Some(*f as i64),
+                _ => None,
+            })
+            .unwrap_or(0);
+        if count <= 0 {
+            // At rest a list-count variable holds 0, so the authored
+            // `<count> > 0` gate hides the container.
+            instantiated_false.extend(list.gated_widgets.iter().copied());
+            continue;
+        }
+        for widget in &list.gated_widgets {
+            instantiated_false.remove(widget);
+        }
+        for &slot in &list.slots {
+            let Some((slot_url, slot_params)) = canvas_urls
+                .iter()
+                .find(|(id, _, _)| *id == slot)
+                .map(|(_, url, params)| (url.clone(), params.clone()))
+            else {
+                continue;
+            };
+            namespaces.insert(slot, format!("{}/[{:04}]", list.count_binding, 0));
+            // The engine clones the slot's ITEM TEMPLATE — its nearest gated
+            // ancestor (the list widget's flex item) — once per entry.
+            let template = nearest_gated_ancestor(scene, slot, &list.gated_widgets).unwrap_or(slot);
+            for index in 1..count {
+                let cloned_root = clone_subtree_as_sibling(scene, template);
+                let Some(cloned_root) = cloned_root else {
+                    break;
+                };
+                // Register every cloned slot canvas for Pass-2 follow with the
+                // instance namespace.
+                let mut stack = vec![cloned_root];
+                while let Some(id) = stack.pop() {
+                    let Some(node) = scene.nodes.get(&id) else {
+                        continue;
+                    };
+                    stack.extend(node.children.iter().copied());
+                    let has_url = node
+                        .raw
+                        .get("canvas")
+                        .and_then(|v| v.as_str())
+                        .is_some_and(|url| !url.is_empty() && url != "null");
+                    if node.ty == BbNodeType::WidgetCanvas && has_url {
+                        canvas_urls.push((id, slot_url.clone(), slot_params.clone()));
+                        namespaces.insert(id, format!("{}/[{:04}]", list.count_binding, index));
+                    }
+                }
+            }
+        }
+    }
+    namespaces
+}
+
+/// Rewrite an instance's inheriting variable bindings (and synthetic static
+/// variable names) under the slot's list namespace, mirroring the engine's
+/// per-instance namespace assignment.
+fn namespace_child_scene_bindings(child_scene: &mut BbScene, namespace: &str) {
+    for op in &mut child_scene.operations {
+        let Some(ty) = op.get("_Type_").and_then(|v| v.as_str()).map(str::to_owned) else {
+            continue;
+        };
+        if ty == "_SynthStaticVariable_" {
+            if let Some(name) = op.get("name").and_then(|v| v.as_str()).map(str::to_owned)
+                && let Some(map) = op.as_object_mut()
+            {
+                map.insert(
+                    "name".to_string(),
+                    serde_json::Value::String(format!("{namespace}/{name}")),
+                );
+            }
+            continue;
+        }
+        if !(ty.starts_with("BuildingBlocks_Bindings") && ty.ends_with("Variable")) {
+            continue;
+        }
+        // `inheritsNamespace: false` bindings address absolute engine paths.
+        if op.get("inheritsNamespace").and_then(|v| v.as_bool()) == Some(false) {
+            continue;
+        }
+        if let Some(binding) = op
+            .get("binding")
+            .and_then(|v| v.as_str())
+            .filter(|b| !b.is_empty())
+            .map(str::to_owned)
+            && let Some(map) = op.as_object_mut()
+        {
+            map.insert(
+                "binding".to_string(),
+                serde_json::Value::String(format!("{namespace}/{binding}")),
+            );
+        }
+    }
+}
+
+/// Find list-slot signatures in the scene's operations.
+fn detect_list_slot_bindings(scene: &BbScene) -> Vec<ListSlotBinding> {
+    let mut ptr_to_op: std::collections::HashMap<String, &serde_json::Value> =
+        std::collections::HashMap::new();
+    let mut variable_bindings: Vec<(String, String)> = Vec::new(); // (ptr, binding)
+    for op in &scene.operations {
+        if let Some(ptr) = op.get("_Pointer_").and_then(|v| v.as_str()) {
+            ptr_to_op.insert(ptr.to_string(), op);
+        }
+        let ty = op.get("_Type_").and_then(|v| v.as_str()).unwrap_or("");
+        if ty.starts_with("BuildingBlocks_Bindings")
+            && ty.ends_with("Variable")
+            && let (Some(ptr), Some(binding)) = (
+                op.get("_Pointer_").and_then(|v| v.as_str()),
+                op.get("binding").and_then(|v| v.as_str()),
+            )
+        {
+            variable_bindings.push((ptr.to_string(), binding.to_string()));
+        }
+    }
+
+    // Count candidates: binding B with a sibling `B/[0000]/…` reference.
+    let mut count_bindings: Vec<String> = Vec::new();
+    for (_, binding) in &variable_bindings {
+        if binding.contains("/[") {
+            continue;
+        }
+        let indexed_prefix = format!("{binding}/[");
+        if variable_bindings
+            .iter()
+            .any(|(_, other)| other.starts_with(&indexed_prefix))
+            && !count_bindings.contains(binding)
+        {
+            count_bindings.push(binding.clone());
+        }
+    }
+
+    let mut out = Vec::new();
+    for count_binding in count_bindings {
+        // Pointers of variable ops reading the count binding.
+        let count_ptrs: std::collections::HashSet<&str> = variable_bindings
+            .iter()
+            .filter(|(_, b)| *b == count_binding)
+            .map(|(p, _)| p.as_str())
+            .collect();
+
+        // Gated widgets: IsActive/Instantiated boolean fields whose input
+        // chain references a count-variable pointer.
+        let mut gated_widgets: Vec<BbNodeId> = Vec::new();
+        for op in &scene.operations {
+            if op.get("_Type_").and_then(|v| v.as_str())
+                != Some("BuildingBlocks_BindingsBooleanField")
+            {
+                continue;
+            }
+            let field = op.get("field").and_then(|v| v.as_str()).unwrap_or("");
+            if !matches!(field, "IsActive" | "Instantiated") {
+                continue;
+            }
+            let Some(widget) = op
+                .get("widget")
+                .and_then(|v| v.as_str())
+                .and_then(parse_points_to_or_ptr)
+            else {
+                continue;
+            };
+            let mut visited = std::collections::HashSet::new();
+            if op
+                .get("input")
+                .is_some_and(|input| chain_references_ptr(input, &ptr_to_op, &count_ptrs, &mut visited))
+                && !gated_widgets.contains(&widget)
+            {
+                gated_widgets.push(widget);
+            }
+        }
+        if gated_widgets.is_empty() {
+            continue;
+        }
+
+        // Slots: WidgetCanvas nodes at/under a gated widget with a canvas url.
+        let mut slots: Vec<BbNodeId> = Vec::new();
+        for (&id, node) in &scene.nodes {
+            if node.ty != BbNodeType::WidgetCanvas {
+                continue;
+            }
+            let has_url = node
+                .raw
+                .get("canvas")
+                .and_then(|v| v.as_str())
+                .is_some_and(|url| !url.is_empty() && url != "null");
+            if !has_url {
+                continue;
+            }
+            let mut cursor = Some(id);
+            while let Some(current) = cursor {
+                if gated_widgets.contains(&current) {
+                    slots.push(id);
+                    break;
+                }
+                cursor = scene.nodes.get(&current).and_then(|n| n.parent);
+            }
+        }
+        if slots.is_empty() {
+            continue;
+        }
+        out.push(ListSlotBinding {
+            count_binding,
+            gated_widgets,
+            slots,
+        });
+    }
+    out
+}
+
+/// Walk a binding-op input chain and report whether it references any of the
+/// given variable pointers.
+fn chain_references_ptr(
+    input: &serde_json::Value,
+    ptr_to_op: &std::collections::HashMap<String, &serde_json::Value>,
+    targets: &std::collections::HashSet<&str>,
+    visited: &mut std::collections::HashSet<String>,
+) -> bool {
+    match input {
+        serde_json::Value::String(s) => {
+            let ptr = s.strip_prefix("_PointsTo_:").unwrap_or(s);
+            if !ptr.starts_with("ptr:") || !visited.insert(ptr.to_string()) {
+                return false;
+            }
+            if targets.contains(ptr) {
+                return true;
+            }
+            ptr_to_op
+                .get(ptr)
+                .is_some_and(|op| chain_references_ptr(op, ptr_to_op, targets, visited))
+        }
+        serde_json::Value::Object(obj) => {
+            if let Some(ptr) = obj.get("_Pointer_").and_then(|v| v.as_str())
+                && targets.contains(ptr)
+            {
+                return true;
+            }
+            for key in ["input", "inputL", "inputR", "inputTrue", "inputFalse"] {
+                if obj
+                    .get(key)
+                    .is_some_and(|inner| chain_references_ptr(inner, ptr_to_op, targets, visited))
+                {
+                    return true;
+                }
+            }
+            obj.get("inputs").and_then(|v| v.as_array()).is_some_and(|inputs| {
+                inputs
+                    .iter()
+                    .any(|inner| chain_references_ptr(inner, ptr_to_op, targets, visited))
+            })
+        }
+        _ => false,
+    }
+}
+
+/// Parse `"_PointsTo_:ptr:N"` or `"ptr:N"` → node id.
+fn parse_points_to_or_ptr(s: &str) -> Option<BbNodeId> {
+    s.strip_prefix("_PointsTo_:")
+        .unwrap_or(s)
+        .strip_prefix("ptr:")
+        .and_then(|n| n.parse().ok())
+}
+
+/// Next unused node id below the widget-standard expansion band.
+fn next_free_low_node_id(scene: &BbScene) -> BbNodeId {
+    let mut next = scene
+        .nodes
+        .keys()
+        .rev()
+        .find(|&&k| k < EXPANSION_ID_BASE)
+        .copied()
+        .unwrap_or(0)
+        .wrapping_add(1);
+    while scene.nodes.contains_key(&next) {
+        next = next.wrapping_add(1);
+    }
+    next
+}
+
+/// The slot's nearest ancestor (inclusive) that appears in `gated`.
+fn nearest_gated_ancestor(
+    scene: &BbScene,
+    slot: BbNodeId,
+    gated: &[BbNodeId],
+) -> Option<BbNodeId> {
+    let mut cursor = Some(slot);
+    while let Some(current) = cursor {
+        if gated.contains(&current) {
+            return Some(current);
+        }
+        cursor = scene.nodes.get(&current).and_then(|n| n.parent);
+    }
+    None
+}
+
+/// Deep-clone `root`'s subtree with fresh ids and attach the clone as a
+/// sibling of `root` (same parent). Returns the cloned root's id.
+fn clone_subtree_as_sibling(scene: &mut BbScene, root: BbNodeId) -> Option<BbNodeId> {
+    let parent_id = scene.nodes.get(&root)?.parent;
+    // Collect the subtree ids in parent-before-child order.
+    let mut order = Vec::new();
+    let mut stack = vec![root];
+    while let Some(id) = stack.pop() {
+        let Some(node) = scene.nodes.get(&id) else {
+            continue;
+        };
+        order.push(id);
+        stack.extend(node.children.iter().copied());
+    }
+    let mut id_map: std::collections::HashMap<BbNodeId, BbNodeId> =
+        std::collections::HashMap::with_capacity(order.len());
+    for &id in &order {
+        let clone_id = next_free_low_node_id_excluding(scene, &id_map);
+        id_map.insert(id, clone_id);
+    }
+    for &id in &order {
+        let Some(mut clone) = scene.nodes.get(&id).cloned() else {
+            continue;
+        };
+        let clone_id = id_map[&id];
+        clone.id = clone_id;
+        clone.parent = if id == root {
+            parent_id
+        } else {
+            clone.parent.and_then(|p| id_map.get(&p).copied())
+        };
+        clone.children = clone
+            .children
+            .iter()
+            .filter_map(|c| id_map.get(c).copied())
+            .collect();
+        scene.nodes.insert(clone_id, clone);
+    }
+    let cloned_root = id_map[&root];
+    if let Some(parent) = parent_id.and_then(|id| scene.nodes.get_mut(&id)) {
+        parent.children.push(cloned_root);
+    }
+    Some(cloned_root)
+}
+
+/// Next unused low-band node id that is also not pending in `reserved`.
+fn next_free_low_node_id_excluding(
+    scene: &BbScene,
+    reserved: &std::collections::HashMap<BbNodeId, BbNodeId>,
+) -> BbNodeId {
+    let mut next = next_free_low_node_id(scene);
+    while reserved.values().any(|&v| v == next) {
+        next = next.wrapping_add(1);
+    }
+    next
+}
