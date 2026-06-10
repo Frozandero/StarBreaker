@@ -91,7 +91,18 @@
     "piplist/[0002]/piplist/[0003]/piplinkamount": 1,
     "piplist/[0000]/ispoweredoff": false,
     "piplist/[0001]/ispoweredoff": false,
-    "piplist/[0002]/ispoweredoff": false
+    "piplist/[0002]/ispoweredoff": false,
+    "piplist/[0000]/tempindicator/maxtemp": 0.0,
+    "piplist/[0001]/tempindicator/currenttemp": 290.0,
+    "piplist/[0001]/tempindicator/mintemp": 273.0,
+    "piplist/[0001]/tempindicator/overheattemp": 372.0,
+    "piplist/[0001]/tempindicator/maxtemp": 440.0,
+    "piplist/[0001]/tempindicator/tempdirection": 0,
+    "piplist/[0002]/tempindicator/currenttemp": 290.0,
+    "piplist/[0002]/tempindicator/mintemp": 273.0,
+    "piplist/[0002]/tempindicator/overheattemp": 372.0,
+    "piplist/[0002]/tempindicator/maxtemp": 440.0,
+    "piplist/[0002]/tempindicator/tempdirection": 0
   },
   "localization": {
     "hud_notarget": "NO TARGET",

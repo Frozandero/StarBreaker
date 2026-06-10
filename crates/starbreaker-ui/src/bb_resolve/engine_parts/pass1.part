@@ -1,12 +1,12 @@
-/// Pass 1 of the recursive resolver: follow the selected default-state
-/// canvas-reference modifier (see `pick_default_entry_decision`), recursively
-/// resolving and merging the referenced canvas. Only ONE style entry is
-/// selected to keep mode-switching canvases (GunsMode / NavMode / TurretMode)
-/// from merging together. Returns the canvas norms merged at this level;
-/// cycle protection is call-path-scoped (`visited` entries added here are
-/// removed once the child resolve returns) so a REPEATED child canvas (the
-/// power columns' per-instance OffPanel) re-merges its own Pass-1 content
-/// for every instance.
+/// Pass 1 of the recursive resolver: follow default-state canvas-reference
+/// modifiers (see `pick_default_entry_decision`), recursively resolving and
+/// merging the referenced canvases. ONE entry is followed per HOST widget:
+/// mode-switching canvases (GunsMode / NavMode / TurretMode share a slot)
+/// stay mutually exclusive, while INDEPENDENT slot-filling entries (the
+/// power item's OffPanel + heat-bar slots, selected by entry conditions)
+/// each merge into their own host. Returns the canvas norms merged at this
+/// level; once-only keys are scoped by the instance namespace so
+/// materialised list instances re-merge their own per-instance content.
 #[allow(clippy::too_many_arguments)]
 fn run_pass1_canvas_references(
     scene: &mut BbScene,
@@ -26,20 +26,72 @@ fn run_pass1_canvas_references(
     debug_trace: bool,
 ) -> std::collections::HashSet<String> {
     let mut pass1_merged_norms: std::collections::HashSet<String> = std::collections::HashSet::new();
+    // The picked entry leads; further canvas-ref entries from the same active
+    // scope follow only when their resolved HOST widget is distinct (one
+    // entry per slot).
+    let mut follow_entries: Vec<&serde_json::Value> = Vec::new();
     if let Some(selection) = pick_default_entry_decision(record_value, root_json, manufacturer_id) {
-        let entry = selection.entry;
-        let entry_name = entry.get("name").and_then(|v| v.as_str()).unwrap_or("?");
-        let match_to = entry.get("matchTo").and_then(|v| v.as_str()).unwrap_or("");
-
         if debug_trace {
             log::info!(
                 "bb_resolve[depth={}]: default entry decision={} entry={:?} score={}",
                 depth,
                 selection.reason.as_str(),
-                entry_name,
+                selection.entry.get("name").and_then(|v| v.as_str()).unwrap_or("?"),
                 selection.score.unwrap_or(0),
             );
         }
+        let mut seen_hosts: std::collections::HashSet<BbNodeId> = std::collections::HashSet::new();
+        let selected_match_to = selection
+            .entry
+            .get("matchTo")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        if let Some(host) = host_node_for_match_to(scene, selected_match_to)
+            .or_else(|| host_canvas_node_for_entry(scene, selection.entry))
+        {
+            seen_hosts.insert(host);
+        }
+        follow_entries.push(selection.entry);
+        // Additional hosts are followed within MATERIALISED instances only:
+        // the power item's OffPanel + heat-bar slots are independent fills,
+        // while un-namespaced masters (MC_S_Self_Master's five mode slots)
+        // stay mutually exclusive under the at-rest single pick.
+        let follow_additional_hosts = instance_namespace.is_some();
+        for entry in pick_active_entries(record_value, root_json, manufacturer_id)
+            .into_iter()
+            .filter(|_| follow_additional_hosts)
+        {
+            if std::ptr::eq(entry, selection.entry) {
+                continue;
+            }
+            let has_canvas_ref = entry
+                .get("modifiers")
+                .and_then(|v| v.as_array())
+                .is_some_and(|mods| {
+                    mods.iter().any(|m| {
+                        m.get("field")
+                            .and_then(|f| f.get("_Type_"))
+                            .and_then(|v| v.as_str())
+                            == Some("BuildingBlocks_FieldModifierRecordRefTypeCanvasReferenceRecord")
+                    })
+                });
+            if !has_canvas_ref {
+                continue;
+            }
+            let entry_match_to = entry.get("matchTo").and_then(|v| v.as_str()).unwrap_or("");
+            let Some(host) = host_node_for_match_to(scene, entry_match_to)
+                .or_else(|| host_canvas_node_for_entry(scene, entry))
+            else {
+                continue;
+            };
+            if seen_hosts.insert(host) {
+                follow_entries.push(entry);
+            }
+        }
+    }
+    for entry in follow_entries {
+        let entry_name = entry.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+        let match_to = entry.get("matchTo").and_then(|v| v.as_str()).unwrap_or("");
 
         if let Some(modifiers) = entry.get("modifiers").and_then(|v| v.as_array()) {
             for modifier in modifiers {
