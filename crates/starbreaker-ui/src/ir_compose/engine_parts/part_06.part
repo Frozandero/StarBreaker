@@ -175,6 +175,9 @@ fn text_origin_in_rect(
         VerticalAlign::Top => rect.y,
         VerticalAlign::Centre => rect.y + ((rect.h - text_h) * 0.5).max(0.0),
         VerticalAlign::Bottom => rect.y + (rect.h - text_h).max(0.0),
+        // Baseline at rect centre + em/2 → block top one half-em below centre
+        // minus the block height (see `VerticalAlign::EmBaseline`).
+        VerticalAlign::EmBaseline => rect.y + rect.h * 0.5 + size_px * 0.5 - text_h,
     };
     (x, y)
 }

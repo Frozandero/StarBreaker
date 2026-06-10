@@ -213,3 +213,38 @@ fn measure_mono_and_sans_return_positive_widths() {
     let (wm, _) = r.measure("TEST", FontKind::Mono, 12.0);
     assert!(ws > 0.0 && wm > 0.0);
 }
+
+/// `VerticalAlign::EmBaseline` places the BASELINE at rect centre + em/2 —
+/// the GFx line box (the full em above the baseline) centred on the anchor.
+/// Verified against the Clipper target screen's centre-anchored NO TARGET
+/// heading: in-game the cap band sits ~0.2 em (one descent) below the
+/// anchor, not cap-centred on it.
+#[test]
+fn swf_em_baseline_alignment_drops_baseline_to_centre_plus_half_em() {
+    let r = TextRenderer::new();
+    let font = test_swf_font();
+    let rect = Rect { x: 0.0, y: 0.0, w: 96.0, h: 48.0 };
+    let size = 20.0; // em 20px; glyph cap band = 6px (300 of 1000 units)
+
+    let mut img = make_img(96, 48);
+    assert!(r.draw_swf_font(
+        &mut img,
+        "A",
+        rect,
+        &font,
+        None,
+        size,
+        [255, 255, 255, 255],
+        TextAlign::Left,
+        VerticalAlign::EmBaseline,
+        None,
+        0.0,
+    ));
+
+    // baseline = 24 + 10 = 34; cap band = 28..34.
+    let top = first_nonblack_y(&img).expect("glyph pixels") as f32;
+    assert!(
+        (top - 28.0).abs() <= 1.5,
+        "cap top should be ≈28 (baseline 34 − cap 6), got {top}"
+    );
+}

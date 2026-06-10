@@ -159,7 +159,18 @@ fn draw_text_node(
         .map(|style| TextAlign::from_bb_str(&style.alignment))
         .unwrap_or(TextAlign::Left)
     };
-    let vertical_align = if center_anchored_heading {
+    let vertical_align = if center_anchored_heading && node.computed_rect.h > nominal_font_size * 3.0 {
+        // Anchor-centred heading whose rect is a PARENT-FILL placeholder (an
+        // authored Auto-sized card laid out at parent size — many times the
+        // line height): the engine auto-sizes the field, and its line box
+        // (the full em above the baseline) centres on the anchor, putting
+        // the cap band one descent below naive cap-centring (Clipper
+        // NO TARGET measured +18.6px at em 100 vs the in-game capture).
+        // A heading in an authored-sized field (e.g. the footer name card,
+        // rect ≈ 1.2 em) keeps line-box centring, which coincides with
+        // cap-centring for a 0.8-ascent font.
+        VerticalAlign::EmBaseline
+    } else if center_anchored_heading {
         VerticalAlign::Centre
     } else {
         node
@@ -208,6 +219,7 @@ fn draw_text_node(
         &node.name,
     );
     let used_swf_font = selected_font.as_ref().is_some_and(|selection| {
+        let mut effective_vertical_align = vertical_align;
         if let Some(inline_rect) = inline_nested_textfield_text_rect(
             node,
             primary_rect,
@@ -217,6 +229,13 @@ fn draw_text_node(
             primary_swf_font_size,
         ) {
             primary_rect = inline_rect;
+            // The nested-pair half-rect model is calibrated for cap-centring
+            // (footer heading cap centre on the nav-arrow line); the GFx
+            // line-box baseline placement applies only to plain anchored
+            // headings.
+            if effective_vertical_align == VerticalAlign::EmBaseline {
+                effective_vertical_align = VerticalAlign::Centre;
+            }
         }
         renderer.draw_swf_font(
             img,
@@ -227,7 +246,7 @@ fn draw_text_node(
             primary_swf_font_size,
             colour,
             align,
-            vertical_align,
+            effective_vertical_align,
             primary_line_spacing,
             node.text_style
                 .as_ref()
@@ -266,6 +285,7 @@ fn draw_text_node(
         }
     }
     if !used_swf_font {
+        let mut effective_vertical_align = vertical_align;
         if let Some(inline_rect) = inline_nested_textfield_text_rect(
             node,
             primary_rect,
@@ -275,6 +295,9 @@ fn draw_text_node(
             fallback_font_size,
         ) {
             primary_rect = inline_rect;
+            if effective_vertical_align == VerticalAlign::EmBaseline {
+                effective_vertical_align = VerticalAlign::Centre;
+            }
         }
         renderer.draw(
             img,
@@ -284,7 +307,7 @@ fn draw_text_node(
             fallback_font_size,
             colour,
             align,
-            vertical_align,
+            effective_vertical_align,
             scale_line_spacing(primary_line_spacing, primary_ttf_font_scale),
         );
     }

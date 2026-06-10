@@ -59,6 +59,11 @@ impl TextRenderer {
             VerticalAlign::Top => rect.y,
             VerticalAlign::Centre => rect.y + ((rect.h - total_h) * 0.5).max(0.0),
             VerticalAlign::Bottom => rect.y + (rect.h - total_h).max(0.0),
+            // Baseline at rect centre + em/2 (GFx line box above the baseline,
+            // centred on the anchor) — see `VerticalAlign::EmBaseline`.
+            VerticalAlign::EmBaseline => {
+                rect.y + rect.h * 0.5 + size_px * 0.5 - v_metrics.ascent
+            }
         };
         let start_baseline = block_top + v_metrics.ascent;
 
@@ -140,6 +145,11 @@ impl TextRenderer {
             VerticalAlign::Top => rect.y,
             VerticalAlign::Centre => rect.y + ((rect.h - total_h) * 0.5).max(0.0),
             VerticalAlign::Bottom => rect.y + (rect.h - total_h).max(0.0),
+            // Baseline at rect centre + em/2 (GFx line box above the baseline,
+            // centred on the anchor) — see `VerticalAlign::EmBaseline`.
+            VerticalAlign::EmBaseline => {
+                rect.y + rect.h * 0.5 + size_px * 0.5 - v_metrics.ascent
+            }
         };
         let start_baseline = block_top + v_metrics.ascent;
 

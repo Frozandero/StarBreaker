@@ -61,6 +61,11 @@ pub enum VerticalAlign {
     Top,
     Centre,
     Bottom,
+    /// GFx line-box placement for anchor-centred labels: the full em sits
+    /// ABOVE the baseline and the box is centred on the rect centre, so the
+    /// baseline lands at `centre + em/2` (one descent below cap-centring).
+    /// Verified against the Clipper target screen's NO TARGET heading.
+    EmBaseline,
 }
 
 impl VerticalAlign {

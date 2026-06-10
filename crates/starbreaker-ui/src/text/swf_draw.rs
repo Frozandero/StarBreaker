@@ -175,6 +175,10 @@ impl TextRenderer {
             VerticalAlign::Top => rect.y + source_top_overscan,
             VerticalAlign::Centre => rect.y + ((rect.h - total_h) * 0.5).max(0.0),
             VerticalAlign::Bottom => rect.y + (rect.h - total_h).max(0.0),
+            // Baseline at rect centre + em/2 (the GFx line box is the full em
+            // above the baseline, centred on the anchor). `block_top` is only
+            // consumed as `start_baseline = block_top - min_y_px`.
+            VerticalAlign::EmBaseline => rect.y + rect.h * 0.5 + size_px * 0.5 + min_y_px,
         };
         let start_baseline = block_top - min_y_px;
 
