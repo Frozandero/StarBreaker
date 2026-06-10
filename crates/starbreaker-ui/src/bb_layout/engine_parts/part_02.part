@@ -51,11 +51,14 @@ fn layout_node_with_rect(
     });
 
     if let Some(flex) = flex_policy {
-        // FlexContainer flow order follows each item's `layoutItemCommon.order`
-        // (CSS flex `order`); ties keep the (layer, id) order established above.
-        // The MFD footer relies on this — children authored Prev/Next/Name lay out
-        // Prev, Name, Next so the nav carats sit at the bar's far ends.
-        children.sort_by_key(|&child_id| {
+        // FlexContainer FLOW order is the AUTHORED child order with each
+        // item's `layoutItemCommon.order` override (CSS flex `order`) — layer
+        // is a draw-order concern only (the power item authors its pip list
+        // on layer 5 next to the layer-0 heat-bar container, flowing
+        // pips-then-gauge). The MFD footer's Prev/Name/Next relies on the
+        // `order` overrides so the nav carats sit at the bar's far ends.
+        let mut flow_children: Vec<BbNodeId> = node.children.clone();
+        flow_children.sort_by_key(|&child_id| {
             scene
                 .nodes
                 .get(&child_id)
@@ -65,7 +68,7 @@ fn layout_node_with_rect(
                 .unwrap_or(0)
         });
         layout_flex_children(
-            &children,
+            &flow_children,
             inner_rect,
             flex,
             node.pivot.x,

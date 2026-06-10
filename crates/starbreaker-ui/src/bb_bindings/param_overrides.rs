@@ -88,6 +88,26 @@ impl BindingResolver {
         }
     }
 
+    pub(super) fn eval_number_component_parameter_override(
+        &self,
+        op: &serde_json::Value,
+        current_ptr: BbNodeId,
+        defaults: &DefaultValueRegistry,
+        seen: &mut std::collections::HashSet<BbNodeId>,
+    ) -> Option<f64> {
+        let parameter = op.get("parameter").and_then(|v| v.as_str())?;
+        let input_ptrs = self.parameter_input_ptrs(parameter)?;
+        for &input_ptr in input_ptrs {
+            if input_ptr == current_ptr {
+                continue;
+            }
+            if let Some(value) = self.eval_number_ptr(input_ptr, defaults, seen) {
+                return Some(value);
+            }
+        }
+        None
+    }
+
     pub(super) fn eval_integer_component_parameter_override(
         &self,
         op: &serde_json::Value,

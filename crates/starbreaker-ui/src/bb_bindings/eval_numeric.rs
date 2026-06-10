@@ -132,6 +132,15 @@ impl BindingResolver {
         let op = self.ptr_to_op.get(&ptr)?;
         let ty = op.get("_Type_").and_then(|v| v.as_str()).unwrap_or("");
         match ty {
+            "_SynthNumberParam_" => op.get("resolvedNumber").and_then(|v| v.as_f64()),
+            "BuildingBlocks_BindingsNumberComponentParameter" => {
+                if let Some(value) =
+                    self.eval_number_component_parameter_override(op, ptr, defaults, seen)
+                {
+                    return Some(value);
+                }
+                op.get("defaultValue").and_then(|v| v.as_f64())
+            }
             "BuildingBlocks_BindingsNumberVariable" => {
                 let path = self.ptr_to_path.get(&ptr)?;
                 let Some(val) = defaults.lookup_path(path) else {

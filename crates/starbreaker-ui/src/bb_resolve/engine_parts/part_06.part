@@ -335,6 +335,7 @@ fn component_parameter_kind_for_field_op(op: &serde_json::Value) -> Option<&'sta
     match op.get("_Type_").and_then(|v| v.as_str()).unwrap_or("") {
         ty if ty.eq_ignore_ascii_case("BuildingBlocks_BindingsBooleanField") => Some("bool"),
         ty if ty.eq_ignore_ascii_case("BuildingBlocks_BindingsIntegerField") => Some("int"),
+        ty if ty.eq_ignore_ascii_case("BuildingBlocks_BindingsNumberField") => Some("num"),
         ty if ty.eq_ignore_ascii_case("BuildingBlocks_BindingsLocalizedField") => Some("loc"),
         ty if ty.eq_ignore_ascii_case("BuildingBlocks_BindingsStringField") => Some("string"),
         _ => None,
@@ -348,6 +349,9 @@ fn component_parameter_kind_for_component_op(op: &serde_json::Value) -> Option<&
         }
         ty if ty.eq_ignore_ascii_case("BuildingBlocks_BindingsIntegerComponentParameter") => {
             Some("int")
+        }
+        ty if ty.eq_ignore_ascii_case("BuildingBlocks_BindingsNumberComponentParameter") => {
+            Some("num")
         }
         ty if ty.eq_ignore_ascii_case("BuildingBlocks_BindingsLocalizedComponentParameter") => {
             Some("loc")

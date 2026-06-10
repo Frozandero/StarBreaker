@@ -186,5 +186,8 @@ fn main() {
                 .collect();
             println!("    tags={tags:?}");
         }
+        if !n.children.is_empty() {
+            println!("    children={:?}", n.children);
+        }
     }
 }
