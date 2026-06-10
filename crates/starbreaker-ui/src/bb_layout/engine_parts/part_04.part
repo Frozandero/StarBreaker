@@ -10,6 +10,7 @@ fn layout_flex_no_grow_children(
     rects: &mut BTreeMap<BbNodeId, Rect>,
     draw_order: &mut Vec<BbNodeId>,
     is_row: bool,
+    reversed: bool,
 ) {
     if children.is_empty() {
         return;
@@ -302,6 +303,12 @@ fn layout_flex_no_grow_children(
     }
 
     total_main += item_spacing * (sizes.len().saturating_sub(1) as f32);
+    // Reverse-direction flex lays authored order from the container's far
+    // end: lay the REVERSED order top-down/left-right with the block aligned
+    // to the end (Start justification means the far edge there).
+    if reversed {
+        sizes.reverse();
+    }
     let avail_main = if is_row { container.w } else { container.h };
     let axis_just_lc = axis_just.to_ascii_lowercase();
     let pivot_start_from_end = is_row && axis_just_lc == "start" && container_pivot_x >= 0.99;
@@ -317,7 +324,7 @@ fn layout_flex_no_grow_children(
     let mut main_offset = match axis_just_lc.as_str() {
         "center" => ((avail_main - total_main) * 0.5).max(0.0),
         "end" | "right" | "bottom" => (avail_main - total_main).max(0.0),
-        "start" if start_from_end => (avail_main - total_main).max(0.0),
+        "start" if start_from_end || reversed => (avail_main - total_main).max(0.0),
         _ => 0.0,
     };
     if tighten_centered_intrinsic_text_column {

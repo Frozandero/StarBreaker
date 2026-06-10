@@ -4,8 +4,6 @@
 
 use crate::bb_brand_apply::{apply_brand_modifiers, apply_scene_style_entries};
 use crate::bb_brand_style::resolve_brand_style;
-use crate::bb_loc::LocFetcher;
-use crate::bb_scene::BbScene;
 
 pub(super) fn project_canvas_style_entries(
     scene: &mut crate::bb_scene::BbScene,

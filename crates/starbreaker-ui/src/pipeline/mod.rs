@@ -7,8 +7,6 @@
 
 use std::collections::BTreeMap;
 
-use crate::bb_brand_apply::{apply_brand_modifiers, apply_scene_style_entries};
-use crate::bb_brand_style::resolve_brand_style;
 use crate::canvas::CanvasWidgetTreeResolver;
 use crate::compose::{ComposeContext, encode_png};
 use crate::defaults::DefaultValueRegistry;

@@ -1,0 +1,104 @@
+// Tests for post-layout WidgetList template replication.
+#[cfg(test)]
+mod tests_list_replication {
+    #![allow(unused_imports, dead_code)]
+
+    use super::*;
+
+    fn bare_node(id: u32, parent: Option<u32>, ty: &str, rect: UiIrRect) -> UiIrNode {
+        UiIrNode {
+            id,
+            parent_id: parent,
+            children: Vec::new(),
+            node_type: ty.to_string(),
+            name: format!("n{id}"),
+            is_active: true,
+            layer: 0,
+            alpha: 1.0,
+            anchor: [0.0, 0.0],
+            pivot: [0.0, 0.0],
+            authored_position: [0.0, 0.0],
+            authored_size: [
+                UiIrValue::Fixed { value: rect.w },
+                UiIrValue::Fixed { value: rect.h },
+            ],
+            padding: [0.0; 4],
+            margin: [0.0; 4],
+            overflow_mode: None,
+            computed_rect: rect,
+            background_fill_colour: None,
+            corner_radius: None,
+            background_fill_alpha: None,
+            background_fill_colour_token: None,
+            segmented_fill: None,
+            border: None,
+            stroke_colour: None,
+            stroke_colour_token: None,
+            stroke_extent: None,
+            colour_blend_mode: None,
+            icon_tint_colour: None,
+            icon_tint_colour_token: None,
+            icon_preset: None,
+            text_payload: None,
+            secondary_text_payload: None,
+            secondary_text_style: None,
+            meter_progress: None,
+            text_style: None,
+            asset_ref: None,
+            asset_layout: None,
+            custom_shape: None,
+            style_tag_uuids: Vec::new(),
+            resolved_style_tags: Vec::new(),
+            is_flash_renderer: false,
+            auto_font_size: false,
+        }
+    }
+
+    /// A bottom-anchored single template in a vertical list replicates upward
+    /// to fill the list's height (the pip stack model).
+    #[test]
+    fn vertical_list_template_replicates_upward() {
+        let mut nodes = vec![
+            bare_node(1, None, "BuildingBlocks_WidgetList", UiIrRect { x: 0.0, y: 0.0, w: 100.0, h: 300.0 }),
+            bare_node(2, Some(1), "display_widget", UiIrRect { x: 0.0, y: 260.0, w: 100.0, h: 40.0 }),
+            bare_node(3, Some(2), "display_widget", UiIrRect { x: 10.0, y: 270.0, w: 80.0, h: 20.0 }),
+        ];
+        nodes[0].children = vec![2];
+        nodes[1].children = vec![3];
+
+        replicate_list_template_nodes(&mut nodes);
+
+        // 300/40 = 7 instances total → 6 clones × 2 subtree nodes appended.
+        let templates: Vec<&UiIrNode> = nodes
+            .iter()
+            .filter(|n| n.parent_id == Some(1))
+            .collect();
+        assert_eq!(templates.len(), 7, "list should hold 7 instances");
+        let mut tops: Vec<f32> = templates.iter().map(|n| n.computed_rect.y).collect();
+        tops.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        assert_eq!(tops.first().copied(), Some(20.0), "highest clone at y=20");
+        assert_eq!(tops.last().copied(), Some(260.0), "template stays at the bottom");
+        // Grandchildren follow their instance offset.
+        let grandchildren = nodes
+            .iter()
+            .filter(|n| n.name == "n3")
+            .count();
+        assert_eq!(grandchildren, 7, "subtree cloned per instance");
+    }
+
+    /// Lists already holding multiple items are left alone.
+    #[test]
+    fn multi_item_list_is_not_replicated() {
+        let mut nodes = vec![
+            bare_node(1, None, "BuildingBlocks_WidgetList", UiIrRect { x: 0.0, y: 0.0, w: 100.0, h: 300.0 }),
+            bare_node(2, Some(1), "display_widget", UiIrRect { x: 0.0, y: 0.0, w: 100.0, h: 40.0 }),
+            bare_node(3, Some(1), "display_widget", UiIrRect { x: 0.0, y: 40.0, w: 100.0, h: 40.0 }),
+        ];
+        nodes[0].children = vec![2, 3];
+        let before = nodes.len();
+
+        replicate_list_template_nodes(&mut nodes);
+
+        assert_eq!(nodes.len(), before, "multi-item list must not replicate");
+    }
+}
