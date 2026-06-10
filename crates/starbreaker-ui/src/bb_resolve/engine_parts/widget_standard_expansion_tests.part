@@ -136,4 +136,160 @@ mod tests_expansion {
             "button host parse-time icon fallback must be cleared after expansion"
         );
     }
+
+    /// Minimal stand-in for `scrollbarhorizontalcomponentstandard`: an
+    /// inactive proxy-tagged `ComponentRoot` hosting the thumb, with the
+    /// authored `_SizeRatio` → `SizeX` and `_Show` → `scrollbar-show` →
+    /// `SecondaryStateTag` op chains and the `RootShow` embedded style.
+    fn scrollbar_template_fixture() -> serde_json::Value {
+        serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.ScrollBarHorizontalComponentStandard",
+            "_RecordId_": "00000000-0000-0000-0000-00000000sb01",
+            "_RecordValue_": {
+                "_Type_": "BuildingBlocks_Canvas",
+                "size": {"_Type_": "Vec3", "x": 1920.0, "y": 1080.0, "z": 0.0},
+                "embeddedStyles": [
+                    {
+                        "_Type_": "BuildingBlocks_StyleEntry",
+                        "name": "RootShow",
+                        "conditionsList": [
+                            {"conditions": [
+                                {"_Type_": "BuildingBlocks_StyleSelectorConditionTag",
+                                 "tag": {"_RecordId_": "e02a2290-9d6c-46f9-8235-4e828d804cee"}}
+                            ]}
+                        ],
+                        "modifiers": [
+                            {"_Type_": "BuildingBlocks_FieldModifierBoolean",
+                             "field": "IsActive", "value": true}
+                        ]
+                    }
+                ],
+                "scene": [
+                    {
+                        "_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                        "name": "ComponentRoot", "isActive": false,
+                        "styleTags": [{"_RecordId_": "21788313-6aff-45b4-a3ad-fdc62b1cf849"}]
+                    },
+                    {
+                        "_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_DisplayWidget",
+                        "name": "BarElementInstance", "parent": "_PointsTo_:ptr:1",
+                        "styleTags": [{"_RecordId_": "9ca447ec-f238-4751-9f22-440db0c25cb2"}]
+                    }
+                ],
+                "operations": [
+                    {"_Type_": "BuildingBlocks_BindingsNumberField",
+                     "widget": "_PointsTo_:ptr:2", "field": "SizeX", "input": "_PointsTo_:ptr:3"},
+                    {"_Pointer_": "ptr:3",
+                     "_Type_": "BuildingBlocks_BindingsNumberComponentParameter",
+                     "name": "_SizeRatio", "parameter": "ParamInput1", "defaultValue": 0.0},
+                    {"_Pointer_": "ptr:5",
+                     "_Type_": "BuildingBlocks_BindingsBooleanComponentParameter",
+                     "name": "_Show", "parameter": "ParamInput1", "defaultValue": false},
+                    {"_Pointer_": "ptr:6", "_Type_": "BuildingBlocks_BindingsTagFromBoolean",
+                     "isTrue": {"_RecordId_": "e02a2290-9d6c-46f9-8235-4e828d804cee"},
+                     "isFalse": null, "input": "_PointsTo_:ptr:5"},
+                    {"_Type_": "BuildingBlocks_BindingsStringField",
+                     "widget": "_PointsTo_:ptr:1", "field": "SecondaryStateTag",
+                     "input": "_PointsTo_:ptr:6"}
+                ]
+            }
+        })
+    }
+
+    /// Host canvas mirroring the power screen's wiring: a clipping
+    /// `Scrollview` and a `ComponentScrollBar` targeting it.
+    fn scrollbar_host_scene() -> BbScene {
+        let canvas = serde_json::json!({
+            "_RecordName_": "test_scrollbar_host",
+            "_RecordId_": "00000000-0000-0000-0000-00000000c002",
+            "_RecordValue_": {
+                "_Type_": "BuildingBlocks_Canvas",
+                "size": {"_Type_": "Vec3", "x": 1920.0, "y": 1080.0, "z": 0.0},
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget", "name": "root"},
+                    {"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "Scrollview", "parent": "_PointsTo_:ptr:1",
+                     "overflow": {"_Type_": "BuildingBlocks_Overflow", "overflow": "Clip"}},
+                    {"_Pointer_": "ptr:4", "_Type_": "BuildingBlocks_ComponentScrollBar",
+                     "name": "ListScroll", "parent": "_PointsTo_:ptr:1",
+                     "direction": "Horizontal", "target": "_PointsTo_:ptr:2"}
+                ],
+                "operations": []
+            }
+        });
+        parse_bb_canvas(&canvas).expect("host canvas should parse")
+    }
+
+    fn scrollbar_fetcher(path: &str) -> Result<serde_json::Value, String> {
+        if path == tag_database_path() {
+            Ok(tag_database_fixture())
+        } else if path.contains("scrollbarhorizontalcomponentstandard") {
+            Ok(scrollbar_template_fixture())
+        } else {
+            Err(format!("test fetcher: no record for '{path}'"))
+        }
+    }
+
+    /// Expansion must pair the template's thumb with the host's `target`
+    /// scroll view and surface the template's embedded `RootShow` entry.
+    #[test]
+    fn scrollbar_expansion_pairs_thumb_with_target_view() {
+        let mut scene = scrollbar_host_scene();
+        let entries = expand_widget_standards(&mut scene, &scrollbar_fetcher);
+
+        let thumb = scene
+            .nodes
+            .values()
+            .find(|n| n.raw.get("_ScrollThumbPair_").is_some())
+            .expect("expansion should annotate the template thumb");
+        assert_eq!(
+            thumb.raw.get("_ScrollThumbAxis_").and_then(|v| v.as_str()),
+            Some("x"),
+            "a SizeX-bound thumb scrolls along x"
+        );
+        let pair = thumb.raw.get("_ScrollThumbPair_").cloned();
+        let view = scene
+            .nodes
+            .values()
+            .find(|n| n.name == "Scrollview")
+            .expect("scroll view should survive expansion");
+        assert_eq!(
+            view.raw.get("_ScrollViewPair_").cloned(),
+            pair,
+            "the host's target view must carry the thumb's pair key"
+        );
+        assert!(
+            entries
+                .iter()
+                .any(|e| e.get("name").and_then(|v| v.as_str()) == Some("RootShow")),
+            "the scrollbar template's embedded RootShow entry must be surfaced"
+        );
+    }
+
+    /// The full at-rest visibility chain: `_Show=true` synth param →
+    /// `scrollbar-show` SecondaryStateTag → embedded `RootShow` style →
+    /// `ComponentRoot.IsActive`.
+    #[test]
+    fn scrollbar_show_chain_activates_component_root() {
+        let mut scene = scrollbar_host_scene();
+        let entries = expand_widget_standards(&mut scene, &scrollbar_fetcher);
+        crate::bb_bindings::resolve_state_tags_into_scene(&mut scene, &Default::default());
+        let empty_raw = serde_json::json!({});
+        let brand = bb_brand_style::BrandStyle {
+            identifier: "widget-standard-embedded".to_string(),
+            entries: entries.as_slice(),
+            raw: &empty_raw,
+        };
+        crate::bb_brand_apply::apply_brand_modifiers(&mut scene, &brand, None);
+
+        let root = scene
+            .nodes
+            .values()
+            .find(|n| n.name == "ComponentRoot")
+            .expect("expansion should merge the template root");
+        assert!(
+            root.is_active,
+            "_Show=true must activate the scrollbar root through RootShow"
+        );
+    }
 }

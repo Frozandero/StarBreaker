@@ -62,6 +62,7 @@
                 padding: [0.0, 0.0, 0.0, 0.0],
                 margin: [0.0, 0.0, 0.0, 0.0],
                 overflow_mode: None,
+                clip_rect: None,
                 computed_rect: UiIrRect { x: 4.0, y: 4.0, w: 24.0, h: 24.0 },
                 background_fill_colour: Some([0.0, 0.0, 1.0, 1.0]),
                 corner_radius: None,
@@ -126,4 +127,90 @@
         assert!(center[0] > 0, "asset tint should contribute red at the center");
         let border = img.get_pixel(4, 4).0;
         assert!(border[0] > 200 && border[1] > 200, "border pixel should be yellow-ish");
+    }
+
+    /// A node whose fill extends past its `clip_rect` (the scroll view's
+    /// partially visible column) must paint inside the clip and leave the
+    /// outside untouched.
+    #[test]
+    fn render_ui_ir_document_clips_fill_to_clip_rect() {
+        let mut document: UiIrDocument = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/ui_ir/expected_testroot_ir.json"
+        ))
+        .expect("golden fixture should parse");
+        document.nodes = vec![UiIrNode {
+            id: 1,
+            parent_id: None,
+            children: Vec::new(),
+            node_type: "display_widget".to_string(),
+            name: "clipped_fill".to_string(),
+            is_active: true,
+            layer: 0,
+            alpha: 1.0,
+            anchor: [0.0, 0.0],
+            pivot: [0.0, 0.0],
+            authored_position: [0.0, 0.0],
+            authored_size: [
+                UiIrValue::Fixed { value: 100.0 },
+                UiIrValue::Fixed { value: 20.0 },
+            ],
+            padding: [0.0, 0.0, 0.0, 0.0],
+            margin: [0.0, 0.0, 0.0, 0.0],
+            overflow_mode: None,
+            clip_rect: Some(UiIrRect { x: 0.0, y: 0.0, w: 50.0, h: 100.0 }),
+            computed_rect: UiIrRect { x: 10.0, y: 10.0, w: 100.0, h: 20.0 },
+            background_fill_colour: Some([0.0, 1.0, 0.0, 1.0]),
+            corner_radius: None,
+            background_fill_alpha: None,
+            background_fill_colour_token: None,
+            segmented_fill: None,
+            polygon: None,
+            border: None,
+            stroke_colour: None,
+            stroke_colour_token: None,
+            stroke_extent: None,
+            colour_blend_mode: None,
+            icon_tint_colour: None,
+            icon_tint_colour_token: None,
+            icon_preset: None,
+            text_payload: None,
+            secondary_text_payload: None,
+            secondary_text_style: None,
+            meter_progress: None,
+            text_style: None::<UiIrTextStyle>,
+            asset_ref: None,
+            asset_layout: None,
+            custom_shape: None,
+            style_tag_uuids: Vec::new(),
+            resolved_style_tags: Vec::new(),
+            is_flash_renderer: false,
+            auto_font_size: false,
+        }];
+
+        let fetcher = StubFetcher { images: HashMap::new() };
+        let atlas = AtlasLibrary::new(&fetcher, Some("drak"));
+        let style = stub_style();
+        let defaults = crate::defaults::DefaultValueRegistry::with_well_known_path_defaults();
+        let assets = crate::swf_assets::SwfAssetLibrary::new(vec![
+            b'F', b'W', b'S', 6, 21, 0, 0, 0,
+            0x00, 0x18, 0x00, 0x01, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ])
+        .expect("minimal swf should parse");
+        let ctx = ComposeContext {
+            style: &style,
+            defaults: &defaults,
+            assets: &assets,
+        };
+
+        let img = render_ui_ir_document(&document, &ctx, &atlas).expect("IR render should succeed");
+        let inside = img.get_pixel(30, 15).0;
+        assert!(inside[1] > 200, "fill inside the clip must paint green, got {inside:?}");
+        let outside = img.get_pixel(70, 15).0;
+        let bg = &style.background;
+        assert_eq!(
+            outside,
+            [bg.r, bg.g, bg.b, bg.a],
+            "fill outside the clip must leave the background untouched"
+        );
     }

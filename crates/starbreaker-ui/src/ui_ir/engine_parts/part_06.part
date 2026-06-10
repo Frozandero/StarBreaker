@@ -1,3 +1,49 @@
+/// Whether `node`'s authored overflow clips its descendants (`Clip` or
+/// `ClipFade` — the fade is an edge treatment on the same clipped region).
+fn node_clips_descendants(node: &BbNode) -> bool {
+    node.raw
+        .get("overflow")
+        .and_then(|overflow| {
+            overflow
+                .get("overflow")
+                .and_then(|v| v.as_str())
+                .or_else(|| overflow.as_str())
+        })
+        .is_some_and(|mode| {
+            mode.eq_ignore_ascii_case("Clip") || mode.eq_ignore_ascii_case("ClipFade")
+        })
+}
+
+/// Pixel-space intersection of all clipping ancestors' laid-out rects: the
+/// region the renderer may paint this node into (the power screen's
+/// `Scrollview` clips its 7-column list to the 3 visible columns).
+fn clip_rect_for_node(
+    scene: &BbScene,
+    layout: &LayoutResult,
+    node: &BbNode,
+) -> Option<UiIrRect> {
+    let mut clip: Option<crate::bb_layout::Rect> = None;
+    let mut parent = node.parent;
+    while let Some(parent_id) = parent {
+        let Some(ancestor) = scene.nodes.get(&parent_id) else { break };
+        if node_clips_descendants(ancestor)
+            && let Some(rect) = layout.rects.get(&parent_id)
+        {
+            clip = Some(match clip {
+                None => *rect,
+                Some(existing) => existing.intersect(rect).unwrap_or(crate::bb_layout::Rect {
+                    x: existing.x,
+                    y: existing.y,
+                    w: 0.0,
+                    h: 0.0,
+                }),
+            });
+        }
+        parent = ancestor.parent;
+    }
+    clip.map(|rect| UiIrRect { x: rect.x, y: rect.y, w: rect.w, h: rect.h })
+}
+
 fn overflow_mode_from_raw(raw: &serde_json::Value) -> Option<String> {
     for key in [
         "OverflowMode",

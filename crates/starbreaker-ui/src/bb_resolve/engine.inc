@@ -22,4 +22,5 @@ include!("engine_parts/registry_gates.part");
 include!("engine_parts/array_list_tests.part");
 include!("engine_parts/param_relay_tests.part");
 include!("engine_parts/widget_standard_expansion.part");
+include!("engine_parts/scrollbar_expansion.part");
 include!("engine_parts/widget_standard_expansion_tests.part");

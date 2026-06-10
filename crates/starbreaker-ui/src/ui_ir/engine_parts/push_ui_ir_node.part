@@ -31,6 +31,7 @@
                 node.margin.left,
             ],
             overflow_mode,
+            clip_rect: clip_rect_for_node(scene, layout, node),
             computed_rect: UiIrRect {
                 x: rect.x,
                 y: rect.y,

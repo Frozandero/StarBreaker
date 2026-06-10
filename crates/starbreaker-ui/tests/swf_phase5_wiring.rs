@@ -69,6 +69,7 @@ fn minimal_node(
         padding: [0.0; 4],
         margin: [0.0; 4],
         overflow_mode: None,
+        clip_rect: None,
         computed_rect: UiIrRect { x: rect.0, y: rect.1, w: rect.2, h: rect.3 },
         background_fill_colour: fill,
         corner_radius: None,

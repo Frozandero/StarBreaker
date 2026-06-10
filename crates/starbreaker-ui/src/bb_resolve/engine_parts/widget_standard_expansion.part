@@ -230,29 +230,34 @@ fn has_expanded_instance(
     })
 }
 
-/// Phase 1: expand standard templates under their host widgets.
+/// Phase 1: expand standard templates under their host widgets. Returns the
+/// expanded templates' own `embeddedStyles` entries that participate in the
+/// scene's style application (currently the scrollbar's `RootShow` gate; the
+/// icon/button standards keep their pre-existing entry-less behaviour).
 fn expand_widget_standards(
     scene: &mut BbScene,
     fetch_by_path: &dyn Fn(&str) -> Result<serde_json::Value, String>,
-) {
+) -> Vec<serde_json::Value> {
+    let mut collected_embedded_entries: Vec<serde_json::Value> = Vec::new();
     let hosts: Vec<(BbNodeId, BbNodeType)> = scene
         .nodes
         .iter()
         .filter(|(_, node)| {
-            matches!(
+            (matches!(
                 node.ty,
                 BbNodeType::WidgetIcon | BbNodeType::ComponentGeneralButtonSecondary
-            ) && node.is_active
+            ) || is_scrollbar_component(&node.ty))
+                && node.is_active
         })
         .map(|(id, node)| (*id, node.ty.clone()))
         .collect();
     if hosts.is_empty() {
-        return;
+        return collected_embedded_entries;
     }
 
     let Ok(tag_database) = fetch_by_path(tag_database_path()) else {
         log::debug!("widget-standard expansion: tag database unavailable; hosts keep authored tags only");
-        return;
+        return collected_embedded_entries;
     };
     let proxy_root_tag = tag_id_by_name(&tag_database, "canvas-proxy-root").unwrap_or_default();
     let mut template_cache: std::collections::HashMap<&'static str, serde_json::Value> =
@@ -261,15 +266,16 @@ fn expand_widget_standards(
         std::collections::HashMap::new();
 
     for (host_id, host_ty) in hosts {
+        let Some(host) = scene.nodes.get(&host_id) else {
+            continue;
+        };
         let template_path = match host_ty {
             BbNodeType::WidgetIcon => icon_widget_standard_path(),
             BbNodeType::ComponentGeneralButtonSecondary => {
                 button_secondary_component_standard_path()
             }
+            ref ty if is_scrollbar_component(ty) => scrollbar_component_standard_path(host),
             _ => continue,
-        };
-        let Some(host) = scene.nodes.get(&host_id) else {
-            continue;
         };
         if !proxy_root_tag.is_empty() && has_expanded_instance(scene, host, &proxy_root_tag) {
             continue;
@@ -313,9 +319,18 @@ fn expand_widget_standards(
                 ("ShowIcon", ParamValue::Bool(icon_properties_show(host))),
                 ("ShowLabel", ParamValue::Bool(label_properties_show(host))),
             ],
+            // `_Show` reflects the runtime "content overflows" check; the
+            // at-rest assumption is corrected by the layout-time scroll
+            // model, which hides the bar again when nothing overflows.
+            ref ty if is_scrollbar_component(ty) => vec![("_Show", ParamValue::Bool(true))],
             _ => continue,
         };
         inject_standard_params(&mut child_scene, host_id, &params);
+        if is_scrollbar_component(&host_ty) {
+            annotate_scroll_thumb_and_view(scene, host_id, &mut child_scene);
+            collected_embedded_entries.extend(template_embedded_style_entries(&template_json));
+            mark_scrollbar_standard_nodes(&mut child_scene);
+        }
         merge_child_scene(scene, child_scene, "", Some(host_id), true);
 
         // The engine routes a button's authored icon identity through the
@@ -351,6 +366,7 @@ fn expand_widget_standards(
             }
         }
     }
+    collected_embedded_entries
 }
 
 /// Phase 2 (post style application): re-target styled custom-icon overrides

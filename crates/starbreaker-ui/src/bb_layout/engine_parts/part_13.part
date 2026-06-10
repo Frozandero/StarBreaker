@@ -1,0 +1,201 @@
+// Scroll-bar thumb geometry: the at-rest scroll model.
+//
+// `bb_resolve` pairs an expanded scrollbar standard's thumb widget with its
+// component's `target` scroll-view node (`_ScrollThumbPair_` /
+// `_ScrollViewPair_` raw markers, see scrollbar_expansion.part). After the
+// main layout pass this post-pass reproduces what the engine's scrollbar
+// component computes each frame from the scroll model:
+//
+//   ratio  = viewport extent / content extent   (along the thumb's axis)
+//   thumb  = track rect scaled by ratio, anchored at scroll offset 0 (at rest)
+//
+// Content extent is measured from the laid-out rects of the view's ACTIVE
+// descendants (a clipped flex flow lays items past the viewport edge). When
+// nothing overflows (ratio >= 1) the engine hides the whole bar (`_Show`
+// false); statically that is reproduced by zeroing the rects of the expanded
+// `ComponentRoot` subtree (the thumb's parent), which the renderer skips.
+
+fn apply_scroll_thumb_rects(scene: &BbScene, rects: &mut BTreeMap<BbNodeId, Rect>) {
+    let thumbs: Vec<(BbNodeId, String, bool)> = scene
+        .nodes
+        .iter()
+        .filter_map(|(id, node)| {
+            let pair = node.raw.get("_ScrollThumbPair_")?.as_str()?.to_owned();
+            let horizontal = node
+                .raw
+                .get("_ScrollThumbAxis_")
+                .and_then(|v| v.as_str())
+                .is_none_or(|axis| axis.eq_ignore_ascii_case("x"));
+            Some((*id, pair, horizontal))
+        })
+        .collect();
+
+    for (thumb_id, pair, horizontal) in thumbs {
+        let Some((view_id, _)) = scene.nodes.iter().find(|(_, node)| {
+            node.raw
+                .get("_ScrollViewPair_")
+                .and_then(|v| v.as_str())
+                == Some(pair.as_str())
+        }) else {
+            continue;
+        };
+        let Some(view_rect) = rects.get(view_id).copied() else {
+            continue;
+        };
+        let viewport = if horizontal { view_rect.w } else { view_rect.h };
+        if viewport <= 0.0 {
+            continue;
+        }
+        let content_end = active_descendant_max_extent(scene, rects, *view_id, horizontal);
+        let content = if horizontal {
+            content_end - view_rect.x
+        } else {
+            content_end - view_rect.y
+        };
+
+        let ratio = if content > viewport { viewport / content } else { 1.0 };
+        let Some(thumb) = scene.nodes.get(&thumb_id) else { continue };
+        if ratio >= 1.0 {
+            // Nothing overflows: the engine drops `_Show` and the bar
+            // disappears. Zero the expanded component subtree's rects.
+            let bar_root = thumb.parent.unwrap_or(thumb_id);
+            zero_subtree_rects(scene, rects, bar_root);
+            continue;
+        }
+        let Some(track) = thumb.parent.and_then(|pid| rects.get(&pid)).copied() else {
+            continue;
+        };
+        if let Some(rect) = rects.get_mut(&thumb_id) {
+            if horizontal {
+                rect.x = track.x;
+                rect.w = track.w * ratio;
+            } else {
+                rect.y = track.y;
+                rect.h = track.h * ratio;
+            }
+        }
+    }
+}
+
+/// Largest active-descendant end edge (`x+w` or `y+h`) under `root`,
+/// starting from the root's own rect end so an empty view yields ratio 1.
+fn active_descendant_max_extent(
+    scene: &BbScene,
+    rects: &BTreeMap<BbNodeId, Rect>,
+    root: BbNodeId,
+    horizontal: bool,
+) -> f32 {
+    let end = |rect: &Rect| if horizontal { rect.x + rect.w } else { rect.y + rect.h };
+    let mut max_end = rects.get(&root).map(|r| end(r)).unwrap_or(0.0);
+    let mut stack: Vec<BbNodeId> = scene
+        .nodes
+        .get(&root)
+        .map(|n| n.children.clone())
+        .unwrap_or_default();
+    while let Some(id) = stack.pop() {
+        let Some(node) = scene.nodes.get(&id) else { continue };
+        if !node.is_active {
+            continue;
+        }
+        if let Some(rect) = rects.get(&id) {
+            max_end = max_end.max(end(rect));
+        }
+        stack.extend(node.children.iter().copied());
+    }
+    max_end
+}
+
+fn zero_subtree_rects(scene: &BbScene, rects: &mut BTreeMap<BbNodeId, Rect>, root: BbNodeId) {
+    let mut stack = vec![root];
+    while let Some(id) = stack.pop() {
+        if let Some(rect) = rects.get_mut(&id) {
+            rect.w = 0.0;
+            rect.h = 0.0;
+        }
+        if let Some(node) = scene.nodes.get(&id) {
+            stack.extend(node.children.iter().copied());
+        }
+    }
+}
+
+#[cfg(test)]
+mod scroll_thumb_tests {
+    use super::*;
+    use crate::bb_scene::parse_bb_canvas;
+
+    /// root > view (Clip, 100px) > list > 7 items of 47px; sibling track >
+    /// thumb. The thumb must shrink to viewport/content of the track and
+    /// stay at the track's start.
+    fn scroll_scene(item_count: usize) -> BbScene {
+        let mut scene_nodes = vec![
+            serde_json::json!({"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                "name": "root",
+                "sizing": {"width": {"value": 1.0, "behavior": "Percent"},
+                           "height": {"value": 1.0, "behavior": "Percent"}}}),
+            serde_json::json!({"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_DisplayWidget",
+                "name": "view", "parent": "_PointsTo_:ptr:1",
+                "overflow": {"overflow": "Clip"},
+                "_ScrollViewPair_": "sp-test",
+                "sizing": {"width": {"value": 100.0, "behavior": "Fixed"},
+                           "height": {"value": 50.0, "behavior": "Fixed"}}}),
+            serde_json::json!({"_Pointer_": "ptr:3", "_Type_": "BuildingBlocks_WidgetList",
+                "name": "list", "parent": "_PointsTo_:ptr:2",
+                "layoutPolicy": {"_Type_": "BuildingBlocks_FlexContainer", "direction": "Row",
+                                  "axisJustification": "Start"},
+                "sizing": {"width": {"value": 1.0, "behavior": "Percent"},
+                           "height": {"value": 1.0, "behavior": "Percent"}}}),
+            serde_json::json!({"_Pointer_": "ptr:4", "_Type_": "BuildingBlocks_DisplayWidget",
+                "name": "track", "parent": "_PointsTo_:ptr:1",
+                "sizing": {"width": {"value": 100.0, "behavior": "Fixed"},
+                           "height": {"value": 4.0, "behavior": "Fixed"}}}),
+            serde_json::json!({"_Pointer_": "ptr:5", "_Type_": "BuildingBlocks_DisplayWidget",
+                "name": "thumb", "parent": "_PointsTo_:ptr:4",
+                "_ScrollThumbPair_": "sp-test", "_ScrollThumbAxis_": "x",
+                "sizing": {"width": {"value": 1.0, "behavior": "Percent"},
+                           "height": {"value": 1.0, "behavior": "Percent"}}}),
+        ];
+        for i in 0..item_count {
+            scene_nodes.push(serde_json::json!({
+                "_Pointer_": format!("ptr:{}", 10 + i),
+                "_Type_": "BuildingBlocks_DisplayWidget",
+                "name": format!("item{i}"), "parent": "_PointsTo_:ptr:3",
+                "sizing": {"width": {"value": 47.0, "behavior": "Fixed"},
+                           "height": {"value": 1.0, "behavior": "Percent"}}}));
+        }
+        let canvas = serde_json::json!({
+            "_RecordValue_": {
+                "_Type_": "BuildingBlocks_Canvas",
+                "size": {"x": 200.0, "y": 50.0},
+                "coordinateMethod": "useRaw",
+                "scene": scene_nodes,
+                "operations": []
+            }
+        });
+        parse_bb_canvas(&canvas).expect("scroll fixture should parse")
+    }
+
+    #[test]
+    fn overflowing_content_shrinks_thumb_to_viewport_ratio() {
+        let scene = scroll_scene(7);
+        let result = layout(&scene, 200, 50);
+        let track = result.rects[&4];
+        let thumb = result.rects[&5];
+        let expected = track.w * (100.0 / (7.0 * 47.0));
+        assert!(
+            (thumb.w - expected).abs() < 0.5,
+            "thumb width {} should be viewport/content of the track ({expected})",
+            thumb.w
+        );
+        assert!((thumb.x - track.x).abs() < 0.01, "at rest the thumb sits at the track start");
+    }
+
+    #[test]
+    fn non_overflowing_content_hides_the_bar() {
+        let scene = scroll_scene(2);
+        let result = layout(&scene, 200, 50);
+        let track = result.rects[&4];
+        let thumb = result.rects[&5];
+        assert_eq!((track.w, track.h), (0.0, 0.0), "track must collapse when nothing overflows");
+        assert_eq!((thumb.w, thumb.h), (0.0, 0.0), "thumb must collapse when nothing overflows");
+    }
+}

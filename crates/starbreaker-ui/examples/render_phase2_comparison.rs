@@ -95,6 +95,7 @@ fn synthetic_hybrid_document() -> UiIrDocument {
             padding: [0.0, 0.0, 0.0, 0.0],
             margin: [0.0, 0.0, 0.0, 0.0],
             overflow_mode: None,
+            clip_rect: None,
             computed_rect: UiIrRect { x: 12.0, y: 10.0, w: 96.0, h: 44.0 },
             background_fill_colour: Some([0.0, 0.0, 1.0, 0.65]),
             corner_radius: None,

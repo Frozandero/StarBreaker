@@ -216,6 +216,9 @@ pub fn layout_with_animation_sample(
         );
     }
 
+    // Scrollbar thumbs reflect the laid-out scroll model (see part_13.part).
+    apply_scroll_thumb_rects(scene, &mut rects);
+
     LayoutResult { canvas, rects, draw_order, canvas_scale }
 }
 

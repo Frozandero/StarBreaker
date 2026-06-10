@@ -94,6 +94,26 @@ fn modular_buttonsecondary_style_path(style_identifier: &str) -> Option<String> 
     ))
 }
 
+fn modular_scrollbar_style_path(style_identifier: &str) -> Option<String> {
+    let normalized = style_identifier.trim().to_ascii_lowercase();
+    if normalized.is_empty() {
+        return None;
+    }
+
+    let module_id = if let Some(rest) = normalized.strip_prefix("s_") {
+        format!("sk_{}", rest)
+    } else if normalized.starts_with("sk_") {
+        normalized
+    } else {
+        return None;
+    };
+
+    Some(format!(
+        "file://./../../../../../../../libs/foundry/records/ui/buildingblocks/styles/modularkitstyles/{0}/{0}_scrollbarstyles.json",
+        module_id
+    ))
+}
+
 fn standard_body_background_widget_path() -> String {
     "file://./../../../../../../../libs/foundry/records/ui/buildingblocks/modularkit/standard/widgets/bodybackgroundwidgetstandard.json".to_string()
 }

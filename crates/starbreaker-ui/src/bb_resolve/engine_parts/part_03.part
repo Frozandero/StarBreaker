@@ -349,11 +349,30 @@ fn resolve_canvas_graph_inner(
         }
     }
 
-    expand_widget_standards(&mut scene, fetch_by_path);
+    // The modular-kit style id comes from the canvas's style link (medical
+    // `s_bioc` → `sk_bioc`) or, for brandStyles-selected canvases (the MFD
+    // header's `s_drak_hud`), from the resolved brand identifier.
+    let modular_style_id = local_style_identifier.clone().or_else(|| {
+        bb_brand_style::resolve_brand_style(root_json, manufacturer_id, preferred_brand)
+            .map(|brand| brand.identifier)
+    });
+    let standard_embedded_entries = expand_widget_standards(&mut scene, fetch_by_path);
     if std::env::var("SB_TAGS_NO_DEFAULTS").as_deref() == Ok("1") {
         crate::bb_bindings::resolve_state_tags_into_scene(&mut scene, &Default::default());
     } else {
         crate::bb_bindings::resolve_state_tags_into_scene(&mut scene, defaults);
+    }
+    // The expanded standards' own embeddedStyles run against the freshly
+    // resolved state tags (the scrollbar's `_Show` → `scrollbar-show` tag
+    // activates `ComponentRoot` through its `RootShow` entry).
+    if !standard_embedded_entries.is_empty() {
+        let empty_raw = serde_json::json!({});
+        let brand = bb_brand_style::BrandStyle {
+            identifier: "widget-standard-embedded".to_string(),
+            entries: standard_embedded_entries.as_slice(),
+            raw: &empty_raw,
+        };
+        crate::bb_brand_apply::apply_brand_modifiers(&mut scene, &brand, loc_fetcher);
     }
     apply_canvas_style_cascade(
         &mut scene,
@@ -366,13 +385,6 @@ fn resolve_canvas_graph_inner(
         fetch_by_path,
         loc_fetcher,
     );
-    // The modular-kit style id comes from the canvas's style link (medical
-    // `s_bioc` → `sk_bioc`) or, for brandStyles-selected canvases (the MFD
-    // header's `s_drak_hud`), from the resolved brand identifier.
-    let modular_style_id = local_style_identifier.clone().or_else(|| {
-        bb_brand_style::resolve_brand_style(root_json, manufacturer_id, preferred_brand)
-            .map(|brand| brand.identifier)
-    });
     if let Some(style_id) = modular_style_id.as_deref() {
         // Named colour roles in modular-kit entries resolve against the brand
         // Style record's palette (the module records carry no `colorStyles`).
@@ -426,6 +438,15 @@ fn resolve_canvas_graph_inner(
                 }
             }
         }
+
+        // The scrollbar sheet applies scoped to expanded scrollbar standards
+        // only — see `apply_scrollbar_modular_styles`.
+        apply_scrollbar_modular_styles(
+            &mut scene,
+            style_id,
+            module_chrome_palette.as_ref(),
+            fetch_by_path,
+        );
     }
     finalize_widget_standard_fields(&mut scene, &Default::default());
 

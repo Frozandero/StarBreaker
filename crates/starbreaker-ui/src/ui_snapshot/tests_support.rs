@@ -22,6 +22,7 @@ pub(super) fn base_node(id: u32, layer: i32) -> UiIrNode {
         padding: [0.0; 4],
         margin: [0.0; 4],
         overflow_mode: Some("visible".to_string()),
+        clip_rect: None,
         computed_rect: UiIrRect {
             x: 10.0,
             y: 20.0,

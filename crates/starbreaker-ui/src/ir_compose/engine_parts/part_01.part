@@ -78,7 +78,12 @@ pub fn render_ui_ir_document(
     let text_renderer = TextRenderer::new();
 
     for node in &draw_order {
-        draw_non_text_node(node, document, ctx, atlas, &mut pixmap);
+        with_node_clip(
+            &mut pixmap,
+            node.clip_rect.as_ref(),
+            ir_rect_to_layout_rect(node.computed_rect),
+            |pixmap| draw_non_text_node(node, document, ctx, atlas, pixmap),
+        );
     }
 
     // Token-driven borders are semantic overlays and should render after base
@@ -95,7 +100,9 @@ pub fn render_ui_ir_document(
         if rect.w < 0.5 || rect.h < 0.5 {
             continue;
         }
-        draw_ir_border(&mut pixmap, rect, border, node.alpha, ctx, node.corner_radius);
+        with_node_clip(&mut pixmap, node.clip_rect.as_ref(), rect, |pixmap| {
+            draw_ir_border(pixmap, rect, border, node.alpha, ctx, node.corner_radius);
+        });
     }
 
     // Keep progress meters on top of base chrome/background fills.
@@ -108,7 +115,9 @@ pub fn render_ui_ir_document(
         let Some(tsk_rect) = TskRect::from_xywh(rect.x, rect.y, rect.w, rect.h) else {
             continue;
         };
-        draw_linear_progress_meter(node, ctx, &mut pixmap, tsk_rect);
+        with_node_clip(&mut pixmap, node.clip_rect.as_ref(), rect, |pixmap| {
+            draw_linear_progress_meter(node, ctx, pixmap, tsk_rect);
+        });
     }
 
     let mut img = pixmap_to_rgba_image(pixmap)?;
@@ -141,13 +150,20 @@ pub fn render_ui_ir_document(
 
     let mut seen_text_rects: HashSet<(i32, i32, i32, i32)> = HashSet::new();
     for node in &text_draw_order {
-        draw_text_node(
+        with_node_clip_image(
             &mut img,
-            node,
-            document,
-            &text_renderer,
-            ctx,
-            &mut seen_text_rects,
+            node.clip_rect.as_ref(),
+            ir_rect_to_layout_rect(node.computed_rect),
+            |img| {
+                draw_text_node(
+                    img,
+                    node,
+                    document,
+                    &text_renderer,
+                    ctx,
+                    &mut seen_text_rects,
+                );
+            },
         );
     }
 

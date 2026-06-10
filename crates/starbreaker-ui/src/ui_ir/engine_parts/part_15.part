@@ -308,6 +308,7 @@ mod tests_e {
                 padding: [0.0, 0.0, 0.0, 0.0],
                 margin: [0.0, 0.0, 0.0, 0.0],
                 overflow_mode: None,
+                clip_rect: None,
                 computed_rect: UiIrRect {
                     x: 0.0,
                     y: 0.0,

@@ -65,6 +65,10 @@ pub struct UiIrNode {
     pub margin: [f32; 4],
     #[serde(skip_serializing_if = "Option::is_none")]
     pub overflow_mode: Option<String>,
+    /// Pixel-space intersection of clipping ancestors (`overflow` Clip /
+    /// ClipFade): the renderer must not paint this node outside it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clip_rect: Option<UiIrRect>,
     pub computed_rect: UiIrRect,
     pub background_fill_colour: Option<[f32; 4]>,
     #[serde(skip_serializing_if = "Option::is_none")]
