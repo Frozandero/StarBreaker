@@ -215,6 +215,31 @@ impl BindingResolver {
                 op.get(if enabled { "isTrue" } else { "isFalse" })
                     .and_then(|v| v.as_f64())
             }
+            "BuildingBlocks_BindingsNumberClamp" => {
+                // `minValue`/`maxValue` literals with optional wired
+                // `inputMinValue`/`inputMaxValue` overrides (the heat gauge's
+                // fill ratio clamps to 0.015..1).
+                let value = op
+                    .get("input")
+                    .and_then(|v| v.as_str())
+                    .and_then(parse_points_to_or_ptr_str)
+                    .and_then(|p| self.eval_number_ptr(p, defaults, seen))?;
+                let min = op
+                    .get("inputMinValue")
+                    .and_then(|v| v.as_str())
+                    .and_then(parse_points_to_or_ptr_str)
+                    .and_then(|p| self.eval_number_ptr(p, defaults, seen))
+                    .or_else(|| op.get("minValue").and_then(|v| v.as_f64()))
+                    .unwrap_or(f64::NEG_INFINITY);
+                let max = op
+                    .get("inputMaxValue")
+                    .and_then(|v| v.as_str())
+                    .and_then(parse_points_to_or_ptr_str)
+                    .and_then(|p| self.eval_number_ptr(p, defaults, seen))
+                    .or_else(|| op.get("maxValue").and_then(|v| v.as_f64()))
+                    .unwrap_or(f64::INFINITY);
+                Some(value.clamp(min, max))
+            }
             "BuildingBlocks_BindingsNumberRound" => {
                 // `amount` is the number of DECIMAL PLACES (the pip slot height
                 // rounds `1/max` to 3 places).
