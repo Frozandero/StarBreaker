@@ -93,7 +93,7 @@ pub fn compile_ui_ir_from_scene_with_animation_sample(
         }
     }
 
-    let mut nodes: Vec<UiIrNode> = build_ui_ir_nodes(
+    let nodes: Vec<UiIrNode> = build_ui_ir_nodes(
         ordered_ids,
         scene,
         &layout,
@@ -108,7 +108,6 @@ pub fn compile_ui_ir_from_scene_with_animation_sample(
         selected_style_source.as_deref(),
         design_text_scale,
     );
-    replicate_list_template_nodes(&mut nodes);
 
     let unresolved_count = nodes
         .iter()

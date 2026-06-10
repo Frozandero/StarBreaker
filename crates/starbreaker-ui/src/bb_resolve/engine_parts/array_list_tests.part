@@ -1,0 +1,238 @@
+// Tests for arrayVariable-driven WidgetList materialisation (array_list.part):
+// the power screen's pip stack — `list_PowerBars` declares
+// `arrayVariable: "pipList"` and the engine instantiates its single template
+// child once per array entry, each entry's inheriting bindings namespaced
+// `<listpath>/[000j]/…`. Counts come from the defaults registry and differ per
+// outer list instance (weapons 4 / engines 6 / shields 4).
+#[cfg(test)]
+mod tests_array_list {
+    #![allow(unused_imports, dead_code)]
+
+    use super::*;
+    use crate::defaults::DefaultValueRegistry;
+
+    /// Item canvas wired like `gen_mc_s_powerlistitem`: a WidgetList with
+    /// `arrayVariable: "pipList"` holding ONE pip template whose SizeX is
+    /// bound to the per-pip `pipAmount` variable.
+    fn item_canvas() -> serde_json::Value {
+        serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.Test_ArrayItem",
+            "_RecordId_": "00000000-0000-0000-0000-0000000a0001",
+            "_RecordValue_": {
+                "_Type_": "BuildingBlocks_Canvas",
+                "size": {"_Type_": "Vec3", "x": 100.0, "y": 600.0, "z": 0.0},
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "item_root", "isActive": true},
+                    {"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_WidgetList",
+                     "name": "pip_list", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "arrayVariable": "pipList",
+                     "layoutPolicy": {"_Type_": "BuildingBlocks_FlexContainer", "direction": "ColumnReverse"}},
+                    {"_Pointer_": "ptr:3", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "pip_template", "parent": "_PointsTo_:ptr:2", "isActive": true,
+                     "sizing": {"_Type_": "BuildingBlocks_Size",
+                       "width": {"_Type_": "BuildingBlocks_FixedOrRelativeValue", "value": 0.5, "behavior": "Percent"},
+                       "height": {"_Type_": "BuildingBlocks_FixedOrRelativeValue", "value": 0.0667, "behavior": "Percent"}}}
+                ],
+                "operations": [
+                    {"_Type_": "BuildingBlocks_BindingsNumberField",
+                     "widget": "_PointsTo_:ptr:3", "field": "SizeX", "input": "_PointsTo_:ptr:10"},
+                    {"_Pointer_": "ptr:10", "_Type_": "BuildingBlocks_BindingsNumberVariable",
+                     "path": [], "binding": "pipAmount", "inheritsNamespace": true}
+                ]
+            }
+        })
+    }
+
+    /// Parent canvas with the count-binding list-slot signature (`items`) whose
+    /// item canvas contains the arrayVariable pip list.
+    fn list_parent_canvas() -> serde_json::Value {
+        serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.Test_ArrayParent",
+            "_RecordId_": "00000000-0000-0000-0000-0000000a0002",
+            "_RecordValue_": {
+                "_Type_": "BuildingBlocks_Canvas",
+                "size": {"_Type_": "Vec3", "x": 400.0, "y": 600.0, "z": 0.0},
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "root", "isActive": true},
+                    {"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "list_container", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "layoutPolicy": {"_Type_": "BuildingBlocks_LayoutPolicyFlexContainer", "direction": "Row"}},
+                    {"_Pointer_": "ptr:5", "_Type_": "BuildingBlocks_WidgetCanvas",
+                     "name": "canvas_listItem", "parent": "_PointsTo_:ptr:2", "isActive": true,
+                     "instantiated": true,
+                     "canvas": "file://./test_arrayitem.json"}
+                ],
+                "operations": [
+                    {"_Type_": "BuildingBlocks_BindingsBooleanField",
+                     "widget": "_PointsTo_:ptr:2", "field": "Instantiated", "input": "_PointsTo_:ptr:11"},
+                    {"_Pointer_": "ptr:11", "_Type_": "BuildingBlocks_BindingsBooleanFromInteger",
+                     "type": "Greater", "inputL": "_PointsTo_:ptr:12", "inputR": null, "value": 0},
+                    {"_Pointer_": "ptr:12", "_Type_": "BuildingBlocks_BindingsIntegerVariable",
+                     "path": [], "binding": "items", "inheritsNamespace": true},
+                    {"_Pointer_": "ptr:13", "_Type_": "BuildingBlocks_BindingsIntegerVariable",
+                     "path": [], "binding": "items/[0000]/flag", "inheritsNamespace": true}
+                ]
+            }
+        })
+    }
+
+    fn fetcher(path: &str) -> Result<serde_json::Value, String> {
+        if path.to_ascii_lowercase().contains("test_arrayitem") {
+            Ok(item_canvas())
+        } else {
+            Err(format!("no record for '{path}'"))
+        }
+    }
+
+    /// Each outer instance materialises its OWN pip count from the registry
+    /// (`items/[000i]/pipList`), the template deactivates, and per-pip
+    /// bindings are namespaced `items/[000i]/pipList/[000j]/…`.
+    #[test]
+    fn array_list_materialises_entries_per_instance_count() {
+        let mut defaults = DefaultValueRegistry::default();
+        defaults.insert_path("items", crate::canvas::Value::Int(2));
+        // Mixed-case keys: engine binding paths are case-insensitive (the
+        // power master reads `resourcenetworkUi`/`resourcenetworkui` for the
+        // same variable in one canvas).
+        defaults.insert_path("items/[0000]/piplist", crate::canvas::Value::Int(3));
+        defaults.insert_path("items/[0001]/pipList", crate::canvas::Value::Int(2));
+        let scene = resolve_canvas_graph_with_defaults(
+            &list_parent_canvas(),
+            Some("drak"),
+            &fetcher,
+            None,
+            None,
+            &defaults,
+        )
+        .expect("resolve");
+
+        let active_pips = scene
+            .nodes
+            .values()
+            .filter(|n| n.name == "pip_template" && n.is_active)
+            .count();
+        assert_eq!(active_pips, 5, "3 + 2 pip entries must materialise");
+        let inactive_templates = scene
+            .nodes
+            .values()
+            .filter(|n| n.name == "pip_template" && !n.is_active)
+            .count();
+        assert_eq!(inactive_templates, 2, "each instance's authored template deactivates");
+
+        let bindings: Vec<String> = scene
+            .operations
+            .iter()
+            .filter_map(|op| {
+                let ty = op.get("_Type_").and_then(|v| v.as_str())?;
+                if !(ty.starts_with("BuildingBlocks_Bindings") && ty.ends_with("Variable")) {
+                    return None;
+                }
+                op.get("binding").and_then(|v| v.as_str()).map(str::to_owned)
+            })
+            .collect();
+        for expected in [
+            "items/[0000]/pipList/[0000]/pipAmount",
+            "items/[0000]/pipList/[0002]/pipAmount",
+            "items/[0001]/pipList/[0001]/pipAmount",
+        ] {
+            assert!(
+                bindings.iter().any(|b| b == expected),
+                "expected per-pip binding {expected}; got {bindings:?}"
+            );
+        }
+        assert!(
+            !bindings.iter().any(|b| b == "items/[0001]/pipList/[0002]/pipAmount"),
+            "instance 1 has only 2 pips; got {bindings:?}"
+        );
+    }
+
+    /// Registry-resolvable `SizeX` bindings on materialised entries override
+    /// the authored editor-placeholder sizing (the pip template's authored
+    /// 0.5-width is the >15-pip fallback; bound values replace it).
+    #[test]
+    fn bound_size_fields_override_authored_sizing_per_entry() {
+        let mut defaults = DefaultValueRegistry::default();
+        defaults.insert_path("items", crate::canvas::Value::Int(1));
+        defaults.insert_path("items/[0000]/piplist", crate::canvas::Value::Int(2));
+        defaults.insert_path(
+            "items/[0000]/piplist/[0000]/pipamount",
+            crate::canvas::Value::Float(0.25),
+        );
+        defaults.insert_path(
+            "items/[0000]/piplist/[0001]/pipamount",
+            crate::canvas::Value::Float(0.75),
+        );
+        let scene = resolve_canvas_graph_with_defaults(
+            &list_parent_canvas(),
+            Some("drak"),
+            &fetcher,
+            None,
+            None,
+            &defaults,
+        )
+        .expect("resolve");
+
+        let mut widths: Vec<f32> = scene
+            .nodes
+            .values()
+            .filter(|n| n.name == "pip_template" && n.is_active)
+            .map(|n| match n.sizing.width {
+                crate::bb_scene::BbValue::Percent(v) => v,
+                ref other => panic!("expected Percent width, got {other:?}"),
+            })
+            .collect();
+        widths.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        assert_eq!(widths, vec![0.25, 0.75], "per-entry bound SizeX values apply");
+    }
+
+    /// Without a registry count for the array path the mechanism stays
+    /// disengaged: the authored template keeps rendering (other list models —
+    /// the count-binding slot signature — own such lists).
+    #[test]
+    fn array_list_absent_count_leaves_template_untouched() {
+        let mut defaults = DefaultValueRegistry::default();
+        defaults.insert_path("items", crate::canvas::Value::Int(1));
+        let scene = resolve_canvas_graph_with_defaults(
+            &list_parent_canvas(),
+            Some("drak"),
+            &fetcher,
+            None,
+            None,
+            &defaults,
+        )
+        .expect("resolve");
+        let templates: Vec<bool> = scene
+            .nodes
+            .values()
+            .filter(|n| n.name == "pip_template")
+            .map(|n| n.is_active)
+            .collect();
+        assert_eq!(templates, vec![true], "no registry count: template stays as authored");
+    }
+
+    /// A zero registry count means an empty array at rest: the template hides.
+    #[test]
+    fn array_list_zero_count_hides_template() {
+        let mut defaults = DefaultValueRegistry::default();
+        defaults.insert_path("items", crate::canvas::Value::Int(1));
+        defaults.insert_path("items/[0000]/piplist", crate::canvas::Value::Int(0));
+        let scene = resolve_canvas_graph_with_defaults(
+            &list_parent_canvas(),
+            Some("drak"),
+            &fetcher,
+            None,
+            None,
+            &defaults,
+        )
+        .expect("resolve");
+        let templates: Vec<bool> = scene
+            .nodes
+            .values()
+            .filter(|n| n.name == "pip_template")
+            .map(|n| n.is_active)
+            .collect();
+        assert_eq!(templates, vec![false], "zero count: template deactivates, no clones");
+    }
+}

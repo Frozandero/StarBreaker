@@ -14,6 +14,8 @@ mod resolve_text;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
+mod tests_numeric_ops;
+#[cfg(test)]
 mod tests_state_tags;
 mod util;
 
@@ -60,9 +62,27 @@ pub fn resolve_state_tags_into_scene(
         "QuinaryStateTag",
     ];
     let resolver = BindingResolver::from_operations(&scene.operations);
+    let probe = std::env::var("SB_UI_GEOM_PROBE").as_deref() == Ok("1");
     let node_ids: Vec<BbNodeId> = scene.nodes.keys().copied().collect();
     for node_id in node_ids {
         for field in STATE_TAG_FIELDS {
+            if probe
+                && *field == "PrimaryStateTag"
+                && scene
+                    .nodes
+                    .get(&node_id)
+                    .is_some_and(|n| n.name == "base_PipListItem")
+            {
+                eprintln!(
+                    "tag-probe: node={} field={} inputs={:?} resolved={:?}",
+                    node_id,
+                    field,
+                    resolver
+                        .widget_field_to_input_ptrs
+                        .get(&(node_id, field.to_string())),
+                    resolver.resolve_field_text(node_id, field, defaults),
+                );
+            }
             let Some(tag_ref) = resolver.resolve_field_text(node_id, field, defaults) else {
                 continue;
             };
@@ -89,4 +109,96 @@ fn state_tag_uuid_from_reference(reference: &str) -> Option<String> {
             _ => ch.is_ascii_hexdigit(),
         });
     is_uuid.then(|| candidate.to_ascii_lowercase())
+}
+
+/// Apply registry-resolvable `SizeX`/`SizeY` number-field bindings to node
+/// sizing, preserving each dimension's authored behaviour (`Percent` stays a
+/// parent fraction, `Fixed` stays canvas units). Authored sizing values on
+/// bound widgets are editor placeholders — the power pip template authors
+/// width 0.5 / height 0.0667 but binds both to the live pip data (full width,
+/// `1/MaxPipList` height). Unresolvable bindings leave the authored value.
+pub fn resolve_geometry_fields_into_scene(
+    scene: &mut crate::bb_scene::BbScene,
+    defaults: &crate::defaults::DefaultValueRegistry,
+) {
+    use crate::bb_scene::BbValue;
+
+    let resolver = BindingResolver::from_operations(&scene.operations);
+    let probe = std::env::var("SB_UI_GEOM_PROBE").as_deref() == Ok("1");
+    if probe {
+        for node in scene.nodes.values() {
+            if node.name == "base_PipListItem" && node.is_active {
+                eprintln!("final-tags-probe: node={} tags={:?}", node.id, node.style_tag_uuids);
+            }
+        }
+        for (ptr, op) in &resolver.ptr_to_op {
+            let ty = op.get("_Type_").and_then(|v| v.as_str()).unwrap_or("");
+            if ty.ends_with("IntegerComponentParameter") {
+                let mut seen = std::collections::HashSet::new();
+                eprintln!(
+                    "param-probe: ptr:{} name={:?} parameter={:?} relay={:?} merged={:?} eval={:?}",
+                    ptr,
+                    op.get("name").and_then(|v| v.as_str()),
+                    op.get("parameter").and_then(|v| v.as_str()),
+                    op.get("_ParamRelay_").and_then(|v| v.as_bool()),
+                    op.get("_MergedOp_").and_then(|v| v.as_bool()),
+                    resolver.eval_integer_ptr(*ptr, defaults, &mut seen),
+                );
+            }
+        }
+    }
+    let node_ids: Vec<BbNodeId> = scene.nodes.keys().copied().collect();
+    for node_id in node_ids {
+        for (field, horizontal) in [("SizeX", true), ("SizeY", false)] {
+            if probe
+                && let Some(node) = scene.nodes.get(&node_id)
+                && let Some(ptrs) = resolver
+                    .widget_field_to_input_ptrs
+                    .get(&(node_id, field.to_string()))
+            {
+                let typed: Vec<String> = ptrs
+                    .iter()
+                    .map(|p| {
+                        let ty = resolver
+                            .ptr_to_op
+                            .get(p)
+                            .and_then(|op| op.get("_Type_"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("<none>");
+                        format!("ptr:{p}:{ty}")
+                    })
+                    .collect();
+                eprintln!(
+                    "geom-probe: node={} '{}' field={} inputs={:?} value={:?}",
+                    node_id,
+                    node.name,
+                    field,
+                    typed,
+                    resolver.resolve_field_number(node_id, field, defaults),
+                );
+            }
+            let Some(value) = resolver.resolve_field_number(node_id, field, defaults) else {
+                continue;
+            };
+            if !value.is_finite() {
+                continue;
+            }
+            let Some(node) = scene.nodes.get_mut(&node_id) else {
+                continue;
+            };
+            let slot = if horizontal {
+                &mut node.sizing.width
+            } else {
+                &mut node.sizing.height
+            };
+            *slot = match &*slot {
+                BbValue::Fixed(_) => BbValue::Fixed(value as f32),
+                BbValue::Percent(_) => BbValue::Percent(value as f32),
+                BbValue::Other { behavior, .. } => BbValue::Other {
+                    value: value as f32,
+                    behavior: behavior.clone(),
+                },
+            };
+        }
+    }
 }

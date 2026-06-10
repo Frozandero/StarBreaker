@@ -1,0 +1,341 @@
+// Tests for multi-hop component-parameter relays (part_06's dynamic param
+// field-binding injection): the power screen's pip sizing chain passes
+// `pipsLengthMax` through THREE canvas levels by slot wiring
+// (master `IntegerField ParamInput0 ← variable` → power 'pips length max' →
+// powerlists 'Max Piplist' → item 'Max pipList'). Each hop's injection clones
+// the parent's input subgraph onto the child's parameter op; clones of
+// parameter ops are relay markers that the NEXT hop up must rewire again.
+#[cfg(test)]
+mod tests_param_relay {
+    #![allow(unused_imports, dead_code)]
+
+    use super::*;
+    use crate::defaults::DefaultValueRegistry;
+
+    /// Leaf canvas: a widget whose SizeY is bound to its own integer
+    /// component parameter (ParamInput1).
+    fn leaf_canvas() -> serde_json::Value {
+        serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.Test_RelayLeaf",
+            "_RecordId_": "00000000-0000-0000-0000-0000000r0003",
+            "_RecordValue_": {
+                "_Type_": "BuildingBlocks_Canvas",
+                "size": {"_Type_": "Vec3", "x": 100.0, "y": 100.0, "z": 0.0},
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "leaf_widget", "isActive": true,
+                     "sizing": {"_Type_": "BuildingBlocks_Size",
+                       "width": {"_Type_": "BuildingBlocks_FixedOrRelativeValue", "value": 1.0, "behavior": "Percent"},
+                       "height": {"_Type_": "BuildingBlocks_FixedOrRelativeValue", "value": 0.05, "behavior": "Percent"}}}
+                ],
+                "operations": [
+                    {"_Type_": "BuildingBlocks_BindingsNumberField",
+                     "widget": "_PointsTo_:ptr:1", "field": "SizeY", "input": "_PointsTo_:ptr:10"},
+                    {"_Pointer_": "ptr:10", "_Type_": "BuildingBlocks_BindingsNumberFromInteger",
+                     "asSeconds": false, "input": "_PointsTo_:ptr:11"},
+                    {"_Pointer_": "ptr:11", "_Type_": "BuildingBlocks_BindingsIntegerComponentParameter",
+                     "name": "Leaf Max", "parameter": "ParamInput1", "defaultValue": 0}
+                ]
+            }
+        })
+    }
+
+    /// Middle canvas: declares its own integer parameter (ParamInput0) and
+    /// relays it to TWO leaf instances' ParamInput1 (the power screen's
+    /// materialised system columns all receive the same 'Max Piplist').
+    fn middle_canvas() -> serde_json::Value {
+        serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.Test_RelayMiddle",
+            "_RecordId_": "00000000-0000-0000-0000-0000000r0002",
+            "_RecordValue_": {
+                "_Type_": "BuildingBlocks_Canvas",
+                "size": {"_Type_": "Vec3", "x": 100.0, "y": 100.0, "z": 0.0},
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "middle_root", "isActive": true},
+                    {"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_WidgetCanvas",
+                     "name": "canvas_leaf_a", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "instantiated": true,
+                     "canvas": "file://./test_relayleaf.json"},
+                    {"_Pointer_": "ptr:3", "_Type_": "BuildingBlocks_WidgetCanvas",
+                     "name": "canvas_leaf_b", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "instantiated": true,
+                     "canvas": "file://./test_relayleaf.json"}
+                ],
+                "operations": [
+                    {"_Type_": "BuildingBlocks_BindingsIntegerField",
+                     "widget": "_PointsTo_:ptr:2", "field": "ParamInput1", "input": "_PointsTo_:ptr:10"},
+                    {"_Type_": "BuildingBlocks_BindingsIntegerField",
+                     "widget": "_PointsTo_:ptr:3", "field": "ParamInput1", "input": "_PointsTo_:ptr:10"},
+                    {"_Pointer_": "ptr:10", "_Type_": "BuildingBlocks_BindingsIntegerComponentParameter",
+                     "name": "Middle Max", "parameter": "ParamInput0", "defaultValue": 0}
+                ]
+            }
+        })
+    }
+
+    /// Root canvas: wires the middle instance's ParamInput0 from an engine
+    /// variable (registry-backed).
+    fn root_canvas() -> serde_json::Value {
+        serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.Test_RelayRoot",
+            "_RecordId_": "00000000-0000-0000-0000-0000000r0001",
+            "_RecordValue_": {
+                "_Type_": "BuildingBlocks_Canvas",
+                "size": {"_Type_": "Vec3", "x": 100.0, "y": 100.0, "z": 0.0},
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "root", "isActive": true},
+                    {"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_WidgetCanvas",
+                     "name": "canvas_middle", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "instantiated": true,
+                     "canvas": "file://./test_relaymiddle.json"}
+                ],
+                "operations": [
+                    {"_Type_": "BuildingBlocks_BindingsIntegerField",
+                     "widget": "_PointsTo_:ptr:2", "field": "ParamInput0", "input": "_PointsTo_:ptr:10"},
+                    {"_Pointer_": "ptr:10", "_Type_": "BuildingBlocks_BindingsIntegerVariable",
+                     "path": [], "binding": "maxpips", "inheritsNamespace": true}
+                ]
+            }
+        })
+    }
+
+    /// Frame canvas above the wiring root: in the real MFD the master canvas
+    /// (which holds the variable wiring) is itself MERGED into the frame, so
+    /// its field ops carry `_MergedOp_` and the global by-name parameter
+    /// fallback cannot see them — the relay chain must work structurally.
+    fn frame_canvas() -> serde_json::Value {
+        serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.Test_RelayFrame",
+            "_RecordId_": "00000000-0000-0000-0000-0000000r0000",
+            "_RecordValue_": {
+                "_Type_": "BuildingBlocks_Canvas",
+                "size": {"_Type_": "Vec3", "x": 100.0, "y": 100.0, "z": 0.0},
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "frame_root", "isActive": true},
+                    {"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_WidgetCanvas",
+                     "name": "canvas_content", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "instantiated": true,
+                     "canvas": "file://./test_relayroot.json"}
+                ],
+                "operations": []
+            }
+        })
+    }
+
+    fn fetcher(path: &str) -> Result<serde_json::Value, String> {
+        let p = path.to_ascii_lowercase();
+        if p.contains("test_relayleaf") {
+            Ok(leaf_canvas())
+        } else if p.contains("test_relaymiddle") {
+            Ok(middle_canvas())
+        } else if p.contains("test_relayroot") {
+            Ok(root_canvas())
+        } else {
+            Err(format!("no record for '{path}'"))
+        }
+    }
+
+    /// The registry-backed variable must reach EVERY leaf instance's
+    /// parameter through two relay hops, and each leaf's bound SizeY must
+    /// apply to its sizing.
+    #[test]
+    fn parameter_relays_across_two_canvas_hops_to_all_instances() {
+        let mut defaults = DefaultValueRegistry::default();
+        defaults.insert_path("maxpips", crate::canvas::Value::Int(6));
+        let scene = resolve_canvas_graph_with_defaults(
+            &frame_canvas(),
+            Some("drak"),
+            &fetcher,
+            None,
+            None,
+            &defaults,
+        )
+        .expect("resolve");
+
+        let heights: Vec<f32> = scene
+            .nodes
+            .values()
+            .filter(|n| n.name == "leaf_widget")
+            .map(|n| match n.sizing.height {
+                crate::bb_scene::BbValue::Percent(v) => v,
+                ref other => panic!("expected Percent height, got {other:?}"),
+            })
+            .collect();
+        assert_eq!(heights.len(), 2, "both leaf instances must merge");
+        for v in heights {
+            assert!((v - 6.0).abs() < 1e-6, "leaf SizeY = relayed maxpips, got {v}");
+        }
+    }
+
+    /// Root variant of the real power master: the middle canvas is selected by
+    /// a Pass-1 `Set Canvas` style entry whose conditions match the host
+    /// WidgetCanvas (type `Canvas`) — there is NO `matchTo` name. The host's
+    /// parameter wiring must still inject into the merged child.
+    fn root_canvas_pass1() -> serde_json::Value {
+        serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.Test_RelayRootPass1",
+            "_RecordId_": "00000000-0000-0000-0000-0000000r0004",
+            "_RecordValue_": {
+                "_Type_": "BuildingBlocks_Canvas",
+                "size": {"_Type_": "Vec3", "x": 100.0, "y": 100.0, "z": 0.0},
+                "defaultStyles": {
+                    "_Type_": "BuildingBlocks_CanvasStyles",
+                    "entries": [
+                        {"_Type_": "BuildingBlocks_StyleEntry", "name": "Set Canvas",
+                         "conditionsList": [
+                            {"_Type_": "BuildingBlocks_StyleConditionList", "name": "cl",
+                             "conditions": [
+                                {"_Type_": "BuildingBlocks_StyleSelectorConditionType", "type": "Canvas"}
+                             ]}
+                         ],
+                         "modifiers": [
+                            {"_Type_": "BuildingBlocks_FieldModifierRecordRef",
+                             "field": {"_Type_": "BuildingBlocks_FieldModifierRecordRefTypeCanvasReferenceRecord",
+                                       "value": "file://./test_relaymiddle.json"}}
+                         ],
+                         "transitions": []}
+                    ]
+                },
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "root", "isActive": true},
+                    {"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_WidgetCanvas",
+                     "name": "canvas_interchangeable", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "instantiated": true,
+                     "canvas": ""}
+                ],
+                "operations": [
+                    {"_Type_": "BuildingBlocks_BindingsIntegerField",
+                     "widget": "_PointsTo_:ptr:2", "field": "ParamInput0", "input": "_PointsTo_:ptr:10"},
+                    {"_Pointer_": "ptr:10", "_Type_": "BuildingBlocks_BindingsIntegerVariable",
+                     "path": [], "binding": "maxpips", "inheritsNamespace": true}
+                ]
+            }
+        })
+    }
+
+    fn fetcher_pass1(path: &str) -> Result<serde_json::Value, String> {
+        let p = path.to_ascii_lowercase();
+        if p.contains("test_relayroot") {
+            Ok(root_canvas_pass1())
+        } else {
+            fetcher(path)
+        }
+    }
+
+    /// Same relay chain, but the wiring root enters via a Pass-1 conditional
+    /// canvas reference (the power master's `canvas_Interchangeable`).
+    #[test]
+    fn parameter_relays_through_pass1_conditional_canvas_reference() {
+        let mut defaults = DefaultValueRegistry::default();
+        defaults.insert_path("maxpips", crate::canvas::Value::Int(6));
+        let scene = resolve_canvas_graph_with_defaults(
+            &frame_canvas(),
+            Some("drak"),
+            &fetcher_pass1,
+            None,
+            None,
+            &defaults,
+        )
+        .expect("resolve");
+
+        let heights: Vec<f32> = scene
+            .nodes
+            .values()
+            .filter(|n| n.name == "leaf_widget")
+            .map(|n| match n.sizing.height {
+                crate::bb_scene::BbValue::Percent(v) => v,
+                ref other => panic!("expected Percent height, got {other:?}"),
+            })
+            .collect();
+        assert_eq!(heights.len(), 2, "both leaf instances must merge");
+        for v in heights {
+            assert!((v - 6.0).abs() < 1e-6, "leaf SizeY = relayed maxpips, got {v}");
+        }
+    }
+
+    /// Middle canvas whose leaf slot is MATERIALISED from a list count (the
+    /// power lists' per-system columns): every cloned instance must receive
+    /// the slot's parameter wiring, not just the authored original.
+    fn middle_canvas_list() -> serde_json::Value {
+        serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.Test_RelayMiddleList",
+            "_RecordId_": "00000000-0000-0000-0000-0000000r0005",
+            "_RecordValue_": {
+                "_Type_": "BuildingBlocks_Canvas",
+                "size": {"_Type_": "Vec3", "x": 100.0, "y": 100.0, "z": 0.0},
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "middle_root", "isActive": true},
+                    {"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "list_container", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "layoutPolicy": {"_Type_": "BuildingBlocks_LayoutPolicyFlexContainer", "direction": "Row"}},
+                    {"_Pointer_": "ptr:5", "_Type_": "BuildingBlocks_WidgetCanvas",
+                     "name": "canvas_listItem", "parent": "_PointsTo_:ptr:2", "isActive": true,
+                     "instantiated": true,
+                     "canvas": "file://./test_relayleaf.json"}
+                ],
+                "operations": [
+                    {"_Type_": "BuildingBlocks_BindingsBooleanField",
+                     "widget": "_PointsTo_:ptr:2", "field": "Instantiated", "input": "_PointsTo_:ptr:11"},
+                    {"_Pointer_": "ptr:11", "_Type_": "BuildingBlocks_BindingsBooleanFromInteger",
+                     "type": "Greater", "inputL": "_PointsTo_:ptr:12", "inputR": null, "value": 0},
+                    {"_Pointer_": "ptr:12", "_Type_": "BuildingBlocks_BindingsIntegerVariable",
+                     "path": [], "binding": "items", "inheritsNamespace": true},
+                    {"_Pointer_": "ptr:13", "_Type_": "BuildingBlocks_BindingsIntegerVariable",
+                     "path": [], "binding": "items/[0000]/flag", "inheritsNamespace": true},
+                    {"_Type_": "BuildingBlocks_BindingsIntegerField",
+                     "widget": "_PointsTo_:ptr:5", "field": "ParamInput1", "input": "_PointsTo_:ptr:10"},
+                    {"_Pointer_": "ptr:10", "_Type_": "BuildingBlocks_BindingsIntegerComponentParameter",
+                     "name": "Middle Max", "parameter": "ParamInput0", "defaultValue": 0}
+                ]
+            }
+        })
+    }
+
+    fn fetcher_list(path: &str) -> Result<serde_json::Value, String> {
+        let p = path.to_ascii_lowercase();
+        if p.contains("test_relayleaf") {
+            Ok(leaf_canvas())
+        } else if p.contains("test_relaymiddle") {
+            Ok(middle_canvas_list())
+        } else {
+            Err(format!("no record for '{path}'"))
+        }
+    }
+
+    /// Every list-materialised slot instance receives the relayed parameter
+    /// (the power screen's three system columns all get 'Max Piplist').
+    #[test]
+    fn parameter_relays_reach_all_materialised_list_instances() {
+        let mut defaults = DefaultValueRegistry::default();
+        defaults.insert_path("maxpips", crate::canvas::Value::Int(6));
+        defaults.insert_path("items", crate::canvas::Value::Int(2));
+        let scene = resolve_canvas_graph_with_defaults(
+            &root_canvas(),
+            Some("drak"),
+            &fetcher_list,
+            None,
+            None,
+            &defaults,
+        )
+        .expect("resolve");
+
+        let heights: Vec<f32> = scene
+            .nodes
+            .values()
+            .filter(|n| n.name == "leaf_widget" && n.is_active)
+            .map(|n| match n.sizing.height {
+                crate::bb_scene::BbValue::Percent(v) => v,
+                ref other => panic!("expected Percent height, got {other:?}"),
+            })
+            .collect();
+        assert_eq!(heights.len(), 2, "two materialised instances must merge");
+        for v in heights {
+            assert!((v - 6.0).abs() < 1e-6, "instance SizeY = relayed maxpips, got {v}");
+        }
+    }
+}

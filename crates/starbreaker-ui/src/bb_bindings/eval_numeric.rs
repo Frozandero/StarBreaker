@@ -167,7 +167,13 @@ impl BindingResolver {
                     .and_then(|v| v.as_str())
                     .and_then(parse_points_to_or_ptr_str);
                 let has_explicit_rhs = input_b.is_some();
-                let a = input.and_then(|p| self.eval_number_ptr(p, defaults, seen)).unwrap_or(0.0);
+                // An absent operand is the authored `amount` constant (the pip
+                // slot height's `Div(amount=1, inputB=MaxPipList)` = 1/max); an
+                // unresolved wired operand is the number type default 0.
+                let a = match input {
+                    Some(p) => self.eval_number_ptr(p, defaults, seen).unwrap_or(0.0),
+                    None => amount,
+                };
                 let b = input_b
                     .and_then(|p| self.eval_number_ptr(p, defaults, seen))
                     .unwrap_or(amount);
@@ -176,8 +182,55 @@ impl BindingResolver {
                     "Sub" => a - b,
                     "Mul" => a * b,
                     "Div" => if b.abs() > f64::EPSILON { a / b } else { 0.0 },
+                    "Min" => a.min(b),
+                    "Max" => a.max(b),
                     _ => a,
                 })
+            }
+            "BuildingBlocks_BindingsNumberFromBoolean" => {
+                // The boolean input's at-rest default is `false`.
+                let mut seen_bool = std::collections::HashSet::new();
+                let enabled = op
+                    .get("input")
+                    .and_then(|v| v.as_str())
+                    .and_then(parse_points_to_or_ptr_str)
+                    .and_then(|p| self.eval_bool_ptr(p, defaults, &mut seen_bool))
+                    .unwrap_or(false);
+                let branch_input = op
+                    .get(if enabled { "inputTrue" } else { "inputFalse" })
+                    .and_then(|v| v.as_str())
+                    .and_then(parse_points_to_or_ptr_str);
+                if let Some(branch_ptr) = branch_input {
+                    return self.eval_number_ptr(branch_ptr, defaults, seen);
+                }
+                op.get(if enabled { "isTrue" } else { "isFalse" })
+                    .and_then(|v| v.as_f64())
+            }
+            "BuildingBlocks_BindingsNumberRound" => {
+                // `amount` is the number of DECIMAL PLACES (the pip slot height
+                // rounds `1/max` to 3 places).
+                let value = op
+                    .get("input")
+                    .and_then(|v| v.as_str())
+                    .and_then(parse_points_to_or_ptr_str)
+                    .and_then(|p| self.eval_number_ptr(p, defaults, seen))?;
+                let places = op.get("amount").and_then(|v| v.as_i64()).unwrap_or(0);
+                let factor = 10f64.powi(places.clamp(0, 12) as i32);
+                Some((value * factor).round() / factor)
+            }
+            "BuildingBlocks_BindingsNumberFromIntegerSwitch" => {
+                let selector = op
+                    .get("input")
+                    .and_then(|v| v.as_str())
+                    .and_then(parse_points_to_or_ptr_str)
+                    .and_then(|p| self.eval_integer_ptr(p, defaults, seen));
+                let matched = selector.and_then(|sel| {
+                    op.get("values")?.as_array()?.iter().find_map(|pair| {
+                        (pair.get("first")?.as_i64()? == sel)
+                            .then(|| pair.get("second").and_then(|v| v.as_f64()))?
+                    })
+                });
+                matched.or_else(|| op.get("defaultValue").and_then(|v| v.as_f64()))
             }
             _ => self.eval_integer_ptr(ptr, defaults, seen).map(|v| v as f64),
         }

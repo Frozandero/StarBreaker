@@ -59,7 +59,7 @@ impl DefaultValueRegistry {
 
     /// Insert or overwrite a binding-path default.
     pub fn insert_path(&mut self, path: &str, default: Value) {
-        self.paths.insert(path.to_owned(), default);
+        self.paths.insert(Self::normalise_path(path), default);
     }
 
     /// Insert or overwrite an MFD slot to content-canvas GUID mapping.
@@ -70,7 +70,15 @@ impl DefaultValueRegistry {
 
     /// Look up a binding-path default.
     pub fn lookup_path(&self, path: &str) -> Option<&Value> {
-        self.paths.get(path)
+        self.paths.get(&Self::normalise_path(path))
+    }
+
+    /// Engine binding paths are case-insensitive and a leading `/` only marks
+    /// the path absolute (the power master reads `resourcenetworkui/…` and
+    /// `/resourcenetworkUi/…` for the same variables in one canvas), so the
+    /// registry stores and looks up lower-cased, slash-trimmed keys.
+    fn normalise_path(path: &str) -> String {
+        path.trim_start_matches('/').to_ascii_lowercase()
     }
 
     /// Look up the content-canvas GUID for an MFD screen slot.

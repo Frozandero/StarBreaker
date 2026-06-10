@@ -306,6 +306,36 @@ impl BindingResolver {
                     _ => None,
                 }
             }
+            "BuildingBlocks_BindingsBooleanFromNumber" => {
+                // `input <type> {inputB | number}` — the authored `number`
+                // literal is the comparison constant (the pip sizing chains'
+                // `count > 15` fallback thresholds).
+                let cmp = op.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                let mut seen_num = std::collections::HashSet::new();
+                let lhs = op
+                    .get("input")
+                    .and_then(|v| v.as_str())
+                    .and_then(parse_points_to_or_ptr_str)
+                    .and_then(|p| self.eval_number_ptr(p, defaults, &mut seen_num))?;
+                let rhs = match op.get("inputB") {
+                    Some(r) if !r.is_null() => {
+                        let mut seen_r = std::collections::HashSet::new();
+                        r.as_str()
+                            .and_then(parse_points_to_or_ptr_str)
+                            .and_then(|p| self.eval_number_ptr(p, defaults, &mut seen_r))?
+                    }
+                    _ => op.get("number").and_then(|v| v.as_f64())?,
+                };
+                match cmp {
+                    "Equal" => Some(lhs == rhs),
+                    "NotEqual" => Some(lhs != rhs),
+                    "Greater" => Some(lhs > rhs),
+                    "GreaterOrEqual" => Some(lhs >= rhs),
+                    "Less" => Some(lhs < rhs),
+                    "LessOrEqual" => Some(lhs <= rhs),
+                    _ => None,
+                }
+            }
             "BindingsOperation_BooleanFromStringIsEmpty" => {
                 let inp = op
                     .get("input")

@@ -206,7 +206,7 @@ fn resolve_node_background_color(node: &mut BbNode, palette_source: &serde_json:
 ///   `conditions[j]` items pass. Conditions may be nested (`AllOf`, `AnyOf`,
 ///   `Parent`), and parent conditions are evaluated against the node's direct
 ///   parent in the parsed BB scene hierarchy.
-fn entry_matches_scene(
+pub(crate) fn entry_matches_scene(
     entry: &serde_json::Value,
     node_id: BbNodeId,
     node: &BbNode,

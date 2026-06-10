@@ -180,7 +180,7 @@ pub fn resolve_canvas_graph_with_defaults(
     if let Some(name) = root_json.get("_RecordName_").and_then(|v| v.as_str()) {
         visited.insert(name.to_ascii_lowercase());
     }
-    resolve_canvas_graph_inner(
+    let mut scene = resolve_canvas_graph_inner(
         root_json,
         manufacturer_id,
         fetch_by_path,
@@ -193,7 +193,13 @@ pub fn resolve_canvas_graph_with_defaults(
         &HashMap::new(),
         bound_view_canvas,
         defaults,
-    )
+        None,
+    )?;
+    // Bound geometry resolves against the full merged operation set (the pip
+    // sizing's component-parameter chain crosses canvas levels), so apply it
+    // once over the final scene.
+    crate::bb_bindings::resolve_geometry_fields_into_scene(&mut scene, defaults);
+    Ok(scene)
 }
 
 /// Apply the external *shared* styles referenced by `defaultStyles.sharedStyles`

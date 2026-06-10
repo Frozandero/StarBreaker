@@ -65,8 +65,8 @@ fn apply_list_slot_bindings(
             // ancestor (the list widget's flex item) — once per entry.
             let template = nearest_gated_ancestor(scene, slot, &list.gated_widgets).unwrap_or(slot);
             for index in 1..count {
-                let cloned_root = clone_subtree_as_sibling(scene, template);
-                let Some(cloned_root) = cloned_root else {
+                let Some((cloned_root, id_map)) = clone_subtree_as_sibling_with_map(scene, template)
+                else {
                     break;
                 };
                 // Register every cloned slot canvas for Pass-2 follow with the
@@ -87,6 +87,7 @@ fn apply_list_slot_bindings(
                         namespaces.insert(id, format!("{}/[{:04}]", list.count_binding, index));
                     }
                 }
+                duplicate_slot_field_ops_for_clone(scene, &id_map);
             }
         }
     }
@@ -132,6 +133,52 @@ fn namespace_child_scene_bindings(child_scene: &mut BbScene, namespace: &str) {
             );
         }
     }
+}
+
+/// Duplicate the parent scene's field operations that target an original
+/// slot's `WidgetCanvas` nodes, retargeting each cloned instance. The engine
+/// applies the same slot wiring (e.g. the power lists' `ParamInput2 ←
+/// 'Max Piplist'`) to every instance; input chains are shared — only the
+/// `widget` ref changes, and any `_Pointer_` is dropped so the copy does not
+/// shadow the original's definition.
+fn duplicate_slot_field_ops_for_clone(
+    scene: &mut BbScene,
+    id_map: &std::collections::HashMap<BbNodeId, BbNodeId>,
+) {
+    let mut copies: Vec<serde_json::Value> = Vec::new();
+    for op in &scene.operations {
+        let ty = op.get("_Type_").and_then(|v| v.as_str()).unwrap_or("");
+        if !ty.contains("Field") {
+            continue;
+        }
+        let Some(widget) = op
+            .get("widget")
+            .and_then(|v| v.as_str())
+            .and_then(parse_points_to_or_ptr)
+        else {
+            continue;
+        };
+        let Some(&clone_id) = id_map.get(&widget) else {
+            continue;
+        };
+        let is_canvas_slot = scene
+            .nodes
+            .get(&widget)
+            .is_some_and(|node| node.ty == BbNodeType::WidgetCanvas);
+        if !is_canvas_slot {
+            continue;
+        }
+        let mut copy = op.clone();
+        if let Some(map) = copy.as_object_mut() {
+            map.remove("_Pointer_");
+            map.insert(
+                "widget".to_string(),
+                serde_json::Value::String(format!("_PointsTo_:ptr:{clone_id}")),
+            );
+        }
+        copies.push(copy);
+    }
+    scene.operations.extend(copies);
 }
 
 /// Find list-slot signatures in the scene's operations.
@@ -336,46 +383,7 @@ fn nearest_gated_ancestor(
 /// Deep-clone `root`'s subtree with fresh ids and attach the clone as a
 /// sibling of `root` (same parent). Returns the cloned root's id.
 fn clone_subtree_as_sibling(scene: &mut BbScene, root: BbNodeId) -> Option<BbNodeId> {
-    let parent_id = scene.nodes.get(&root)?.parent;
-    // Collect the subtree ids in parent-before-child order.
-    let mut order = Vec::new();
-    let mut stack = vec![root];
-    while let Some(id) = stack.pop() {
-        let Some(node) = scene.nodes.get(&id) else {
-            continue;
-        };
-        order.push(id);
-        stack.extend(node.children.iter().copied());
-    }
-    let mut id_map: std::collections::HashMap<BbNodeId, BbNodeId> =
-        std::collections::HashMap::with_capacity(order.len());
-    for &id in &order {
-        let clone_id = next_free_low_node_id_excluding(scene, &id_map);
-        id_map.insert(id, clone_id);
-    }
-    for &id in &order {
-        let Some(mut clone) = scene.nodes.get(&id).cloned() else {
-            continue;
-        };
-        let clone_id = id_map[&id];
-        clone.id = clone_id;
-        clone.parent = if id == root {
-            parent_id
-        } else {
-            clone.parent.and_then(|p| id_map.get(&p).copied())
-        };
-        clone.children = clone
-            .children
-            .iter()
-            .filter_map(|c| id_map.get(c).copied())
-            .collect();
-        scene.nodes.insert(clone_id, clone);
-    }
-    let cloned_root = id_map[&root];
-    if let Some(parent) = parent_id.and_then(|id| scene.nodes.get_mut(&id)) {
-        parent.children.push(cloned_root);
-    }
-    Some(cloned_root)
+    clone_subtree_as_sibling_with_map(scene, root).map(|(cloned_root, _)| cloned_root)
 }
 
 /// Next unused low-band node id that is also not pending in `reserved`.

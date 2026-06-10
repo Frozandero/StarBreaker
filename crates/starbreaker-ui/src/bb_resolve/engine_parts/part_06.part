@@ -221,9 +221,8 @@ fn inject_dynamic_param_field_bindings(
         let Some(field_name) = parent_op.get("field").and_then(|v| v.as_str()) else {
             continue;
         };
-        let Some(target_ptr) = child_param_targets
+        let Some(target_ptrs) = child_param_targets
             .get(&(field_name.to_ascii_lowercase(), binding_kind))
-            .copied()
         else {
             continue;
         };
@@ -231,15 +230,20 @@ fn inject_dynamic_param_field_bindings(
             continue;
         };
 
-        let mut ptr_remap = std::collections::HashMap::new();
-        let _ = clone_binding_subgraph_into_child(
-            input_ptr,
-            target_ptr,
-            &parent_ptr_to_op,
-            &mut occupied_ptrs,
-            &mut ptr_remap,
-            &mut injected_ops,
-        );
+        // Inject into EVERY matching target: besides the child's own parameter
+        // op, deeper relay clones (one per materialised list instance on the
+        // power screen) all consume the same slot wiring.
+        for &target_ptr in target_ptrs {
+            let mut ptr_remap = std::collections::HashMap::new();
+            let _ = clone_binding_subgraph_into_child(
+                input_ptr,
+                target_ptr,
+                &parent_ptr_to_op,
+                &mut occupied_ptrs,
+                &mut ptr_remap,
+                &mut injected_ops,
+            );
+        }
     }
 
     if !injected_ops.is_empty() {
@@ -249,19 +253,43 @@ fn inject_dynamic_param_field_bindings(
 
 fn child_component_parameter_targets(
     child_operations: &[serde_json::Value],
-) -> std::collections::HashMap<(String, &'static str), BbNodeId> {
-    let mut targets = std::collections::HashMap::new();
+) -> std::collections::HashMap<(String, &'static str), Vec<BbNodeId>> {
+    // The child's parameter interface is its OWN parameter ops plus relay
+    // clones injected during deeper merges (`_ParamRelay_`). Parameter ops
+    // belonging to canvases merged INTO the child that were never wired keep
+    // their authored defaults — slot names are per-canvas, so a same-named
+    // slot in an unrelated merged canvas must not receive this wiring.
+    //
+    // Injection REPLACES a pointer's definition by appending a shadowing op
+    // with the same pointer id (evaluation is last-wins), so only the LIVE
+    // (last) definition per pointer is a target — a stale shadowed def still
+    // carries its old slot name and would mis-route a same-kind wiring (the
+    // power master's `batterytotal` landing on already-rewired pip params).
+    let mut live_defs: std::collections::BTreeMap<BbNodeId, &serde_json::Value> =
+        std::collections::BTreeMap::new();
     for op in child_operations {
+        if let Some(ptr) = ptr_ref_to_id(op.get("_Pointer_")) {
+            live_defs.insert(ptr, op);
+        }
+    }
+    let mut targets: std::collections::HashMap<(String, &'static str), Vec<BbNodeId>> =
+        std::collections::HashMap::new();
+    for (&ptr, op) in &live_defs {
         let Some(kind) = component_parameter_kind_for_component_op(op) else {
             continue;
         };
+        let merged = op.get("_MergedOp_").and_then(|v| v.as_bool()) == Some(true);
+        let relay = op.get("_ParamRelay_").and_then(|v| v.as_bool()) == Some(true);
+        if merged && !relay {
+            continue;
+        }
         let Some(parameter) = op.get("parameter").and_then(|v| v.as_str()) else {
             continue;
         };
-        let Some(ptr) = ptr_ref_to_id(op.get("_Pointer_")) else {
-            continue;
-        };
-        targets.insert((parameter.to_ascii_lowercase(), kind), ptr);
+        targets
+            .entry((parameter.to_ascii_lowercase(), kind))
+            .or_default()
+            .push(ptr);
     }
     targets
 }
@@ -328,6 +356,12 @@ fn clone_binding_subgraph_into_child(
     let mut cloned = source_op.clone();
     cloned["_Pointer_"] = serde_json::Value::String(format!("ptr:{new_ptr}"));
     remap_binding_input_fields(&mut cloned, ptr_remap);
+    // A cloned parameter op is a RELAY awaiting the next hop's wiring: when
+    // this child later merges into ITS parent, the next injection must rewire
+    // these clones too (the pip sizing's 3-level `pipsLengthMax` chain).
+    if component_parameter_kind_for_component_op(&cloned).is_some() {
+        cloned["_ParamRelay_"] = serde_json::Value::Bool(true);
+    }
     cloned_ops.push(cloned);
     Some(new_ptr)
 }

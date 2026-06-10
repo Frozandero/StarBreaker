@@ -155,5 +155,13 @@ fn main() {
         if n.segmented_fill.is_some() {
             println!("    segmented={:?}", n.segmented_fill);
         }
+        if !n.resolved_style_tags.is_empty() {
+            let tags: Vec<&str> = n
+                .resolved_style_tags
+                .iter()
+                .filter_map(|t| t.tag_name.as_deref())
+                .collect();
+            println!("    tags={tags:?}");
+        }
     }
 }

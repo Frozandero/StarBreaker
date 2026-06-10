@@ -469,3 +469,23 @@ fn host_node_for_match_to(scene: &BbScene, match_to: &str) -> Option<BbNodeId> {
     None
 }
 
+/// Host WidgetCanvas for a Pass-1 canvas-reference entry without a `matchTo`
+/// name: the entry's style conditions select the host (the power master's
+/// `Set Canvas` entry matches type `Canvas` + a brand tag on
+/// `canvas_Interchangeable`). Returns the first matching WidgetCanvas node.
+fn host_canvas_node_for_entry(scene: &BbScene, entry: &serde_json::Value) -> Option<BbNodeId> {
+    let mut ids: Vec<BbNodeId> = scene
+        .nodes
+        .iter()
+        .filter(|(_, node)| node.ty == BbNodeType::WidgetCanvas)
+        .map(|(&id, _)| id)
+        .collect();
+    ids.sort_unstable();
+    ids.into_iter().find(|&id| {
+        scene
+            .nodes
+            .get(&id)
+            .is_some_and(|node| crate::bb_brand_apply::entry_matches_scene(entry, id, node, scene))
+    })
+}
+

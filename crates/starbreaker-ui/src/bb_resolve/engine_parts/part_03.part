@@ -2,6 +2,11 @@
 /// (lower-cased basenames extracted from `file://` URLs or bare names) seen so
 /// far in the call chain; any path already in `visited` is skipped to break
 /// cycles.
+///
+/// `instance_namespace` is the binding namespace this canvas instance lives
+/// under (a list-slot instance's `piplist/[000i]`, inherited by its own
+/// children). Namespacing at resolve START — before state tags and the style
+/// cascade — lets instance-specific data (pip states) drive styling.
 fn resolve_canvas_graph_inner(
     root_json: &serde_json::Value,
     manufacturer_id: Option<&str>,
@@ -15,9 +20,13 @@ fn resolve_canvas_graph_inner(
     inherited_boolean_bindings: &HashMap<String, bool>,
     bound_view_canvas: Option<&str>,
     defaults: &crate::defaults::DefaultValueRegistry,
+    instance_namespace: Option<&str>,
 ) -> Result<BbScene, String> {
     let mut scene = parse_bb_canvas(root_json)?;
     inline_animation_timeline_references(&mut scene, fetch_by_path);
+    if let Some(namespace) = instance_namespace {
+        namespace_child_scene_bindings(&mut scene, namespace);
+    }
     let record_value = root_json.get("_RecordValue_").ok_or("missing _RecordValue_")?;
     let local_boolean_bindings = {
         let mut bindings = inherited_boolean_bindings.clone();
@@ -173,6 +182,7 @@ fn resolve_canvas_graph_inner(
                     &local_boolean_bindings,
                     bound_view_canvas,
                     defaults,
+                    instance_namespace,
                 ) {
                     Ok(scene) => scene,
                     Err(e) => {
@@ -191,7 +201,11 @@ fn resolve_canvas_graph_inner(
                 if let Some(param_inputs) = match_to_param_inputs.as_ref() {
                     inject_param_overrides(param_inputs, &mut child_scene);
                 }
-                if let Some(host_node_id) = host_node_for_match_to(&scene, match_to) {
+                // Without a matchTo name the entry's style conditions select
+                // the host canvas slot (the power master's `Set Canvas`).
+                let host_node_id = host_node_for_match_to(&scene, match_to)
+                    .or_else(|| host_canvas_node_for_entry(&scene, entry));
+                if let Some(host_node_id) = host_node_id {
                     inject_dynamic_param_field_bindings(
                         host_node_id,
                         &scene.operations,
@@ -354,6 +368,13 @@ fn resolve_canvas_graph_inner(
                     continue;
                 }
             };
+            // A list-slot instance introduces its own namespace (already
+            // fully qualified — the count binding was namespaced at this
+            // level's resolve start); other children inherit this canvas's.
+            let child_namespace = list_namespaces
+                .get(&node_id)
+                .map(String::as_str)
+                .or(instance_namespace);
             let mut child_scene = match resolve_canvas_graph_inner(
                 &child_json,
                 manufacturer_id,
@@ -367,6 +388,7 @@ fn resolve_canvas_graph_inner(
                 &local_boolean_bindings,
                 bound_view_canvas,
                 defaults,
+                child_namespace,
             ) {
                 Ok(s) => s,
                 Err(e) => {
@@ -380,12 +402,15 @@ fn resolve_canvas_graph_inner(
             };
             inject_param_overrides(&param_inputs, &mut child_scene);
             inject_dynamic_param_field_bindings(node_id, &scene.operations, &mut child_scene);
-            if let Some(namespace) = list_namespaces.get(&node_id) {
-                namespace_child_scene_bindings(&mut child_scene, namespace);
-            }
             merge_child_scene(&mut scene, child_scene, "", Some(node_id), false);
         }
     }
+
+    // Materialise arrayVariable-bound lists BEFORE state tags and the style
+    // cascade so per-entry data (pip states) participates in styling. Entry
+    // counts resolve against this instance's namespace (the power pip stacks
+    // differ per system: 4/6/4).
+    apply_array_variable_lists(&mut scene, instance_namespace.unwrap_or(""), defaults);
 
     // Apply style modifiers after scene resolution is complete (the R2 phase).
     // Cascade order mirrors the engine: generic sharedStyles base first, then
@@ -410,7 +435,7 @@ fn resolve_canvas_graph_inner(
     }
 
     expand_widget_standards(&mut scene, fetch_by_path);
-    crate::bb_bindings::resolve_state_tags_into_scene(&mut scene, &Default::default());
+    crate::bb_bindings::resolve_state_tags_into_scene(&mut scene, defaults);
     apply_canvas_style_cascade(
         &mut scene,
         root_json,
