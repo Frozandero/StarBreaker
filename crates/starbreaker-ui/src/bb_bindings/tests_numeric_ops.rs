@@ -269,3 +269,50 @@ fn unresolvable_bound_anchor_keeps_authored_value() {
     super::resolve_geometry_fields_into_scene(&mut scene, &empty);
     assert_eq!(scene.nodes[&1].anchor.y, 0.25, "authored anchor survives");
 }
+
+/// `LocalizedFromNumber` formats with `nPlaces` decimals and
+/// `LocalizedSIUnitFromNumber` adds the SI magnitude prefix — the emissions
+/// header's "3.5K" emitted / "294.1" ambient pair.
+#[test]
+fn localized_number_and_si_unit_formatting() {
+    let ops = serde_json::json!([
+        {"_Type_": "BuildingBlocks_BindingsLocalizedField",
+         "widget": "_PointsTo_:ptr:1", "field": "ParamInput0", "input": "_PointsTo_:ptr:10"},
+        {"_Pointer_": "ptr:10", "_Type_": "BuildingBlocks_BindingsLocalizedSIUnitFromNumber",
+         "nPlaces": 1, "nPlacesBinding": null, "withSeparators": false,
+         "unitSuffix": "None", "unitSuffixBinding": null, "forcedSIPrefix": "INVALID",
+         "input": "_PointsTo_:ptr:12"},
+        {"_Pointer_": "ptr:12", "_Type_": "BuildingBlocks_BindingsNumberVariable",
+         "path": [], "binding": "emitted", "inheritsNamespace": true},
+        {"_Type_": "BuildingBlocks_BindingsLocalizedField",
+         "widget": "_PointsTo_:ptr:2", "field": "ParamInput0", "input": "_PointsTo_:ptr:11"},
+        {"_Pointer_": "ptr:11", "_Type_": "BuildingBlocks_BindingsLocalizedFromNumber",
+         "nZeros": 0, "nPlaces": 1, "trailingZeros": true, "withSeparators": false,
+         "input": "_PointsTo_:ptr:13"},
+        {"_Pointer_": "ptr:13", "_Type_": "BuildingBlocks_BindingsNumberVariable",
+         "path": [], "binding": "ambient", "inheritsNamespace": true}
+    ]);
+    let resolver = resolver_for(ops);
+    let mut defaults = DefaultValueRegistry::default();
+    defaults.insert_path("emitted", Value::Float(3500.0));
+    defaults.insert_path("ambient", Value::Float(294.1));
+
+    assert_eq!(
+        resolver.resolve_field_text(1, "ParamInput0", &defaults).as_deref(),
+        Some("3.5K"),
+        "SI prefix at one decimal place"
+    );
+    assert_eq!(
+        resolver.resolve_field_text(2, "ParamInput0", &defaults).as_deref(),
+        Some("294.1"),
+        "plain number at one decimal place"
+    );
+
+    // Below the SI threshold the SI op formats the plain number.
+    let mut defaults = DefaultValueRegistry::default();
+    defaults.insert_path("emitted", Value::Float(294.1));
+    assert_eq!(
+        resolver.resolve_field_text(1, "ParamInput0", &defaults).as_deref(),
+        Some("294.1")
+    );
+}

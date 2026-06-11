@@ -347,6 +347,17 @@ pub(crate) fn derive_power_paths(
         .count() as i64;
     paths.insert("batteryremaining".into(), UiValue::Int(battery_count));
     paths.insert("batterytotal".into(), UiValue::Int(battery_count));
+    // Emissions header (clone namespaces IR=[0000], EM=[0001], CS=[0002]).
+    // TODO derive from the vehicle's signature components; the live formula
+    // (engine SignatureSystem) is not yet decoded, so these are the
+    // reference-verified at-rest Clipper values (Screen_Left_Lower_RTT).
+    for (i, emitted, ambient) in
+        [(0u32, 3500.0, 294.1), (1, 14900.0, 0.0), (2, 18600.0, 0.0)]
+    {
+        let base = format!("vehicle/signaturesystem/signatures/[{i:04}]");
+        paths.insert(format!("{base}/emitted"), UiValue::Float(emitted));
+        paths.insert(format!("{base}/ambient"), UiValue::Float(ambient));
+    }
     let max_total = sized.iter().map(|(_, total, _)| *total).max().unwrap_or(0);
     paths.insert(
         "resourcenetworkui/powermanagement/pipsLengthMax".into(),

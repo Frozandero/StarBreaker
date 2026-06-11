@@ -171,6 +171,71 @@ use super::types::{BbNodeType, BbScene};
         assert!(cloned_field_exists, "expected a remapped field op for the cloned widget");
     }
 
+    /// A `WidgetClone`'s `urlPostfix` namespaces the CLONED subtree's
+    /// inheriting variable bindings (the emissions header's clone_IR/EM/CS
+    /// carry `Signatures/[000i]` so each clone's `Emitted`/`Ambient` resolve
+    /// per signature channel). Non-inheriting bindings address absolute
+    /// engine paths and stay untouched.
+    #[test]
+    fn widget_clone_url_postfix_namespaces_cloned_variable_bindings() {
+        let canvas = serde_json::json!({
+            "_RecordValue_": {
+                "size": {"x": 100.0, "y": 100.0},
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_WidgetCanvas",
+                     "name": "root", "isActive": true},
+                    {"_Pointer_": "ptr:3", "_Type_": "BuildingBlocks_WidgetClone",
+                     "name": "clone_IR", "isActive": true,
+                     "parent": "_PointsTo_:ptr:1",
+                     "urlPostfix": "Signatures/[0000]",
+                     "target": "_PointsTo_:ptr:4"}
+                ],
+                "library": [
+                    {"_Pointer_": "ptr:4", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "template", "isActive": true},
+                    {"_Pointer_": "ptr:5", "_Type_": "BuildingBlocks_WidgetTextField",
+                     "name": "text_Emitted", "isActive": true,
+                     "parent": "_PointsTo_:ptr:4"}
+                ],
+                "operations": [
+                    {"_Pointer_": "ptr:10", "_Type_": "BuildingBlocks_BindingsNumberVariable",
+                     "binding": "Emitted", "inheritsNamespace": true},
+                    {"_Pointer_": "ptr:11", "_Type_": "BuildingBlocks_BindingsNumberVariable",
+                     "binding": "Absolute/Path", "inheritsNamespace": false},
+                    {"_Type_": "BuildingBlocks_BindingsNumberField",
+                     "widget": "_PointsTo_:ptr:5", "field": "Alpha",
+                     "input": "_PointsTo_:ptr:10"},
+                    {"_Type_": "BuildingBlocks_BindingsNumberField",
+                     "widget": "_PointsTo_:ptr:5", "field": "SizeX",
+                     "input": "_PointsTo_:ptr:11"}
+                ]
+            }
+        });
+
+        let scene = parse_bb_canvas(&canvas).expect("parse failed");
+        let bindings: Vec<String> = scene
+            .operations
+            .iter()
+            .filter(|op| {
+                op.get("_Type_").and_then(|v| v.as_str())
+                    == Some("BuildingBlocks_BindingsNumberVariable")
+            })
+            .filter_map(|op| op.get("binding").and_then(|v| v.as_str()).map(str::to_owned))
+            .collect();
+        assert!(
+            bindings.iter().any(|b| b == "Signatures/[0000]/Emitted"),
+            "cloned inheriting binding is namespaced, got {bindings:?}"
+        );
+        assert!(
+            bindings.iter().filter(|b| *b == "Absolute/Path").count() == 2,
+            "non-inheriting binding stays absolute in both copies, got {bindings:?}"
+        );
+        assert!(
+            bindings.iter().any(|b| b == "Emitted"),
+            "the library original keeps its un-namespaced binding"
+        );
+    }
+
     // ── MC_S_Self_Master ─────────────────────────────────────────────────────
 
     #[test]

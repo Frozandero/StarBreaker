@@ -94,7 +94,19 @@ pub(super) fn expand_widget_clones(
             nodes.insert(new_id, new_node);
         }
 
-        clone_widget_clone_operations(&id_map, operations, synthetic_base);
+        let clone_namespace = clone_node
+            .raw
+            .get("urlPostfix")
+            .and_then(|v| v.as_str())
+            .map(|s| s.trim_matches('/'))
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned);
+        clone_widget_clone_operations(
+            &id_map,
+            operations,
+            synthetic_base,
+            clone_namespace.as_deref(),
+        );
     }
 }
 
@@ -102,6 +114,7 @@ fn clone_widget_clone_operations(
     node_id_map: &BTreeMap<BbNodeId, BbNodeId>,
     operations: &mut Vec<serde_json::Value>,
     synthetic_base: &mut u32,
+    clone_namespace: Option<&str>,
 ) {
     let source_node_ids: BTreeSet<BbNodeId> = node_id_map.keys().copied().collect();
     let mut op_ptr_to_index = HashMap::new();
@@ -158,6 +171,25 @@ fn clone_widget_clone_operations(
         if let Some(old_ptr) = op_ptr {
             if let Some(new_ptr) = op_ptr_map.get(&old_ptr) {
                 cloned["_Pointer_"] = serde_json::Value::String(format!("ptr:{new_ptr}"));
+            }
+        }
+        // The clone's `urlPostfix` namespaces the cloned instance's inheriting
+        // variable bindings (the emissions clones' `Signatures/[000i]` give
+        // each clone its own `Emitted`/`Ambient`); `inheritsNamespace: false`
+        // bindings address absolute engine paths.
+        if let Some(namespace) = clone_namespace {
+            let ty = cloned.get("_Type_").and_then(|v| v.as_str()).unwrap_or("");
+            if ty.starts_with("BuildingBlocks_Bindings")
+                && ty.ends_with("Variable")
+                && cloned.get("inheritsNamespace").and_then(|v| v.as_bool()) != Some(false)
+                && let Some(binding) = cloned
+                    .get("binding")
+                    .and_then(|v| v.as_str())
+                    .filter(|b| !b.is_empty())
+                    .map(str::to_owned)
+            {
+                cloned["binding"] =
+                    serde_json::Value::String(format!("{namespace}/{binding}"));
             }
         }
         cloned_ops.push(cloned);

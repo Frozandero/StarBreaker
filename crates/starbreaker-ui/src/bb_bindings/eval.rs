@@ -67,6 +67,39 @@ impl BindingResolver {
             "BuildingBlocks_BindingsLocalizedFromInteger" => self
                 .eval_integer_ptr_from_field(op.get("input").and_then(|v| v.as_str()), defaults, seen)
                 .map(|v| v.to_string()),
+            "BuildingBlocks_BindingsLocalizedFromNumber" => {
+                let mut seen_num = std::collections::HashSet::new();
+                let value = op
+                    .get("input")
+                    .and_then(|v| v.as_str())
+                    .and_then(parse_points_to_or_ptr_str)
+                    .and_then(|p| self.eval_number_ptr(p, defaults, &mut seen_num))?;
+                let n_places = op.get("nPlaces").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+                let trailing = op.get("trailingZeros").and_then(|v| v.as_bool()).unwrap_or(true);
+                Some(format_number_places(value, n_places, trailing))
+            }
+            "BuildingBlocks_BindingsLocalizedSIUnitFromNumber" => {
+                // SI magnitude prefix at `nPlaces` decimals — the emissions
+                // header's "3.5K" (3500). Below 1000 the plain number renders.
+                let mut seen_num = std::collections::HashSet::new();
+                let value = op
+                    .get("input")
+                    .and_then(|v| v.as_str())
+                    .and_then(parse_points_to_or_ptr_str)
+                    .and_then(|p| self.eval_number_ptr(p, defaults, &mut seen_num))?;
+                let n_places = op.get("nPlaces").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+                let magnitude = value.abs();
+                let (scaled, prefix) = if magnitude >= 1_000_000_000.0 {
+                    (value / 1_000_000_000.0, "G")
+                } else if magnitude >= 1_000_000.0 {
+                    (value / 1_000_000.0, "M")
+                } else if magnitude >= 1_000.0 {
+                    (value / 1_000.0, "K")
+                } else {
+                    (value, "")
+                };
+                Some(format!("{}{prefix}", format_number_places(scaled, n_places, true)))
+            }
             "BuildingBlocks_BindingsLocalizationFromIntegerSwitch" => {
                 let input = self.eval_integer_ptr_from_field(op.get("input").and_then(|v| v.as_str()), defaults, seen)?;
                 let values = op.get("values").and_then(|v| v.as_array()).cloned().unwrap_or_default();
@@ -391,4 +424,15 @@ impl BindingResolver {
             .is_none()
     }
 
+}
+
+/// Format a number at `n_places` decimals; `trailing_zeros: false` trims the
+/// fractional part's trailing zeros (and a bare trailing point).
+fn format_number_places(value: f64, n_places: usize, trailing_zeros: bool) -> String {
+    let formatted = format!("{value:.n_places$}");
+    if trailing_zeros || n_places == 0 {
+        return formatted;
+    }
+    let trimmed = formatted.trim_end_matches('0').trim_end_matches('.');
+    trimmed.to_string()
 }

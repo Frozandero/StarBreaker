@@ -281,9 +281,23 @@ fn resolve_canvas_graph_inner(
             // A list-slot instance introduces its own namespace (already
             // fully qualified — the count binding was namespaced at this
             // level's resolve start); other children inherit this canvas's.
+            // An ABSOLUTE `urlPostfix` (leading slash — the emissions
+            // instance's `/Vehicle/SignatureSystem`) addresses the engine
+            // data root and becomes the child instance's namespace. Relative
+            // postfixes are NOT composed: the medical canvases author their
+            // bindings (partially) pre-qualified and the platinum-frozen
+            // registry keys capture that resolution.
+            let postfix_namespace: Option<String> = scene
+                .nodes
+                .get(&node_id)
+                .and_then(|n| n.raw.get("urlPostfix"))
+                .and_then(|v| v.as_str())
+                .filter(|s| s.starts_with('/') && !s.trim_matches('/').is_empty())
+                .map(|s| s.trim_matches('/').to_owned());
             let child_namespace = list_namespaces
                 .get(&node_id)
                 .map(String::as_str)
+                .or(postfix_namespace.as_deref())
                 .or(instance_namespace);
             let mut child_scene = match resolve_canvas_graph_inner(
                 &child_json,

@@ -224,6 +224,41 @@ fn battery_counts_come_from_fitted_items() {
     assert_eq!(paths.get("batterytotal"), Some(&UiValue::Int(2)));
 }
 
+/// The emissions header reads `vehicle/signaturesystem/signatures/[000i]`
+/// (IR=0, EM=1, CS=2) emitted/ambient pairs via the clone namespaces.
+#[test]
+fn emission_signature_paths_are_emitted() {
+    let pools = power_pools_from_vehicle(&clipper_pools_json());
+    let items = clipper_fitted_items();
+    let paths = derive_power_paths(&pools, &items, &PoolDefaults::default(), &clipper_pool_icons());
+
+    assert_eq!(
+        paths.get("vehicle/signaturesystem/signatures/[0000]/emitted"),
+        Some(&UiValue::Float(3500.0)),
+        "IR emitted"
+    );
+    assert_eq!(
+        paths.get("vehicle/signaturesystem/signatures/[0000]/ambient"),
+        Some(&UiValue::Float(294.1)),
+        "IR ambient"
+    );
+    assert_eq!(
+        paths.get("vehicle/signaturesystem/signatures/[0001]/emitted"),
+        Some(&UiValue::Float(14900.0)),
+        "EM emitted"
+    );
+    assert_eq!(
+        paths.get("vehicle/signaturesystem/signatures/[0002]/emitted"),
+        Some(&UiValue::Float(18600.0)),
+        "CS emitted"
+    );
+    assert_eq!(
+        paths.get("vehicle/signaturesystem/signatures/[0002]/ambient"),
+        Some(&UiValue::Float(0.0)),
+        "CS ambient"
+    );
+}
+
 /// The gauge scale ceiling tracks the ITEM's real overheat threshold (the
 /// Clipper's flight controller overheats at 450 K, its shields at 372 K), so
 /// the heat-bar band ratios stay coherent (overheat never exceeds the scale).
