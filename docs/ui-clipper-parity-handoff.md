@@ -81,7 +81,7 @@ embeds the per-identity delta and refuses no-op re-freezes.
 | 2 | Emissions | IR/EM/CS labels render `@LOC_PLACEHOLDER` | **FIXED 2026-06-11** — clone expansion applies FieldModifierLocalization via `_SynthLocalizedWidget_` (below) |
 | 3 | OUTPUT card | title at right of header row; ref has icon→dots→title left-aligned | **FIXED 2026-06-11** — draw-metrics intrinsic measurement (below); title flows after the dots |
 | 4 | Battery card | OFFLINE text container 543px overflows card, indented right | **FIXED 2026-06-11** — same fix; OFFLINE fits the card (draw-width box + 1b shrink) |
-| 5 | All cards/pips/gauges | icons dark, separator dots invisible, gauge zone colours, pip brightness, backdrop bands, "2" white vs cream | **PARTIALLY LANDED 2026-06-11** — the defaultStyles cascade re-land (below) tints the system/card icons (Accent2/Base) and delivered the medical white X + annunciator rounded chiclets; residuals: "2" white vs cream, separator dots, pip brightness, backdrop bands (A7 class) |
+| 5 | All cards/pips/gauges | icons dark, separator dots invisible, gauge zone colours, pip brightness, backdrop bands, "2" white vs cream | **PARTIALLY LANDED 2026-06-11** — the defaultStyles cascade re-land (below) tints the system/card icons (Accent2/Base) and delivered the medical white X + annunciator rounded chiclets; residuals: "2" white vs cream (DIAGNOSED: our `UI_Generic_Flag_03 → Foreground` directive in `node_colour_directive_token` is right for the medical card headers — genuinely white in-game, platinum-pinned — but wrong for the power "2", cream/Base in-game; the discriminator needs authored-data archaeology on the medical ChoiceButton headers; power isn't a frozen target so no outlier vehicle — fix before the power freeze), separator dots, pip brightness, backdrop bands (A7 class) |
 | 6 | Footer/scrollbar | good parity; faint track + backdrop band remain (A7 class) | Open — A7 backdrop class residual |
 
 ## Remaining work, in order
@@ -185,19 +185,34 @@ band; chevrons byte-untouched); ui_target_b/small_door byte-identical.
 DON'T retry the "enableColorOverlay+null → Base" overlay default (regressed
 target-screen chevrons; entry-driven FillColor is the engine model).
 
-### 6. Medical bed (plan Steps 10–13)
+### 6. Medical bed (plan Steps 10–13) — status 2026-06-11 evening
 
-- ~~White X~~ DONE 2026-06-11 (item 5's re-land + stale-RGBA clear; verified
-  vs medical1 reference, 196px delta, platinum re-frozen).
-- 64→69px close-button: find the engine rule or register w/h known-outliers
-  (`crates/starbreaker-ui/tests/fixtures/ui_ir/ui_known_outliers.json`,
-  reference-anchored one-sided overrides; none registered yet).
-- Position outliers: T3 + MEDICAL ASSISTANT −5px (lower), PATIENT NAME +
-  "No patient in bed" +5px (higher), Bioticorp logo −12px (check
-  `vertical_alpha_balance_offset` in `ir_compose/engine_parts/engine_01.part` (`vertical_alpha_balance_offset`)
-  first — if fixed, also re-freeze `ui_target_b` end-of-bed).
-- Tint-related platinum re-freeze DONE with item 5; a further re-freeze is
-  needed only if the position outliers land.
+- ~~White X~~ DONE (item 5's re-land + stale-RGBA clear; verified vs
+  medical1 reference, 196px delta, platinum re-frozen).
+- ~~Bioticorp logo −12px~~ DONE (4f8532f4e): `draw_manufacturer_logo_ir`
+  now honours the authored asset layout (Contain at containPosition 0,0 —
+  the square 1024-viewBox SVG width-fits its 120×140 box top-anchored) and
+  the `vertical_alpha_balance_offset` recentring heuristic is DELETED. Bed
+  logo measures pixel-exact vs the reference (rows 44–83); end-of-bed
+  matches within its capture offset. Artifact re-freeze done (ui_target_a/b
+  ±2510px in the logo box only).
+- ~~Position outliers~~ REGISTERED as reference-anchored known-outliers
+  (`ui_known_outliers.json`, 4 entries on ui_target_a): T3 + MEDICAL
+  ASSISTANT primary_text_top 77→82 (~5px high), PATIENT NAME pair primary
+  1004→999 / secondary 1032→1029 (~5px/3px low). True fix = the
+  caption/heading line-box baseline model (A5 residual class, opposite
+  signs in two pair archetypes — no single offset rule).
+- 64→69px close-button — ENGINE RULE DIAGNOSED, implementation deferred:
+  the frame node (`ComponentRoot`, authored 64×64, border 3px, radius 6)
+  draws its border OUTSET in-game (content-box: 64 + 2×3 = 70 visible;
+  reference measures 68–70 at the aligned right edge). Our border draws
+  inset (64 visible). NOTE: a w/h known-outlier is the WRONG vehicle —
+  outset borders are paint-only, the snapshot rect stays 64 and would
+  never graduate. Implementation = outset border drawing scoped to
+  expanded-standard component roots (own `canvas-proxy-root` tag);
+  blast radius includes the GOLD target master's two 212×105.6 side
+  buttons (3.33px borders) — measure those frames on the target reference
+  before landing, then artifact-adjudicate every target.
 
 ### 7. Power wrap (Step 9 finish)
 
