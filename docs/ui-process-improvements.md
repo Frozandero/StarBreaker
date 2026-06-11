@@ -345,6 +345,15 @@ writing):
 3. **Comparison**: `scripts/ui_compare.py` usage + preset list; reference
    image inventory (`/home/tom/projects/scorg_tools/reference/in-game/...`
    per screen, with resolution caveats).
+3b. **Screen dossier table** — ONE ROW PER KNOWN SCREEN so a per-screen
+   prompt needs only the screen name: helper name | scene.json that carries
+   the binding (LOD0 cockpit MFDs vs LOD1 medical/door/annunciator) |
+   canvas record (name + mirror path) | reference image path | ui_compare
+   preset | frozen tier/target id (if any) | open known issues pointer
+   (handoff/catalog). Seed with: Screen_Left_Lower_RTT (power),
+   Screen_Right_Upper_RTT (target, gold clipper_target_master), medical bed
+   (platinum ui_target_a), end-of-bed (platinum ui_target_b), small door,
+   annunciator master left (golds), and the remaining Clipper helpers.
 4. **MCP tools** (server `starbreakerMcp`), with WHEN-to-use guidance:
    - UI: `ui_canvas_style_inventory`, `ui_scene_style_probe`, `ui_ir_query`
      (the style investigation order), `ui_regression_registry`,
@@ -382,7 +391,7 @@ writing):
 | Document | Disposition |
 |---|---|
 | `crates/starbreaker-ui/docs/ui-matching-workflow.md` | **Delete**; content absorbed (corrected) into `docs/ui-workflow.md`. Leave no stub — update every reference. |
-| `crates/starbreaker-ui/docs/ui-matching-agent-prompt.md` | **Rewrite** as a ~20-line prompt that points at `docs/ui-workflow.md` + the arc handoff and states only the per-arc variables (images, ship, goal). |
+| `crates/starbreaker-ui/docs/ui-matching-agent-prompt.md` | **Rewrite** as the SHORT PER-SCREEN PROMPT template (~20 lines): (1) read `docs/ui-workflow.md` then `docs/ui-reference.md`; (2) look up `<SCREEN>` in the reference doc's screen dossier; (3) goal = close the gap to the dossier's reference image — replay-render, run `ui_compare.py`, build/extend the diff catalog, then the TDD loop with `ui_check.sh`, guard-adjudication on trips, audited freezes only with approval; (4) per-arc variables block (`SCREEN=`, optional `HANDOFF=`, optional known-symptom list); ships with one filled-in example. |
 | `crates/starbreaker-ui/docs/ui-matching-text-prompt.md` | **Delete** (text-only variant obsolete — agents in use are vision-capable; the rewritten prompt covers both). |
 | `docs/ui-regression-baseline-workflow.md` | **Delete**; freeze flows live in `docs/ui-workflow.md` §7; schema details stay in `crates/starbreaker-ui/docs/ir-freeze-schema.md`. |
 | `docs/ui-matching-tasks/target-master-findings.md` | **Delete** (stale findings; anything still true is in the runbook/memory). |
@@ -487,11 +496,15 @@ spec.
    gain a pointer "process docs consolidated → docs/ui-workflow.md +
    docs/ui-reference.md"; fix the `MFD_IR_DUMP_LOG` ghost-probe note
    (correct name: `ui render --dump-ir-dir`).
-6. Acceptance (item 11's): fresh-context dry run — open ONLY the two new
-   docs + handoff and walk one full cycle (replay render → compare → pick
+6. Acceptance (item 11's, strengthened): the deliverable is the SHORT
+   PROMPT — instantiate the rewritten template for one screen (e.g.
+   `SCREEN=Screen_Left_Lower_RTT`) and dry-run it from fresh context (or a
+   subagent): with ONLY that prompt, the agent must reach a replay render,
+   a region comparison, a catalog entry, and the start of a TDD fix (e.g.
    the ignored `column_zero_auto_text_children_stack_at_measured_heights`
-   spec → confirm every needed command/path is present in the docs WITHOUT
-   leaving them). Commit:
+   spec) WITHOUT leaving the two docs + dossier for any command or path.
+   Any lookup that forces an excursion is a doc bug — fix it before
+   closing the phase. Commit:
    `docs: consolidated UI workflow + reference; supersede ui-matching docs
    (process item 11)`.
 
