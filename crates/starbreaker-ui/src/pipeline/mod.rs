@@ -23,6 +23,7 @@ mod style_projection;
 use style_projection::project_canvas_style_entries;
 mod style_selection;
 mod swf_selection;
+mod text_measure;
 mod timing;
 #[cfg(test)]
 mod tests;
@@ -332,6 +333,15 @@ pub fn compile_ir_for_binding(inputs: &PipelineInputs<'_>) -> Result<UiIrDocumen
         1.0
     };
 
+    // Pre-layout draw-faithful text measurement: load the SAME SWF assets the
+    // compose-time draw will use so intrinsic text boxes hug the painted
+    // glyphs (measure == draw; see pipeline/text_measure.rs). An empty
+    // library (no SWF source) selects no font and the TTF estimate stays.
+    let measure_swf_paths: Vec<String> = selected_swf_source.iter().cloned().collect();
+    let measure_assets =
+        timed("swf_load_measure", || load_first_swf(&measure_swf_paths, inputs.swf_fetcher));
+    let text_measure = Some(text_measure::SwfDrawTextMeasure::new(&measure_assets));
+
     let mut ir = timed("ir_compile", || crate::ui_ir::compile_ui_ir_from_scene_with_animation_sample(
         &scene,
         Some(inputs.canvas_fetcher),
@@ -347,6 +357,7 @@ pub fn compile_ir_for_binding(inputs: &PipelineInputs<'_>) -> Result<UiIrDocumen
         inputs.animation_sample_percent,
         100,
         design_text_scale,
+        text_measure.as_ref().map(|m| m as &dyn crate::ui_ir::DrawTextMeasure),
     ));
     ir.warnings.extend(fallback_counter_warnings(
         style_manifest

@@ -103,10 +103,104 @@ mod tests_d {
             Some(50.0),
             100,
             1.0,
+            None,
         );
 
         let node = ir.nodes.iter().find(|node| node.name == "fingerprint_like").expect("sample node");
         assert!((node.alpha - 0.5).abs() < f32::EPSILON);
+    }
+
+    /// With a [`DrawTextMeasure`] supplied, the pre-layout annotation pass
+    /// writes `_DrawTextWidthPx_`/`_DrawTextHeightPx_` from the DRAW-side
+    /// glyph metrics and the intrinsic layout hugs them; without it the
+    /// TTF estimate applies (the control proves the assertion discriminates).
+    #[test]
+    fn compile_ir_uses_draw_text_measure_for_intrinsic_boxes() {
+        struct StubMeasure;
+        impl DrawTextMeasure for StubMeasure {
+            fn measure_px(
+                &self,
+                _font_symbol: Option<&str>,
+                _label_style: Option<&str>,
+                _text: &str,
+                _font_px: f32,
+                _letter_spacing_px: f32,
+            ) -> Option<(f32, f32)> {
+                Some((160.4, 30.0))
+            }
+        }
+
+        let canvas = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.TestDrawMeasure",
+            "_RecordValue_": {
+                "size": {"x": 400, "y": 100},
+                "coordinateMethod": "useRaw",
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "row", "isActive": true,
+                     "layoutPolicy": {"_Type_": "BuildingBlocks_FlexContainer",
+                                      "direction": "Row", "axisJustification": "Start"},
+                     "sizing": {"width": {"value": 1.0, "behavior": "Percent"},
+                                "height": {"value": 1.0, "behavior": "Percent"}}},
+                    {"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_WidgetTextField",
+                     "name": "title", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "_ResolvedText_": "OUTPUT",
+                     "text": "OUTPUT",
+                     "fontSize": {"value": 20.0, "behavior": "Fixed"},
+                     "sizing": {"width": {"value": 0.0, "behavior": "Auto"},
+                                "height": {"value": 1.0, "behavior": "Percent"}}}
+                ],
+                "operations": []
+            }
+        });
+
+        let scene = crate::bb_scene::parse_bb_canvas(&canvas).expect("scene parse");
+        let compile = |measure: Option<&dyn DrawTextMeasure>| {
+            compile_ui_ir_from_scene_with_animation_sample(
+                &scene,
+                None,
+                "guid-draw-measure",
+                Some("BuildingBlocks_Canvas.TestDrawMeasure"),
+                (400, 100),
+                &defaults(),
+                None,
+                None,
+                &[],
+                Vec::new(),
+                Vec::new(),
+                None,
+                100,
+                1.0,
+                measure,
+            )
+        };
+
+        let with_measure = compile(Some(&StubMeasure));
+        let title = with_measure
+            .nodes
+            .iter()
+            .find(|node| node.name == "title")
+            .expect("title node");
+        assert!(
+            (title.computed_rect.w - 160.4).abs() < 0.6,
+            "the Auto title box hugs the draw-measured width, got {}",
+            title.computed_rect.w
+        );
+
+        // Control: the same compile WITHOUT the measurer uses the TTF
+        // estimate — if this also landed at 160.4 the assertion above would
+        // prove nothing.
+        let without_measure = compile(None);
+        let control = without_measure
+            .nodes
+            .iter()
+            .find(|node| node.name == "title")
+            .expect("title node");
+        assert!(
+            (control.computed_rect.w - 160.4).abs() > 5.0,
+            "the TTF-estimate control must differ from the stub width, got {}",
+            control.computed_rect.w
+        );
     }
 
     #[test]

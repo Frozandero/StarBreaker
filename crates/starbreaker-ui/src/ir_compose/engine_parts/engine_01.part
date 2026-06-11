@@ -24,7 +24,7 @@ use crate::bb_layout::Rect;
 use crate::compose::ComposeContext;
 use crate::error::UiError;
 use crate::text::{FontKind, TextAlign, TextRenderer, VerticalAlign};
-use crate::swf_assets::FontGlyphSet;
+use crate::swf_assets::{FontGlyphSet, SwfAssetLibrary};
 use crate::ui_ir::{
     validate_ui_ir_document, UiIrBorder, UiIrColourBlendMode, UiIrDocument, UiIrNode, UiIrPolygon,
     UiIrRect, UiIrTextPayload, UiIrTextStyle, UiIrValue,
@@ -1939,9 +1939,9 @@ impl FontSelectionSource {
     }
 }
 
-struct SelectedImportedFont<'a> {
-    symbol: String,
-    font: &'a FontGlyphSet,
+pub(crate) struct SelectedImportedFont<'a> {
+    pub(crate) symbol: String,
+    pub(crate) font: &'a FontGlyphSet,
     source: FontSelectionSource,
 }
 
@@ -1949,9 +1949,26 @@ fn select_imported_ui_font<'a>(
     ctx: &'a ComposeContext<'_>,
     text_style: Option<&UiIrTextStyle>,
 ) -> Option<SelectedImportedFont<'a>> {
-    if let Some(symbol) = font_symbol_from_text_style(text_style)
-        && let Some(id) = ctx.assets.lookup_export(symbol)
-        && let Some(font) = ctx.assets.get_font(id)
+    select_imported_ui_font_from_assets(
+        ctx.assets,
+        font_symbol_from_text_style(text_style),
+        text_style.and_then(|style| style.label_style.as_deref()),
+    )
+}
+
+/// Assets-level draw font selection — the single source of truth for which
+/// imported SWF font a text element renders with. Shared by the compose-time
+/// draw (via [`select_imported_ui_font`]) and the pipeline's pre-layout
+/// [`crate::ui_ir::DrawTextMeasure`] so intrinsic text measurement selects
+/// EXACTLY the font the draw will use (measure == draw by construction).
+pub(crate) fn select_imported_ui_font_from_assets<'a>(
+    assets: &'a SwfAssetLibrary,
+    font_symbol: Option<&str>,
+    label_style: Option<&str>,
+) -> Option<SelectedImportedFont<'a>> {
+    if let Some(symbol) = font_symbol
+        && let Some(id) = assets.lookup_export(symbol)
+        && let Some(font) = assets.get_font(id)
     {
         return Some(SelectedImportedFont {
             symbol: symbol.to_string(),
@@ -1960,14 +1977,11 @@ fn select_imported_ui_font<'a>(
         });
     }
 
-    let label_style = text_style.and_then(|style| style.label_style.as_deref());
-
     if matches!(label_style, Some("Title3")) {
-        let mut text1_fonts: Vec<(String, &'a FontGlyphSet)> = ctx
-            .assets
+        let mut text1_fonts: Vec<(String, &'a FontGlyphSet)> = assets
             .export_entries()
             .filter(|(symbol, _)| symbol.starts_with("$Text1"))
-            .filter_map(|(symbol, id)| ctx.assets.get_font(id).map(|font| (symbol.to_string(), font)))
+            .filter_map(|(symbol, id)| assets.get_font(id).map(|font| (symbol.to_string(), font)))
             .collect();
 
         text1_fonts.sort_by(|(left_name, left_font), (right_name, right_font)| {
@@ -1988,8 +2002,8 @@ fn select_imported_ui_font<'a>(
     let preferred_symbols: &[&str] = &["$Text1Book", "$Text1Med", "$OutfitRegular", "$Text1Bold", "$CIGDrake"];
 
     for symbol in preferred_symbols {
-        if let Some(id) = ctx.assets.lookup_export(symbol)
-            && let Some(font) = ctx.assets.get_font(id)
+        if let Some(id) = assets.lookup_export(symbol)
+            && let Some(font) = assets.get_font(id)
         {
             return Some(SelectedImportedFont {
                 symbol: symbol.to_string(),
@@ -2017,7 +2031,7 @@ fn select_imported_ui_font<'a>(
         ],
     };
     for (query, label) in preferred_font_names {
-        if let Some(font) = ctx.assets.find_font_by_name(query) {
+        if let Some(font) = assets.find_font_by_name(query) {
             return Some(SelectedImportedFont {
                 symbol: label.to_string(),
                 font,
@@ -2106,7 +2120,7 @@ fn fit_swf_font_size_to_rect(
 /// em (`ascent + |descent|`) plus its leading, scaled to `size_px`. This is the
 /// vertical space one line of this font occupies — what an `autoFontSize` field sizes
 /// against so the line fits its rect.
-fn swf_line_box_px(font: &FontGlyphSet, size_px: f32) -> f32 {
+pub(crate) fn swf_line_box_px(font: &FontGlyphSet, size_px: f32) -> f32 {
     let ascent = font.ascent.map(|value| value as f32).unwrap_or(820.0);
     let descent = font.descent.map(|value| value as f32).unwrap_or(-204.0);
     let leading = font.leading.map(|value| value as f32).unwrap_or(0.0);

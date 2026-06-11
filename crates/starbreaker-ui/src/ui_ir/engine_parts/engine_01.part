@@ -411,6 +411,26 @@ pub fn stable_hash_ui_ir(document: &UiIrDocument) -> Result<String, serde_json::
 }
 
 /// Compile a canonical UI IR document from a resolved scene.
+/// Draw-faithful text measurement supplied by the caller that owns the SWF
+/// font assets the renderer will draw with (`pipeline`). The pre-layout
+/// annotation pass uses it to write `_DrawTextWidthPx_`/`_DrawTextHeightPx_`
+/// so `bb_layout`'s intrinsic text boxes hug the glyphs the draw will paint
+/// (the SWF path renders at the IR font size with NO TTF calibration — a TTF
+/// estimate overshoots ~1.5×; see docs/ui-clipper-parity-handoff.md #3).
+/// Returns `None` when no draw font would be selected for the element (the
+/// renderer falls back to the TTF path, whose estimate bb_layout already
+/// models).
+pub trait DrawTextMeasure {
+    fn measure_px(
+        &self,
+        font_symbol: Option<&str>,
+        label_style: Option<&str>,
+        text: &str,
+        font_px: f32,
+        letter_spacing_px: f32,
+    ) -> Option<(f32, f32)>;
+}
+
 pub fn compile_ui_ir_from_scene(
     scene: &BbScene,
     canvas_fetcher: Option<&dyn CanvasFetcher>,
@@ -440,6 +460,7 @@ pub fn compile_ui_ir_from_scene(
         None,
         confidence,
         1.0,
+        None,
     )
 }
 
@@ -458,6 +479,7 @@ pub fn compile_ui_ir_from_scene_with_animation_sample(
     animation_sample_percent: Option<f32>,
     confidence: u8,
     design_text_scale: f32,
+    text_measure: Option<&dyn DrawTextMeasure>,
 ) -> UiIrDocument {
     let mut layout_scene = scene.clone();
     if let Some(root_annunciator_items) = layout_scene
@@ -502,6 +524,8 @@ pub fn compile_ui_ir_from_scene_with_animation_sample(
         &style_font_sizes,
         &standard_text_styles,
         design_text_scale,
+        canvas_fetcher,
+        text_measure,
     );
     let layout = bb_layout::layout_with_animation_sample(
         &layout_scene,
@@ -672,6 +696,15 @@ fn missing_strict_renderer_style_semantics(node: &UiIrNode) -> Vec<String> {
 /// measurement matches what the renderer will draw (the brand Heading sizes,
 /// not the authored editor size). Auto-fit text is skipped — its size
 /// depends on the laid-out rect.
+///
+/// When a [`DrawTextMeasure`] is supplied, additionally measure the resolved
+/// text through the DRAW-side glyph machinery and write
+/// `_DrawTextWidthPx_`/`_DrawTextHeightPx_`: the SWF draw path renders at the
+/// IR font size (no TTF calibration), so only a measure over the same font
+/// the renderer selects keeps intrinsic boxes hugging the painted glyphs
+/// (docs/ui-clipper-parity-handoff.md catalog #3). The measured size mirrors
+/// the IR build path: a styled (brand-table) size verbatim, a plain size with
+/// the font record's imageSizePercent boost.
 #[allow(clippy::too_many_arguments)]
 fn annotate_effective_font_px(
     layout_scene: &mut BbScene,
@@ -681,6 +714,8 @@ fn annotate_effective_font_px(
     style_font_sizes: &HashMap<String, f32>,
     standard_text_styles: &HashMap<String, StandardTextStyle>,
     design_text_scale: f32,
+    canvas_fetcher: Option<&dyn CanvasFetcher>,
+    text_measure: Option<&dyn DrawTextMeasure>,
 ) {
     let ids: Vec<BbNodeId> = layout_scene
         .nodes
@@ -696,7 +731,7 @@ fn annotate_effective_font_px(
     for id in ids {
         let Some(node) = scene.nodes.get(&id) else { continue };
         let Some(text) = node.text.as_ref() else { continue };
-        let (font_size, _is_styled) = resolve_effective_font_size(
+        let (font_size, is_styled) = resolve_effective_font_size(
             id,
             node,
             text,
@@ -715,10 +750,59 @@ fn annotate_effective_font_px(
         if font_px <= 0.0 {
             continue;
         }
+        let draw_metrics = text_measure.and_then(|measure| {
+            let resolved_text = node.raw.get("_ResolvedText_").and_then(|v| v.as_str())?;
+            let font_record = effective_font_record(node, standard_text_styles);
+            let resolved_font_record = font_record
+                .as_deref()
+                .and_then(|record_ref| resolve_record(canvas_fetcher, &[record_ref]));
+            // The draw consumes the IR text_style font size: styled sizes
+            // verbatim, plain sizes with the imageSizePercent boost — mirror
+            // that here so measure == draw.
+            let draw_font_size = if is_styled {
+                UiIrValue::Fixed { value: font_px }
+            } else {
+                adjust_ui_ir_font_value_for_font_record_image_percent(
+                    UiIrValue::Fixed { value: font_px },
+                    resolved_font_record.as_ref(),
+                )
+            };
+            let UiIrValue::Fixed { value: draw_font_px } = draw_font_size else {
+                return None;
+            };
+            let font_symbol = resolved_font_record
+                .as_ref()
+                .map(|record| record.get("_RecordValue_").unwrap_or(record))
+                .and_then(|value| value.get("font"))
+                .and_then(|value| value.as_str())
+                .filter(|symbol| !symbol.is_empty())
+                .map(str::to_owned);
+            let label_style = label_style_name_from_raw(node);
+            let letter_spacing_px = brand_style_letter_spacing(
+                label_style.as_deref(),
+                standard_text_styles,
+            )
+            .map(|spacing| spacing * design_text_scale)
+            .unwrap_or(0.0);
+            measure.measure_px(
+                font_symbol.as_deref(),
+                label_style.as_deref(),
+                resolved_text,
+                draw_font_px,
+                letter_spacing_px,
+            )
+        });
         if let Some(node) = layout_scene.nodes.get_mut(&id)
             && let Some(map) = node.raw.as_object_mut()
         {
             map.insert("_EffectiveFontPx_".to_string(), serde_json::json!(font_px));
+            if let Some((draw_w, draw_h)) = draw_metrics
+                && draw_w > 0.0
+                && draw_h > 0.0
+            {
+                map.insert("_DrawTextWidthPx_".to_string(), serde_json::json!(draw_w));
+                map.insert("_DrawTextHeightPx_".to_string(), serde_json::json!(draw_h));
+            }
         }
     }
 }
