@@ -33,3 +33,11 @@ This register tracks active UI fallbacks in `starbreaker-ui` and explicitly reco
 - New fallbacks must declare scope, trigger, and sunset target before merge.
 - Fall-backs without telemetry or retirement criteria are not allowed.
 - When a fallback is removed, move it to the retired section with evidence.
+
+## Pinned at-rest registry values
+
+Pinned (non-derived) values in
+`crates/starbreaker-ui/data/default_value_registry_v1.json` are themselves
+documented fallbacks: each path family's provenance and sunset condition is
+tracked in `crates/starbreaker-ui/data/default_value_registry_v1.notes.md`
+(updated in the same commits that touch the registry).
