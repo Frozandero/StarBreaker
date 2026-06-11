@@ -3004,6 +3004,10 @@ mod ui_regression_registry_tests {
         );
     }
 
+    // The validator is a POSIX shell script (bash + jq); on Windows the
+    // bash bridge mangles the Windows paths passed via env vars, so these
+    // two tests only run where the script actually executes.
+    #[cfg(unix)]
     #[test]
     fn ui_regression_validate_quick_mode_passes_with_default_fixtures() {
         let server = StarBreakerMcp::new(None);
@@ -3019,6 +3023,8 @@ mod ui_regression_registry_tests {
         assert_eq!(json.get("passed").and_then(|v| v.as_bool()), Some(true));
     }
 
+    // POSIX-script-backed — see the note on the quick-mode test above.
+    #[cfg(unix)]
     #[test]
     fn ui_regression_validate_reports_missing_freeze_file() {
         let server = StarBreakerMcp::new(None);
@@ -3047,15 +3053,23 @@ mod ui_regression_registry_tests {
     /// Helper: run a test with a live P4K/DataCore connection. Passes the server
     /// to the closure so the test can query real DataCore records.
     /// Uses auto-discovery (same path as production code).
+    ///
+    /// SKIPS (early-returns) when no Data.p4k can be discovered — CI runners
+    /// have no Star Citizen install, and `server.data()` would otherwise
+    /// panic. Locally, set `SC_DATA_P4K` to point at non-default data.
     fn with_p4k_test<F>(test: F)
     where
         F: FnOnce(StarBreakerMcp),
     {
+        if let Err(e) = starbreaker_p4k::find_p4k() {
+            eprintln!("SKIP: no Data.p4k available ({e}); set SC_DATA_P4K to run P4K-backed MCP tests");
+            return;
+        }
         let server = StarBreakerMcp::new(None);
         // Verify P4K loaded successfully via auto-discovery
         if server.data().p4k.entries().is_empty() {
             panic!(
-                "P4K auto-discovery failed — expected Data.p4k at ~/Games/star-citizen/drive_c/Program Files/Roberts Space Industries/StarCitizen/LIVE/Data.p4k. \
+                "P4K auto-discovery found a path but loaded no entries. \
                 Set SC_DATA_P4K env var to override."
             );
         }
