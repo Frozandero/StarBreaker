@@ -1173,9 +1173,24 @@ fn layout_flex_no_grow_children(
                 // card's "2" + "/ 16", which the zero rule collapses onto one
                 // spot) and mixed rows (the battery header's icon + separator
                 // + Auto BATTERY title, which the fill placement paints over
-                // the icon). Column flows keep the downstream auto_main
-                // placement the medical baselines pin.
+                // the icon).
                 w = intrinsic;
+                auto_main = false;
+            } else if !is_row
+                && matches!(
+                    node.sizing.height,
+                    BbValue::Other { value, ref behavior } if behavior == "Auto" && value == 0.0
+                )
+                && let Some(intrinsic) =
+                    auto_text_intrinsic_main(child_id, scene, csy, false)
+            {
+                // Text-backed Auto ZERO-hint (value 0.0 = pure content hint)
+                // children in a COLUMN stack at measured text heights — the
+                // emissions Numbers Container stacks emitted above ambient.
+                // Scoped to 0.0 only: the medical platinum pins the fill
+                // placement for NON-zero Auto hints in columns (a column-wide
+                // intrinsic drifted the medical header h 78→18, y +27).
+                h = intrinsic;
                 auto_main = false;
             } else if is_row {
                 w = 0.0;

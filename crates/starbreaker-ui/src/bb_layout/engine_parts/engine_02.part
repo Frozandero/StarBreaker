@@ -1937,10 +1937,10 @@ fn apply_flex_no_grow_shrink(
         return total_main;
     }
     let all_items_flex_managed = sizes.iter().all(|(child_id, _, _, _)| {
-        scene
-            .nodes
-            .get(child_id)
-            .is_some_and(|node| main_axis_flex_managed(node, is_row))
+        scene.nodes.get(child_id).is_some_and(|node| {
+            main_axis_flex_managed(node, is_row)
+                || zero_auto_text_backed(*child_id, node, scene, is_row)
+        })
     });
     if !all_items_flex_managed {
         return total_main;
@@ -1975,6 +1975,26 @@ fn apply_flex_no_grow_shrink(
         .map(|(_, w, h, _)| if is_row { *w } else { *h })
         .sum::<f32>()
         + spacing_total
+}
+
+/// Auto ZERO-hint (value 0.0) children whose main size came from the text
+/// intrinsic are CONTENT-SIZED flex items and shrink with their flow (the
+/// emissions Numbers Container's emitted/ambient pair otherwise overflows
+/// its 141px band at nominal-font measure). Zero-hint children WITHOUT
+/// measurable text keep the zero-size rule and stay outside the shrink set.
+/// Existence of an intrinsic is scale-independent, so the probe scale is 1.
+fn zero_auto_text_backed(
+    node_id: BbNodeId,
+    node: &crate::bb_scene::BbNode,
+    scene: &BbScene,
+    is_row: bool,
+) -> bool {
+    let main = if is_row { &node.sizing.width } else { &node.sizing.height };
+    let zero_auto = matches!(
+        main,
+        BbValue::Other { value, behavior } if behavior == "Auto" && *value == 0.0
+    );
+    zero_auto && auto_text_intrinsic_main(node_id, scene, 1.0, is_row).is_some()
 }
 
 /// A child participates in flex main-axis sizing when its authored sizing is
@@ -2175,7 +2195,6 @@ mod flex_shrink_tests {
     /// emitted above ambient. Columns with non-zero Auto hints keep the
     /// downstream fill placement the medical baselines pin.
     #[test]
-    #[ignore = "NEXT STEP (handoff): extend part_04's intrinsic branch to COLUMN flows for Auto value == 0.0 text-backed children; run guards to adjudicate vs the medical column pins"]
     fn column_zero_auto_text_children_stack_at_measured_heights() {
         let canvas = serde_json::json!({
             "_RecordValue_": {
@@ -2221,6 +2240,66 @@ mod flex_shrink_tests {
             "ambient stacks below emitted: ambient.y {} vs emitted end {}",
             ambient.y,
             emitted.y + emitted.h
+        );
+    }
+
+    /// Zero-auto text-backed children are CONTENT-SIZED flex items: when
+    /// their measured intrinsics overflow the column they shrink
+    /// proportionally to fit like every other flex-managed class (the
+    /// emissions Numbers Container's emitted/ambient pair authors 0.0Auto
+    /// texts whose nominal-font measure overflows the 141px band — the
+    /// engine shows both lines adjacent inside the band).
+    #[test]
+    fn column_zero_auto_text_children_shrink_to_fit_container() {
+        let canvas = serde_json::json!({
+            "_RecordValue_": {
+                "_Type_": "BuildingBlocks_Canvas",
+                "size": {"x": 350.0, "y": 141.0},
+                "coordinateMethod": "useRaw",
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "numbers", "isActive": true,
+                     "layoutPolicy": {"_Type_": "BuildingBlocks_FlexContainer",
+                                      "direction": "Column", "axisJustification": "Center"},
+                     "sizing": {"width": {"value": 1.0, "behavior": "Percent"},
+                                "height": {"value": 1.0, "behavior": "Percent"}}},
+                    {"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_WidgetTextField",
+                     "name": "emitted", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "_ResolvedText_": "3.5K",
+                     "text": "3.5K",
+                     "fontSize": {"value": 80.0, "behavior": "Fixed"},
+                     "sizing": {"width": {"value": 1.0, "behavior": "Percent"},
+                                "height": {"value": 0.0, "behavior": "Auto"}}},
+                    {"_Pointer_": "ptr:3", "_Type_": "BuildingBlocks_WidgetTextField",
+                     "name": "ambient", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "_ResolvedText_": "294.1",
+                     "text": "294.1",
+                     "fontSize": {"value": 80.0, "behavior": "Fixed"},
+                     "sizing": {"width": {"value": 1.0, "behavior": "Percent"},
+                                "height": {"value": 0.0, "behavior": "Auto"}}}
+                ],
+                "operations": []
+            }
+        });
+        let scene = parse_bb_canvas(&canvas).expect("fixture parses");
+        let result = layout(&scene, 350, 141);
+        let emitted = result.rects[&2];
+        let ambient = result.rects[&3];
+        assert!(
+            emitted.h > 4.0,
+            "emitted keeps a measured height, got {}",
+            emitted.h
+        );
+        assert!(
+            ambient.y >= emitted.y + emitted.h - 0.6,
+            "ambient stacks below emitted: ambient.y {} vs emitted end {}",
+            ambient.y,
+            emitted.y + emitted.h
+        );
+        assert!(
+            ambient.y + ambient.h <= 141.0 + 0.6,
+            "the pair shrinks to fit the 141px column, got ambient end {}",
+            ambient.y + ambient.h
         );
     }
 

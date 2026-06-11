@@ -22,10 +22,9 @@ parity arc (plan `~/.claude/plans/wondrous-sparking-sketch.md`, branch
 ## Where things stand
 
 All work is committed on `feature/ui`; tree is clean and green via
-`bash scripts/ui_check.sh --full` (482 ui lib tests passed, 2 ignored —
-one is the next-step spec test, see below; all 5 frozen targets in the
-live IR guard; snapshot + visual suites; both freeze validators; 3d lib;
-font harness 26/26). Renders in this doc come from
+`bash scripts/ui_check.sh --full` (484 ui lib tests passed, 1 ignored;
+all 5 frozen targets in the live IR guard; snapshot + visual suites; both
+freeze validators; 3d lib; font harness 26/26). Renders in this doc come from
 `./target/debug/starbreaker ui render --scene
 "/home/tom/projects/scorg_tools/ships/Packages/DRAK Clipper_LOD0_TEX0/scene.json"
 --out-dir /tmp/... --helper Screen_Left_Lower_RTT` (debug build is fine;
@@ -78,7 +77,7 @@ embeds the per-identity delta and refuses no-op re-freezes.
 | # | Region | Difference | Status |
 |---|---|---|---|
 | 1 | Emissions | header collapsed to 2px | **FIXED** (SizeY behaviour + iscast) — values render "3.5K / 0.0 / 0.0" in IR-EM-CS order |
-| 1b | Emissions | emitted/ambient OVERLAP inside each group (one line, ambient under emitted) | **NEXT — spec test ready** (below) |
+| 1b | Emissions | emitted/ambient OVERLAP inside each group (one line, ambient under emitted) | **FIXED 2026-06-11** — two rules: column zero-Auto text intrinsics + zero-Auto text children join the flex shrink set (below) |
 | 2 | Emissions | IR/EM/CS labels render `@LOC_PLACEHOLDER` | **OPEN — mechanism decoded** (below) |
 | 3 | OUTPUT card | title at right of header row; ref has icon→dots→title left-aligned | OPEN — investigate flow/justification after 1b (same machinery family) |
 | 4 | Battery card | OFFLINE text container 543px overflows card, indented right | OPEN — intrinsic measure uses effective font 100 for that text; revisit with 1b |
@@ -87,28 +86,33 @@ embeds the per-identity delta and refuses no-op re-freezes.
 
 ## Remaining work, in order
 
-### 1b. Emissions emitted/ambient stacking (spec test ready)
+### 1b. Emissions emitted/ambient stacking — LANDED 2026-06-11
 
-The ignored test
-`column_zero_auto_text_children_stack_at_measured_heights`
-(`bb_layout/engine_parts/engine_02.part`) is the spec: in a COLUMN flex, Auto
-**value 0.0** (pure content hint) text-backed children must stack at
-measured text heights. Implementation: in
-`bb_layout/engine_parts/engine_01.part` (search `layout_flex_no_grow_children`), the auto_main chain currently has
-`} else if is_row && let Some(intrinsic) = auto_text_intrinsic_main(...)`;
-add a column branch gated on `Auto && value == 0.0` calling
-`auto_text_intrinsic_main(child_id, scene, csy, false)`, set `h = intrinsic;
-auto_main = false`. **Why scoped to 0.0:** the medical platinum pins the
-column fill placement for non-zero Auto hints (a column-wide intrinsic
-previously drifted the medical header h 78→18, y +27). Remove `#[ignore]`,
-run the battery, adjudicate any guard trip via the structural-discriminator
-method (`docs/ui-process-improvements.md` §8).
+Two structural rules landed (TDD, both spec tests in
+`bb_layout/engine_parts/engine_02.part` `flex_shrink_tests`):
 
-The containers (`base_CurrentEmittedContainer`, `card_AmbientEmission`,
-0.5Perc×0.0Auto) and the cards/texts inside (0.0Auto²) all need this; after
-the fix re-render and check the inner Row/Column nesting (drak's "Numbers
-Container" brand entry now genuinely turns `base_NumericValues` into a
-Column via the new FlexDirection modifier support).
+1. `column_zero_auto_text_children_stack_at_measured_heights` — in a COLUMN
+   flex, Auto **value 0.0** (pure content hint) text-backed children take
+   their measured text heights (`layout_flex_no_grow_children` auto_main
+   chain, `bb_layout/engine_parts/engine_01.part`). Scoped to 0.0 only: the
+   medical platinum pins the fill placement for non-zero Auto hints.
+2. `column_zero_auto_text_children_shrink_to_fit_container` — zero-Auto
+   text-backed children are CONTENT-SIZED flex items and join the shrink
+   set (`zero_auto_text_backed`, used by `apply_flex_no_grow_shrink`).
+   Without this the emitted/ambient intrinsics (150px each at the
+   nominal-100 measure) overflow the 141.5px band; with it they shrink to
+   ~70.75 each and the fit-to-rect font model lands ~28px — matching the
+   reference's adjacent two-line stack. Zero-Auto children WITHOUT text
+   keep the zero-size rule and still veto flow-wide shrink (medical
+   exemption semantics preserved; full battery + font harness green).
+
+Verified on the replay render: emissions values now read 3.5K/294.1,
+14.9K/0.0, 18.6K/0.0 in tight emitted-over-ambient stacks like the
+reference. Note the pre-layout `_EffectiveFontPx_` for these texts is
+still the authored 100 (no brand-standard FontSize applied pre-layout) —
+the rendered size is correct only because the fit-to-rect model scales
+into the shrunk box; the genuine effective-font question rides item 5's
+cascade re-land (same family as catalog #4 OFFLINE font-100).
 
 ### 2. Emissions IR/EM/CS labels (clone modifiers)
 
