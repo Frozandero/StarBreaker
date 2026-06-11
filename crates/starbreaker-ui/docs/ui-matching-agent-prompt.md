@@ -2,7 +2,8 @@
 
 Instantiate the variables and paste. All process knowledge lives in
 `docs/ui-workflow.md` + `docs/ui-reference.md` (repo `docs/`); keep this
-prompt short and let those docs do the arming.
+prompt short and let those docs do the arming. Companion:
+`ui-process-retro-prompt.md` runs the post-arc retrospective.
 
 ## Template
 
