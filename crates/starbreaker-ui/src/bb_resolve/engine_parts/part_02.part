@@ -201,7 +201,42 @@ pub fn resolve_canvas_graph_with_defaults(
     crate::bb_bindings::resolve_geometry_fields_into_scene(&mut scene, defaults);
     // Registry-backed direct visibility gates (the power columns' off panels).
     apply_registry_direct_gates(&mut scene, defaults);
+    // Bound text values, resolved once for layout-time intrinsic sizing
+    // (Auto-sized flex text like the OUTPUT card's "2" / "/ 16" pair).
+    resolve_text_values_into_scene(&mut scene, defaults);
     Ok(scene)
+}
+
+/// Resolve each active text field's bound value into `raw["_ResolvedText_"]`
+/// so the layout engine can measure Auto-sized flex children (it has no
+/// binding access of its own).
+fn resolve_text_values_into_scene(
+    scene: &mut BbScene,
+    defaults: &crate::defaults::DefaultValueRegistry,
+) {
+    let resolver = crate::bb_bindings::BindingResolver::from_operations(&scene.operations);
+    let ids: Vec<BbNodeId> = scene
+        .nodes
+        .iter()
+        .filter(|(_, node)| {
+            node.is_active && matches!(node.ty, crate::bb_scene::BbNodeType::WidgetTextField)
+        })
+        .map(|(id, _)| *id)
+        .collect();
+    for id in ids {
+        let Some(node) = scene.nodes.get(&id) else { continue };
+        let text = resolver.resolve_text_detailed(id, &node.raw, defaults).text;
+        let trimmed = text.trim();
+        if trimmed.is_empty() || trimmed.starts_with('@') {
+            continue;
+        }
+        let text = text.clone();
+        if let Some(node) = scene.nodes.get_mut(&id)
+            && let Some(map) = node.raw.as_object_mut()
+        {
+            map.insert("_ResolvedText_".to_string(), serde_json::json!(text));
+        }
+    }
 }
 
 /// Apply the external *shared* styles referenced by `defaultStyles.sharedStyles`

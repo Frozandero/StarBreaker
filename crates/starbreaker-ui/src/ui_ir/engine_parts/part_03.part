@@ -43,13 +43,27 @@ pub fn compile_ui_ir_from_scene_with_animation_sample(
             .max(desired_top_bottom_padding);
     }
 
+    let binding_resolver = BindingResolver::from_operations(&scene.operations);
+    let style_font_sizes = collect_style_font_sizes(scene);
+    let standard_text_styles =
+        collect_standard_text_styles(canvas_fetcher, selected_style_source.as_deref(), canvas_name);
+    // Layout-time intrinsic text measurement must use the EFFECTIVE (styled)
+    // font size, not the authored editor size — annotate before layout.
+    annotate_effective_font_px(
+        &mut layout_scene,
+        scene,
+        &binding_resolver,
+        defaults,
+        &style_font_sizes,
+        &standard_text_styles,
+        design_text_scale,
+    );
     let layout = bb_layout::layout_with_animation_sample(
         &layout_scene,
         target_size.0,
         target_size.1,
         animation_sample_percent,
     );
-    let binding_resolver = BindingResolver::from_operations(&scene.operations);
 
     let has_text = scene.nodes.values().any(|n| n.text.is_some());
     let has_custom_shape = scene
@@ -65,9 +79,6 @@ pub fn compile_ui_ir_from_scene_with_animation_sample(
     };
 
     let mut warnings = Vec::new();
-    let style_font_sizes = collect_style_font_sizes(scene);
-    let standard_text_styles =
-        collect_standard_text_styles(canvas_fetcher, selected_style_source.as_deref(), canvas_name);
     if scene.roots.is_empty() {
         warnings.push("scene has no root nodes".to_string());
     }
@@ -210,3 +221,59 @@ fn missing_strict_renderer_style_semantics(node: &UiIrNode) -> Vec<String> {
     warnings
 }
 
+
+/// Write each measurable text field's EFFECTIVE (styled) font size into the
+/// layout scene's raw (`_EffectiveFontPx_`) so `bb_layout`'s intrinsic text
+/// measurement matches what the renderer will draw (the brand Heading sizes,
+/// not the authored editor size). Auto-fit text is skipped — its size
+/// depends on the laid-out rect.
+#[allow(clippy::too_many_arguments)]
+fn annotate_effective_font_px(
+    layout_scene: &mut BbScene,
+    scene: &BbScene,
+    binding_resolver: &BindingResolver,
+    defaults: &DefaultValueRegistry,
+    style_font_sizes: &HashMap<String, f32>,
+    standard_text_styles: &HashMap<String, StandardTextStyle>,
+    design_text_scale: f32,
+) {
+    let ids: Vec<BbNodeId> = layout_scene
+        .nodes
+        .iter()
+        .filter(|(_, node)| {
+            node.is_active
+                && node.text.is_some()
+                && node.raw.get("_ResolvedText_").is_some()
+                && !auto_font_size_enabled(&node.raw)
+        })
+        .map(|(id, _)| *id)
+        .collect();
+    for id in ids {
+        let Some(node) = scene.nodes.get(&id) else { continue };
+        let Some(text) = node.text.as_ref() else { continue };
+        let (font_size, _is_styled) = resolve_effective_font_size(
+            id,
+            node,
+            text,
+            0.0,
+            node.raw.get("_ResolvedText_").and_then(|v| v.as_str()),
+            scene,
+            binding_resolver,
+            defaults,
+            style_font_sizes,
+            standard_text_styles,
+            design_text_scale,
+        );
+        let UiIrValue::Fixed { value: font_px } = font_size else {
+            continue;
+        };
+        if font_px <= 0.0 {
+            continue;
+        }
+        if let Some(node) = layout_scene.nodes.get_mut(&id)
+            && let Some(map) = node.raw.as_object_mut()
+        {
+            map.insert("_EffectiveFontPx_".to_string(), serde_json::json!(font_px));
+        }
+    }
+}

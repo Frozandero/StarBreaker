@@ -1,0 +1,121 @@
+// Intrinsic text measurement for Auto-sized flex children.
+//
+// The no-grow flex flow treats Auto main-axis children as zero-sized (no
+// content measurement), which collapses text-backed value groups like the
+// OUTPUT card's "2" + "/ 16" pair (Auto containers in a Center-justified
+// row) onto one spot. `auto_text_intrinsic_main` measures the subtree's
+// RESOLVED text (bb_resolve writes `raw["_ResolvedText_"]` for active text
+// fields) with the shared TTF metrics, so such children flow at their
+// natural width/height like the engine lays them out.
+
+/// The compose-time BB text calibration (`ir_compose`'s
+/// `TEXT_RENDER_SIZE_CALIBRATION`): rendered glyphs are 1.5× the nominal
+/// authored size, so intrinsic measurement must match what gets drawn.
+const LAYOUT_TEXT_MEASURE_CALIBRATION: f32 = 1.5;
+
+/// Best-effort intrinsic main-axis size of an Auto-sized flex child whose
+/// subtree carries resolved text. `None` when no measurable text exists
+/// (the caller keeps the zero-size rule).
+fn auto_text_intrinsic_main(
+    node_id: BbNodeId,
+    scene: &BbScene,
+    canvas_scale: f32,
+    is_row: bool,
+) -> Option<f32> {
+    let renderer = crate::text::TextRenderer::new();
+    let mut best: Option<f32> = None;
+    let mut stack = vec![node_id];
+    while let Some(id) = stack.pop() {
+        let Some(node) = scene.nodes.get(&id) else { continue };
+        if !node.is_active {
+            continue;
+        }
+        stack.extend(node.children.iter().copied());
+        let Some(text_value) = node.raw.get("_ResolvedText_").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let Some(text) = (!text_value.trim().is_empty()).then_some(text_value) else {
+            continue;
+        };
+        // Prefer the EFFECTIVE (styled) size the renderer will draw with
+        // (annotated by ui_ir before layout); fall back to the authored size.
+        let size_px = if let Some(effective) = node
+            .raw
+            .get("_EffectiveFontPx_")
+            .and_then(|v| v.as_f64())
+            .filter(|v| *v > 0.0)
+        {
+            effective as f32 * LAYOUT_TEXT_MEASURE_CALIBRATION
+        } else {
+            match node.text.as_ref().map(|t| &t.font_size) {
+                Some(BbValue::Fixed(size)) if *size > 0.0 => {
+                    *size * canvas_scale * LAYOUT_TEXT_MEASURE_CALIBRATION
+                }
+                _ => continue,
+            }
+        };
+        let (w, h) = renderer.measure(text, crate::text::FontKind::Mono, size_px);
+        let main = if is_row { w } else { h };
+        best = Some(best.map_or(main, |b: f32| b.max(main)));
+    }
+    best
+}
+
+#[cfg(test)]
+mod auto_text_flex_tests {
+    use super::*;
+    use crate::bb_scene::parse_bb_canvas;
+
+    /// Two Auto-width text containers in a Center-justified row flow at
+    /// their measured widths side by side (the OUTPUT card's "2" "/ 16").
+    #[test]
+    fn auto_text_children_flow_at_measured_widths() {
+        let canvas = serde_json::json!({
+            "_RecordValue_": {
+                "_Type_": "BuildingBlocks_Canvas",
+                "size": {"x": 400.0, "y": 100.0},
+                "coordinateMethod": "useRaw",
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "row", "isActive": true,
+                     "layoutPolicy": {"_Type_": "BuildingBlocks_FlexContainer",
+                                      "direction": "Row", "axisJustification": "Center"},
+                     "sizing": {"width": {"value": 1.0, "behavior": "Percent"},
+                                "height": {"value": 1.0, "behavior": "Percent"}}},
+                    {"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_WidgetTextField",
+                     "name": "current", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "_ResolvedText_": "2",
+                     "text": "2",
+                     "fontSize": {"value": 20.0, "behavior": "Fixed"},
+                     "sizing": {"width": {"value": 1.0, "behavior": "Auto"},
+                                "height": {"value": 1.0, "behavior": "Percent"}}},
+                    {"_Pointer_": "ptr:3", "_Type_": "BuildingBlocks_WidgetTextField",
+                     "name": "total", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "_ResolvedText_": "/ 16",
+                     "text": "/ 16",
+                     "fontSize": {"value": 20.0, "behavior": "Fixed"},
+                     "sizing": {"width": {"value": 1.0, "behavior": "Auto"},
+                                "height": {"value": 1.0, "behavior": "Percent"}}}
+                ],
+                "operations": []
+            }
+        });
+        let scene = parse_bb_canvas(&canvas).expect("fixture parses");
+        let result = layout(&scene, 400, 100);
+        let current = result.rects[&2];
+        let total = result.rects[&3];
+        assert!(current.w > 5.0, "current text gets a measured width, got {}", current.w);
+        assert!(total.w > current.w, "the longer text is wider, got {} vs {}", total.w, current.w);
+        assert!(
+            (total.x - (current.x + current.w)).abs() < 0.6,
+            "the pair flows adjacently: total.x {} after current end {}",
+            total.x,
+            current.x + current.w
+        );
+        // Center justification: the group is centred in the 400px row.
+        let group_left = current.x;
+        let group_right = total.x + total.w;
+        let centre_offset = ((group_left + group_right) / 2.0 - 200.0).abs();
+        assert!(centre_offset < 1.0, "group centred, offset {centre_offset}");
+    }
+}

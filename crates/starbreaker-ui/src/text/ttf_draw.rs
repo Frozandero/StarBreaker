@@ -192,11 +192,13 @@ impl TextRenderer {
             }
         }
 
+        // Saturating spans: extreme layout rects saturate glyph coordinates
+        // to the i32 limits, and a plain subtraction overflows in debug.
         (min_x < max_x && min_y < max_y).then_some(Rect {
             x: min_x as f32,
             y: min_y as f32,
-            w: (max_x - min_x) as f32,
-            h: (max_y - min_y) as f32,
+            w: (max_x as i64 - min_x as i64) as f32,
+            h: (max_y as i64 - min_y as i64) as f32,
         })
     }
 }
