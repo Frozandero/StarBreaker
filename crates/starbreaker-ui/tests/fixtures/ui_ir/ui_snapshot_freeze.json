@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "frozen_at": "2026-06-10T21:33:30Z",
+  "frozen_at": "2026-06-11T10:40:22Z",
   "approver": "tom",
-  "reason": "Freeze Drake Clipper target screen (Screen_Right_Upper_RTT / mc_s_target_master) as gold standard",
+  "reason": "SizeX/SizeY style modifiers preserve authored sizing behaviour (Percent stays Percent): the target screen's TARGET STATUS faint backdrop band (node 40, authored SizeY 0.18 Percent, alpha 0.1) now renders 194px tall instead of a 0.18px sliver — movement toward the in-game reference (open item A7), exposed by the power-screen emissions review",
   "signature": null,
   "manifest_path": "/home/tom/projects/scorg_tools/StarBreaker/crates/starbreaker-ui/tests/fixtures/ui_ir/ui_snapshot_manifest.json",
   "targets": [
@@ -2363,7 +2363,7 @@
             "x": 15.0,
             "y": 0.0,
             "w": 1890.0,
-            "h": 0.18,
+            "h": 194.40001,
             "alpha": 0.1,
             "blend_mode": null,
             "asset_identity": null,

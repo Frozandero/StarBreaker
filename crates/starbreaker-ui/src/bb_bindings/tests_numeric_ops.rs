@@ -316,3 +316,33 @@ fn localized_number_and_si_unit_formatting() {
         Some("294.1")
     );
 }
+
+/// A boolean `ComponentParameter` with no parent wiring takes a registry
+/// value matching its NAME before the editor `defaultValue` — `iscast`
+/// defaults TRUE in data (the editor pose) but the engine wires it FALSE for
+/// screen render targets; the at-rest registry carries that engine value.
+#[test]
+fn boolean_param_takes_registry_value_by_name_over_editor_default() {
+    let ops = serde_json::json!([
+        {"_Type_": "BuildingBlocks_BindingsBooleanField",
+         "widget": "_PointsTo_:ptr:1", "field": "IsActive", "input": "_PointsTo_:ptr:10"},
+        {"_Pointer_": "ptr:10", "_Type_": "BuildingBlocks_BindingsBooleanComponentParameter",
+         "name": "iscast", "parameter": "ParamInput0", "defaultValue": true}
+    ]);
+    let resolver = resolver_for(ops);
+
+    let empty = DefaultValueRegistry::default();
+    assert_eq!(
+        resolver.resolve_field_bool(1, "IsActive", &empty),
+        Some(true),
+        "no registry value: the authored editor default"
+    );
+
+    let mut defaults = DefaultValueRegistry::default();
+    defaults.insert_path("iscast", Value::Bool(false));
+    assert_eq!(
+        resolver.resolve_field_bool(1, "IsActive", &defaults),
+        Some(false),
+        "registry at-rest value wins over the editor default"
+    );
+}

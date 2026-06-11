@@ -44,11 +44,13 @@ pub(super) fn apply_number_field(field_name: &str, value: f64, node: &mut BbNode
     match field_name {
         "SizeX" => {
             let v = value as f32;
-            node.sizing.width = bb_value_with_raw_behavior(v, node.raw.get("WidthBehavior"));
+            let current = node.sizing.width.clone();
+            node.sizing.width = bb_value_with_raw_behavior(v, node.raw.get("WidthBehavior"), &current);
         }
         "SizeY" => {
             let v = value as f32;
-            node.sizing.height = bb_value_with_raw_behavior(v, node.raw.get("HeightBehavior"));
+            let current = node.sizing.height.clone();
+            node.sizing.height = bb_value_with_raw_behavior(v, node.raw.get("HeightBehavior"), &current);
         }
         "AnchorX" => node.anchor.x = value as f32,
         "AnchorY" => node.anchor.y = value as f32,

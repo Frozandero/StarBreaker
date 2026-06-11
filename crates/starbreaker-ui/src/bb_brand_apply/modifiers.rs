@@ -125,7 +125,10 @@ pub(super) fn apply_modifier(
         "BuildingBlocks_FieldModifierEnumerated"
         | "BuildingBlocks_FieldModifierEnumeratedTypeImageScalingBehavior"
         | "BuildingBlocks_FieldModifierEnumeratedTypeWidthBehavior"
-        | "BuildingBlocks_FieldModifierEnumeratedTypeHeightBehavior" => {
+        | "BuildingBlocks_FieldModifierEnumeratedTypeHeightBehavior"
+        | "BuildingBlocks_FieldModifierEnumeratedTypeFlexDirection"
+        | "BuildingBlocks_FieldModifierEnumeratedTypeFlexAxisJustification"
+        | "BuildingBlocks_FieldModifierEnumeratedTypeFlexCrossAxisJustification" => {
             if let Some(value) = value.and_then(|v| v.as_str()) {
                 apply_enum_field(field_name, value, node);
             }
@@ -177,6 +180,9 @@ fn modifier_parts(modifier: &serde_json::Value) -> Option<(&str, &str, Option<&s
                     "BuildingBlocks_FieldModifierEnumeratedTypeWidthBehavior" => Some("WidthBehavior"),
                     "BuildingBlocks_FieldModifierEnumeratedTypeHeightBehavior" => Some("HeightBehavior"),
                     "BuildingBlocks_FieldModifierEnumeratedTypeImageScalingBehavior" => Some("ImageScalingBehavior"),
+                    "BuildingBlocks_FieldModifierEnumeratedTypeFlexDirection" => Some("FlexDirection"),
+                    "BuildingBlocks_FieldModifierEnumeratedTypeFlexAxisJustification" => Some("FlexAxisJustification"),
+                    "BuildingBlocks_FieldModifierEnumeratedTypeFlexCrossAxisJustification" => Some("FlexCrossAxisJustification"),
                     _ => None,
                 })
                 .unwrap_or("");
@@ -351,11 +357,27 @@ fn apply_boolean_field(field_name: &str, value: bool, node: &mut BbNode) {
 /// Convert a raw `WidthBehavior` / `HeightBehavior` JSON value into the correct
 /// `BbValue` for the given numeric size `v`.  Falls back to `Fixed` when the
 /// behavior field is absent or unrecognised.
-pub(super) fn bb_value_with_raw_behavior(v: f32, raw_behavior: Option<&serde_json::Value>) -> BbValue {
+pub(super) fn bb_value_with_raw_behavior(
+    v: f32,
+    raw_behavior: Option<&serde_json::Value>,
+    current: &BbValue,
+) -> BbValue {
     match raw_behavior.and_then(|b| b.as_str()) {
         Some("Percent") => BbValue::Percent(v),
-        Some("Fixed") | None => BbValue::Fixed(v),
+        Some("Fixed") => BbValue::Fixed(v),
         Some(other) => BbValue::Other { value: v, behavior: other.to_string() },
+        // No explicit *Behavior override: the number modifier changes the
+        // VALUE and the node's authored behaviour is preserved (the
+        // emissions clones are Percent-sized; a `SizeY 1.0` entry keeps them
+        // parent fractions — Fixed(1) collapsed the header to 1px).
+        None => match current {
+            BbValue::Fixed(_) => BbValue::Fixed(v),
+            BbValue::Percent(_) => BbValue::Percent(v),
+            BbValue::Other { behavior, .. } => BbValue::Other {
+                value: v,
+                behavior: behavior.clone(),
+            },
+        },
     }
 }
 
@@ -372,7 +394,8 @@ fn apply_enum_field(field_name: &str, value: &str, node: &mut BbNode) {
                 BbValue::Fixed(v) | BbValue::Percent(v) => v,
                 BbValue::Other { value, .. } => value,
             };
-            node.sizing.width = bb_value_with_raw_behavior(current, Some(&serde_json::Value::String(value.to_string())));
+            let sizing = node.sizing.width.clone();
+            node.sizing.width = bb_value_with_raw_behavior(current, Some(&serde_json::Value::String(value.to_string())), &sizing);
         }
         "HeightBehavior" => {
             node.raw.as_object_mut().and_then(|obj| {
@@ -382,7 +405,8 @@ fn apply_enum_field(field_name: &str, value: &str, node: &mut BbNode) {
                 BbValue::Fixed(v) | BbValue::Percent(v) => v,
                 BbValue::Other { value, .. } => value,
             };
-            node.sizing.height = bb_value_with_raw_behavior(current, Some(&serde_json::Value::String(value.to_string())));
+            let sizing = node.sizing.height.clone();
+            node.sizing.height = bb_value_with_raw_behavior(current, Some(&serde_json::Value::String(value.to_string())), &sizing);
         }
         "ImageScalingBehavior" => {
             // Write to raw for renderer.
@@ -392,6 +416,25 @@ fn apply_enum_field(field_name: &str, value: &str, node: &mut BbNode) {
                     serde_json::Value::String(value.to_string()),
                 )
             });
+        }
+        // Flex enum modifiers rewrite the node's AUTHORED layoutPolicy the
+        // layout engine reads (the drak emissions "Numbers Container" entry
+        // turns the authored Row into a Column). A node without a flex
+        // layoutPolicy is left untouched — these restyle an existing flex,
+        // they don't create one.
+        "FlexDirection" | "FlexAxisJustification" | "FlexCrossAxisJustification" => {
+            let key = match field_name {
+                "FlexDirection" => "direction",
+                "FlexAxisJustification" => "axisJustification",
+                _ => "crossAxisJustification",
+            };
+            if let Some(policy) = node
+                .raw
+                .get_mut("layoutPolicy")
+                .and_then(|p| p.as_object_mut())
+            {
+                policy.insert(key.to_string(), serde_json::Value::String(value.to_string()));
+            }
         }
         _ => {
             // Generic fallback → write to raw.

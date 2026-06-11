@@ -121,7 +121,8 @@
     "piplist/[0006]/itemicon": "UI/Textures/Vector/General/CommonIcons/icon_common_salvage.svg",
     "piplist/[0006]/piplist": 0,
     "piplist/[0006]/piplinkamount": 1,
-    "piplist/[0006]/ispoweredoff": false
+    "piplist/[0006]/ispoweredoff": false,
+    "iscast": false
   },
   "localization": {
     "hud_notarget": "NO TARGET",

@@ -112,3 +112,70 @@ use serde_json::json;
         }
     }
 
+
+    /// A `SizeX`/`SizeY` number modifier changes the VALUE and preserves the
+    /// node's authored sizing behaviour unless an explicit
+    /// `WidthBehavior`/`HeightBehavior` override says otherwise — the
+    /// emissions clones (Percent-sized) styled `SizeY 1.0` stay parent
+    /// fractions; converting to Fixed collapsed the header to 1px.
+    #[test]
+    fn test_size_modifiers_preserve_authored_behaviour() {
+        let mut scene = make_test_scene();
+        {
+            let node = scene.nodes.get_mut(&1).unwrap();
+            node.sizing.width = crate::bb_scene::BbValue::Percent(0.3);
+            node.sizing.height = crate::bb_scene::BbValue::Percent(0.5);
+        }
+        let brand = BrandStyle {
+            identifier: "test_brand".to_string(),
+            entries: &[json!({
+                "modifiers": [
+                    {"_Type_": "BuildingBlocks_FieldModifierNumber", "field": "SizeY", "value": 1.0}
+                ]
+            })],
+            raw: &json!({}),
+        };
+        apply_brand_modifiers(&mut scene, &brand, None);
+        assert_eq!(
+            scene.nodes[&1].sizing.height,
+            crate::bb_scene::BbValue::Percent(1.0),
+            "Percent stays Percent"
+        );
+
+        // An explicit HeightBehavior raw override still wins.
+        scene.nodes.get_mut(&1).unwrap().raw = json!({"HeightBehavior": "Fixed"});
+        apply_brand_modifiers(&mut scene, &brand, None);
+        assert_eq!(scene.nodes[&1].sizing.height, crate::bb_scene::BbValue::Fixed(1.0));
+    }
+
+    /// Enumerated flex modifiers rewrite the node's authored layoutPolicy —
+    /// the drak emissions "Numbers Container" entry turns the authored Row
+    /// into a Column (emitted stacked above ambient).
+    #[test]
+    fn test_flex_enum_modifiers_rewrite_layout_policy() {
+        let mut scene = make_test_scene();
+        scene.nodes.get_mut(&1).unwrap().raw = json!({
+            "layoutPolicy": {"_Type_": "BuildingBlocks_FlexContainer",
+                             "direction": "Row", "axisJustification": "Start",
+                             "crossAxisJustification": "Stretch"}
+        });
+        let brand = BrandStyle {
+            identifier: "test_brand".to_string(),
+            entries: &[json!({
+                "modifiers": [
+                    {"_Type_": "BuildingBlocks_FieldModifierEnumerated",
+                     "field": {"_Type_": "BuildingBlocks_FieldModifierEnumeratedTypeFlexDirection",
+                               "value": "Column"}},
+                    {"_Type_": "BuildingBlocks_FieldModifierEnumerated",
+                     "field": {"_Type_": "BuildingBlocks_FieldModifierEnumeratedTypeFlexCrossAxisJustification",
+                               "value": "Center"}}
+                ]
+            })],
+            raw: &json!({}),
+        };
+        apply_brand_modifiers(&mut scene, &brand, None);
+        let lp = &scene.nodes[&1].raw["layoutPolicy"];
+        assert_eq!(lp["direction"], "Column");
+        assert_eq!(lp["crossAxisJustification"], "Center");
+        assert_eq!(lp["axisJustification"], "Start", "untouched field survives");
+    }

@@ -264,6 +264,23 @@ impl BindingResolver {
                 if let Some(value) = self.eval_bool_component_parameter_override(op, ptr, defaults, seen) {
                     return Some(value);
                 }
+                // An unwired param takes a registry at-rest value matching its
+                // NAME before the editor defaultValue: `iscast` authors TRUE
+                // (the editor pose) but the engine wires it FALSE for screen
+                // render targets — the registry carries that engine value.
+                if let Some(value) = op
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .filter(|name| !name.is_empty())
+                    .and_then(|name| defaults.lookup_path(name))
+                {
+                    return match value {
+                        Value::Bool(b) => Some(*b),
+                        Value::Int(i) => Some(*i != 0),
+                        Value::Float(f) => Some(*f != 0.0),
+                        _ => None,
+                    };
+                }
                 op.get("defaultValue").and_then(|v| v.as_bool()).or(Some(false))
             }
             "BuildingBlocks_BindingsBooleanVariable" => {

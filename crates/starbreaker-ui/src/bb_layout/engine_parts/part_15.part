@@ -5,6 +5,106 @@ mod flex_shrink_tests {
     use super::*;
     use crate::bb_scene::parse_bb_canvas;
 
+    /// Auto ZERO-hint (value 0.0) text-backed children in a COLUMN stack at
+    /// their measured text heights — the emissions Numbers Container stacks
+    /// emitted above ambient. Columns with non-zero Auto hints keep the
+    /// downstream fill placement the medical baselines pin.
+    #[test]
+    #[ignore = "NEXT STEP (handoff): extend part_04's intrinsic branch to COLUMN flows for Auto value == 0.0 text-backed children; run guards to adjudicate vs the medical column pins"]
+    fn column_zero_auto_text_children_stack_at_measured_heights() {
+        let canvas = serde_json::json!({
+            "_RecordValue_": {
+                "_Type_": "BuildingBlocks_Canvas",
+                "size": {"x": 350.0, "y": 141.0},
+                "coordinateMethod": "useRaw",
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "numbers", "isActive": true,
+                     "layoutPolicy": {"_Type_": "BuildingBlocks_FlexContainer",
+                                      "direction": "Column", "axisJustification": "Center"},
+                     "sizing": {"width": {"value": 1.0, "behavior": "Percent"},
+                                "height": {"value": 1.0, "behavior": "Percent"}}},
+                    {"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_WidgetTextField",
+                     "name": "emitted", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "_ResolvedText_": "3.5K",
+                     "text": "3.5K",
+                     "fontSize": {"value": 20.0, "behavior": "Fixed"},
+                     "sizing": {"width": {"value": 1.0, "behavior": "Percent"},
+                                "height": {"value": 0.0, "behavior": "Auto"}}},
+                    {"_Pointer_": "ptr:3", "_Type_": "BuildingBlocks_WidgetTextField",
+                     "name": "ambient", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "_ResolvedText_": "294.1",
+                     "text": "294.1",
+                     "fontSize": {"value": 20.0, "behavior": "Fixed"},
+                     "sizing": {"width": {"value": 1.0, "behavior": "Percent"},
+                                "height": {"value": 0.0, "behavior": "Auto"}}}
+                ],
+                "operations": []
+            }
+        });
+        let scene = parse_bb_canvas(&canvas).expect("fixture parses");
+        let result = layout(&scene, 350, 141);
+        let emitted = result.rects[&2];
+        let ambient = result.rects[&3];
+        assert!(
+            emitted.h > 4.0 && emitted.h < 141.0,
+            "emitted gets a measured height, got {}",
+            emitted.h
+        );
+        assert!(
+            ambient.y >= emitted.y + emitted.h - 0.6,
+            "ambient stacks below emitted: ambient.y {} vs emitted end {}",
+            ambient.y,
+            emitted.y + emitted.h
+        );
+    }
+
+    /// Flex flow lays children in `layoutItemCommon.order`, not scene order —
+    /// the emissions clones author scene order EM, CS, IR with orders 3, 5, 1
+    /// (separators interleaved at even orders) and the engine shows IR first.
+    #[test]
+    fn flex_children_flow_in_layout_item_order() {
+        let canvas = serde_json::json!({
+            "_RecordValue_": {
+                "_Type_": "BuildingBlocks_Canvas",
+                "size": {"x": 300.0, "y": 50.0},
+                "coordinateMethod": "useRaw",
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "row", "isActive": true,
+                     "layoutPolicy": {"_Type_": "BuildingBlocks_FlexContainer",
+                                      "direction": "Row", "axisJustification": "Start"},
+                     "sizing": {"width": {"value": 1.0, "behavior": "Percent"},
+                                "height": {"value": 1.0, "behavior": "Percent"}}},
+                    {"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "em", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "layoutItemCommon": {"_Type_": "BuildingBlocks_LayoutItemCommon", "order": 3},
+                     "sizing": {"width": {"value": 50.0, "behavior": "Fixed"},
+                                "height": {"value": 1.0, "behavior": "Percent"}}},
+                    {"_Pointer_": "ptr:3", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "cs", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "layoutItemCommon": {"_Type_": "BuildingBlocks_LayoutItemCommon", "order": 5},
+                     "sizing": {"width": {"value": 50.0, "behavior": "Fixed"},
+                                "height": {"value": 1.0, "behavior": "Percent"}}},
+                    {"_Pointer_": "ptr:4", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "ir", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "layoutItemCommon": {"_Type_": "BuildingBlocks_LayoutItemCommon", "order": 1},
+                     "sizing": {"width": {"value": 50.0, "behavior": "Fixed"},
+                                "height": {"value": 1.0, "behavior": "Percent"}}}
+                ],
+                "operations": []
+            }
+        });
+        let scene = parse_bb_canvas(&canvas).expect("fixture parses");
+        let result = layout(&scene, 300, 50);
+        let (ir, em, cs) = (result.rects[&4], result.rects[&2], result.rects[&3]);
+        assert!(
+            ir.x < em.x && em.x < cs.x,
+            "order 1 < 3 < 5 lays IR, EM, CS left to right: ir.x={} em.x={} cs.x={}",
+            ir.x, em.x, cs.x
+        );
+    }
+
     /// Overflowing no-grow flex children shrink proportionally to fit (CSS
     /// flex-shrink): the battery card's column authors 0.9 + 0.5 fractions
     /// (318px in a 227px container) and the in-game card keeps all three

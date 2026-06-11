@@ -76,6 +76,17 @@ pub(super) fn expand_widget_clones(
 
             if src_id == target_id {
                 new_node.parent = clone_node.parent;
+                // The clone node's flex item placement (`layoutItemCommon.order`
+                // — the emissions clones author IR=1/EM=3/CS=5 against their
+                // EM, CS, IR scene order) belongs to the INSTANCE, not the
+                // template.
+                if let Some(item_common) = clone_node.raw.get("layoutItemCommon") {
+                    if !item_common.is_null()
+                        && let Some(obj) = new_node.raw.as_object_mut()
+                    {
+                        obj.insert("layoutItemCommon".to_string(), item_common.clone());
+                    }
+                }
                 new_node.position = clone_node.position.clone();
                 new_node.position_offset = clone_node.position_offset.clone();
                 new_node.sizing = clone_node.sizing.clone();
