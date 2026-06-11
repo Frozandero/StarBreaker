@@ -22,7 +22,7 @@ parity arc (plan `~/.claude/plans/wondrous-sparking-sketch.md`, branch
 ## Where things stand
 
 All work is committed on `feature/ui`; tree is clean and green via
-`bash scripts/ui_check.sh --full` (484 ui lib tests passed, 1 ignored;
+`bash scripts/ui_check.sh --full` (487 ui lib tests passed, 1 ignored;
 all 5 frozen targets in the live IR guard; snapshot + visual suites; both
 freeze validators; 3d lib; font harness 26/26). Renders in this doc come from
 `./target/debug/starbreaker ui render --scene
@@ -79,8 +79,8 @@ embeds the per-identity delta and refuses no-op re-freezes.
 | 1 | Emissions | header collapsed to 2px | **FIXED** (SizeY behaviour + iscast) — values render "3.5K / 0.0 / 0.0" in IR-EM-CS order |
 | 1b | Emissions | emitted/ambient OVERLAP inside each group (one line, ambient under emitted) | **FIXED 2026-06-11** — two rules: column zero-Auto text intrinsics + zero-Auto text children join the flex shrink set (below) |
 | 2 | Emissions | IR/EM/CS labels render `@LOC_PLACEHOLDER` | **FIXED 2026-06-11** — clone expansion applies FieldModifierLocalization via `_SynthLocalizedWidget_` (below) |
-| 3 | OUTPUT card | title at right of header row; ref has icon→dots→title left-aligned | **DIAGNOSED 2026-06-11, spec test ready** — intrinsic measure ≠ draw width (below) |
-| 4 | Battery card | OFFLINE text container 543px overflows card, indented right | Same root cause as #3 (drawn width 352.5 vs measured 543); after the #3 fix the 352.5px box still slightly overflows the 339px card → the new zero-Auto shrink (1b rule 2) finishes the job |
+| 3 | OUTPUT card | title at right of header row; ref has icon→dots→title left-aligned | **FIXED 2026-06-11** — draw-metrics intrinsic measurement (below); title flows after the dots |
+| 4 | Battery card | OFFLINE text container 543px overflows card, indented right | **FIXED 2026-06-11** — same fix; OFFLINE fits the card (draw-width box + 1b shrink) |
 | 5 | All cards/pips/gauges | icons dark, separator dots invisible, gauge zone colours, pip brightness, backdrop bands, "2" white vs cream | **DEFERRED by design** — the parked defaultStyles/icon-tint cascade re-land, scheduled with the medical re-freeze (Steps 10–13); full diagnosis in memory file §"DIAGNOSED, NOT LANDED" |
 | 6 | Footer/scrollbar | good parity; faint track + backdrop band remain (A7 class) | Defer with #5 |
 
@@ -133,42 +133,35 @@ library original keeps its placeholder. The clones' second modifier
 NOT applied — shape_Icon is inactive at rest so there is no observable
 effect to test; pick it up if/when an icon-active screen needs it.
 
-### 3. OUTPUT title position / 4. OFFLINE width — DIAGNOSED, spec test ready
+### 3. OUTPUT title position / 4. OFFLINE width — LANDED 2026-06-11
 
-Root cause (measured 2026-06-11): the header row FLOWS correctly (icon
-140.8 → dots 230.5 → title box 274.4) but the title box is 232.7px wide
-while the drawn glyphs are 160.4px (`SB_UI_FONT_DUMP`: size_px 50 =
-effective 30 × host-stage 1.667, drawn width 160.43). The authored
-`textAlignment: Right` puts the 72px slack on the LEFT. In the engine the
-Auto box hugs its glyphs (measure==draw), making alignment invisible — the
-defect is OUR measure, not the alignment or the flow.
+Root cause: the intrinsic text measure (TTF Mono at effective × 1.5,
+mirroring the TTF fallback draw) overshot ~1.45× on screens whose text
+draws through imported SWF fonts — the SWF path renders at the IR font
+size with NO TTF calibration (`SB_UI_FONT_DUMP` for OUTPUT: size_px 50 =
+effective 30 × host-stage 1.667, drawn width 160.43 vs measured box
+232.7). The authored Right alignment put the slack on the left; in the
+engine measure==draw so the box hugs the glyphs and alignment is moot.
 
-Why the measure overshoots ~1.45× on the MFD path:
-`node_resolved_text_size` measures TTF Mono (advance ≈0.862em) at
-effective × `LAYOUT_TEXT_MEASURE_CALIBRATION` (1.5), mirroring the
-INTERIOR draw path (`TEXT_RENDER_SIZE_CALIBRATION` 1.5 + TTF). The MFD
-path draws SWF Audimat Mono (advance ≈0.535em of its 21560-unit em) at
-size_px = effective × design_text_scale (1.667; no 1.5). 0.862×1.5 /
-(0.535×1.667×21560-em-normalised) ≈ 1.45. The advance mismatch dominates —
-no scale constant can reconcile it; the measure must use draw metrics.
+Landed (specs `auto_text_child_prefers_draw_metrics_annotations` in
+bb_layout + `compile_ir_uses_draw_text_measure_for_intrinsic_boxes` in
+ui_ir, the latter with a no-measure control proving discrimination):
 
-Fix spec (the `#[ignore]`d test
-`auto_text_child_prefers_draw_metrics_annotations`,
-`bb_layout/engine_parts/engine_02.part`): ui_ir's pre-layout annotation
-pass — it already writes `_ResolvedText_`/`_EffectiveFontPx_` and knows
-the resolved font record + `design_text_scale` (passed from
-`pipeline/mod.rs`, which holds the `swf_library`) — additionally writes
-`_DrawTextWidthPx_`/`_DrawTextHeightPx_` measured through the draw-side
-SWF glyph machinery (`swf_glyph_advance_px` in `text/swf_draw.rs`; extract
-a measure helper). `node_resolved_text_size` prefers the annotations over
-its TTF estimate. Plumbing: a text-measure callback from pipeline into
-`compile_ui_ir_*` (the SWF font lookup per resolved font record lives
-there). Expect gold `clipper_target_master` geometry drift — adjudicate
-each identity vs the reference (movement toward = re-freeze §7).
+- `ui_ir::DrawTextMeasure` trait; the pre-layout annotation pass writes
+  `_DrawTextWidthPx_`/`_DrawTextHeightPx_` (draw font size mirrored:
+  styled brand sizes verbatim, plain + imageSizePercent boost);
+  `node_resolved_text_size` prefers the annotations.
+- `pipeline/text_measure.rs` implements it over the SAME
+  `SwfAssetLibrary` + font selection as the compose draw (selection core
+  extracted to assets-level `select_imported_ui_font_from_assets`,
+  shared by both — measure == draw by construction). Width = the draw's
+  advance primitive; height = its em line box. No SWF source → no
+  annotation → the TTF ×1.5 estimate stays (that path's draw IS TTF).
 
-For #4: OFFLINE drawn width is 352.51 (vs 543 measured); with draw-metric
-boxes it still slightly overflows the 339px card, then the zero-Auto
-shrink (1b rule 2) fits it — verify both cards after landing.
+Verified: OUTPUT flows icon→dots→title; OFFLINE fits its card; emissions
+unchanged. `ui_check.sh --full` ALL GREEN with NO baseline drift — the
+anticipated gold-target adjudication was not needed (its pinned elements
+aren't in Auto-intrinsic flows beyond thresholds).
 
 ### 5. Parked tint/defaultStyles cascade re-land (with medical Steps 10–13)
 
