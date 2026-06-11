@@ -17,11 +17,15 @@ Read, in order:
 4. docs/ui-reference.md     (commands, tools, data; find SCREEN in §3 dossier)
 
 SCREEN=<dossier row, e.g. Screen_Left_Lower_RTT>
+REFERENCE=<optional reference-image path — overrides the dossier's, or
+  supplies one for a screen not yet in the dossier; in that case ADD the
+  screen's dossier row (docs/ui-reference.md §3) as part of the work>
 HANDOFF=<optional, e.g. docs/ui-clipper-parity-handoff.md — read it if set>
 KNOWN_SYMPTOMS=<optional user-observed differences, else start from review>
 
-Goal: get SCREEN's render closer to its reference image (dossier row gives
-scene, canvas, reference, compare preset, frozen tier, open issues).
+Goal: get SCREEN's render closer to its reference image (REFERENCE if set,
+else the dossier row's; the dossier row also gives scene, canvas, compare
+preset, frozen tier, open issues).
 
 Work: replay-render SCREEN; run scripts/ui_compare.py with the preset and
 READ the crops; build/extend the numbered diff catalog (workflow §4); then
