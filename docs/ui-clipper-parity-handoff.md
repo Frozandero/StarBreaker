@@ -81,8 +81,8 @@ embeds the per-identity delta and refuses no-op re-freezes.
 | 2 | Emissions | IR/EM/CS labels render `@LOC_PLACEHOLDER` | **FIXED 2026-06-11** — clone expansion applies FieldModifierLocalization via `_SynthLocalizedWidget_` (below) |
 | 3 | OUTPUT card | title at right of header row; ref has icon→dots→title left-aligned | **FIXED 2026-06-11** — draw-metrics intrinsic measurement (below); title flows after the dots |
 | 4 | Battery card | OFFLINE text container 543px overflows card, indented right | **FIXED 2026-06-11** — same fix; OFFLINE fits the card (draw-width box + 1b shrink) |
-| 5 | All cards/pips/gauges | icons dark, separator dots invisible, gauge zone colours, pip brightness, backdrop bands, "2" white vs cream | **DEFERRED by design** — the parked defaultStyles/icon-tint cascade re-land, scheduled with the medical re-freeze (Steps 10–13); full diagnosis in memory file §"DIAGNOSED, NOT LANDED" |
-| 6 | Footer/scrollbar | good parity; faint track + backdrop band remain (A7 class) | Defer with #5 |
+| 5 | All cards/pips/gauges | icons dark, separator dots invisible, gauge zone colours, pip brightness, backdrop bands, "2" white vs cream | **PARTIALLY LANDED 2026-06-11** — the defaultStyles cascade re-land (below) tints the system/card icons (Accent2/Base) and delivered the medical white X + annunciator rounded chiclets; residuals: "2" white vs cream, separator dots, pip brightness, backdrop bands (A7 class) |
+| 6 | Footer/scrollbar | good parity; faint track + backdrop band remain (A7 class) | Open — A7 backdrop class residual |
 
 ## Remaining work, in order
 
@@ -163,25 +163,32 @@ unchanged. `ui_check.sh --full` ALL GREEN with NO baseline drift — the
 anticipated gold-target adjudication was not needed (its pinned elements
 aren't in Auto-intrinsic flows beyond thresholds).
 
-### 5. Parked tint/defaultStyles cascade re-land (with medical Steps 10–13)
+### 5. Tint/defaultStyles cascade re-land — LANDED 2026-06-11 (79c87e8ea)
 
-Full diagnosis in memory `power-screen-parity-plan.md` §"DIAGNOSED, NOT
-LANDED (re-land with medical re-freeze)". Summary: power icon yellow =
-defaultStyles entry "System Icon Color" (FillColor Accent2@1.0 on the `icon`
-tag e5cd9d57); pipeline gaps are (a) `apply_canvas_style_cascade` never
-applies `defaultStyles.entries`' plain modifiers, (b)
-`FieldModifierColor` with a palette lacking `colorStyles` drops its token,
-(c) `ir_compose`'s custom-shape fill_override path leaves asset-bearing
-custom shapes untinted even when tokens flow. Expected medical platinum
-token drift when re-landed: close-button X Base→Bright (this IS the wanted
-white X of Step 10), fingerprint images Accent1→Base, one text
-Foreground→Bright — adjudicate vs the medical references at the re-freeze.
+Three TDD'd rules: (a) `apply_canvas_style_cascade` applies the canvas's
+own `defaultStyles.entries` as cascade BASE (style-link < defaultStyles <
+shared < brand < embedded < inline); (b) `FieldModifierColor` with an
+entries-only palette (no `colorStyles`) keeps its TOKEN for the
+render-time resolver; (c) the token-only path CLEARS a stale RGBA an
+earlier pass wrote for the field (the per-pass WidgetIcon overlay default
+had written Base RGBA that shadowed the bioc `Bright` token on the medical
+X). NOTE: the originally-suspected ir_compose custom-shape fill gap did
+NOT materialise — once tokens flow correctly the existing fill_override
+path tints; no compose change was needed.
+
+Audited re-freezes (IR + artifacts, approver tom) with per-target pixel
+decomposition — pre-cascade renders were byte-identical to the previous
+frozen hashes: ui_target_a +196px (white X, toward reference);
+eng_annunciator +27.7k px (rounded chiclet corners + border insets, toward
+reference); clipper_target_master +320px (subtle footer title-card border
+band; chevrons byte-untouched); ui_target_b/small_door byte-identical.
 DON'T retry the "enableColorOverlay+null → Base" overlay default (regressed
 target-screen chevrons; entry-driven FillColor is the engine model).
 
 ### 6. Medical bed (plan Steps 10–13)
 
-- White X: likely already delivered by item 5's Bright token shift — verify.
+- ~~White X~~ DONE 2026-06-11 (item 5's re-land + stale-RGBA clear; verified
+  vs medical1 reference, 196px delta, platinum re-frozen).
 - 64→69px close-button: find the engine rule or register w/h known-outliers
   (`crates/starbreaker-ui/tests/fixtures/ui_ir/ui_known_outliers.json`,
   reference-anchored one-sided overrides; none registered yet).
@@ -189,9 +196,8 @@ target-screen chevrons; entry-driven FillColor is the engine model).
   "No patient in bed" +5px (higher), Bioticorp logo −12px (check
   `vertical_alpha_balance_offset` in `ir_compose/engine_parts/engine_01.part` (`vertical_alpha_balance_offset`)
   first — if fixed, also re-freeze `ui_target_b` end-of-bed).
-- Re-freeze medical platinum: `scripts/freeze_ui_snapshot_ir.sh --approver
-  tom --reason ...` + `scripts/validate_ui_snapshot_freeze.sh` + artifact
-  freeze.
+- Tint-related platinum re-freeze DONE with item 5; a further re-freeze is
+  needed only if the position outliers land.
 
 ### 7. Power wrap (Step 9 finish)
 
