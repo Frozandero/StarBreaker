@@ -425,15 +425,38 @@ fn draw_manufacturer_logo_ir(
         }
 
         if norm.ends_with(".svg") {
-            if let Some(svg_bytes) = atlas.fetch_raw(&norm)
-                && let Some(img) = crate::bb_svg::rasterize_svg(&svg_bytes, iw, ih, fill_override)
-            {
-                let draw_y = draw_rect.y as i32 - vertical_alpha_balance_offset(&img);
+            // The engine renders the logo SVG per its AUTHORED asset layout —
+            // contain-fit at the authored contain position (the medical
+            // footer's Logo authors Contain/0/0: the square Bioticorp SVG
+            // width-fits its 120×140 box top-anchored, reference rows
+            // 1016–1055). No alpha-balance recentring (a prior recentring
+            // offset drew the glyph ~11px low and the stretch ~15% tall).
+            let contained = node
+                .asset_layout
+                .as_ref()
+                .and_then(|layout| layout.scaling_behavior.as_deref())
+                .is_some_and(|behavior| behavior.eq_ignore_ascii_case("Contain"));
+            let rasterized = atlas.fetch_raw(&norm).and_then(|svg_bytes| {
+                if contained {
+                    let layout = node.asset_layout.as_ref().expect("contain layout");
+                    crate::bb_svg::rasterize_svg_contained(
+                        &svg_bytes,
+                        iw,
+                        ih,
+                        fill_override,
+                        layout.contain_position_x.unwrap_or(0.5),
+                        layout.contain_position_y.unwrap_or(0.5),
+                    )
+                } else {
+                    crate::bb_svg::rasterize_svg(&svg_bytes, iw, ih, fill_override)
+                }
+            });
+            if let Some(img) = rasterized {
                 blit_atlas_image_tinted(
                     pixmap,
                     &img,
                     draw_rect.x as i32,
-                    draw_y,
+                    draw_rect.y as i32,
                     [1.0, 1.0, 1.0, 1.0],
                     node.alpha,
                 );
@@ -476,29 +499,6 @@ fn manufacturer_logo_tint(node: &UiIrNode, ctx: &ComposeContext<'_>) -> [f32; 4]
                 .and_then(|token| resolve_colour_token(ctx, token))
         })
         .unwrap_or([1.0, 1.0, 1.0, 1.0])
-}
-
-fn vertical_alpha_balance_offset(img: &RgbaImage) -> i32 {
-    let mut top = 0i32;
-    let mut bottom = 0i32;
-
-    for y in 0..img.height() {
-        let has_alpha = (0..img.width()).any(|x| img.get_pixel(x, y)[3] > 0);
-        if has_alpha {
-            break;
-        }
-        top += 1;
-    }
-
-    for y in (0..img.height()).rev() {
-        let has_alpha = (0..img.width()).any(|x| img.get_pixel(x, y)[3] > 0);
-        if has_alpha {
-            break;
-        }
-        bottom += 1;
-    }
-
-    (top - bottom) / 2
 }
 
 fn brand_logo_slug(slug: &str) -> &str {

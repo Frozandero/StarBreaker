@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "frozen_at": "2026-06-11T19:17:57Z",
+  "frozen_at": "2026-06-11T20:07:09Z",
   "approver": "tom",
-  "reason": "tint/defaultStyles cascade re-land, adjudicated per target: ui_target_a 196px = close-button X Base->Bright white (toward medical1 reference, the wanted white X); eng_annunciator_master_left 27.7k px = chiclets gain their rounded corners + border insets (toward Screen_Annunciator_L reference); clipper_target_master 320px = subtle footer title-card border band (chevrons byte-untouched, no visible deviation vs reference); ui_target_b and clipper_small_door byte-identical. Pre-cascade renders are byte-identical to the previous frozen hashes, so this session's earlier text-measure commits contributed zero drift.",
+  "reason": "manufacturer logo renders per its authored asset layout (Contain at containPosition, no alpha-balance recentring): the square Bioticorp SVG now contain-fits its 120x140 box top-anchored. ui_target_a + ui_target_b each change 2510px confined to the logo box (1761-1880, 1015-1069); the bed logo measures pixel-exact against the medical1 reference (rows 44-83). Other targets byte-identical.",
   "signature": null,
   "manifest_path": "crates/starbreaker-ui/tests/fixtures/ui_ir/ui_snapshot_manifest.json",
   "artifacts": [
@@ -11,7 +11,7 @@
       "tier": "platinum",
       "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_i_med_medicalbed_a.png",
       "artifact_path": "test-artifacts/ui/ui_target_a.png",
-      "sha256": "12f0bf760b44f5ce4c55f38c10a624082ab12895cc14fd9ac43e576d4cc4e16c",
+      "sha256": "c8df25d7a4381798221ba251387684d46633414ed9c912504e1d0bf84111da33",
       "width": 1920,
       "height": 1080,
       "channels": "srgba"
@@ -21,7 +21,7 @@
       "tier": "platinum",
       "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_i_med_medicalendofbed_a.png",
       "artifact_path": "test-artifacts/ui/ui_target_b.png",
-      "sha256": "6a952bbc9b6e90ece5cd3a7c4d2c5a3c84b0c07da8b1960a2486a05d14da5fee",
+      "sha256": "3ebe66abea0754281c0b1c9036bdfe14f4bc6ed624d8453e765b05d5a42cb49c",
       "width": 1920,
       "height": 1080,
       "channels": "srgba"

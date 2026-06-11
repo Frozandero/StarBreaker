@@ -1312,6 +1312,84 @@ mod tests_c {
     }
 
 
+    /// The manufacturer logo SVG renders per its AUTHORED asset layout —
+    /// contain-fit at the authored contain position, with no alpha-balance
+    /// recentring. Measured on the medical bed reference: the square
+    /// 1024-viewBox Bioticorp SVG contain-fits its 120×140 box top-anchored
+    /// (authored Contain/0/0), putting the glyph at rows 1016–1055; the old
+    /// stretch + recentring drew it ~11px lower and ~15% taller.
+    #[test]
+    fn manufacturer_logo_svg_renders_as_authored_without_recentring() {
+        // Square viewBox, bottom-heavy content, in a 40×80 box: contain-fit
+        // (width-bound, top-anchored) puts the glyph at rect-relative rows
+        // 24..32; a stretch puts it at 48..64; stretch+recentring at 42..58.
+        let svg = br#"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10' width='10' height='10'>
+            <rect x='1' y='6' width='8' height='2' fill='#ffffff'/>
+        </svg>"#.to_vec();
+        let mut images = HashMap::new();
+        images.insert(
+            "data/ui/textures/signs/brands/drak/drak_logo.svg".to_string(),
+            svg,
+        );
+        let fetcher = StubFetcher { images };
+        let atlas = AtlasLibrary::new(&fetcher, Some("drak"));
+        let style = stub_style();
+        let defaults = crate::defaults::DefaultValueRegistry::with_well_known_path_defaults();
+        let assets = minimal_swf_assets();
+        let ctx = ComposeContext {
+            style: &style,
+            defaults: &defaults,
+            assets: &assets,
+        };
+
+        let mut node = blank_node("BuildingBlocks_WidgetManufacturerLogo");
+        node.computed_rect = UiIrRect { x: 10.0, y: 10.0, w: 40.0, h: 80.0 };
+        node.asset_layout = Some(UiIrAssetLayout {
+            scaling_behavior: Some("Contain".to_string()),
+            contain_position_x: Some(0.0),
+            contain_position_y: Some(0.0),
+            flip_horizontal: None,
+            flip_vertical: None,
+        });
+
+        let document = UiIrDocument {
+            schema_version: UI_IR_SCHEMA_VERSION,
+            canvas_guid: "logo-test".to_string(),
+            canvas_name: Some("BuildingBlocks_Canvas.LogoPlacement".to_string()),
+            target_width: 100,
+            target_height: 100,
+            selected_style_source: None,
+            selected_swf_source: None,
+            renderer_hint: UiRendererHint::Bb,
+            confidence: 100,
+            warnings: Vec::new(),
+            unresolved_references: Vec::new(),
+            resolved_asset_refs: Vec::new(),
+            missing_asset_refs: Vec::new(),
+            nodes: vec![node],
+        };
+
+        let img = render_ui_ir_document(&document, &ctx, &atlas).expect("render");
+        // Contain in the 40×80 box is width-bound: the 10-unit viewBox maps
+        // to 40px anchored at containY 0.0, so the y=6..8 glyph occupies
+        // rect-relative rows 24..32 → absolute rows 34..42.
+        let bg = [48u8, 32, 16, 255];
+        let glyph_rows: Vec<u32> = (0..img.height())
+            .filter(|&y| {
+                (0..img.width()).any(|x| {
+                    let p = img.get_pixel(x, y).0;
+                    p.iter().zip(bg.iter()).any(|(a, b)| (*a as i32 - *b as i32).abs() > 24)
+                })
+            })
+            .collect();
+        let top = *glyph_rows.first().expect("logo glyph visible");
+        assert!(
+            (top as i32 - 34).abs() <= 1,
+            "logo glyph contain-fits at the authored position (top ≈34), got top {top} \
+             (a stretch puts it at ~58; stretch + alpha-balance recentring at ~52)"
+        );
+    }
+
     #[test]
     fn render_ui_ir_document_renders_text_from_golden_fixture() {
         let document: UiIrDocument = serde_json::from_str(include_str!(
