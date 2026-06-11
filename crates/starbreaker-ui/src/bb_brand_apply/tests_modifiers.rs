@@ -33,6 +33,95 @@ use serde_json::json;
         );
     }
 
+    /// A `FieldModifierColor` whose palette container carries NO `colorStyles`
+    /// (an entries-only container like the power screen's defaultStyles /
+    /// brandStyles) cannot resolve the RGBA — but its TOKEN must still flow
+    /// (the render-time colour resolver has the effective palette). Dropping
+    /// the token left the power icons' 'System Icon Color' Accent2 unapplied.
+    #[test]
+    fn color_modifier_without_palette_still_writes_token() {
+        let mut scene = make_test_scene();
+        let brand = BrandStyle {
+            identifier: "test_brand".to_string(),
+            entries: &[json!({
+                "modifiers": [
+                    {
+                        "_Type_": "BuildingBlocks_FieldModifierColor",
+                        "field": "FillColor",
+                        "color": {
+                            "_Type_": "BuildingBlocks_ColorStyle",
+                            "color": "Accent2",
+                            "alpha": 1.0
+                        }
+                    }
+                ]
+            })],
+            raw: &json!({}),
+        };
+
+        apply_brand_modifiers(&mut scene, &brand, None);
+
+        let node = scene.nodes.get(&1).unwrap();
+        assert_eq!(
+            node.raw.get("FillColorToken").and_then(|v| v.as_str()),
+            Some("Accent2"),
+            "the colour token must survive an unresolvable palette"
+        );
+    }
+
+    /// When a HIGHER-priority entry resolves token-only (entries-only
+    /// palette), a stale RGBA written by an earlier pass for the same field
+    /// must not shadow it at draw time: the medical close-button X kept its
+    /// Base light-blue RGBA (icon overlay default) while the bioc ghost
+    /// entry's `Bright` token landed beside it — the renderer drew the stale
+    /// RGBA and the wanted white X never appeared. The fallback clears the
+    /// field's RGBA so the render-time resolver honours the token (the same
+    /// overwrite semantics as the resolved-colour path).
+    #[test]
+    fn token_only_color_modifier_clears_stale_rgba() {
+        let mut scene = make_test_scene();
+        {
+            let node = scene.nodes.get_mut(&1).unwrap();
+            let obj = node.raw.as_object_mut().unwrap();
+            obj.insert(
+                "FillColor".to_string(),
+                json!({"r": 0.45, "g": 0.78, "b": 1.0, "a": 1.0}),
+            );
+            obj.insert("FillColorToken".to_string(), json!("Base"));
+        }
+        let brand = BrandStyle {
+            identifier: "test_brand".to_string(),
+            entries: &[json!({
+                "modifiers": [
+                    {
+                        "_Type_": "BuildingBlocks_FieldModifierColor",
+                        "field": "FillColor",
+                        "color": {
+                            "_Type_": "BuildingBlocks_ColorStyle",
+                            "color": "Bright",
+                            "alpha": 1.0
+                        }
+                    }
+                ]
+            })],
+            raw: &json!({}),
+        };
+
+        apply_brand_modifiers(&mut scene, &brand, None);
+
+        let node = scene.nodes.get(&1).unwrap();
+        assert_eq!(
+            node.raw.get("FillColorToken").and_then(|v| v.as_str()),
+            Some("Bright"),
+            "the later entry's token wins"
+        );
+        assert!(
+            node.raw.get("FillColor").is_none(),
+            "the stale RGBA from the earlier pass is cleared, got {:?}",
+            node.raw.get("FillColor")
+        );
+    }
+
     #[test]
     fn test_type_condition_matches_widget_image() {
         // ConditionType "Image" must match a WidgetImage node.

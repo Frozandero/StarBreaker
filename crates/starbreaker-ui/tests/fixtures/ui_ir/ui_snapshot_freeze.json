@@ -1,10 +1,148 @@
 {
   "schema_version": 1,
-  "frozen_at": "2026-06-11T10:40:22Z",
+  "frozen_at": "2026-06-11T19:10:39Z",
   "approver": "tom",
-  "reason": "SizeX/SizeY style modifiers preserve authored sizing behaviour (Percent stays Percent): the target screen's TARGET STATUS faint backdrop band (node 40, authored SizeY 0.18 Percent, alpha 0.1) now renders 194px tall instead of a 0.18px sliver — movement toward the in-game reference (open item A7), exposed by the power-screen emissions review",
+  "reason": "tint/defaultStyles cascade re-land (power catalog #5 / medical step 10): canvas defaultStyles.entries now apply as cascade BASE; FieldModifierColor with an entries-only palette keeps its TOKEN and clears stale RGBA. Per-identity: ui_target_a 4026531855 custom_shape Base->Bright + rgba None = the reference's WHITE close-button X (196px, verified vs medical1 reference); ui_target_a 2147483679 + ui_target_b 2147483680 image Accent1->Base = bioc bottom-bar entry-driven token, zero pixel change; ui_target_a 2147483697 text icon+text Foreground->Bright = TierLevel's literal Bright style tag, zero pixel change; eng_annunciator_master_left 10-14 widget_text icon+text null->Base = chiclet label texts now record their entry-driven Base token (rendered colour already Base-resolved, zero pixel change); eng_annunciator_master_left 15 image background rgba+token(Background) presence = inert defaultStyles fill, zero pixel change. Artifact hashes verify the zero-pixel claims.",
   "signature": null,
   "manifest_path": "/home/tom/projects/scorg_tools/StarBreaker/crates/starbreaker-ui/tests/fixtures/ui_ir/ui_snapshot_manifest.json",
+  "delta": [
+    {
+      "target": "eng_annunciator_master_left",
+      "identity": "10:widget_text",
+      "field": "icon_tint_token",
+      "old": null,
+      "new": "Base"
+    },
+    {
+      "target": "eng_annunciator_master_left",
+      "identity": "10:widget_text",
+      "field": "text_tint_token",
+      "old": null,
+      "new": "Base"
+    },
+    {
+      "target": "eng_annunciator_master_left",
+      "identity": "11:widget_text",
+      "field": "icon_tint_token",
+      "old": null,
+      "new": "Base"
+    },
+    {
+      "target": "eng_annunciator_master_left",
+      "identity": "11:widget_text",
+      "field": "text_tint_token",
+      "old": null,
+      "new": "Base"
+    },
+    {
+      "target": "eng_annunciator_master_left",
+      "identity": "12:widget_text",
+      "field": "icon_tint_token",
+      "old": null,
+      "new": "Base"
+    },
+    {
+      "target": "eng_annunciator_master_left",
+      "identity": "12:widget_text",
+      "field": "text_tint_token",
+      "old": null,
+      "new": "Base"
+    },
+    {
+      "target": "eng_annunciator_master_left",
+      "identity": "13:widget_text",
+      "field": "icon_tint_token",
+      "old": null,
+      "new": "Base"
+    },
+    {
+      "target": "eng_annunciator_master_left",
+      "identity": "13:widget_text",
+      "field": "text_tint_token",
+      "old": null,
+      "new": "Base"
+    },
+    {
+      "target": "eng_annunciator_master_left",
+      "identity": "14:widget_text",
+      "field": "icon_tint_token",
+      "old": null,
+      "new": "Base"
+    },
+    {
+      "target": "eng_annunciator_master_left",
+      "identity": "14:widget_text",
+      "field": "text_tint_token",
+      "old": null,
+      "new": "Base"
+    },
+    {
+      "target": "eng_annunciator_master_left",
+      "identity": "15:widget_image",
+      "field": "background_rgba",
+      "old": null,
+      "new": [
+        0.14901961,
+        0.105882354,
+        0.039215688,
+        1.0
+      ]
+    },
+    {
+      "target": "eng_annunciator_master_left",
+      "identity": "15:widget_image",
+      "field": "background_tint_token",
+      "old": null,
+      "new": "Background"
+    },
+    {
+      "target": "ui_target_a",
+      "identity": "2147483679:widget_image",
+      "field": "icon_tint_token",
+      "old": "Accent1",
+      "new": "Base"
+    },
+    {
+      "target": "ui_target_a",
+      "identity": "2147483697:widget_text_field",
+      "field": "icon_tint_token",
+      "old": null,
+      "new": "Bright"
+    },
+    {
+      "target": "ui_target_a",
+      "identity": "2147483697:widget_text_field",
+      "field": "text_tint_token",
+      "old": "Foreground",
+      "new": "Bright"
+    },
+    {
+      "target": "ui_target_a",
+      "identity": "4026531855:widget_custom_shape",
+      "field": "icon_tint_rgba",
+      "old": [
+        0.4509804,
+        0.7764706,
+        0.99607843,
+        1.0
+      ],
+      "new": null
+    },
+    {
+      "target": "ui_target_a",
+      "identity": "4026531855:widget_custom_shape",
+      "field": "icon_tint_token",
+      "old": "Base",
+      "new": "Bright"
+    },
+    {
+      "target": "ui_target_b",
+      "identity": "2147483680:widget_image",
+      "field": "icon_tint_token",
+      "old": "Accent1",
+      "new": "Base"
+    }
+  ],
   "targets": [
     {
       "id": "ui_target_a",
@@ -814,7 +952,7 @@
             "text_rgba": null,
             "text_tint_token": null,
             "icon_tint_rgba": null,
-            "icon_tint_token": "Accent1",
+            "icon_tint_token": "Base",
             "stroke_extent": 1.0,
             "text_payload": null,
             "text_font_identity": null,
@@ -882,9 +1020,9 @@
             "stroke_rgba": null,
             "stroke_tint_token": null,
             "text_rgba": null,
-            "text_tint_token": "Foreground",
+            "text_tint_token": "Bright",
             "icon_tint_rgba": null,
-            "icon_tint_token": null,
+            "icon_tint_token": "Bright",
             "stroke_extent": 1.0,
             "text_payload": "T3",
             "text_font_identity": "file://./../../../../../../../../libs/foundry/records/ui/buildingblocks/fontstyles/blenderpro-thin.json",
@@ -1203,13 +1341,8 @@
             "stroke_tint_token": null,
             "text_rgba": null,
             "text_tint_token": null,
-            "icon_tint_rgba": [
-              0.4509804,
-              0.7764706,
-              0.99607843,
-              1.0
-            ],
-            "icon_tint_token": "Base",
+            "icon_tint_rgba": null,
+            "icon_tint_token": "Bright",
             "stroke_extent": 1.0,
             "text_payload": null,
             "text_font_identity": null,
@@ -1551,7 +1684,7 @@
             "text_rgba": null,
             "text_tint_token": null,
             "icon_tint_rgba": null,
-            "icon_tint_token": "Accent1",
+            "icon_tint_token": "Base",
             "stroke_extent": 1.0,
             "text_payload": null,
             "text_font_identity": null,
@@ -1858,8 +1991,13 @@
             "alignment": null,
             "vertical_alignment": null,
             "overflow_mode": "{\"_Type_\":\"BuildingBlocks_Overflow\",\"depthFadeThreshold\":0.0,\"fadeXAxis\":true,\"fadeYAxis\":true,\"fadeZAxis\":true,\"heightFadeThreshold\":0.0,\"overflow\":\"Visible\",\"widthFadeThreshold\":0.0}",
-            "background_rgba": null,
-            "background_tint_token": null,
+            "background_rgba": [
+              0.14901961,
+              0.105882354,
+              0.039215688,
+              1.0
+            ],
+            "background_tint_token": "Background",
             "stroke_rgba": null,
             "stroke_tint_token": null,
             "text_rgba": null,
@@ -2108,9 +2246,9 @@
             "stroke_rgba": null,
             "stroke_tint_token": null,
             "text_rgba": null,
-            "text_tint_token": null,
+            "text_tint_token": "Base",
             "icon_tint_rgba": null,
-            "icon_tint_token": null,
+            "icon_tint_token": "Base",
             "stroke_extent": 1.0,
             "text_payload": "PWR",
             "text_font_identity": "file://./../../../../../../../../../libs/foundry/records/ui/buildingblocks/fontstyles/blenderpro-heavy.json",
@@ -2143,9 +2281,9 @@
             "stroke_rgba": null,
             "stroke_tint_token": null,
             "text_rgba": null,
-            "text_tint_token": null,
+            "text_tint_token": "Base",
             "icon_tint_rgba": null,
-            "icon_tint_token": null,
+            "icon_tint_token": "Base",
             "stroke_extent": 1.0,
             "text_payload": "WPN",
             "text_font_identity": "file://./../../../../../../../../../libs/foundry/records/ui/buildingblocks/fontstyles/blenderpro-heavy.json",
@@ -2178,9 +2316,9 @@
             "stroke_rgba": null,
             "stroke_tint_token": null,
             "text_rgba": null,
-            "text_tint_token": null,
+            "text_tint_token": "Base",
             "icon_tint_rgba": null,
-            "icon_tint_token": null,
+            "icon_tint_token": "Base",
             "stroke_extent": 1.0,
             "text_payload": "THR",
             "text_font_identity": "file://./../../../../../../../../../libs/foundry/records/ui/buildingblocks/fontstyles/blenderpro-heavy.json",
@@ -2213,9 +2351,9 @@
             "stroke_rgba": null,
             "stroke_tint_token": null,
             "text_rgba": null,
-            "text_tint_token": null,
+            "text_tint_token": "Base",
             "icon_tint_rgba": null,
-            "icon_tint_token": null,
+            "icon_tint_token": "Base",
             "stroke_extent": 1.0,
             "text_payload": "SHLD",
             "text_font_identity": "file://./../../../../../../../../../libs/foundry/records/ui/buildingblocks/fontstyles/blenderpro-heavy.json",
@@ -2248,9 +2386,9 @@
             "stroke_rgba": null,
             "stroke_tint_token": null,
             "text_rgba": null,
-            "text_tint_token": null,
+            "text_tint_token": "Base",
             "icon_tint_rgba": null,
-            "icon_tint_token": null,
+            "icon_tint_token": "Base",
             "stroke_extent": 1.0,
             "text_payload": "COOL",
             "text_font_identity": "file://./../../../../../../../../../libs/foundry/records/ui/buildingblocks/fontstyles/blenderpro-heavy.json",

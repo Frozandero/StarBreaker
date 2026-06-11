@@ -114,6 +114,23 @@ pub(super) fn apply_modifier(
                     {
                         background.insert("color".to_string(), value.clone());
                     }
+                } else {
+                    // An entries-only container (no `colorStyles`, e.g. the power
+                    // screen's defaultStyles/brandStyles) cannot resolve the RGBA
+                    // here — still record the TOKEN so the render-time colour
+                    // resolver (which has the effective palette) applies it
+                    // ('System Icon Color' FillColor Accent2 on the `icon` tag).
+                    // Clear any stale RGBA an earlier (lower-priority) pass wrote
+                    // for this field — the same overwrite semantics as the
+                    // resolved path; a leftover RGBA would shadow the token at
+                    // draw (the medical close-button X kept its Base light-blue
+                    // under the bioc ghost entry's Bright token).
+                    if token.is_some() {
+                        node.raw
+                            .as_object_mut()
+                            .and_then(|obj| obj.remove(field_name));
+                    }
+                    write_color_token_to_raw(field_name, token.as_deref(), node);
                 }
             }
         }

@@ -744,6 +744,31 @@ fn apply_canvas_style_cascade(
         .map(|b| b.raw)
         .unwrap_or(palette_source.unwrap_or(record_value));
     let shared_chrome = brand_palette_record.as_ref().unwrap_or(shared_fills);
+    // The canvas's own `defaultStyles.entries` are the cascade BASE (below
+    // sharedStyles/brand/embedded): the power list item's 'System Icon Color'
+    // (FillColor Accent2 on the `icon` tag) and the pip fill/state entries
+    // live there. Entries are condition-gated like every other pass, so
+    // hover/interaction variants don't match at-rest nodes. The container is
+    // entries-only (no `colorStyles`); unresolvable colours keep their TOKEN
+    // via the modifier token fallback for the render-time resolver.
+    if let Some(entries) = record_value
+        .get("defaultStyles")
+        .and_then(|ds| ds.get("entries"))
+        .and_then(|v| v.as_array())
+        .filter(|entries| !entries.is_empty())
+    {
+        let brand = bb_brand_style::BrandStyle {
+            identifier: "defaultStyles".to_string(),
+            entries: entries.as_slice(),
+            raw: shared_fills,
+        };
+        crate::bb_brand_apply::apply_brand_modifiers_with_palette(
+            scene,
+            &brand,
+            shared_chrome,
+            loc_fetcher,
+        );
+    }
     apply_shared_styles(scene, record_value, shared_fills, shared_chrome, fetch_by_path, loc_fetcher);
     if let Some(brand_style) = brand_style.as_ref() {
         let palette = brand_palette_record.as_ref().unwrap_or(brand_style.raw);

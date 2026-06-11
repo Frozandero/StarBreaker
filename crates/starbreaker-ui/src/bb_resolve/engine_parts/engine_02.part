@@ -2158,6 +2158,90 @@ mod tests_e {
     }
 
 
+    /// The canvas's own `defaultStyles.entries` are part of the style cascade
+    /// (BASE, below sharedStyles/brand/embedded): the power list item's
+    /// 'System Icon Color' entry (FillColor Accent2 conditioned on the `icon`
+    /// framework tag) lives ONLY there for canvases whose selected brand
+    /// container omits it. The container is entries-only (no `colorStyles`),
+    /// so the token flows via the modifier token fallback.
+    #[test]
+    fn default_styles_entries_apply_as_cascade_base() {
+        let root = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.DefaultStylesBase",
+            "_RecordValue_": {
+                "size": {"x": 100.0, "y": 100.0},
+                "defaultStyles": {
+                    "_Type_": "BuildingBlocks_DefaultStyles",
+                    "sharedStyles": null,
+                    "entries": [
+                        {
+                            "_Type_": "BuildingBlocks_StyleEntry",
+                            "name": "System Icon Color",
+                            "conditionsList": [
+                                {
+                                    "_Type_": "BuildingBlocks_StyleConditionList",
+                                    "conditions": [
+                                        {
+                                            "_Type_": "BuildingBlocks_StyleSelectorConditionTag",
+                                            "tag": {"_RecordId_": "e5cd9d57-953e-4e53-8759-839ab5c0b8d9"}
+                                        }
+                                    ]
+                                }
+                            ],
+                            "modifiers": [
+                                {
+                                    "_Type_": "BuildingBlocks_FieldModifierColor",
+                                    "field": "FillColor",
+                                    "color": {
+                                        "_Type_": "BuildingBlocks_ColorStyle",
+                                        "color": "Accent2",
+                                        "alpha": 1.0
+                                    }
+                                }
+                            ],
+                            "transitions": []
+                        }
+                    ]
+                },
+                "brandStyles": [],
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "root", "isActive": true},
+                    {"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_WidgetCustomShape",
+                     "name": "shape_Icon", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "styleTags": [
+                        {"_RecordId_": "e5cd9d57-953e-4e53-8759-839ab5c0b8d9"}
+                     ]},
+                    {"_Pointer_": "ptr:3", "_Type_": "BuildingBlocks_WidgetCustomShape",
+                     "name": "shape_Plain", "parent": "_PointsTo_:ptr:1", "isActive": true}
+                ],
+                "operations": []
+            }
+        });
+
+        let scene = resolve_canvas_graph(&root, None, &|p| Err(format!("no fetch: {p}")))
+            .expect("resolve");
+        let icon = scene
+            .nodes
+            .values()
+            .find(|n| n.name == "shape_Icon")
+            .expect("icon node");
+        assert_eq!(
+            icon.raw.get("FillColorToken").and_then(|v| v.as_str()),
+            Some("Accent2"),
+            "the tag-conditioned defaultStyles entry applies to the tagged node"
+        );
+        let plain = scene
+            .nodes
+            .values()
+            .find(|n| n.name == "shape_Plain")
+            .expect("plain node");
+        assert!(
+            plain.raw.get("FillColorToken").is_none(),
+            "an untagged node is not styled by the tag-conditioned entry"
+        );
+    }
+
     #[test]
     fn inject_param_overrides_synthesizes_boolean_component_parameter_values() {
         let mut child_scene = crate::bb_scene::BbScene {
