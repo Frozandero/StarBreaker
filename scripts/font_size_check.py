@@ -39,12 +39,29 @@ TARGETS = (
 )
 
 
+def harness_error(msg):
+    """A harness error means the CHECKER or dump format broke — distinct from
+    font drift (exit 1) so format rot can never masquerade as MISSING data
+    (docs/ui-process-improvements.md item 3)."""
+    print(f"HARNESS ERROR: {msg}", file=sys.stderr)
+    sys.exit(2)
+
+
 def load(path):
-    """Return {(canvas, node, text): visible_px} for the target canvases."""
+    """Return ({(canvas, node, text): visible_px} for target canvases,
+    total FONTDUMP line count, set of unexpected cell counts)."""
     out = {}
+    total = 0
+    odd_widths = set()
     for line in open(path):
+        if not line.startswith("FONTDUMP"):
+            continue
+        total += 1
         cells = [c for c in line.rstrip("\n").split("\t") if c != "FONTDUMP"]
-        if len(cells) < 7:
+        # 7 data cells = pre-width_px format; 8 = current. Anything else is
+        # format drift the checker does not understand.
+        if len(cells) not in (7, 8):
+            odd_widths.add(len(cells))
             continue
         # Head fields are positional; text is always LAST (the dump gained a
         # width_px column after the baseline was captured — both layouts parse).
@@ -54,7 +71,7 @@ def load(path):
         if canvas not in TARGETS:
             continue
         out[(canvas, node, text)] = float(visible)
-    return out
+    return out, total, odd_widths
 
 
 def main():
@@ -64,8 +81,23 @@ def main():
     tol = float(sys.argv[2]) if len(sys.argv) > 2 else 2.5
     baseline = sys.argv[3] if len(sys.argv) > 3 else DEFAULT_BASELINE
 
-    base = load(baseline)
-    new = load(new_path)
+    base, base_total, base_odd = load(baseline)
+    new, new_total, new_odd = load(new_path)
+
+    if base_odd or new_odd:
+        harness_error(
+            f"unexpected FONTDUMP cell counts {sorted(base_odd | new_odd)} "
+            "(expected 7 or 8 data cells) — the dump format changed; update "
+            "this checker and docs/ui-font-size-harness.md"
+        )
+    if new_total == 0:
+        harness_error(f"no FONTDUMP lines in {new_path} — was SB_UI_FONT_DUMP=1 set?")
+    if base and new_total > 0 and not (set(base) & set(new)):
+        harness_error(
+            f"dump has {new_total} FONTDUMP lines but ZERO match the baseline "
+            "keys — wrong scene (the baseline canvases live in the Clipper "
+            "LOD1 interior scene) or key-format drift; this is not font drift"
+        )
     bad = []
     for key, bv in sorted(base.items()):
         nv = new.get(key)
