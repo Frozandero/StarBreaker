@@ -6,7 +6,6 @@
 > `grep -rn "part_NN.part" crates/starbreaker-ui/src` locates the absorbing
 > chunk for any stale reference (memory notes included).
 
-
 State, remaining issues, and the ongoing plan for the Drake Clipper screen
 parity arc (plan `~/.claude/plans/wondrous-sparking-sketch.md`, branch
 `feature/ui`). Companion documents:
@@ -16,18 +15,22 @@ parity arc (plan `~/.claude/plans/wondrous-sparking-sketch.md`, branch
   full mechanism research log; this handoff supersedes its "remaining" lists.
 - `docs/ui-workflow.md` + `docs/ui-reference.md` — the rules and the
   command/tool reference (TDD, no per-asset hacks, audited freezes only).
+  Fresh sessions: instantiate
+  `crates/starbreaker-ui/docs/ui-matching-agent-prompt.md` with
+  `SCREEN=Screen_Left_Lower_RTT`, `HANDOFF=` this file.
 
 ## Where things stand
 
-All work is committed on `feature/ui`; tree is clean and green:
-`cargo test -p starbreaker-ui --lib` (480 passed, 2 ignored — one is the
-next-step spec test, see below), `--test manifest_live_ir_guard` (all 5
-frozen targets), `--test line_count_guard`, `cargo test -p starbreaker-3d
---lib`. Renders in this doc come from
+All work is committed on `feature/ui`; tree is clean and green via
+`bash scripts/ui_check.sh --full` (482 ui lib tests passed, 2 ignored —
+one is the next-step spec test, see below; all 5 frozen targets in the
+live IR guard; snapshot + visual suites; both freeze validators; 3d lib;
+font harness 26/26). Renders in this doc come from
 `./target/debug/starbreaker ui render --scene
 "/home/tom/projects/scorg_tools/ships/Packages/DRAK Clipper_LOD0_TEX0/scene.json"
---out-dir /tmp/... --helper Screen_Left_Lower_RTT` (debug build is fine; the
-release re-export only matters for the artifact freeze at wrap).
+--out-dir /tmp/... --helper Screen_Left_Lower_RTT` (debug build is fine;
+release re-exports only matter for artifact freezes). Compare with
+`python3 scripts/ui_compare.py <render> <reference> --regions power`.
 
 Reference images: `/home/tom/projects/scorg_tools/reference/in-game/Clipper/`
 (`Screen_Left_Lower_RTT.png` power, `Screen_Right_Upper_RTT.png` target,
@@ -46,11 +49,15 @@ artifacts — ignore (Tom's rule).
 | 53b00b171 | Step 5: `IntegerFromNumber` eval, `LocalizationCombine.withSpace`, param slot broadcast + unconditional relay tagging → OUTPUT "2 / 16" |
 | 82aecd85a | Step 6 (row): `_ResolvedText_`/`_EffectiveFontPx_` annotations + intrinsic text measurement for all-Auto rows |
 | fded64d87 | Step 6 (column): scoped flex shrink (`apply_flex_no_grow_shrink` — only flex-managed children shrink); battery counts derived from fitted Battery items → "0 / 0" |
-| 1b486f82e + prior | Steps 4+12-fonts: node `inlineStyles` cascade (FINAL stage, `__InlineFontSize` outranks brand standard) → OUTPUT/BATTERY FontSize 30; mixed-row Auto text intrinsics (BATTERY right of icon); `font_size_check.py` parser fix |
-| (gauge commit) | Step 7: bound `AnchorX/AnchorY` applied in `resolve_geometry_fields_into_scene` (marker = `1 − current/max`); beyond-edge-anchored Auto-hint textfields size to text (°C below gauge); bb_layout part_15 split |
+| ffd587211 | Steps 4+12-fonts: node `inlineStyles` cascade (FINAL stage, `__InlineFontSize` outranks brand standard) → OUTPUT/BATTERY FontSize 30; mixed-row Auto text intrinsics (BATTERY right of icon); `font_size_check.py` parser fix |
+| 1161e705a | Step 7: bound `AnchorX/AnchorY` applied in `resolve_geometry_fields_into_scene` (marker = `1 − current/max`); beyond-edge-anchored Auto-hint textfields size to text (°C below gauge); bb_layout part_15 split |
 | 1b486f82e | Step 8 (values): clone `urlPostfix` namespaces cloned bindings; ABSOLUTE WidgetCanvas `urlPostfix` → child namespace; `LocalizedFromNumber` + `LocalizedSIUnitFromNumber` eval; signature derivation paths |
-| (docs) | `docs/ui-process-improvements.md` |
-| HEAD | Step 9R fixes: SizeX/SizeY modifiers preserve authored sizing behaviour (+ audited gold re-freeze, see below); boolean params take registry value by NAME (`iscast=false`); flex enum modifiers (FlexDirection etc.); clone roots inherit `layoutItemCommon` (IR, EM, CS order) |
+| e4a4bdef6, 9ba1c94b9, a3b16bc92 | `docs/ui-process-improvements.md` (retrospective → consolidation spec → phased plan) |
+| b0d57a684 | Step 9R fixes: SizeX/SizeY modifiers preserve authored sizing behaviour (+ audited gold re-freeze, see below); boolean params take registry value by NAME (`iscast=false`); flex enum modifiers (FlexDirection etc.); clone roots inherit `layoutItemCommon` (IR, EM, CS order) |
+| 837e6caff | this handoff doc |
+| 2c6029f49 … 89d6a4d51 | process-plan implementation: `ui_check.sh`, `ui_compare.py`, harness self-check, `ui_stage_diff`; `docs/ui-workflow.md` + `docs/ui-reference.md` (old ui-matching docs DELETED); self-auditing freezes (delta embedded, no-op refused); registry `.notes.md`; docs reference guard; font TSV re-captured; artifact freeze refreshed |
+| 3b3957562 … c256e3efc | engine-part consolidation: 83 `part_NN.part` → 12 `engine_NN.part` chunks (cap 3000); zero code changes |
+| 6b958b4e5 | CI: P4K-backed MCP tests SKIP without game data; validator tests cfg(unix) |
 
 ### Gold re-freeze performed (audited)
 
@@ -59,8 +66,12 @@ artifacts — ignore (Tom's rule).
 backdrop band (authored SizeY 0.18 **Percent**, alpha 0.1) that the old
 Percent→Fixed modifier conversion collapsed to a sliver — movement toward
 the reference; partially resolves open item A7. The freeze delta was audited
-to exactly that one element. The **artifact PNG freeze was deferred** to the
-wrap step (it sources from the release re-export, which hasn't been rerun).
+to exactly that one element. The artifact PNG freeze was completed
+(89d6a4d51): the release re-export produced byte-identical target PNGs
+(all 5 sha256 hashes unchanged — the alpha-0.1 band does not alter the
+canvas-direct render's pixels; its visible-pixel side rides catalog #5/#6,
+the A7 backdrop class). Freezes are now SELF-AUDITING: the tool prints and
+embeds the per-identity delta and refuses no-op re-freezes.
 
 ## Step 9R diff catalog (power screen vs reference) — status
 
@@ -159,24 +170,19 @@ target-screen chevrons; entry-driven FillColor is the engine model).
 
 ### 7. Power wrap (Step 9 finish)
 
-After 1b/2 land: full `cargo test --workspace`; `cargo build --release -p
-starbreaker`; re-export
+After 1b/2 land: `bash scripts/ui_check.sh --full`; `cargo build --release
+-p starbreaker`; re-export
 (`./target/release/starbreaker entity export drak_clipper
 /home/tom/projects/scorg_tools/ships --kind decomposed` — no SC_DATA_P4K
-needed, auto-detected); final side-by-side vs the power reference; THEN
-`scripts/freeze_ui_regression_artifacts.sh --approver tom --reason ...`
-(deferred from the gold re-freeze — the artifact baselines still match the
-pre-arc export and the visual tests pass against those).
+needed, auto-detected); final `ui_compare.py` pass vs the power reference;
+then re-run the artifact freeze if any frozen target's PNG changed (the
+2026-06-11 freeze 89d6a4d51 covers the current export).
 
 ### 8. Approval-gated items (ask Tom)
 
-- **Font baseline TSV re-capture**: `crates/starbreaker-ui/tests/fixtures/
-  font_size_baseline.tsv` has 7 stale drifts from earlier APPROVED work
-  (annunciator PWR/WPN/THR +11.8%, SHLD +3.2%, door CLOSED −10.7%,
-  end-of-bed TierLevel/TitleText +3.4%). Capture per
-  `docs/ui-font-size-harness.md` from the LOD1 scene
-  (`DRAK Clipper_LOD1_TEX2/scene.json` — the LOD0 scene lacks the
-  medical/door/annunciator bindings).
+- ~~Font baseline TSV re-capture~~ DONE (5a5b51f71): re-captured from the
+  LOD1 scene, checker 26/26; the 7 baselined drifts are quoted in the
+  commit.
 - **OUTPUT 2/16 + emissions derivation formulas**: both still
   reference-pinned (registry / `ship_values.rs` with TODOs). Emissions live
   formula = engine SignatureSystem; the canvas's `staticVariables`
@@ -205,15 +211,17 @@ pre-arc export and the visual tests pass against those).
   `auto_text_intrinsic_main` (any row), columns pending 1b; scrollable
   (`scrollPolicy`) and wrap rows exempt from shrink. SpaceBetween axis
   justification is NOT implemented (falls back to Start) — minor open.
-- **Probes**: `BB_SHRINK_PROBE`, `SB_UI_GEOM_PROBE`, `BB_A3_STYLE_PROBE`,
-  `BB_A3_TEXT_PROBE`, `SB_SHIP_VALUES_DUMP`, `SB_UI_FONT_DUMP`. (A probe
-  registry doc is improvement-plan item 7.) `ui render --dump-ir-dir <dir>`
-  writes the composed IR JSON per helper.
-- **Stage bisection**: `examples/repro_emissions.rs` (scratch) — parse-only
-  vs full-resolve layout diff; generalise per improvement plan item 6.
+- **Probes**: full registry in `docs/ui-reference.md` §6
+  (`BB_SHRINK_PROBE`, `SB_UI_GEOM_PROBE`, `BB_A3_STYLE_PROBE`,
+  `BB_A3_TEXT_PROBE`, `SB_SHIP_VALUES_DUMP`, `SB_UI_FONT_DUMP`,
+  `ui render --dump-ir-dir <dir>`).
+- **Stage bisection**: `cargo run -p starbreaker-ui --example ui_stage_diff
+  -- <canvas.json> [WxH] [--filter <substr>]` — parse-only vs full-resolve
+  layout diff with a first-divergence report.
 - **Freezes**: `scripts/freeze_ui_snapshot_ir.sh` + validate +
-  `scripts/freeze_ui_regression_artifacts.sh`; ALWAYS diff the freeze JSON
-  per-identity before committing (improvement plan item 5 automates this).
+  `scripts/freeze_ui_regression_artifacts.sh`. The IR freeze tool now
+  prints/embeds the per-identity delta and refuses no-op re-freezes; the
+  reason and the commit message must account for every delta line.
 
 ## Task list mapping
 
