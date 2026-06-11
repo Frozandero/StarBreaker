@@ -155,7 +155,8 @@ fn apply_style_entries(
                     .filter_map(|e| e.get("name").and_then(|v| v.as_str()))
                     .collect();
                 log::info!(
-                    "A3-style-probe: id=ptr:{} name={:?} tags={:?} matches={:?}",
+                    "A3-style-probe[{}]: id=ptr:{} name={:?} tags={:?} matches={:?}",
+                    style_identifier.unwrap_or("?"),
                     node_id,
                     node.name,
                     node.style_tag_uuids,

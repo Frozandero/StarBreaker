@@ -11,9 +11,10 @@
 //!   Online-state `SPowerSegmentResourceUnit.units` power consumption;
 //! - in-use pips: pool total × `ItemResourceNetworkGlobal
 //!   .defaultPowerDistributionParams.poolDefault{Weapons,Engines,Shields}`;
-//! - per-pool icons: pool `itemType` → MFD vector asset (the power screen's
-//!   `MFD-Icon-*` set, visually verified against the in-game reference; the
-//!   engineering-screen icons in `uiParams.typeData` are a different set);
+//! - per-pool icons: pool `itemType` → `ItemResourceNetworkGlobal
+//!   .uiParams.typeData[enum index].typeIcon` (gun = three bullets,
+//!   thrusters = chevrons, shield generator = shield in a dashed circle —
+//!   all verified against the in-game reference);
 //! - heat gauge: shown for pools whose fitted items model temperature;
 //!   `overheatTemperature` comes from the item's
 //!   `EntityTemperatureItemResource`, the remaining scale values are
@@ -90,7 +91,8 @@ impl UiShipData {
         }
 
         let pool_defaults = pool_defaults_from_global(db);
-        let overrides = derive_power_paths(&pools, &fitted_items, &pool_defaults);
+        let pool_icons = pool_icons_from_global(db);
+        let overrides = derive_power_paths(&pools, &fitted_items, &pool_defaults, &pool_icons);
         if std::env::var("SB_SHIP_VALUES_DUMP").as_deref() == Ok("1") {
             let mut entries: Vec<_> = overrides.iter().collect();
             entries.sort_by(|a, b| a.0.cmp(b.0));
@@ -257,22 +259,52 @@ fn pool_default_fraction(item_type: &str, defaults: &PoolDefaults) -> f64 {
     }
 }
 
-/// The power screen's per-pool MFD glyphs (`UI/Textures/Vector/Ships/General`
-/// + the common-icon set for utility beams), keyed by pool `itemType`.
-/// Visually verified against the in-game reference; this is the MFD set, not
-/// the engineering-screen `uiParams.typeData` set.
-fn pool_type_icon(item_type: &str) -> &'static str {
-    match item_type {
-        "WeaponGun" => "UI/Textures/Vector/Ships/General/MFD-Icon-Weapons.svg",
-        "FlightController" => "UI/Textures/Vector/Ships/General/MFD-Icon-Thrust.svg",
-        "Shield" => "UI/Textures/Vector/Ships/General/MFD-Icon-Shield.svg",
-        "TractorBeam" | "TowingBeam" => {
-            "UI/Textures/Vector/General/CommonIcons/icon_common_tractor beam.svg"
+/// Pool `itemType` → power-screen glyph from
+/// `ItemResourceNetworkGlobal.uiParams.typeData`, indexed by the DataCore
+/// item-type enum (the array position IS the enum value — verified against
+/// the in-game reference: gun = three bullets, thrusters = chevrons, shield
+/// generator = shield in a dashed circle).
+fn pool_icons_from_global(db: &Database<'_>) -> HashMap<String, String> {
+    let mut icons = HashMap::new();
+    let Some(options) = (0..db.enum_defs().len() as i32).find_map(|i| {
+        let names: Vec<&str> = db
+            .enum_options(i)
+            .iter()
+            .map(|id| db.resolve_string2(*id))
+            .collect();
+        (names.iter().any(|n| *n == "WeaponGun")
+            && names.iter().any(|n| *n == "FlightController"))
+        .then_some(names)
+    }) else {
+        return icons;
+    };
+    let Some(type_data) = db
+        .struct_id("ItemResourceNetworkGlobal")
+        .and_then(|si| db.records_of_type(si).next())
+        .and_then(|record| record_json(db, record))
+    else {
+        return icons;
+    };
+    let Some(entries) = type_data
+        .get("_RecordValue_")
+        .unwrap_or(&type_data)
+        .get("uiParams")
+        .and_then(|u| u.get("typeData"))
+        .and_then(|t| t.as_array())
+    else {
+        return icons;
+    };
+    for (index, name) in options.iter().enumerate() {
+        if let Some(icon) = entries
+            .get(index)
+            .and_then(|entry| entry.get("typeIcon"))
+            .and_then(|v| v.as_str())
+            .filter(|icon| !icon.is_empty())
+        {
+            icons.insert((*name).to_string(), icon.to_string());
         }
-        "WeaponMining" => "UI/Textures/Vector/General/CommonIcons/icon_common_mining.svg",
-        "SalvageHead" => "UI/Textures/Vector/General/CommonIcons/icon_common_salvage.svg",
-        _ => "",
     }
+    icons
 }
 
 /// Build the power-screen binding-path overrides from the vehicle's pools and
@@ -281,6 +313,7 @@ pub(crate) fn derive_power_paths(
     pools: &[PowerPool],
     fitted_items: &[Json],
     pool_defaults: &PoolDefaults,
+    pool_icons: &HashMap<String, String>,
 ) -> HashMap<String, UiValue> {
     // Per pool: (total pips, overheat temperature of its consumers).
     let mut sized: Vec<(&PowerPool, u32, Option<f64>)> = pools
@@ -313,7 +346,8 @@ pub(crate) fn derive_power_paths(
 
     for (i, (pool, total, overheat)) in sized.iter().enumerate() {
         let base = format!("piplist/[{i:04}]");
-        paths.insert(format!("{base}/itemicon"), UiValue::Str(pool_type_icon(&pool.item_type).into()));
+        let icon = pool_icons.get(&pool.item_type).cloned().unwrap_or_default();
+        paths.insert(format!("{base}/itemicon"), UiValue::Str(icon));
         paths.insert(format!("{base}/piplinkamount"), UiValue::Int(1));
         paths.insert(format!("{base}/ispoweredoff"), UiValue::Bool(false));
         paths.insert(format!("{base}/piplist"), UiValue::Int(*total as i64));

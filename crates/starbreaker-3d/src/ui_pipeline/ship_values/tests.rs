@@ -5,6 +5,22 @@
 
 use super::*;
 
+fn clipper_pool_icons() -> HashMap<String, String> {
+    [
+        ("WeaponGun", "UI/Textures/Vector/General/CommonIcons/icon_common_weapon_gun.svg"),
+        ("FlightController", "UI/Textures/Vector/Ships/ProfessionScreens/Engineering/Engineering_Icon_ItemThrusters.svg"),
+        ("Shield", "UI/Textures/Vector/General/CommonIcons/icon_common_generator_shield.svg"),
+        ("TractorBeam", "UI/Textures/Vector/General/CommonIcons/icon_common_tractor beam.svg"),
+        ("TowingBeam", "UI/Textures/Vector/General/CommonIcons/icon_common_tractor beam.svg"),
+        ("WeaponMining", "UI/Textures/Vector/General/CommonIcons/icon_common_mining.svg"),
+        ("SalvageHead", "UI/Textures/Vector/General/CommonIcons/icon_common_salvage.svg"),
+    ]
+    .into_iter()
+    .map(|(k, v)| (k.to_string(), v.to_string()))
+    .collect()
+}
+
+
 fn clipper_pools_json() -> Json {
     serde_json::json!({
         "_RecordValue_": {
@@ -108,7 +124,7 @@ fn item_power_units_sum_only_power_segment_units() {
 fn derived_clipper_paths_match_reference_model() {
     let pools = power_pools_from_vehicle(&clipper_pools_json());
     let items = clipper_fitted_items();
-    let paths = derive_power_paths(&pools, &items, &PoolDefaults::default());
+    let paths = derive_power_paths(&pools, &items, &PoolDefaults::default(), &clipper_pool_icons());
 
     assert_eq!(paths.get("piplist"), Some(&UiValue::Int(7)));
     assert_eq!(
@@ -120,15 +136,21 @@ fn derived_clipper_paths_match_reference_model() {
     // Display order: weapons, engines (FlightController), shields, then rest.
     assert_eq!(
         paths.get("piplist/[0000]/itemicon"),
-        Some(&UiValue::Str("UI/Textures/Vector/Ships/General/MFD-Icon-Weapons.svg".into()))
+        Some(&UiValue::Str(
+            "UI/Textures/Vector/General/CommonIcons/icon_common_weapon_gun.svg".into()
+        ))
     );
     assert_eq!(
         paths.get("piplist/[0001]/itemicon"),
-        Some(&UiValue::Str("UI/Textures/Vector/Ships/General/MFD-Icon-Thrust.svg".into()))
+        Some(&UiValue::Str(
+            "UI/Textures/Vector/Ships/ProfessionScreens/Engineering/Engineering_Icon_ItemThrusters.svg".into()
+        ))
     );
     assert_eq!(
         paths.get("piplist/[0002]/itemicon"),
-        Some(&UiValue::Str("UI/Textures/Vector/Ships/General/MFD-Icon-Shield.svg".into()))
+        Some(&UiValue::Str(
+            "UI/Textures/Vector/General/CommonIcons/icon_common_generator_shield.svg".into()
+        ))
     );
 
     // 4/6/4 totals, 2/3/2 in use (bright bottom-up), selected = highest lit.
@@ -185,7 +207,7 @@ fn gauge_scale_tracks_item_overheat_threshold() {
         item_json("Shield", 2, Some(372.0)),
         item_json("FlightController", 6, Some(450.0)),
     ];
-    let paths = derive_power_paths(&pools, &items, &PoolDefaults::default());
+    let paths = derive_power_paths(&pools, &items, &PoolDefaults::default(), &clipper_pool_icons());
 
     assert_eq!(
         paths.get("piplist/[0001]/tempindicator/overheattemp"),

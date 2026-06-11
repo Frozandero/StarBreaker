@@ -179,6 +179,9 @@ fn main() {
         if n.segmented_fill.is_some() {
             println!("    segmented={:?}", n.segmented_fill);
         }
+        if n.icon_tint_colour.is_some() || n.icon_tint_colour_token.is_some() {
+            println!("    icon_tint={:?} icon_tint_token={:?}", n.icon_tint_colour, n.icon_tint_colour_token);
+        }
         if !n.resolved_style_tags.is_empty() {
             let tags: Vec<&str> = n
                 .resolved_style_tags
