@@ -34,6 +34,7 @@ pub mod bb_svg;
 pub mod canvas;
 pub mod compose;
 pub mod defaults;
+pub mod freeze_audit;
 pub mod error;
 pub mod hybrid_compose;
 pub mod icon_preset;

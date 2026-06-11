@@ -49,6 +49,15 @@ Top-level structure:
   "reason": "<why>",
   "signature": null,
   "manifest_path": "crates/starbreaker-ui/tests/fixtures/ui_ir/ui_snapshot_manifest.json",
+  "delta": [
+    {
+      "target": "clipper_target_master",
+      "identity": "40:widget_custom_shape",
+      "field": "h",
+      "old": 0.18,
+      "new": 194.4
+    }
+  ],
   "targets": [
     {
       "id": "ui_target_a",
@@ -66,6 +75,13 @@ Top-level structure:
   ]
 }
 ```
+
+`delta` (additive, optional in older files) is the SELF-AUDIT written by
+`freeze_ui_snapshot_ir`: one entry per identity/field changed vs the previous
+freeze (`<added>`/`<removed>` for new/vanished identities or targets). The
+freeze tool prints it and refuses a no-op re-freeze without `--allow-empty`;
+the `reason` and the freeze commit message must account for every entry
+(`docs/ui-workflow.md` §7).
 
 ## Required Fields
 

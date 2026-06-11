@@ -38,6 +38,9 @@ struct SnapshotFreezeFile {
     reason: String,
     signature: Option<String>,
     manifest_path: String,
+    /// Self-audit: per-identity changes vs the previous freeze
+    /// (docs/ui-workflow.md §7). Empty on first freeze of a new file.
+    delta: Vec<starbreaker_ui::freeze_audit::FreezeDelta>,
     targets: Vec<SnapshotFreezeTarget>,
 }
 
@@ -318,6 +321,7 @@ fn main() -> Result<(), String> {
     let mut approver: Option<String> = None;
     let mut reason: Option<String> = None;
     let mut signature: Option<String> = None;
+    let mut allow_empty = false;
 
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -327,6 +331,7 @@ fn main() -> Result<(), String> {
             "--approver" => approver = args.next(),
             "--reason" => reason = args.next(),
             "--signature" => signature = args.next(),
+            "--allow-empty" => allow_empty = true,
             _ => return Err(format!("unknown arg: {arg}")),
         }
     }
@@ -393,15 +398,45 @@ fn main() -> Result<(), String> {
     .trim()
     .to_string();
 
-    let freeze = SnapshotFreezeFile {
+    let mut freeze = SnapshotFreezeFile {
         schema_version: 1,
         frozen_at,
         approver,
         reason,
         signature,
         manifest_path: manifest_path.display().to_string(),
+        delta: Vec::new(),
         targets,
     };
+
+    // Self-auditing delta report (docs/ui-workflow.md §7): diff against the
+    // existing freeze, print every changed identity, embed the delta in the
+    // written file, and refuse a no-op re-freeze unless --allow-empty.
+    // The comparison goes through the SERIALIZED form so float formatting is
+    // identical on both sides (a Value round-trip widens f32 and produces
+    // phantom precision deltas).
+    if let Ok(existing_raw) = fs::read_to_string(&output_path) {
+        let existing: serde_json::Value = serde_json::from_str(&existing_raw)
+            .map_err(|err| format!("existing freeze is not valid JSON: {err}"))?;
+        let new_serialized = serde_json::to_string(&freeze)
+            .map_err(|err| format!("failed to serialize freeze file: {err}"))?;
+        let new_value: serde_json::Value = serde_json::from_str(&new_serialized)
+            .map_err(|err| format!("freeze round-trip failed: {err}"))?;
+        let deltas = starbreaker_ui::freeze_audit::diff_freeze_documents(&existing, &new_value);
+        if deltas.is_empty() && !allow_empty {
+            return Err(
+                "no baseline changes vs the existing freeze — refusing a no-op \
+                 re-freeze (pass --allow-empty to update metadata only)"
+                    .to_string(),
+            );
+        }
+        println!("freeze delta vs existing baseline ({} change(s)):", deltas.len());
+        for d in &deltas {
+            println!("  {} {} {}: {} -> {}", d.target, d.identity, d.field, d.old, d.new);
+        }
+        println!("the --reason and the commit message must account for every line above.");
+        freeze.delta = deltas;
+    }
 
     let serialized = serde_json::to_string_pretty(&freeze)
         .map_err(|err| format!("failed to serialize freeze file: {err}"))?;
