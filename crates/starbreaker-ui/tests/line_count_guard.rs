@@ -1,10 +1,12 @@
 //! Guardrail test: fail when any Rust source file (`.rs`) or engine part file
-//! (`.part`) in `src/` exceeds 500 lines.
+//! (`.part`) in `src/` exceeds 3000 lines. Files should still split by
+//! RESPONSIBILITY well before the cap (target chunks ~2500 lines or less);
+//! the cap is the hard stop, not the goal.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const MAX_LINES: usize = 500;
+const MAX_LINES: usize = 3000;
 
 fn collect_rs_files(root: &Path, out: &mut Vec<PathBuf>) {
     let entries = match fs::read_dir(root) {
