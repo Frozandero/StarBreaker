@@ -2243,6 +2243,55 @@ mod flex_shrink_tests {
         );
     }
 
+    /// NEXT-STEP SPEC (catalog #3/#4, diagnosis in
+    /// docs/ui-clipper-parity-handoff.md): the intrinsic text measure must
+    /// match what the draw will actually paint. ui_ir's pre-layout
+    /// annotation pass — which knows the resolved font record and
+    /// `design_text_scale` — writes `_DrawTextWidthPx_`/`_DrawTextHeightPx_`
+    /// measured through the draw-side glyph metrics; `node_resolved_text_size`
+    /// prefers those annotations over its TTF estimate. On the MFD SWF path
+    /// the TTF estimate overshoots ~1.45× (TTF advance 0.862em at
+    /// effective×1.5 vs SWF Audimat 0.535em at effective×1.667), which parks
+    /// the OUTPUT title 72px right (authored Right alignment in the oversized
+    /// box) and OFFLINE at 543px in a 339px card.
+    #[test]
+    #[ignore = "NEXT STEP (handoff catalog #3): ui_ir pre-layout draw-metrics annotations + measure preference; adjudicate gold MFD target drift"]
+    fn auto_text_child_prefers_draw_metrics_annotations() {
+        let canvas = serde_json::json!({
+            "_RecordValue_": {
+                "_Type_": "BuildingBlocks_Canvas",
+                "size": {"x": 400.0, "y": 100.0},
+                "coordinateMethod": "useRaw",
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "row", "isActive": true,
+                     "layoutPolicy": {"_Type_": "BuildingBlocks_FlexContainer",
+                                      "direction": "Row", "axisJustification": "Start"},
+                     "sizing": {"width": {"value": 1.0, "behavior": "Percent"},
+                                "height": {"value": 1.0, "behavior": "Percent"}}},
+                    {"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_WidgetTextField",
+                     "name": "title", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "_ResolvedText_": "OUTPUT",
+                     "_DrawTextWidthPx_": 160.4,
+                     "_DrawTextHeightPx_": 30.0,
+                     "text": "OUTPUT",
+                     "fontSize": {"value": 20.0, "behavior": "Fixed"},
+                     "sizing": {"width": {"value": 32.0, "behavior": "Auto"},
+                                "height": {"value": 32.0, "behavior": "Auto"}}}
+                ],
+                "operations": []
+            }
+        });
+        let scene = parse_bb_canvas(&canvas).expect("fixture parses");
+        let result = layout(&scene, 400, 100);
+        let title = result.rects[&2];
+        assert!(
+            (title.w - 160.4).abs() < 0.6,
+            "the Auto title box hugs the DRAW width annotation, got {}",
+            title.w
+        );
+    }
+
     /// Zero-auto text-backed children are CONTENT-SIZED flex items: when
     /// their measured intrinsics overflow the column they shrink
     /// proportionally to fit like every other flex-managed class (the

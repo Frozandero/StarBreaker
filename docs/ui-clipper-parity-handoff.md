@@ -78,9 +78,9 @@ embeds the per-identity delta and refuses no-op re-freezes.
 |---|---|---|---|
 | 1 | Emissions | header collapsed to 2px | **FIXED** (SizeY behaviour + iscast) — values render "3.5K / 0.0 / 0.0" in IR-EM-CS order |
 | 1b | Emissions | emitted/ambient OVERLAP inside each group (one line, ambient under emitted) | **FIXED 2026-06-11** — two rules: column zero-Auto text intrinsics + zero-Auto text children join the flex shrink set (below) |
-| 2 | Emissions | IR/EM/CS labels render `@LOC_PLACEHOLDER` | **OPEN — mechanism decoded** (below) |
-| 3 | OUTPUT card | title at right of header row; ref has icon→dots→title left-aligned | OPEN — investigate flow/justification after 1b (same machinery family) |
-| 4 | Battery card | OFFLINE text container 543px overflows card, indented right | OPEN — intrinsic measure uses effective font 100 for that text; revisit with 1b |
+| 2 | Emissions | IR/EM/CS labels render `@LOC_PLACEHOLDER` | **FIXED 2026-06-11** — clone expansion applies FieldModifierLocalization via `_SynthLocalizedWidget_` (below) |
+| 3 | OUTPUT card | title at right of header row; ref has icon→dots→title left-aligned | **DIAGNOSED 2026-06-11, spec test ready** — intrinsic measure ≠ draw width (below) |
+| 4 | Battery card | OFFLINE text container 543px overflows card, indented right | Same root cause as #3 (drawn width 352.5 vs measured 543); after the #3 fix the 352.5px box still slightly overflows the 339px card → the new zero-Auto shrink (1b rule 2) finishes the job |
 | 5 | All cards/pips/gauges | icons dark, separator dots invisible, gauge zone colours, pip brightness, backdrop bands, "2" white vs cream | **DEFERRED by design** — the parked defaultStyles/icon-tint cascade re-land, scheduled with the medical re-freeze (Steps 10–13); full diagnosis in memory file §"DIAGNOSED, NOT LANDED" |
 | 6 | Footer/scrollbar | good parity; faint track + backdrop band remain (A7 class) | Defer with #5 |
 
@@ -114,33 +114,61 @@ the rendered size is correct only because the fit-to-rect model scales
 into the shrunk box; the genuine effective-font question rides item 5's
 cascade re-land (same family as catalog #4 OFFLINE font-100).
 
-### 2. Emissions IR/EM/CS labels (clone modifiers)
+### 2. Emissions IR/EM/CS labels — LANDED 2026-06-11
 
-Authored: each `WidgetClone` (clone_IR/EM/CS in `gen_mc_s_emissions.json`)
-carries `modifiers: [FieldModifierPair { target: ptr:5 (text_Abbreviation),
-modifier: FieldModifierLocalization { field: "ParamInput0", value:
-"@hud_Label_IR|EM|CS" } }]`. Our clone expansion
-(`bb_scene/clone_expand.rs`) ignores `modifiers`.
+NOTE: the original plan's premise was wrong — there is NO
+`BindingsLocalizedField` op for text_Abbreviation (ptr:5) in
+`gen_mc_s_emissions.json`; the clone's FieldModifierLocalization is the
+ONLY text source for that label (authored `labelProperties.label =
+@LOC_PLACEHOLDER`, suppressed as intentionally-empty).
 
-Plan: during clone expansion, for each FieldModifierPair whose modifier is a
-Localization: map `target` through `id_map` to the cloned widget; in the
-CLONED ops, find the `BindingsLocalizedField { widget: <cloned target>,
-field: <modifier.field> }` op, chase its `input` chain to the first
-`BindingsLocalizedComponentParameter`, and append a `_SynthLocalizedParam_`
-op sharing that (cloned) `_Pointer_` with `resolvedLocKey` = the modifier
-value — the exact shadowing mechanism `inject_param_overrides`
-(`bb_resolve/engine_parts/engine_01.part`, `inject_param_overrides`) already uses. Loc keys
-`@hud_Label_IR/EM/CS` must exist in the localization map (verify; they are
-standard HUD strings).
+Landed (test `widget_clone_localization_modifiers_apply_to_cloned_targets`,
+`bb_scene/tests.rs`): `apply_clone_modifiers` in `bb_scene/clone_expand.rs`
+maps each FieldModifierPair target through the clone `id_map` and
+synthesizes a `_SynthLocalizedWidget_` op (the existing
+`inject_param_overrides` vehicle feeding `widget_to_loc_key`), so the label
+resolves `@hud_Label_IR/EM/CS` → "IR"/"EM"/"CS" (caseModifier Upper). The
+library original keeps its placeholder. The clones' second modifier
+(FieldModifierString SvgPath → per-type icon on shape_Icon) is logged but
+NOT applied — shape_Icon is inactive at rest so there is no observable
+effect to test; pick it up if/when an icon-active screen needs it.
 
-### 3. OUTPUT title position / 4. OFFLINE width
+### 3. OUTPUT title position / 4. OFFLINE width — DIAGNOSED, spec test ready
 
-Diagnose after 1b lands (both are text-flow placements in the same card
-machinery). For #4 note the OFFLINE text's effective font resolves 100 (no
-inline style); its intrinsic row measure yields 543px. The reference shows
-it fitting the 339px card — likely the correct font comes from a brand
-standard that the parked tint/defaultStyles cascade work will apply, so
-consider deferring #4 into item 5's re-land rather than fixing twice.
+Root cause (measured 2026-06-11): the header row FLOWS correctly (icon
+140.8 → dots 230.5 → title box 274.4) but the title box is 232.7px wide
+while the drawn glyphs are 160.4px (`SB_UI_FONT_DUMP`: size_px 50 =
+effective 30 × host-stage 1.667, drawn width 160.43). The authored
+`textAlignment: Right` puts the 72px slack on the LEFT. In the engine the
+Auto box hugs its glyphs (measure==draw), making alignment invisible — the
+defect is OUR measure, not the alignment or the flow.
+
+Why the measure overshoots ~1.45× on the MFD path:
+`node_resolved_text_size` measures TTF Mono (advance ≈0.862em) at
+effective × `LAYOUT_TEXT_MEASURE_CALIBRATION` (1.5), mirroring the
+INTERIOR draw path (`TEXT_RENDER_SIZE_CALIBRATION` 1.5 + TTF). The MFD
+path draws SWF Audimat Mono (advance ≈0.535em of its 21560-unit em) at
+size_px = effective × design_text_scale (1.667; no 1.5). 0.862×1.5 /
+(0.535×1.667×21560-em-normalised) ≈ 1.45. The advance mismatch dominates —
+no scale constant can reconcile it; the measure must use draw metrics.
+
+Fix spec (the `#[ignore]`d test
+`auto_text_child_prefers_draw_metrics_annotations`,
+`bb_layout/engine_parts/engine_02.part`): ui_ir's pre-layout annotation
+pass — it already writes `_ResolvedText_`/`_EffectiveFontPx_` and knows
+the resolved font record + `design_text_scale` (passed from
+`pipeline/mod.rs`, which holds the `swf_library`) — additionally writes
+`_DrawTextWidthPx_`/`_DrawTextHeightPx_` measured through the draw-side
+SWF glyph machinery (`swf_glyph_advance_px` in `text/swf_draw.rs`; extract
+a measure helper). `node_resolved_text_size` prefers the annotations over
+its TTF estimate. Plumbing: a text-measure callback from pipeline into
+`compile_ui_ir_*` (the SWF font lookup per resolved font record lives
+there). Expect gold `clipper_target_master` geometry drift — adjudicate
+each identity vs the reference (movement toward = re-freeze §7).
+
+For #4: OFFLINE drawn width is 352.51 (vs 543 measured); with draw-metric
+boxes it still slightly overflows the 339px card, then the zero-Auto
+shrink (1b rule 2) fits it — verify both cards after landing.
 
 ### 5. Parked tint/defaultStyles cascade re-land (with medical Steps 10–13)
 
