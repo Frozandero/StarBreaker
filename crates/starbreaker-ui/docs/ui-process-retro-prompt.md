@@ -3,8 +3,7 @@
 The companion to `ui-matching-agent-prompt.md`: that one starts a parity
 arc fresh; this one is pasted **at the end of a working session, to the
 agent that did the work** — the retrospective runs on lived context (the
-friction, dead ends, and retyped commands only that session knows), so it
-is NOT handed off to a fresh agent. Generic: no variables to fill in. The
+friction, dead ends, and retyped commands only that session knows). The
 ledger of findings and their implementation state is
 `docs/ui-process-improvements.md` — retros APPEND to it, they don't start
 new documents.
