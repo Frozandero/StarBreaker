@@ -236,6 +236,68 @@ use super::types::{BbNodeType, BbScene};
         );
     }
 
+    /// A `WidgetClone`'s `modifiers` (FieldModifierPair) apply to the CLONED
+    /// instance: a `FieldModifierLocalization` on a `ParamInputN` field
+    /// supplies the cloned target widget's localized parameter (the emissions
+    /// clone_IR/EM/CS set text_Abbreviation's `ParamInput0` to
+    /// `@hud_Label_IR/EM/CS`). The synthesized `_SynthLocalizedWidget_` op is
+    /// the same vehicle `inject_param_overrides` uses; the library original
+    /// keeps its placeholder.
+    #[test]
+    fn widget_clone_localization_modifiers_apply_to_cloned_targets() {
+        let canvas = serde_json::json!({
+            "_RecordValue_": {
+                "size": {"x": 100.0, "y": 100.0},
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_WidgetCanvas",
+                     "name": "root", "isActive": true},
+                    {"_Pointer_": "ptr:3", "_Type_": "BuildingBlocks_WidgetClone",
+                     "name": "clone_IR", "isActive": true,
+                     "parent": "_PointsTo_:ptr:1",
+                     "target": "_PointsTo_:ptr:4",
+                     "modifiers": [
+                        {"_Type_": "BuildingBlocks_FieldModifierPair",
+                         "target": "_PointsTo_:ptr:5",
+                         "modifier": {
+                            "_Type_": "BuildingBlocks_FieldModifierLocalization",
+                            "field": "ParamInput0",
+                            "value": "@hud_Label_IR"
+                         }}
+                     ]}
+                ],
+                "library": [
+                    {"_Pointer_": "ptr:4", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "template", "isActive": true},
+                    {"_Pointer_": "ptr:5", "_Type_": "BuildingBlocks_WidgetTextField",
+                     "name": "text_Abbreviation", "isActive": true,
+                     "parent": "_PointsTo_:ptr:4"}
+                ],
+                "operations": []
+            }
+        });
+
+        let scene = parse_bb_canvas(&canvas).expect("parse failed");
+        let cloned_label = scene
+            .nodes
+            .values()
+            .find(|node| node.name == "text_Abbreviation" && node.id != 5)
+            .expect("expected cloned label node");
+        let synth = scene
+            .operations
+            .iter()
+            .find(|op| op.get("_Type_").and_then(|v| v.as_str()) == Some("_SynthLocalizedWidget_"))
+            .expect("expected a _SynthLocalizedWidget_ op for the clone modifier");
+        assert_eq!(
+            synth.get("widget").and_then(|v| v.as_str()),
+            Some(format!("_PointsTo_:ptr:{}", cloned_label.id).as_str()),
+            "the modifier applies to the CLONED label, not the library original"
+        );
+        assert_eq!(
+            synth.get("resolvedLocKey").and_then(|v| v.as_str()),
+            Some("@hud_Label_IR")
+        );
+    }
+
     // ── MC_S_Self_Master ─────────────────────────────────────────────────────
 
     #[test]

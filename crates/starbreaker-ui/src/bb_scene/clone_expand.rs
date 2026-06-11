@@ -118,6 +118,61 @@ pub(super) fn expand_widget_clones(
             synthetic_base,
             clone_namespace.as_deref(),
         );
+        apply_clone_modifiers(&clone_node, &id_map, operations);
+    }
+}
+
+/// Apply a `WidgetClone`'s `modifiers` (FieldModifierPair) to the CLONED
+/// instance. A `FieldModifierLocalization` on a `ParamInputN` field supplies
+/// the cloned target widget's localized parameter (the emissions
+/// clone_IR/EM/CS set text_Abbreviation's `ParamInput0` to
+/// `@hud_Label_IR/EM/CS`): synthesize the same `_SynthLocalizedWidget_` op
+/// `inject_param_overrides` uses, addressed at the clone-mapped target so the
+/// library original keeps its placeholder. Other modifier types are logged
+/// until a motivating case lands.
+fn apply_clone_modifiers(
+    clone_node: &BbNode,
+    id_map: &BTreeMap<BbNodeId, BbNodeId>,
+    operations: &mut Vec<serde_json::Value>,
+) {
+    let Some(modifiers) = clone_node.raw.get("modifiers").and_then(|v| v.as_array()) else {
+        return;
+    };
+    for pair in modifiers {
+        let Some(target_id) = pair
+            .get("target")
+            .and_then(|v| v.as_str())
+            .and_then(parse_points_to)
+            .and_then(|ptr| id_map.get(&ptr).copied())
+        else {
+            continue;
+        };
+        let Some(modifier) = pair.get("modifier") else {
+            continue;
+        };
+        let modifier_type = modifier.get("_Type_").and_then(|v| v.as_str()).unwrap_or("");
+        match modifier_type {
+            "BuildingBlocks_FieldModifierLocalization" => {
+                let Some(value) = modifier
+                    .get("value")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                else {
+                    continue;
+                };
+                operations.push(serde_json::json!({
+                    "_Type_": "_SynthLocalizedWidget_",
+                    "widget": format!("_PointsTo_:ptr:{target_id}"),
+                    "resolvedLocKey": value,
+                }));
+            }
+            other => {
+                log::debug!(
+                    "bb_scene: unapplied WidgetClone modifier type '{other}' on clone '{}'",
+                    clone_node.name
+                );
+            }
+        }
     }
 }
 
