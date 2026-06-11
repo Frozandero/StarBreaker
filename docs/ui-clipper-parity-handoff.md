@@ -1,5 +1,12 @@
 # Clipper UI parity — handoff (2026-06-11)
 
+> NOTE 2026-06-11: the `engine_parts/part_NN.part` files were consolidated
+> into `engine_NN.part` chunks (cap 3000, target ≤2500 — `docs/ui-workflow.md`
+> rule 5). Old part names are listed in each chunk's header comment, so
+> `grep -rn "part_NN.part" crates/starbreaker-ui/src` locates the absorbing
+> chunk for any stale reference (memory notes included).
+
+
 State, remaining issues, and the ongoing plan for the Drake Clipper screen
 parity arc (plan `~/.claude/plans/wondrous-sparking-sketch.md`, branch
 `feature/ui`). Companion documents:
@@ -7,8 +14,8 @@ parity arc (plan `~/.claude/plans/wondrous-sparking-sketch.md`, branch
 - `docs/ui-process-improvements.md` — process changes adopted mid-arc.
 - Project memory `power-screen-parity-plan.md` (Claude session memory) — the
   full mechanism research log; this handoff supersedes its "remaining" lists.
-- `docs/ui-matching-workflow.md` — the rules (TDD, no per-asset hacks, never
-  shift frozen baselines without an audited re-freeze).
+- `docs/ui-workflow.md` + `docs/ui-reference.md` — the rules and the
+  command/tool reference (TDD, no per-asset hacks, audited freezes only).
 
 ## Where things stand
 
@@ -73,10 +80,10 @@ wrap step (it sources from the release re-export, which hasn't been rerun).
 
 The ignored test
 `column_zero_auto_text_children_stack_at_measured_heights`
-(`bb_layout/engine_parts/part_15.part`) is the spec: in a COLUMN flex, Auto
+(`bb_layout/engine_parts/engine_02.part`) is the spec: in a COLUMN flex, Auto
 **value 0.0** (pure content hint) text-backed children must stack at
 measured text heights. Implementation: in
-`bb_layout/engine_parts/part_04.part`, the auto_main chain currently has
+`bb_layout/engine_parts/engine_01.part` (search `layout_flex_no_grow_children`), the auto_main chain currently has
 `} else if is_row && let Some(intrinsic) = auto_text_intrinsic_main(...)`;
 add a column branch gated on `Auto && value == 0.0` calling
 `auto_text_intrinsic_main(child_id, scene, csy, false)`, set `h = intrinsic;
@@ -107,7 +114,7 @@ field: <modifier.field> }` op, chase its `input` chain to the first
 `BindingsLocalizedComponentParameter`, and append a `_SynthLocalizedParam_`
 op sharing that (cloned) `_Pointer_` with `resolvedLocKey` = the modifier
 value — the exact shadowing mechanism `inject_param_overrides`
-(`bb_resolve/engine_parts/part_06.part`) already uses. Loc keys
+(`bb_resolve/engine_parts/engine_01.part`, `inject_param_overrides`) already uses. Loc keys
 `@hud_Label_IR/EM/CS` must exist in the localization map (verify; they are
 standard HUD strings).
 
@@ -144,7 +151,7 @@ target-screen chevrons; entry-driven FillColor is the engine model).
   reference-anchored one-sided overrides; none registered yet).
 - Position outliers: T3 + MEDICAL ASSISTANT −5px (lower), PATIENT NAME +
   "No patient in bed" +5px (higher), Bioticorp logo −12px (check
-  `vertical_alpha_balance_offset` in `ir_compose/engine_parts/part_02.part`
+  `vertical_alpha_balance_offset` in `ir_compose/engine_parts/engine_01.part` (`vertical_alpha_balance_offset`)
   first — if fixed, also re-freeze `ui_target_b` end-of-bed).
 - Re-freeze medical platinum: `scripts/freeze_ui_snapshot_ir.sh --approver
   tom --reason ...` + `scripts/validate_ui_snapshot_freeze.sh` + artifact
@@ -182,7 +189,7 @@ pre-arc export and the visual tests pass against those).
   root_entity so `ui render --scene` == export.
 - **Namespaces**: list slots (fully-qualified at materialisation), ABSOLUTE
   WidgetCanvas `urlPostfix` (leading `/`) → child namespace
-  (`bb_resolve/engine_parts/part_03.part`), clone `urlPostfix` → cloned
+  (`bb_resolve/engine_parts/engine_01.part`, Pass-2 child-namespace block), clone `urlPostfix` → cloned
   binding prefix (`bb_scene/clone_expand.rs`). RELATIVE canvas postfixes are
   deliberately NOT composed — medical authors pre-qualified bindings and the
   platinum registry keys pin that; composing them broke ui_target_a/b
@@ -191,7 +198,7 @@ pre-arc export and the visual tests pass against those).
   node `inlineStyles` (always applied last per pass + an empty-entry pass in
   `apply_canvas_style_cascade` guarantees them). Inline FontSize is marked
   `__InlineFontSize` and outranks the brand table in
-  `resolve_effective_font_size` (`ui_ir/engine_parts/part_09.part`).
+  `resolve_effective_font_size` (`ui_ir/engine_parts/engine_02.part`, `resolve_effective_font_size`).
 - **Flex**: order = `layoutItemCommon.order`; shrink only over flex-managed
   children (Fixed/Percent/Auto∈(0,1]); Auto hints >1 and method None are
   fill-fallback and never shrink; row intrinsic text measurement via
