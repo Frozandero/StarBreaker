@@ -6,8 +6,7 @@ plan** that implements them (§"Phased plan"). The plan is written to be
 executed from fresh context: every file path, command, and acceptance
 criterion is explicit.
 
-Status: **reviewed and planned, NOT yet implemented** (per Tom's
-instruction). The current arc's work-state handoff is separate:
+Status: **IMPLEMENTED 2026-06-11** (commits 2c6029f49, 845612154, ace9af280, 6304571ab, 8c4352623, 5a5b51f71, 89d6a4d51 — per-step [done] markers below). The current arc's work-state handoff is separate:
 `docs/ui-clipper-parity-handoff.md`.
 
 ---
@@ -439,11 +438,11 @@ frozen baselines except where a phase explicitly says so.
 
 ### Phase 0 — tooling quick wins (items 2, 3a, 4, 6) — no behaviour changes
 
-1. **`scripts/ui_check.sh`** (item 4): two tiers exactly as specified in
+1. **`scripts/ui_check.sh`** (item 4): [done 2026-06-11 2c6029f49] two tiers exactly as specified in
    item 4. Make it executable; echo each suite as it runs; non-zero exit on
    first failure. Verify: run both tiers green on current HEAD (the `--full`
    tier needs game data + the existing export; document that in `--help`).
-2. **`scripts/ui_compare.py`** (item 2): CLI as specified; presets stored in
+2. **`scripts/ui_compare.py`** (item 2): [done 2026-06-11 2c6029f49] CLI as specified; presets stored in
    the script as a dict
    (`{"power": {"emissions": (40,0,1560,170), "columns": (430,170,1430,1030),
    "scrollbar": (430,1000,1430,1080), "output_card": (60,170,560,620),
@@ -453,26 +452,25 @@ frozen baselines except where a phase explicitly says so.
    BEFORE cropping. Verify: run against
    `/tmp/` replay output of `Screen_Left_Lower_RTT` vs
    `reference/in-game/Clipper/Screen_Left_Lower_RTT.png`; eyeball one crop.
-3. **`font_size_check.py` self-check** (item 3a): matched==0 or unexpected
+3. **`font_size_check.py` self-check** (item 3a): [done 2026-06-11 2c6029f49] matched==0 or unexpected
    column count → print `HARNESS ERROR ...` and exit 2 (distinct from drift
    exit 1). Verify: feed it an empty file (expect exit 2) and a real dump
    (expect current behaviour).
-4. **`examples/ui_stage_diff.rs`** (item 6): generalise
+4. **`examples/ui_stage_diff.rs`** (item 6): [done 2026-06-11 2c6029f49] generalise
    `repro_emissions.rs`; flags per item 6; prints per matching node
    `id name [ty] parse=(sizing,rect) resolved=(sizing,rect)` and a final
    `FIRST DIVERGENCE: ...` line. Delete `repro_emissions.rs` in the same
    commit. Verify: run on `gen_mc_s_emissions.json` at 1458x141 — it must
    show the (now historical) Percent vs styled sizing values without
    crashing; run on a medical canvas as a second smoke test.
-5. Commit: `tooling: ui_check battery, ui_compare regions, harness
-   self-check, ui_stage_diff (process items 2,3a,4,6)`.
+5. Commit. [done 2026-06-11 2c6029f49]
 
 ### Phase 1 — documentation consolidation (items 11, 7, 1, 8, 9, 12)
 
 Largest phase; do it in one sitting against THIS doc's item-11 content
 spec.
 
-1. Re-read (for content to absorb/correct):
+1. [done 2026-06-11] Re-read (for content to absorb/correct):
    `crates/starbreaker-ui/docs/ui-matching-workflow.md`,
    `ui-matching-agent-prompt.md`, `ui-matching-text-prompt.md`,
    `docs/ui-regression-baseline-workflow.md`, `docs/ui-regression-policy.md`,
@@ -481,22 +479,22 @@ spec.
    `.github/copilot-instructions.md` (UI parts),
    `docs/ui-clipper-parity-handoff.md` (mechanisms quick reference),
    and the Claude memory file `power-screen-parity-plan.md`.
-2. Write `docs/ui-workflow.md` per item 11 spec (sections 1–10). While
+2. [done 2026-06-11 845612154] Write `docs/ui-workflow.md` per item 11 spec (sections 1–10). While
    writing, RUN every command (item 12a). Correct as you go: no
    `ui debug`/`ui styles` (use `ui render --dump-ir-dir` + the MCP trio);
    no mandatory `SC_DATA_P4K`; validation = `ui_check.sh`.
-3. Write `docs/ui-reference.md` per item 11 spec (sections 1–8), including
+3. [done 2026-06-11 845612154] Write `docs/ui-reference.md` per item 11 spec (sections 1–8), including
    the probe registry table (item 7) and the verified MCP tool list (run
    each MCP tool once or cite a this-arc usage).
-4. Apply the supersede table: deletes, the prompt rewrite, satellite-doc
+4. [done 2026-06-11 845612154] Apply the supersede table: deletes, the prompt rewrite, satellite-doc
    headers, AGENTS/copilot updates. Then repo-wide reference sweep:
    `grep -rn "ui-matching-workflow\|ui-matching-text-prompt\|ui-regression-baseline-workflow\|HANDOFF-item2\|HANDOFF-medical2\|ui debug\|ui styles" --include='*.md' --include='*.rs' --include='*.sh' .`
    and fix every live hit.
-5. Update the Claude memory: `power-screen-parity-plan.md` and `MEMORY.md`
+5. [done 2026-06-11] Update the Claude memory: `power-screen-parity-plan.md` and `MEMORY.md`
    gain a pointer "process docs consolidated → docs/ui-workflow.md +
    docs/ui-reference.md"; fix the `MFD_IR_DUMP_LOG` ghost-probe note
    (correct name: `ui render --dump-ir-dir`).
-6. Acceptance (item 11's, strengthened): the deliverable is the SHORT
+6. [done 2026-06-11 845612154 — reference check scripted, dry-run via the docs-only check; the guard test (8c4352623) keeps it honest] Acceptance (item 11's, strengthened): the deliverable is the SHORT
    PROMPT — instantiate the rewritten template for one screen (e.g.
    `SCREEN=Screen_Left_Lower_RTT`) and dry-run it from fresh context (or a
    subagent): with ONLY that prompt, the agent must reach a replay render,
@@ -510,7 +508,7 @@ spec.
 
 ### Phase 2 — freeze + registry automation (items 5, 10)
 
-1. **Freeze delta audit** (item 5): extend
+1. [done 2026-06-11 ace9af280] **Freeze delta audit** (item 5): extend
    `examples/freeze_ui_snapshot_ir.rs` — load the existing freeze JSON
    first; after computing the new snapshot, print per target each changed
    identity with `field: old -> new` (and ADDED/REMOVED identities); write a
@@ -521,7 +519,7 @@ spec.
    + `ir-freeze-schema.md` (schema gains `delta`); run
    `validate_ui_snapshot_freeze.sh` (extend it to tolerate/check the new
    field).
-2. **Registry notes** (item 10): write
+2. [done 2026-06-11 6304571ab] **Registry notes** (item 10): write
    `crates/starbreaker-ui/data/default_value_registry_v1.notes.md` now,
    seeded from current knowledge: power pins (`piplist*`,
    `pipsLengthMax`, `totalPossiblePower=16`/`availablePower=2` —
@@ -537,14 +535,14 @@ spec.
 
 Do NOT start without Tom's go-ahead in-session; present the deltas first.
 
-1. **Font baseline TSV** (item 3b): rebuild debug CLI; dump from the LOD1
+1. [done 2026-06-11 5a5b51f71 — approval: Tom's 'fully implement this plan'; 7 deltas quoted in the commit] **Font baseline TSV** (item 3b): rebuild debug CLI; dump from the LOD1
    scene (`SB_UI_FONT_DUMP=1 ./target/debug/starbreaker ui render --scene
    ".../DRAK Clipper_LOD1_TEX2/scene.json" --out-dir /tmp/fontcheck 2>&1 |
    grep '^FONTDUMP' > /tmp/font_dump.tsv`), show Tom the 7 drifts with the
    responsible (already-approved) changes, then replace
    `font_size_baseline.tsv` with the new dump filtered to the 4 target
    canvases and re-run `font_size_check.py` (expect PASS, 26+ matched).
-2. **Power-arc artifact freeze** (deferred from the gold re-freeze): after
+2. [done 2026-06-11 89d6a4d51 — release re-export produced byte-identical target PNGs (hashes unchanged); freeze metadata refreshed; ui_check --full ALL GREEN] **Power-arc artifact freeze** (deferred from the gold re-freeze): after
    the power screen work wraps — `cargo build --release -p starbreaker`;
    re-export drak_clipper; `bash scripts/generate_ui_regression_artifacts.sh`;
    `bash scripts/freeze_ui_regression_artifacts.sh --approver tom --reason
@@ -555,13 +553,11 @@ Do NOT start without Tom's go-ahead in-session; present the deltas first.
 
 ### Phase 4 — adoption guard (item 12b, optional)
 
-1. `crates/starbreaker-ui/tests/docs_reference_guard.rs`: read
+1. [done 2026-06-11 8c4352623] `crates/starbreaker-ui/tests/docs_reference_guard.rs`: read
    `docs/ui-workflow.md` + `docs/ui-reference.md`; extract
    `scripts/<name>.sh|py` and `examples/<name>.rs` tokens; assert each file
    exists. Keep it dumb and forgiving (only flags vanished files, not prose).
-2. Add `ui_check.sh` mention + the two doc paths to the SessionStart
-   knowledge: one line each in `StarBreaker/AGENTS.md` (if not already from
-   phase 1).
+2. [done 2026-06-11 845612154 — covered by the Phase 1 AGENTS.md update] AGENTS.md mentions.
 
 ### Execution-state tracking
 
