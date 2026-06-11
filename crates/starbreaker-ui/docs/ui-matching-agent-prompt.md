@@ -24,7 +24,8 @@ Goal: get SCREEN's render closer to its reference image (dossier row gives
 scene, canvas, reference, compare preset, frozen tier, open issues).
 
 Work: replay-render SCREEN; run scripts/ui_compare.py with the preset and
-READ the crops; build/extend the numbered diff catalog; then the TDD loop
+READ the crops; build/extend the numbered diff catalog (workflow §4); then
+the TDD loop
 from docs/ui-workflow.md §3 — failing test first, one structural fix at the
 owning stage, scripts/ui_check.sh every cycle, re-render + compare, update
 the catalog and the arc memory/handoff. Guard trips → §5 adjudication
