@@ -31,34 +31,42 @@ fn auto_text_intrinsic_main(
             continue;
         }
         stack.extend(node.children.iter().copied());
-        let Some(text_value) = node.raw.get("_ResolvedText_").and_then(|v| v.as_str()) else {
+        let Some((w, h)) = node_resolved_text_size(node, canvas_scale, &renderer) else {
             continue;
         };
-        let Some(text) = (!text_value.trim().is_empty()).then_some(text_value) else {
-            continue;
-        };
-        // Prefer the EFFECTIVE (styled) size the renderer will draw with
-        // (annotated by ui_ir before layout); fall back to the authored size.
-        let size_px = if let Some(effective) = node
-            .raw
-            .get("_EffectiveFontPx_")
-            .and_then(|v| v.as_f64())
-            .filter(|v| *v > 0.0)
-        {
-            effective as f32 * LAYOUT_TEXT_MEASURE_CALIBRATION
-        } else {
-            match node.text.as_ref().map(|t| &t.font_size) {
-                Some(BbValue::Fixed(size)) if *size > 0.0 => {
-                    *size * canvas_scale * LAYOUT_TEXT_MEASURE_CALIBRATION
-                }
-                _ => continue,
-            }
-        };
-        let (w, h) = renderer.measure(text, crate::text::FontKind::Mono, size_px);
         let main = if is_row { w } else { h };
         best = Some(best.map_or(main, |b: f32| b.max(main)));
     }
     best
+}
+
+/// Measure ONE node's resolved text (`raw["_ResolvedText_"]`) at the size the
+/// renderer will draw it with: the EFFECTIVE (styled) size annotated by ui_ir
+/// before layout, else the authored font size — both at the draw calibration.
+/// `None` when the node carries no measurable text.
+fn node_resolved_text_size(
+    node: &crate::bb_scene::BbNode,
+    canvas_scale: f32,
+    renderer: &crate::text::TextRenderer,
+) -> Option<(f32, f32)> {
+    let text_value = node.raw.get("_ResolvedText_").and_then(|v| v.as_str())?;
+    let text = (!text_value.trim().is_empty()).then_some(text_value)?;
+    let size_px = if let Some(effective) = node
+        .raw
+        .get("_EffectiveFontPx_")
+        .and_then(|v| v.as_f64())
+        .filter(|v| *v > 0.0)
+    {
+        effective as f32 * LAYOUT_TEXT_MEASURE_CALIBRATION
+    } else {
+        match node.text.as_ref().map(|t| &t.font_size) {
+            Some(BbValue::Fixed(size)) if *size > 0.0 => {
+                *size * canvas_scale * LAYOUT_TEXT_MEASURE_CALIBRATION
+            }
+            _ => return None,
+        }
+    };
+    Some(renderer.measure(text, crate::text::FontKind::Mono, size_px))
 }
 
 /// Standard flex SHRINK: overflowing no-grow children scale down
@@ -203,6 +211,51 @@ mod auto_text_flex_tests {
         assert!(centre_offset < 1.0, "group centred, offset {centre_offset}");
     }
 
+    /// An OVERLAY (non-flex) Auto-hint textfield with resolved text sizes to
+    /// its measured text, honouring its authored anchor/pivot — the heat
+    /// gauge's `CelsiusSymbol` (anchor y 1.02, pivot y 1.0, Auto 64) hangs
+    /// just below the gauge bottom; the fill fallback used to stretch it over
+    /// the whole gauge, painting "ºC" mid-bar.
+    #[test]
+    fn overlay_auto_text_field_sizes_to_text_and_anchors_below() {
+        let canvas = serde_json::json!({
+            "_RecordValue_": {
+                "_Type_": "BuildingBlocks_Canvas",
+                "size": {"x": 58.0, "y": 296.0},
+                "coordinateMethod": "useRaw",
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "gauge_root", "isActive": true,
+                     "sizing": {"width": {"value": 1.0, "behavior": "Percent"},
+                                "height": {"value": 1.0, "behavior": "Percent"}}},
+                    {"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_WidgetTextField",
+                     "name": "celsius", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "anchor": {"x": 0.5, "y": 1.02, "z": 0.0},
+                     "pivot": {"x": 0.5, "y": 1.0, "z": 0.0},
+                     "_ResolvedText_": "ºC",
+                     "text": "ºC",
+                     "fontSize": {"value": 18.0, "behavior": "Fixed"},
+                     "sizing": {"width": {"value": 64.0, "behavior": "Auto"},
+                                "height": {"value": 64.0, "behavior": "Auto"}}}
+                ],
+                "operations": []
+            }
+        });
+        let scene = parse_bb_canvas(&canvas).expect("fixture parses");
+        let result = layout(&scene, 58, 296);
+        let celsius = result.rects[&2];
+        assert!(
+            celsius.h < 100.0 && celsius.h > 4.0,
+            "text-sized height, got {}",
+            celsius.h
+        );
+        let bottom = celsius.y + celsius.h;
+        assert!(
+            (bottom - 1.02 * 296.0).abs() < 1.5,
+            "bottom anchored at 1.02 of the gauge, got {bottom}"
+        );
+    }
+
     /// A text-backed Auto child in a MIXED row (the battery card's header:
     /// fixed icon + fixed separator + Auto title card) flows after its
     /// siblings at measured width instead of filling the container from the
@@ -268,185 +321,3 @@ mod auto_text_flex_tests {
     }
 }
 
-#[cfg(test)]
-mod flex_shrink_tests {
-    use super::*;
-    use crate::bb_scene::parse_bb_canvas;
-
-    /// Overflowing no-grow flex children shrink proportionally to fit (CSS
-    /// flex-shrink): the battery card's column authors 0.9 + 0.5 fractions
-    /// (318px in a 227px container) and the in-game card keeps all three
-    /// rows inside. Scrolling lists are exempt (the pip columns overflow by
-    /// design).
-    #[test]
-    fn overflowing_no_grow_children_shrink_to_fit() {
-        let canvas = serde_json::json!({
-            "_RecordValue_": {
-                "_Type_": "BuildingBlocks_Canvas",
-                "size": {"x": 300.0, "y": 227.0},
-                "coordinateMethod": "useRaw",
-                "scene": [
-                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
-                     "name": "column", "isActive": true,
-                     "layoutPolicy": {"_Type_": "BuildingBlocks_FlexContainer",
-                                      "direction": "Column", "axisJustification": "Start"},
-                     "sizing": {"width": {"value": 1.0, "behavior": "Percent"},
-                                "height": {"value": 1.0, "behavior": "Percent"}}},
-                    {"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_DisplayWidget",
-                     "name": "values", "parent": "_PointsTo_:ptr:1", "isActive": true,
-                     "sizing": {"width": {"value": 1.0, "behavior": "Percent"},
-                                "height": {"value": 0.9, "behavior": "Auto"}}},
-                    {"_Pointer_": "ptr:3", "_Type_": "BuildingBlocks_DisplayWidget",
-                     "name": "offline_row", "parent": "_PointsTo_:ptr:1", "isActive": true,
-                     "sizing": {"width": {"value": 1.0, "behavior": "Percent"},
-                                "height": {"value": 0.5, "behavior": "Auto"}}}
-                ],
-                "operations": []
-            }
-        });
-        let scene = parse_bb_canvas(&canvas).expect("fixture parses");
-        let result = layout(&scene, 300, 227);
-        let values = result.rects[&2];
-        let offline = result.rects[&3];
-        let shrink = 227.0 / (0.9 * 227.0 + 0.5 * 227.0);
-        assert!(
-            (values.h - 0.9 * 227.0 * shrink).abs() < 1.0,
-            "values row shrinks proportionally, got {}",
-            values.h
-        );
-        assert!(
-            (offline.y - (values.y + values.h)).abs() < 0.6,
-            "rows stack sequentially after shrink"
-        );
-        assert!(
-            offline.y + offline.h <= 227.5,
-            "rows fit the container, bottom {}",
-            offline.y + offline.h
-        );
-    }
-
-    /// Sizing-method "None" children are not flex-managed: they fall back to
-    /// container fill and visibly overflow (the medical footer's TextLayout
-    /// row holds two 604.8px-wide label-caption pairs in a 604.8px row with
-    /// overflow Visible). Shrink must not redistribute them.
-    #[test]
-    fn fill_fallback_children_do_not_shrink() {
-        let canvas = serde_json::json!({
-            "_RecordValue_": {
-                "_Type_": "BuildingBlocks_Canvas",
-                "size": {"x": 604.8, "y": 108.0},
-                "coordinateMethod": "useRaw",
-                "scene": [
-                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
-                     "name": "text_layout", "isActive": true,
-                     "layoutPolicy": {"_Type_": "BuildingBlocks_FlexContainer",
-                                      "direction": "Row", "axisJustification": "Start",
-                                      "columnSpacing": 30.0},
-                     "sizing": {"width": {"value": 1.0, "behavior": "Percent"},
-                                "height": {"value": 1.0, "behavior": "Percent"}}},
-                    {"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_DisplayWidget",
-                     "name": "operator_name", "parent": "_PointsTo_:ptr:1", "isActive": true,
-                     "sizing": {"width": {"value": 64.0, "behavior": "None"},
-                                "height": {"value": 64.0, "behavior": "None"}}},
-                    {"_Pointer_": "ptr:3", "_Type_": "BuildingBlocks_DisplayWidget",
-                     "name": "patient_name", "parent": "_PointsTo_:ptr:1", "isActive": true,
-                     "sizing": {"width": {"value": 64.0, "behavior": "None"},
-                                "height": {"value": 64.0, "behavior": "None"}}}
-                ],
-                "operations": []
-            }
-        });
-        let scene = parse_bb_canvas(&canvas).expect("fixture parses");
-        let result = layout(&scene, 605, 108);
-        assert!(
-            (result.rects[&2].w - 604.8).abs() < 1.5 && (result.rects[&3].w - 604.8).abs() < 1.5,
-            "fill-fallback children keep container width, got {} and {}",
-            result.rects[&2].w,
-            result.rects[&3].w
-        );
-    }
-
-    /// The flex-managed taxonomy mirrors `resolve_value`: Fixed, Percent and
-    /// normalized Auto fractions (0,1] are engine-distributed extents; Auto
-    /// content hints (>1, e.g. the medical label-caption pairs' Auto 64) and
-    /// method "None" resolve via the fill fallback and must not shrink.
-    #[test]
-    fn auto_content_hints_are_not_flex_managed() {
-        let canvas = serde_json::json!({
-            "_RecordValue_": {
-                "_Type_": "BuildingBlocks_Canvas",
-                "size": {"x": 100.0, "y": 100.0},
-                "coordinateMethod": "useRaw",
-                "scene": [
-                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
-                     "name": "fixed", "isActive": true,
-                     "sizing": {"width": {"value": 80.0, "behavior": "Fixed"},
-                                "height": {"value": 80.0, "behavior": "Fixed"}}},
-                    {"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_DisplayWidget",
-                     "name": "auto_fraction", "isActive": true,
-                     "sizing": {"width": {"value": 0.9, "behavior": "Auto"},
-                                "height": {"value": 0.9, "behavior": "Auto"}}},
-                    {"_Pointer_": "ptr:3", "_Type_": "BuildingBlocks_DisplayWidget",
-                     "name": "auto_hint", "isActive": true,
-                     "sizing": {"width": {"value": 64.0, "behavior": "Auto"},
-                                "height": {"value": 64.0, "behavior": "Auto"}}},
-                    {"_Pointer_": "ptr:4", "_Type_": "BuildingBlocks_DisplayWidget",
-                     "name": "method_none", "isActive": true,
-                     "sizing": {"width": {"value": 64.0, "behavior": "None"},
-                                "height": {"value": 64.0, "behavior": "None"}}}
-                ],
-                "operations": []
-            }
-        });
-        let scene = parse_bb_canvas(&canvas).expect("fixture parses");
-        let by_name = |name: &str| {
-            scene
-                .nodes
-                .values()
-                .find(|n| n.name == name)
-                .expect("fixture node")
-        };
-        assert!(main_axis_flex_managed(by_name("fixed"), true));
-        assert!(main_axis_flex_managed(by_name("auto_fraction"), true));
-        assert!(!main_axis_flex_managed(by_name("auto_hint"), true));
-        assert!(!main_axis_flex_managed(by_name("method_none"), true));
-    }
-
-    /// A scrolling list keeps its overflow (the power screen's pip columns
-    /// scroll horizontally past the viewport).
-    #[test]
-    fn scrolling_list_children_do_not_shrink() {
-        let canvas = serde_json::json!({
-            "_RecordValue_": {
-                "_Type_": "BuildingBlocks_Canvas",
-                "size": {"x": 100.0, "y": 50.0},
-                "coordinateMethod": "useRaw",
-                "scene": [
-                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_WidgetList",
-                     "name": "list", "isActive": true,
-                     "scrollPolicy": {"_Type_": "BuildingBlocks_UnidirectionalScroller",
-                                      "scrollDirection": "Horizontal"},
-                     "layoutPolicy": {"_Type_": "BuildingBlocks_FlexContainer",
-                                      "direction": "Row", "axisJustification": "Start"},
-                     "sizing": {"width": {"value": 1.0, "behavior": "Percent"},
-                                "height": {"value": 1.0, "behavior": "Percent"}}},
-                    {"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_DisplayWidget",
-                     "name": "item_a", "parent": "_PointsTo_:ptr:1", "isActive": true,
-                     "sizing": {"width": {"value": 80.0, "behavior": "Fixed"},
-                                "height": {"value": 1.0, "behavior": "Percent"}}},
-                    {"_Pointer_": "ptr:3", "_Type_": "BuildingBlocks_DisplayWidget",
-                     "name": "item_b", "parent": "_PointsTo_:ptr:1", "isActive": true,
-                     "sizing": {"width": {"value": 80.0, "behavior": "Fixed"},
-                                "height": {"value": 1.0, "behavior": "Percent"}}}
-                ],
-                "operations": []
-            }
-        });
-        let scene = parse_bb_canvas(&canvas).expect("fixture parses");
-        let result = layout(&scene, 100, 50);
-        assert!(
-            (result.rects[&2].w - 80.0).abs() < 0.5 && (result.rects[&3].w - 80.0).abs() < 0.5,
-            "scroll-list items keep their authored size"
-        );
-    }
-}

@@ -196,6 +196,20 @@ fn resolve_value_for_node(
         // hint (for example 64). Treat that hint as size instead of filling
         // the parent, which causes header/label overlap in medical canvases.
         *value * canvas_scale
+    } else if matches!(node.ty, BbNodeType::WidgetTextField)
+        && matches!(v, BbValue::Other { value, behavior } if behavior == "Auto" && *value > 1.0)
+        && (if is_width { node.anchor.x } else { node.anchor.y }) > 1.0
+        && let Some((text_w, text_h)) =
+            node_resolved_text_size(node, canvas_scale, &crate::text::TextRenderer::new())
+    {
+        // An Auto CONTENT-HINT (>1) textfield ANCHORED BEYOND the parent edge
+        // (anchor > 1.0 on this axis) hangs outside its parent — filling is
+        // meaningless there, so it sizes to its measured text. The heat
+        // gauge's `CelsiusSymbol` (anchor y 1.02, pivot y 1.0, Auto 64) hangs
+        // below the bar; the fill fallback stretched it over the gauge,
+        // painting "ºC" mid-bar. In-parent Auto-hint textfields keep the
+        // long-verified fill behaviour the gold baselines pin.
+        if is_width { text_w } else { text_h }
     } else if matches!(node.ty, BbNodeType::WidgetImage | BbNodeType::WidgetIcon)
         && is_tiny_fixed_value(v, primary_dim, canvas_scale)
     {

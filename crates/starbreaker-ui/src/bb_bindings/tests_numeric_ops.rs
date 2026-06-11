@@ -191,3 +191,81 @@ fn localized_from_integer_resolves_through_integer_from_number() {
         "the OUTPUT total renders the slash-prefixed integer"
     );
 }
+
+/// Bound `AnchorY` number fields apply to node anchors (the heat gauge's
+/// `CurrentVelocityMarker` binds `AnchorY = 1 - currentTemp/maxTemp` so the
+/// marker rides the temperature; the authored anchor 0 is an editor rest
+/// pose). Unresolvable chains keep the authored anchor.
+#[test]
+fn bound_anchor_fields_apply_to_node_anchor() {
+    let canvas = serde_json::json!({
+        "_RecordValue_": {
+            "_Type_": "BuildingBlocks_Canvas",
+            "size": {"x": 100.0, "y": 100.0},
+            "coordinateMethod": "useRaw",
+            "scene": [
+                {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                 "name": "marker", "isActive": true,
+                 "anchor": {"x": 1.0, "y": 0.0, "z": 0.0},
+                 "sizing": {"width": {"value": 1.0, "behavior": "Percent"},
+                            "height": {"value": 13.0, "behavior": "Fixed"}}}
+            ],
+            "operations": [
+                {"_Type_": "BuildingBlocks_BindingsNumberField",
+                 "widget": "_PointsTo_:ptr:1", "field": "AnchorY",
+                 "input": "_PointsTo_:ptr:10"},
+                {"_Pointer_": "ptr:10", "_Type_": "BuildingBlocks_BindingsNumberArithmatic",
+                 "type": "Sub", "amount": 1.0, "input": null, "inputB": "_PointsTo_:ptr:11"},
+                {"_Pointer_": "ptr:11", "_Type_": "BuildingBlocks_BindingsNumberArithmatic",
+                 "type": "Div", "amount": 1.0, "input": "_PointsTo_:ptr:12", "inputB": "_PointsTo_:ptr:13"},
+                {"_Pointer_": "ptr:12", "_Type_": "BuildingBlocks_BindingsNumberVariable",
+                 "path": [], "binding": "tempindicator/currenttemp", "inheritsNamespace": true},
+                {"_Pointer_": "ptr:13", "_Type_": "BuildingBlocks_BindingsNumberVariable",
+                 "path": [], "binding": "tempindicator/maxtemp", "inheritsNamespace": true}
+            ]
+        }
+    });
+    let mut scene = crate::bb_scene::parse_bb_canvas(&canvas).expect("fixture parses");
+
+    let mut defaults = DefaultValueRegistry::default();
+    defaults.insert_path("tempindicator/currenttemp", Value::Float(290.0));
+    defaults.insert_path("tempindicator/maxtemp", Value::Float(518.0));
+    super::resolve_geometry_fields_into_scene(&mut scene, &defaults);
+    let anchor_y = scene.nodes[&1].anchor.y;
+    assert!(
+        (anchor_y - (1.0 - 290.0 / 518.0)).abs() < 1e-4,
+        "bound AnchorY applies: got {anchor_y}"
+    );
+    assert_eq!(scene.nodes[&1].anchor.x, 1.0, "unbound axis untouched");
+}
+
+/// A bound anchor whose chain cannot resolve at all (a bare unbound engine
+/// variable) keeps the authored anchor.
+#[test]
+fn unresolvable_bound_anchor_keeps_authored_value() {
+    let canvas = serde_json::json!({
+        "_RecordValue_": {
+            "_Type_": "BuildingBlocks_Canvas",
+            "size": {"x": 100.0, "y": 100.0},
+            "coordinateMethod": "useRaw",
+            "scene": [
+                {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                 "name": "marker", "isActive": true,
+                 "anchor": {"x": 0.5, "y": 0.25, "z": 0.0},
+                 "sizing": {"width": {"value": 1.0, "behavior": "Percent"},
+                            "height": {"value": 13.0, "behavior": "Fixed"}}}
+            ],
+            "operations": [
+                {"_Type_": "BuildingBlocks_BindingsNumberField",
+                 "widget": "_PointsTo_:ptr:1", "field": "AnchorY",
+                 "input": "_PointsTo_:ptr:10"},
+                {"_Pointer_": "ptr:10", "_Type_": "BuildingBlocks_BindingsNumberVariable",
+                 "path": [], "binding": "some/unbound/value", "inheritsNamespace": true}
+            ]
+        }
+    });
+    let mut scene = crate::bb_scene::parse_bb_canvas(&canvas).expect("fixture parses");
+    let empty = DefaultValueRegistry::default();
+    super::resolve_geometry_fields_into_scene(&mut scene, &empty);
+    assert_eq!(scene.nodes[&1].anchor.y, 0.25, "authored anchor survives");
+}

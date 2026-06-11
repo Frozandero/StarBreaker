@@ -164,5 +164,25 @@ pub fn resolve_geometry_fields_into_scene(
                 },
             };
         }
+        // Bound anchors ride live data in-engine (the heat gauge marker's
+        // `AnchorY = 1 - currentTemp/maxTemp`); the authored anchor is an
+        // editor rest pose. Zero is a legitimate anchor, so unlike sizes only
+        // non-finite results keep the authored value.
+        for (field, horizontal) in [("AnchorX", true), ("AnchorY", false)] {
+            let Some(value) = resolver.resolve_field_number(node_id, field, defaults) else {
+                continue;
+            };
+            if !value.is_finite() {
+                continue;
+            }
+            let Some(node) = scene.nodes.get_mut(&node_id) else {
+                continue;
+            };
+            if horizontal {
+                node.anchor.x = value as f32;
+            } else {
+                node.anchor.y = value as f32;
+            }
+        }
     }
 }
