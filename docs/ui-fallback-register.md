@@ -1,5 +1,7 @@
 # UI Fallback Register
 
+> Satellite doc — the authoritative process is `docs/ui-workflow.md`; commands/tools/data live in `docs/ui-reference.md`.
+
 This register tracks active UI fallbacks in `starbreaker-ui` and explicitly records owner, scope, trigger signal, and retirement target.
 
 ## Active Fallbacks

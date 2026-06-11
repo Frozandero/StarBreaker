@@ -153,7 +153,7 @@ while IFS=$'\t' read -r target_id source_png tier; do
 
   if [[ ! -f "${source_path}" ]]; then
     echo "error: source image missing for ${target_id}: ${source_path}" >&2
-    echo "       re-export the ship first (see docs/ui-regression-baseline-workflow.md)" >&2
+    echo "       re-export the ship first (see docs/ui-workflow.md §7)" >&2
     exit 1
   fi
 

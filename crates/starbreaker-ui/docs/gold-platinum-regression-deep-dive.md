@@ -1,5 +1,7 @@
 # Gold/Platinum UI Regression Deep-Dive
 
+> Historical background reading — the current process is `docs/ui-workflow.md` (repo docs/).
+
 Date: 2026-05-31
 Scope: `starbreaker-ui` gold/platinum regression coverage, test architecture, and onboarding workflow for new targets/tier changes.
 Constraint: report-only pass; no code changes in this task.

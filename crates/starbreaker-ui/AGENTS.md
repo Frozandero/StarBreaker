@@ -11,11 +11,14 @@ Before planning or editing in this crate, read these in order:
 1. `StarBreaker/AGENTS.md`
 2. `StarBreaker/.github/copilot-instructions.md`
 3. `StarBreaker/crates/starbreaker-ui/AGENTS.md` (this file)
-4. `StarBreaker/crates/starbreaker-ui/docs/ui-matching-workflow.md` for any UI parity/matching task
+4. `StarBreaker/docs/ui-workflow.md` (the process) and
+   `StarBreaker/docs/ui-reference.md` (commands/tools/data + per-screen
+   dossier) for any UI parity/matching task
 
 Do not rely on stale chat context for UI matching behavior. Re-read
-`ui-matching-workflow.md` when switching screens, after long detours, or when
-visual fixes stop converging.
+`docs/ui-workflow.md` when switching screens, after long detours, or when
+visual fixes stop converging. To launch a per-screen parity pass, use
+`crates/starbreaker-ui/docs/ui-matching-agent-prompt.md`.
 
 ## Core rules
 

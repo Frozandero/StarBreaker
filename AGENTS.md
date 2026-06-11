@@ -343,6 +343,11 @@ the `//!` first line of each file in the module directory.
   reusable Blender material node templates.
 - `docs/blender-shader-family-inventory.json` — the canonical list of
   CryEngine shader families we know about.
+- `docs/ui-workflow.md` — THE UI parity process (TDD loop, review
+  phase, guard adjudication, freezes); read before any UI matching work.
+- `docs/ui-reference.md` — UI commands, MCP usage, probes, data
+  locations, and the per-screen dossier. Validation entry point:
+  `scripts/ui_check.sh` (add `--full` at workstream boundaries).
 - `docs/ui-fallback-register.md` — active and retired UI fallback
   register with owner, trigger signal, and sunset target.
 - `docs/ui-architecture-runbook.md` — UI pipeline architecture and

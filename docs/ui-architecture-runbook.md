@@ -1,5 +1,7 @@
 # UI Architecture and Troubleshooting Runbook
 
+> Satellite doc — the authoritative process is `docs/ui-workflow.md`; commands/tools/data live in `docs/ui-reference.md`.
+
 ## Architecture Summary
 
 The UI pipeline is split into four stages:

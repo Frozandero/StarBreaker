@@ -1,5 +1,7 @@
 # UI Regression Policy
 
+> Satellite doc — the authoritative process is `docs/ui-workflow.md`; commands/tools/data live in `docs/ui-reference.md`.
+
 This policy defines required regression coverage for `starbreaker-ui` changes.
 
 ## Required for Every UI Defect Fix
