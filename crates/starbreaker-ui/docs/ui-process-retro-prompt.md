@@ -9,9 +9,8 @@ ledger of findings and their implementation state is
 `docs/ui-process-improvements.md` — retros APPEND to it, they don't start
 new documents.
 
-## Prompt (paste as-is)
+## Instructions
 
-```text
 Consider the work you have done in this session/arc: what worked, what
 didn't, and how the process can be improved — updating tools, creating new
 ones, and updating documentation with enough information to bootstrap the
@@ -70,14 +69,3 @@ every command, path, and mapping a fresh agent needs must resolve without
 leaving docs/ui-workflow.md + docs/ui-reference.md + the dossier. Any
 excursion YOU needed during this retro is a doc bug: fix it before
 closing.
-```
-
-## Example (the 2026-06-11 retrospective)
-
-Run at the end of the power-screen arc, in-session. Findings → ledger items
-1–12 (review phase, ui_compare, harness self-checks, ui_check battery,
-self-auditing freezes, ui_stage_diff, probe registry, guard adjudication
-method, memory discipline, registry provenance, doc consolidation,
-verify-on-write); implemented as the ledger's Phases 0–4 (commits
-`2c6029f49` … `89d6a4d51`), including superseding the old ui-matching docs
-and the per-screen dossier that now bootstraps fresh sessions.
