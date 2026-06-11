@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "frozen_at": "2026-06-10T22:48:40Z",
+  "frozen_at": "2026-06-11T14:06:58Z",
   "approver": "tom",
-  "reason": "Add Drake Clipper target screen (mc_s_target_master) gold artifact baseline",
+  "reason": "Power-screen parity arc artifact refresh: re-export after the arc's landed changes (derivation, pips/icons, OUTPUT/battery cards, gauge marker + °C, emissions values, inlineStyles fonts, SizeY behaviour fix incl. the audited gold node-40 backdrop re-freeze). IR freeze already covers the semantic deltas; this refreshes the artifact hashes from the new canonical export.",
   "signature": null,
   "manifest_path": "crates/starbreaker-ui/tests/fixtures/ui_ir/ui_snapshot_manifest.json",
   "artifacts": [
