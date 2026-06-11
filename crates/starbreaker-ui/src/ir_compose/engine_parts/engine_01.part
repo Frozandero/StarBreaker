@@ -539,7 +539,9 @@ fn resolve_colour_token(ctx: &ComposeContext<'_>, token: &str) -> Option<[f32; 4
             }
             style_colour_slot_rgba(ctx, 1).or_else(|| Some(primary))
         },
-        "accent3" | "warning" => style_colour_slot_rgba(ctx, 2),
+        // `Moderate` is BB_ColorStyle index 2 (the authoritative enum order);
+        // `Accent3`/`Warning` are the hand-mapped aliases of the same slot.
+        "accent3" | "warning" | "moderate" => style_colour_slot_rgba(ctx, 2),
         "accent4" | "critical" | "negative" => style_colour_slot_rgba(ctx, 3),
         "accent5" | "contactunknown" => style_colour_slot_rgba(ctx, 4),
         "mid" | "contactneutral" => style_colour_slot_rgba(ctx, 5),

@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "frozen_at": "2026-06-11T20:07:09Z",
+  "frozen_at": "2026-06-11T22:17:34Z",
   "approver": "tom",
-  "reason": "manufacturer logo renders per its authored asset layout (Contain at containPosition, no alpha-balance recentring): the square Bioticorp SVG now contain-fits its 120x140 box top-anchored. ui_target_a + ui_target_b each change 2510px confined to the logo box (1761-1880, 1015-1069); the bed logo measures pixel-exact against the medical1 reference (rows 44-83). Other targets byte-identical.",
+  "reason": "annunciator regression fix: chiclet state styling now flows from the authored entries (deferred late-state child entries + Moderate token + severity re-pins) — WPN renders the reference's amber block with dark text, COOL the authored 143-grey bold label; the full chiclet band redraws (~339k px) and was adjudicated side-by-side vs Screen_Annunciator_L.png. All other targets byte-identical (the end-of-bed fingerprint's dropped ASOP stroke is render-inert).",
   "signature": null,
   "manifest_path": "crates/starbreaker-ui/tests/fixtures/ui_ir/ui_snapshot_manifest.json",
   "artifacts": [
@@ -41,7 +41,7 @@
       "tier": "gold",
       "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_h_eng_annunciator_master_left.png",
       "artifact_path": "test-artifacts/ui/eng_annunciator_master_left.png",
-      "sha256": "2f35ed6d10152530ae5e4545bf4398357c049c3763edc017be868bfa699d9456",
+      "sha256": "04d6508d0752e04b1f47aea8130f604eaf0c96bf62520453d1b99f6119527242",
       "width": 1920,
       "height": 432,
       "channels": "srgba"

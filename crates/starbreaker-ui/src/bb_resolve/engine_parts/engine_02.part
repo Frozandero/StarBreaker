@@ -2384,6 +2384,129 @@ mod tests_e {
     }
 
 
+    /// A child canvas's state-conditioned style entries must apply once the
+    /// node state tags are resolvable — the annunciator chiclet severities
+    /// arrive via PARENT-injected dynamic params, so at the child's own
+    /// cascade time the state tags don't exist yet and entries like
+    /// "Critical - Text" (Parent[AnyOfTag state]) can never match. The child's
+    /// entries are deferred and re-applied (subtree-scoped) after
+    /// `resolve_state_tags_into_scene` at the parent level.
+    #[test]
+    fn child_state_conditioned_entries_apply_after_parent_param_injection() {
+        let state_tag = "11111111-1111-1111-1111-111111111111";
+        let child = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.DeferredStyleChild",
+            "_RecordValue_": {
+                "size": {"x": 100.0, "y": 100.0},
+                "defaultStyles": {"entries": []},
+                "brandStyles": [],
+                "embeddedStyles": [
+                    {
+                        "_Type_": "BuildingBlocks_StyleEntry",
+                        "name": "Critical - Text",
+                        "conditionsList": [
+                            {
+                                "_Type_": "BuildingBlocks_StyleConditionList",
+                                "conditions": [
+                                    {"_Type_": "BuildingBlocks_StyleSelectorConditionType", "type": "Text"},
+                                    {"_Type_": "BuildingBlocks_StyleSelectorConditionParent",
+                                     "conditions": [
+                                        {"_Type_": "BuildingBlocks_StyleSelectorConditionAnyOfTag",
+                                         "tags": [{"_RecordId_": state_tag}]}
+                                     ]}
+                                ]
+                            }
+                        ],
+                        "modifiers": [
+                            {"_Type_": "BuildingBlocks_FieldModifierColor",
+                             "field": "FillColor",
+                             "color": {"_Type_": "BuildingBlocks_ColorStyle", "color": "Background", "alpha": 1.0}}
+                        ],
+                        "transitions": []
+                    }
+                ],
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "item", "isActive": true},
+                    {"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_WidgetText",
+                     "name": "label", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "text": "WPN"}
+                ],
+                "operations": [
+                    {"_Pointer_": "ptr:9", "_Type_": "BuildingBlocks_BindingsIntegerComponentParameter",
+                     "name": "Value item", "parameter": "ParamInput0", "defaultValue": 0},
+                    {"_Pointer_": "ptr:12", "_Type_": "BuildingBlocks_BindingsTagFromIntegerSwitch",
+                     "input": "_PointsTo_:ptr:9", "defaultValue": null,
+                     "values": [
+                        {"_Type_": "BuildingBlocks_IntegerTagPair", "first": 4,
+                         "second": {"_RecordId_": state_tag, "_RecordName_": format!("Tag.{state_tag}")}}
+                     ]},
+                    {"_Type_": "BuildingBlocks_BindingsStringField",
+                     "widget": "_PointsTo_:ptr:1", "field": "PrimaryStateTag",
+                     "input": "_PointsTo_:ptr:12"}
+                ]
+            }
+        });
+        let host = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.DeferredStyleHost",
+            "_RecordValue_": {
+                "size": {"x": 100.0, "y": 100.0},
+                "defaultStyles": {"entries": []},
+                "brandStyles": [],
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "host_root", "isActive": true},
+                    {"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_WidgetCanvas",
+                     "name": "slot", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "canvas": "file://./deferred_child.json"}
+                ],
+                "operations": [
+                    {"_Pointer_": "ptr:10", "_Type_": "BuildingBlocks_BindingsIntegerVariable",
+                     "binding": "/Test/Severity"},
+                    {"_Type_": "BuildingBlocks_BindingsIntegerField",
+                     "widget": "_PointsTo_:ptr:2", "field": "ParamInput0",
+                     "input": "_PointsTo_:ptr:10"}
+                ]
+            }
+        });
+
+        let mut defaults = crate::defaults::DefaultValueRegistry::new();
+        defaults.insert_path("/Test/Severity", crate::canvas::Value::Int(4));
+        let scene = resolve_canvas_graph_with_defaults(
+            &host,
+            None,
+            &|url| match url {
+                "file://./deferred_child.json" => Ok(child.clone()),
+                other => Err(format!("framework record unavailable in fixture: {other}")),
+            },
+            None,
+            None,
+            &defaults,
+        )
+        .expect("resolve failed");
+
+        let item = scene
+            .nodes
+            .values()
+            .find(|node| node.name == "item")
+            .expect("merged child item");
+        assert!(
+            item.style_tag_uuids.iter().any(|t| t == state_tag),
+            "the parent-injected severity resolves the item's state tag, got {:?}",
+            item.style_tag_uuids
+        );
+        let label = scene
+            .nodes
+            .values()
+            .find(|node| node.name == "label")
+            .expect("merged child label");
+        assert_eq!(
+            label.raw.get("FillColorToken").and_then(|v| v.as_str()),
+            Some("Background"),
+            "the state-conditioned child entry applies after param injection"
+        );
+    }
+
     #[test]
     fn pass1_style_ref_child_is_resolved_recursively() {
         // Phase B1 regression: Pass 1 canvas-reference children must themselves

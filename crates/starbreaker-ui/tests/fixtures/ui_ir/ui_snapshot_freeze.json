@@ -1,146 +1,90 @@
 {
   "schema_version": 1,
-  "frozen_at": "2026-06-11T19:10:39Z",
+  "frozen_at": "2026-06-11T22:13:50Z",
   "approver": "tom",
-  "reason": "tint/defaultStyles cascade re-land (power catalog #5 / medical step 10): canvas defaultStyles.entries now apply as cascade BASE; FieldModifierColor with an entries-only palette keeps its TOKEN and clears stale RGBA. Per-identity: ui_target_a 4026531855 custom_shape Base->Bright + rgba None = the reference's WHITE close-button X (196px, verified vs medical1 reference); ui_target_a 2147483679 + ui_target_b 2147483680 image Accent1->Base = bioc bottom-bar entry-driven token, zero pixel change; ui_target_a 2147483697 text icon+text Foreground->Bright = TierLevel's literal Bright style tag, zero pixel change; eng_annunciator_master_left 10-14 widget_text icon+text null->Base = chiclet label texts now record their entry-driven Base token (rendered colour already Base-resolved, zero pixel change); eng_annunciator_master_left 15 image background rgba+token(Background) presence = inert defaultStyles fill, zero pixel change. Artifact hashes verify the zero-pixel claims.",
+  "reason": "annunciator regression fix (deferred late-state child entries + Moderate token + severity re-pins) adjudicated vs Screen_Annunciator_L.png: 11 widget_text Base->Disabled = the WPN label's authored 'Moderate - Text' dark text on the bright moderate block (was orange-on-orange invisible); 14 widget_text text_rgba 0.561-grey = 'Off - Text' authored SRGBA 143 for the COOL label (was orange, reference grey); 18/27/31/33 widget_image Accent3->None = gradient tint tokens following the severity re-pins (items 0/2/3 -> severity 0: the reference's orange chiclet TEXT colours prove no moderate state at rest; visual gradients stay within the pre-existing deviation class); ui_target_b 2147483670 stroke Accent2-green rgba+token -> None = ic_touchhere 'SwapColorsToASOP' no longer mis-applies on medical (Ancestor-with-breaks containment now enforced everywhere; zero pixel change, fingerprint matches medical2 reference).",
   "signature": null,
   "manifest_path": "/home/tom/projects/scorg_tools/StarBreaker/crates/starbreaker-ui/tests/fixtures/ui_ir/ui_snapshot_manifest.json",
   "delta": [
     {
       "target": "eng_annunciator_master_left",
-      "identity": "10:widget_text",
-      "field": "icon_tint_token",
-      "old": null,
-      "new": "Base"
-    },
-    {
-      "target": "eng_annunciator_master_left",
-      "identity": "10:widget_text",
-      "field": "text_tint_token",
-      "old": null,
-      "new": "Base"
-    },
-    {
-      "target": "eng_annunciator_master_left",
       "identity": "11:widget_text",
       "field": "icon_tint_token",
-      "old": null,
-      "new": "Base"
+      "old": "Base",
+      "new": "Disabled"
     },
     {
       "target": "eng_annunciator_master_left",
       "identity": "11:widget_text",
       "field": "text_tint_token",
-      "old": null,
-      "new": "Base"
-    },
-    {
-      "target": "eng_annunciator_master_left",
-      "identity": "12:widget_text",
-      "field": "icon_tint_token",
-      "old": null,
-      "new": "Base"
-    },
-    {
-      "target": "eng_annunciator_master_left",
-      "identity": "12:widget_text",
-      "field": "text_tint_token",
-      "old": null,
-      "new": "Base"
-    },
-    {
-      "target": "eng_annunciator_master_left",
-      "identity": "13:widget_text",
-      "field": "icon_tint_token",
-      "old": null,
-      "new": "Base"
-    },
-    {
-      "target": "eng_annunciator_master_left",
-      "identity": "13:widget_text",
-      "field": "text_tint_token",
-      "old": null,
-      "new": "Base"
+      "old": "Base",
+      "new": "Disabled"
     },
     {
       "target": "eng_annunciator_master_left",
       "identity": "14:widget_text",
-      "field": "icon_tint_token",
-      "old": null,
-      "new": "Base"
+      "field": "text_font_identity",
+      "old": "file://./../../../../../../../../../libs/foundry/records/ui/buildingblocks/fontstyles/blenderpro-heavy.json",
+      "new": "file://./../../../../../../../../../libs/foundry/records/ui/buildingblocks/fontstyles/blenderpro-bold.json"
     },
     {
       "target": "eng_annunciator_master_left",
       "identity": "14:widget_text",
-      "field": "text_tint_token",
-      "old": null,
-      "new": "Base"
-    },
-    {
-      "target": "eng_annunciator_master_left",
-      "identity": "15:widget_image",
-      "field": "background_rgba",
+      "field": "text_rgba",
       "old": null,
       "new": [
-        0.14901961,
-        0.105882354,
-        0.039215688,
+        0.56078434,
+        0.56078434,
+        0.56078434,
         1.0
       ]
     },
     {
       "target": "eng_annunciator_master_left",
-      "identity": "15:widget_image",
-      "field": "background_tint_token",
-      "old": null,
-      "new": "Background"
-    },
-    {
-      "target": "ui_target_a",
-      "identity": "2147483679:widget_image",
+      "identity": "18:widget_image",
       "field": "icon_tint_token",
-      "old": "Accent1",
-      "new": "Base"
+      "old": "Accent3",
+      "new": null
     },
     {
-      "target": "ui_target_a",
-      "identity": "2147483697:widget_text_field",
+      "target": "eng_annunciator_master_left",
+      "identity": "27:widget_image",
       "field": "icon_tint_token",
-      "old": null,
-      "new": "Bright"
+      "old": "Accent3",
+      "new": null
     },
     {
-      "target": "ui_target_a",
-      "identity": "2147483697:widget_text_field",
-      "field": "text_tint_token",
-      "old": "Foreground",
-      "new": "Bright"
+      "target": "eng_annunciator_master_left",
+      "identity": "31:widget_image",
+      "field": "icon_tint_token",
+      "old": "Accent3",
+      "new": null
     },
     {
-      "target": "ui_target_a",
-      "identity": "4026531855:widget_custom_shape",
-      "field": "icon_tint_rgba",
+      "target": "eng_annunciator_master_left",
+      "identity": "33:widget_image",
+      "field": "icon_tint_token",
+      "old": "Accent3",
+      "new": null
+    },
+    {
+      "target": "ui_target_b",
+      "identity": "2147483670:widget_custom_shape",
+      "field": "stroke_rgba",
       "old": [
-        0.4509804,
-        0.7764706,
-        0.99607843,
+        0.2627451,
+        0.8666667,
+        0.5764706,
         1.0
       ],
       "new": null
     },
     {
-      "target": "ui_target_a",
-      "identity": "4026531855:widget_custom_shape",
-      "field": "icon_tint_token",
-      "old": "Base",
-      "new": "Bright"
-    },
-    {
       "target": "ui_target_b",
-      "identity": "2147483680:widget_image",
-      "field": "icon_tint_token",
-      "old": "Accent1",
-      "new": "Base"
+      "identity": "2147483670:widget_custom_shape",
+      "field": "stroke_tint_token",
+      "old": "Accent2",
+      "new": null
     }
   ],
   "targets": [
@@ -1599,13 +1543,8 @@
             "overflow_mode": "{\"_Type_\":\"BuildingBlocks_Overflow\",\"depthFadeThreshold\":0.0,\"fadeXAxis\":true,\"fadeYAxis\":true,\"fadeZAxis\":true,\"heightFadeThreshold\":0.0,\"overflow\":\"Visible\",\"widthFadeThreshold\":0.0}",
             "background_rgba": null,
             "background_tint_token": null,
-            "stroke_rgba": [
-              0.2627451,
-              0.8666667,
-              0.5764706,
-              1.0
-            ],
-            "stroke_tint_token": "Accent2",
+            "stroke_rgba": null,
+            "stroke_tint_token": null,
             "text_rgba": null,
             "text_tint_token": null,
             "icon_tint_rgba": [
@@ -2038,7 +1977,7 @@
             "text_rgba": null,
             "text_tint_token": null,
             "icon_tint_rgba": null,
-            "icon_tint_token": "Accent3",
+            "icon_tint_token": null,
             "stroke_extent": 1.0,
             "text_payload": null,
             "text_font_identity": null,
@@ -2073,7 +2012,7 @@
             "text_rgba": null,
             "text_tint_token": null,
             "icon_tint_rgba": null,
-            "icon_tint_token": "Accent3",
+            "icon_tint_token": null,
             "stroke_extent": 1.0,
             "text_payload": null,
             "text_font_identity": null,
@@ -2143,7 +2082,7 @@
             "text_rgba": null,
             "text_tint_token": null,
             "icon_tint_rgba": null,
-            "icon_tint_token": "Accent3",
+            "icon_tint_token": null,
             "stroke_extent": 1.0,
             "text_payload": null,
             "text_font_identity": null,
@@ -2178,7 +2117,7 @@
             "text_rgba": null,
             "text_tint_token": null,
             "icon_tint_rgba": null,
-            "icon_tint_token": "Accent3",
+            "icon_tint_token": null,
             "stroke_extent": 1.0,
             "text_payload": null,
             "text_font_identity": null,
@@ -2281,9 +2220,9 @@
             "stroke_rgba": null,
             "stroke_tint_token": null,
             "text_rgba": null,
-            "text_tint_token": "Base",
+            "text_tint_token": "Disabled",
             "icon_tint_rgba": null,
-            "icon_tint_token": "Base",
+            "icon_tint_token": "Disabled",
             "stroke_extent": 1.0,
             "text_payload": "WPN",
             "text_font_identity": "file://./../../../../../../../../../libs/foundry/records/ui/buildingblocks/fontstyles/blenderpro-heavy.json",
@@ -2385,13 +2324,18 @@
             "background_tint_token": null,
             "stroke_rgba": null,
             "stroke_tint_token": null,
-            "text_rgba": null,
+            "text_rgba": [
+              0.56078434,
+              0.56078434,
+              0.56078434,
+              1.0
+            ],
             "text_tint_token": "Base",
             "icon_tint_rgba": null,
             "icon_tint_token": "Base",
             "stroke_extent": 1.0,
             "text_payload": "COOL",
-            "text_font_identity": "file://./../../../../../../../../../libs/foundry/records/ui/buildingblocks/fontstyles/blenderpro-heavy.json",
+            "text_font_identity": "file://./../../../../../../../../../libs/foundry/records/ui/buildingblocks/fontstyles/blenderpro-bold.json",
             "text_font_size": 21.333334,
             "line_spacing": 0.0,
             "primary_text_top": 529.0,

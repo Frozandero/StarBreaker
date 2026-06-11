@@ -139,27 +139,30 @@ pub(crate) fn condition_matches_node(
         let Some(conditions) = condition.get("conditions").and_then(|v| v.as_array()) else {
             return false;
         };
-        // `breakConditions` bound the walk, but only within MATERIALISED list
-        // entries (`_MaterialisedEntry_`, the power pip stacks): per-entry
-        // state tags must not leak across entry boundaries (an Unpowered
-        // pip's fill must not match the column root's Powered tag), and the
-        // boundary node itself is tested match-before-break (it carries both
-        // the `general-list-item` break tag and its own state tag). An EMPTY
-        // conditions list with breaks is a CONTAINMENT test: true when an
-        // ancestor matches the breaks (the pip selector arrow's entry
-        // requires living inside the Secondary-tagged `PipBox_Selecter`
-        // slot). Outside materialised entries the long-verified semantics the
-        // medical baselines pin apply: breaks are ignored and empty
-        // conditions match at the first resolvable ancestor.
+        // `breakConditions` bound the walk for POSITIVE conditions only
+        // within MATERIALISED list entries (`_MaterialisedEntry_`, the power
+        // pip stacks): per-entry state tags must not leak across entry
+        // boundaries (an Unpowered pip's fill must not match the column
+        // root's Powered tag), and the boundary node itself is tested
+        // match-before-break (it carries both the `general-list-item` break
+        // tag and its own state tag). An EMPTY conditions list with breaks
+        // is a CONTAINMENT test EVERYWHERE: true only when an ancestor
+        // matches the breaks (the pip selector arrow's entry requires living
+        // inside the Secondary-tagged `PipBox_Selecter` slot; the touch-here
+        // fingerprint's "ChangeSizeForASOP" requires an ASOP-host-tagged
+        // ancestor and must NOT resize the medical at-rest fingerprint).
         let break_conditions = condition
             .get("breakConditions")
             .and_then(|v| v.as_array())
             .map(|a| a.as_slice())
             .unwrap_or(&[]);
-        let scoped_breaks = !break_conditions.is_empty() && within_materialised_entry(node, scene);
+        let containment_test = conditions.is_empty() && !break_conditions.is_empty();
+        let scoped_breaks = containment_test
+            || (!break_conditions.is_empty() && within_materialised_entry(node, scene));
         if conditions.is_empty() && !scoped_breaks {
-            // Legacy semantics: an empty conditions list matches at the first
-            // resolvable ancestor (a parentless node has none and fails).
+            // Legacy semantics: an empty conditions list (and no breaks)
+            // matches at the first resolvable ancestor (a parentless node
+            // has none and fails).
             return node
                 .parent
                 .is_some_and(|parent| scene.nodes.contains_key(&parent));

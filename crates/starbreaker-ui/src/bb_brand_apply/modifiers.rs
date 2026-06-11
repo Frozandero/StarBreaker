@@ -124,8 +124,16 @@ pub(super) fn apply_modifier(
                     // for this field — the same overwrite semantics as the
                     // resolved path; a leftover RGBA would shadow the token at
                     // draw (the medical close-button X kept its Base light-blue
-                    // under the bioc ghost entry's Bright token).
-                    if token.is_some() {
+                    // under the bioc ghost entry's Bright token). An UNCHANGED
+                    // token keeps its already-resolved RGBA: re-applying the same
+                    // entry (the deferred child-subtree pass) must be a no-op.
+                    let existing_token = node
+                        .raw
+                        .get(format!("{field_name}Token"))
+                        .and_then(|v| v.as_str());
+                    if token.as_deref() != existing_token
+                        && token.is_some()
+                    {
                         node.raw
                             .as_object_mut()
                             .and_then(|obj| obj.remove(field_name));

@@ -9,10 +9,10 @@
     "/ship/hp/current": "MAX",
     "/ship/hp/max": "MAX",
     "/seatdashboard/powerstate": "OFFLINE",
-    "/AnnunciatorProvider/Issues/[0000]/Severity": 1,
-    "/AnnunciatorProvider/Issues/[0001]/Severity": 4,
-    "/AnnunciatorProvider/Issues/[0002]/Severity": 1,
-    "/AnnunciatorProvider/Issues/[0003]/Severity": 1,
+    "/AnnunciatorProvider/Issues/[0000]/Severity": 0,
+    "/AnnunciatorProvider/Issues/[0001]/Severity": 1,
+    "/AnnunciatorProvider/Issues/[0002]/Severity": 0,
+    "/AnnunciatorProvider/Issues/[0003]/Severity": 0,
     "/AnnunciatorProvider/Issues/[0004]/Severity": 5,
     "/seatdashboard/powercurrent": 2,
     "/seatdashboard/powermax": 16,
@@ -122,7 +122,8 @@
     "piplist/[0006]/piplist": 0,
     "piplist/[0006]/piplinkamount": 1,
     "piplist/[0006]/ispoweredoff": false,
-    "iscast": false
+    "iscast": false,
+    "/AnnunciatorProvider/Issues/[0008]/Severity": 5
   },
   "localization": {
     "hud_notarget": "NO TARGET",

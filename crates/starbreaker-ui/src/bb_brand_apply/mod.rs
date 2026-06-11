@@ -127,6 +127,43 @@ pub fn apply_scene_style_entries(
     apply_style_entries(scene, entries, &palettes, None, loc_fetcher, None);
 }
 
+/// Re-apply a merged child canvas's style entries to that child's SUBTREE
+/// only, once runtime state tags are resolvable (the child's own cascade ran
+/// before its parent injected the dynamic params its state tags derive from
+/// — the annunciator chiclets' "Critical - Text"/"Off - Text" entries match
+/// only here). Entries are condition-gated as usual; re-application of an
+/// already-applied entry is idempotent (same modifiers overwrite, and an
+/// unchanged colour token does not clear an already-resolved RGBA).
+pub fn apply_scene_style_entries_in_subtree(
+    scene: &mut BbScene,
+    entries: &[serde_json::Value],
+    palette_source: &serde_json::Value,
+    loc_fetcher: Option<&dyn LocFetcher>,
+    subtree_root: BbNodeId,
+    style_identifier: &str,
+) {
+    let mut allowed: std::collections::HashSet<BbNodeId> = std::collections::HashSet::new();
+    let mut stack = vec![subtree_root];
+    while let Some(id) = stack.pop() {
+        if !allowed.insert(id) {
+            continue;
+        }
+        if let Some(node) = scene.nodes.get(&id) {
+            stack.extend(node.children.iter().copied());
+        }
+    }
+    let palettes = PaletteSources::uniform(palette_source);
+    apply_style_entries_filtered(
+        scene,
+        entries,
+        &palettes,
+        Some(style_identifier),
+        loc_fetcher,
+        None,
+        Some(&allowed),
+    );
+}
+
 fn apply_style_entries(
     scene: &mut BbScene,
     entries: &[serde_json::Value],
@@ -135,9 +172,35 @@ fn apply_style_entries(
     loc_fetcher: Option<&dyn LocFetcher>,
     scope_marker: Option<&str>,
 ) {
+    apply_style_entries_filtered(
+        scene,
+        entries,
+        palettes,
+        style_identifier,
+        loc_fetcher,
+        scope_marker,
+        None,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn apply_style_entries_filtered(
+    scene: &mut BbScene,
+    entries: &[serde_json::Value],
+    palettes: &PaletteSources<'_>,
+    style_identifier: Option<&str>,
+    loc_fetcher: Option<&dyn LocFetcher>,
+    scope_marker: Option<&str>,
+    allowed_nodes: Option<&std::collections::HashSet<BbNodeId>>,
+) {
     let style_probe = std::env::var("BB_A3_STYLE_PROBE").as_deref() == Ok("1");
     let node_ids: Vec<_> = scene.nodes.keys().copied().collect();
     for node_id in node_ids {
+        if let Some(allowed) = allowed_nodes
+            && !allowed.contains(&node_id)
+        {
+            continue;
+        }
         let (matching_entries, inline_entries): (Vec<&serde_json::Value>, Vec<serde_json::Value>) = {
             let Some(node) = scene.nodes.get(&node_id) else {
                 continue;

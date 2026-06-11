@@ -673,6 +673,125 @@ fn apply_shared_styles(
     }
 }
 
+/// Collect the child canvas's style entries (defaultStyles + embeddedStyles)
+/// whose POSITIVE conditions reference at least one tag that NO child node
+/// carried when the child's own cascade ran — the late-state class: the tag
+/// can only appear after the parent injects the dynamic params it derives
+/// from (the annunciator chiclets' severity → "Critical - Text"/"Off -
+/// Text"). Entries whose gating tags were all present (the power pips' state
+/// entries, unconditional Common entries) already applied correctly at child
+/// time and must NOT re-run — a blanket re-application regressed the power
+/// footer and icons. `NotTag` references are not triggers (a tag appearing
+/// later cannot un-apply an entry). `embeddedStyles` is authored as either a
+/// bare entry array or an `{ entries: [...] }` container.
+fn collect_late_state_style_entries(
+    canvas_json: &serde_json::Value,
+    child_scene: &BbScene,
+) -> Vec<serde_json::Value> {
+    let child_tag_universe: std::collections::HashSet<&str> = child_scene
+        .nodes
+        .values()
+        .flat_map(|node| node.style_tag_uuids.iter().map(String::as_str))
+        .collect();
+    // The late-state class is gated to tags the child's own
+    // `TagFromIntegerSwitch` ops can produce — the multi-state machines fed
+    // by parent-supplied parameters (the annunciator chiclet severities),
+    // reference-adjudicated. Boolean-derived tags (`TagFromBoolean`, e.g.
+    // the MFD footer's warning band) are deliberately NOT deferred yet:
+    // their at-rest truth values are unadjudicated and a blanket deferral
+    // lit the footer warning band the power reference does not show.
+    let mut switch_tag_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for op in &child_scene.operations {
+        if op
+            .get("_Type_")
+            .and_then(|v| v.as_str())
+            .is_some_and(|t| t.ends_with("BindingsTagFromIntegerSwitch"))
+            && let Some(values) = op.get("values").and_then(|v| v.as_array())
+        {
+            for pair in values {
+                if let Some(uuid) = pair
+                    .get("second")
+                    .and_then(|tag| tag.get("_RecordId_"))
+                    .and_then(|v| v.as_str())
+                {
+                    switch_tag_ids.insert(uuid.to_ascii_lowercase());
+                }
+            }
+        }
+    }
+    if switch_tag_ids.is_empty() {
+        return Vec::new();
+    }
+    let record_value = canvas_json.get("_RecordValue_").unwrap_or(canvas_json);
+    let mut entries: Vec<serde_json::Value> = Vec::new();
+    let mut push_late_state = |container: &[serde_json::Value]| {
+        for entry in container {
+            let mut tag_refs: Vec<String> = Vec::new();
+            collect_positive_condition_tag_ids(entry.get("conditionsList"), &mut tag_refs);
+            if tag_refs.iter().any(|uuid| {
+                !child_tag_universe.contains(uuid.as_str()) && switch_tag_ids.contains(uuid)
+            }) {
+                entries.push(entry.clone());
+            }
+        }
+    };
+    if let Some(default_entries) = record_value
+        .get("defaultStyles")
+        .and_then(|ds| ds.get("entries"))
+        .and_then(|v| v.as_array())
+    {
+        push_late_state(default_entries);
+    }
+    if let Some(embedded) = record_value.get("embeddedStyles") {
+        let embedded_entries = embedded
+            .as_array()
+            .or_else(|| embedded.get("entries").and_then(|v| v.as_array()));
+        if let Some(embedded_entries) = embedded_entries {
+            push_late_state(embedded_entries);
+        }
+    }
+    entries
+}
+
+/// Recursively collect tag `_RecordId_`s referenced by POSITIVE conditions
+/// (Tag / AnyOfTag / AllOfTag and anything nested under Parent / Ancestor /
+/// AllOf / AnyOf, including Ancestor `breakConditions` — a containment test's
+/// boundary tag is a positive requirement). `NotTag` is skipped.
+fn collect_positive_condition_tag_ids(value: Option<&serde_json::Value>, out: &mut Vec<String>) {
+    let Some(value) = value else { return };
+    match value {
+        serde_json::Value::Array(items) => {
+            for item in items {
+                collect_positive_condition_tag_ids(Some(item), out);
+            }
+        }
+        serde_json::Value::Object(map) => {
+            let cond_type = map.get("_Type_").and_then(|v| v.as_str()).unwrap_or("");
+            if cond_type.ends_with("ConditionNotTag") || cond_type.ends_with("ConditionNotCondition") {
+                return;
+            }
+            if let Some(uuid) = map
+                .get("tag")
+                .and_then(|tag| tag.get("_RecordId_"))
+                .and_then(|v| v.as_str())
+            {
+                out.push(uuid.to_ascii_lowercase());
+            }
+            // `AnyOfTag`/`AllOfTag` list items are BARE tag refs (no `tag`
+            // wrapper): `{ _RecordPath_, _RecordName_, _RecordId_ }`.
+            if cond_type.is_empty()
+                && let Some(uuid) = map.get("_RecordId_").and_then(|v| v.as_str())
+            {
+                out.push(uuid.to_ascii_lowercase());
+            }
+            for key in ["conditions", "conditionsList", "tags", "breakConditions"] {
+                collect_positive_condition_tag_ids(map.get(key), out);
+            }
+        }
+        _ => {}
+    }
+}
+
 /// The `BuildingBlocks_Style` record carrying the brand's colour palette.
 ///
 /// A canvas's `brandStyles[]` container carries only `entries`; named colour
@@ -971,6 +1090,14 @@ fn resolve_canvas_graph_inner(
         set
     };
 
+    // Child canvases' style entries, re-applied (subtree-scoped) after THIS
+    // level's state-tag resolution. A child's own cascade ran before its
+    // dynamic params were injected, so entries conditioned on param-derived
+    // state tags (the annunciator chiclets' "Critical - Text"/"Off - Text")
+    // can only match here.
+    let mut deferred_child_style_passes: Vec<(BbNodeId, Vec<serde_json::Value>, String)> =
+        Vec::new();
+
     {
         let mut canvas_urls = root_canvas_urls;
 
@@ -1123,6 +1250,14 @@ fn resolve_canvas_graph_inner(
                 &mut child_scene,
                 child_namespace.is_some(),
             );
+            let child_entries = collect_late_state_style_entries(&child_json, &child_scene);
+            if !child_entries.is_empty() {
+                deferred_child_style_passes.push((
+                    node_id,
+                    child_entries,
+                    extract_record_name(&url),
+                ));
+            }
             merge_child_scene(&mut scene, child_scene, "", Some(node_id), false);
         }
     }
@@ -1167,6 +1302,23 @@ fn resolve_canvas_graph_inner(
         crate::bb_bindings::resolve_state_tags_into_scene(&mut scene, &Default::default());
     } else {
         crate::bb_bindings::resolve_state_tags_into_scene(&mut scene, defaults);
+    }
+    // Deferred child-canvas entries re-run against the freshly resolved state
+    // tags, scoped to each child's subtree (see the collection site above).
+    // The empty palette keeps colours token-only; an unchanged token is a
+    // no-op against the child cascade's earlier resolution.
+    if !deferred_child_style_passes.is_empty() {
+        let empty_palette = serde_json::json!({});
+        for (host_id, entries, identifier) in &deferred_child_style_passes {
+            crate::bb_brand_apply::apply_scene_style_entries_in_subtree(
+                &mut scene,
+                entries,
+                &empty_palette,
+                loc_fetcher,
+                *host_id,
+                identifier,
+            );
+        }
     }
     // The expanded standards' own embeddedStyles run against the freshly
     // resolved state tags (the scrollbar's `_Show` → `scrollbar-show` tag

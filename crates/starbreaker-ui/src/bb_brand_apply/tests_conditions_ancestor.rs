@@ -164,3 +164,72 @@ fn selector_arrow_entry_activates_polygon_on_selected_pip() {
         "the selected pip's arrow must activate"
     );
 }
+
+/// An EMPTY-conditions Ancestor with `breakConditions` is a CONTAINMENT test
+/// everywhere, not only inside materialised list entries: the touch-here
+/// fingerprint's "ChangeSizeForASOP" requires an ASOP-host-tagged ancestor
+/// (tag 143d6071), so on the medical end-of-bed — no such ancestor — the
+/// entry must NOT match (the legacy "empty conditions match at the first
+/// resolvable ancestor" reading shrank the at-rest fingerprint 224→153 away
+/// from the reference).
+#[test]
+fn empty_conditions_ancestor_with_breaks_is_containment_everywhere() {
+    let mut scene = make_test_scene();
+    {
+        let root = scene.nodes.get_mut(&1).unwrap();
+        root.style_tag_uuids = vec!["tag-medical-host".to_string()];
+        root.children = vec![2];
+    }
+    let mut shape = scene.nodes.get(&1).unwrap().clone();
+    shape.id = 2;
+    shape.parent = Some(1);
+    shape.children = vec![];
+    shape.name = "fingerprint".to_string();
+    shape.style_tag_uuids = vec!["tag-asop-variant".to_string()];
+    shape.raw = serde_json::json!({});
+    scene.nodes.insert(2, shape);
+
+    let entries = [json!({
+        "name": "ChangeSizeForASOP",
+        "conditionsList": [
+            {"conditions": [
+                {"_Type_": "BuildingBlocks_StyleSelectorConditionTag",
+                 "tag": {"_RecordId_": "tag-asop-variant"}},
+                {"_Type_": "BuildingBlocks_StyleSelectorConditionAncestor",
+                 "breakConditions": [
+                    {"_Type_": "BuildingBlocks_StyleSelectorConditionTag",
+                     "tag": {"_RecordId_": "tag-asop-host"}}],
+                 "conditions": []}
+            ]}
+        ],
+        "modifiers": [
+            {"_Type_": "BuildingBlocks_FieldModifierNumber",
+             "field": "Alpha", "value": 0.25}
+        ]
+    })];
+    let brand = BrandStyle {
+        identifier: "test_brand".to_string(),
+        entries: &entries,
+        raw: &json!({}),
+    };
+    apply_brand_modifiers(&mut scene, &brand, None);
+    assert_eq!(
+        scene.nodes.get(&2).unwrap().alpha,
+        1.0,
+        "no ASOP-host ancestor: the containment test must fail"
+    );
+
+    // Positive twin: the host carries the break tag — the entry applies.
+    scene
+        .nodes
+        .get_mut(&1)
+        .unwrap()
+        .style_tag_uuids
+        .push("tag-asop-host".to_string());
+    apply_brand_modifiers(&mut scene, &brand, None);
+    assert_eq!(
+        scene.nodes.get(&2).unwrap().alpha,
+        0.25,
+        "ASOP-host ancestor present: the containment test must pass"
+    );
+}

@@ -1122,6 +1122,13 @@ mod tests_c {
             Some([0.0, 113.0 / 255.0, 188.0 / 255.0, 1.0])
         );
         assert_eq!(resolve_colour_token(&ctx, "Accent5"), Some([0.0, 113.0 / 255.0, 188.0 / 255.0, 1.0]));
+        // `Moderate` is BB_ColorStyle index 2 — the same slot the `Accent3` /
+        // `Warning` aliases resolve (the annunciator's "Moderate - SubItem"
+        // BackgroundColor lights the WPN chiclet amber).
+        assert_eq!(
+            resolve_colour_token(&ctx, "Moderate"),
+            style_colour_slot_rgba(&ctx, 2)
+        );
 
         let drake_hud_like_style = ManufacturerStyle {
             colour_slots: vec![
