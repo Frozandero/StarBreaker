@@ -1,0 +1,2497 @@
+// Consolidated engine chunk 01 (formerly: part_01.part, part_02.part, part_03.part, part_04.part, part_05.part, part_06.part, part_07.part).
+//   part_01.part: Canonical UI IR renderer for generic BuildingBlocks output.
+//   part_06.part: Registered fallback (docs/ui-fallback-register.md): the word-space gap inserted between
+//   part_07.part: Fit a SWF text size to its container rect using *real glyph metrics*.
+
+// Canonical UI IR renderer for generic BuildingBlocks output.
+// GOLDEN RULE: No hard-coding, heuristic workarounds, no procedural fallbacks. Avoid targetted scoping. Find the root cause and fix issues instead. Find the source data even it means doing things the hard way. This is intended to be a pipeline that is completely generic that can work for any UI on any ship and must not have targetted hacks that won't fix the issue in other places. This will keep the code lean and generic. Think how the game-engine would implement it.
+//
+// This module is the first Phase 2 step toward deterministic renderer
+// consumption of [`crate::ui_ir::UiIrDocument`]. It renders the generic BB
+// path directly from IR fields that were materialized in Phase 1: layout,
+// fill colours, borders, asset references, and resolved text payload/style.
+//
+
+use image::RgbaImage;
+use image::imageops;
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::OnceLock;
+use tiny_skia::{BlendMode, Color, Paint, PathBuilder, Pixmap, PixmapPaint, Rect as TskRect, Stroke, Transform};
+
+use crate::bb_atlas::AtlasLibrary;
+use crate::bb_assets::UiAssetResolver;
+use crate::bb_layout::Rect;
+use crate::compose::ComposeContext;
+use crate::error::UiError;
+use crate::text::{FontKind, TextAlign, TextRenderer, VerticalAlign};
+use crate::swf_assets::FontGlyphSet;
+use crate::ui_ir::{
+    validate_ui_ir_document, UiIrBorder, UiIrColourBlendMode, UiIrDocument, UiIrNode, UiIrPolygon,
+    UiIrRect, UiIrTextPayload, UiIrTextStyle, UiIrValue,
+};
+
+// BB/Flash nominal font sizes render visually smaller with the bundled DejaVu
+// fallback fonts. Calibrate at compose time to match measured output.
+const TEXT_RENDER_SIZE_CALIBRATION: f32 = 1.5;
+const SWF_TEXT_RENDER_SIZE_CALIBRATION: f32 = 0.84;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DebugTextRects {
+    pub primary: Rect,
+    pub secondary: Option<Rect>,
+    pub primary_text_origin: (f32, f32),
+    pub secondary_text_origin: Option<(f32, f32)>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DebugTextDrawnBounds {
+    pub primary: Rect,
+    pub secondary: Option<Rect>,
+}
+
+/// Render a generic BuildingBlocks IR document without consulting raw BB data.
+///
+/// This renderer intentionally consumes only the canonical IR plus style/assets.
+/// SWF-specific and raw-source fallback behavior remains in the legacy renderer
+/// until the later Phase 2 split is complete.
+pub fn render_ui_ir_document(
+    document: &UiIrDocument,
+    ctx: &ComposeContext<'_>,
+    atlas: &AtlasLibrary<'_>,
+) -> Result<RgbaImage, UiError> {
+    validate_ui_ir_document(document)
+        .map_err(|errors| UiError::RenderError(format!("invalid UI IR: {}", errors.join("; "))))?;
+
+    if document.target_width == 0 || document.target_height == 0 {
+        return Err(UiError::RenderError(format!(
+            "invalid target size {}x{}",
+            document.target_width, document.target_height
+        )));
+    }
+
+    let mut pixmap = Pixmap::new(document.target_width, document.target_height)
+        .ok_or_else(|| UiError::RenderError("pixmap allocation failed".into()))?;
+
+    let bg = &ctx.style.background;
+    pixmap.fill(Color::from_rgba8(bg.r, bg.g, bg.b, bg.a));
+
+    let mut draw_order: Vec<&UiIrNode> = document.nodes.iter().filter(|node| node.is_active).collect();
+    // Keep authored IR order within each layer. Synthetic ids are an
+    // implementation detail and must not affect visual stacking.
+    draw_order.sort_by_key(|node| node.layer);
+
+    let text_renderer = TextRenderer::new();
+
+    for node in &draw_order {
+        with_node_clip(
+            &mut pixmap,
+            node.clip_rect.as_ref(),
+            ir_rect_to_layout_rect(node.computed_rect),
+            |pixmap| draw_non_text_node(node, document, ctx, atlas, pixmap),
+        );
+    }
+
+    // Token-driven borders are semantic overlays and should render after base
+    // fills/assets so child card fills do not obscure parent outlines.
+    for node in &draw_order {
+        let Some(border) = &node.border else {
+            continue;
+        };
+        if !border_uses_colour_tokens(border) {
+            continue;
+        }
+        let rect = resolved_linear_progress_meter_rect(node, document)
+            .unwrap_or_else(|| ir_rect_to_layout_rect(node.computed_rect));
+        if rect.w < 0.5 || rect.h < 0.5 {
+            continue;
+        }
+        with_node_clip(&mut pixmap, node.clip_rect.as_ref(), rect, |pixmap| {
+            draw_ir_border(pixmap, rect, border, node.alpha, ctx, node.corner_radius);
+        });
+    }
+
+    // Keep progress meters on top of base chrome/background fills.
+    for node in &draw_order {
+        if node.meter_progress.is_none() {
+            continue;
+        }
+        let rect = resolved_linear_progress_meter_rect(node, document)
+            .unwrap_or_else(|| ir_rect_to_layout_rect(node.computed_rect));
+        let Some(tsk_rect) = TskRect::from_xywh(rect.x, rect.y, rect.w, rect.h) else {
+            continue;
+        };
+        with_node_clip(&mut pixmap, node.clip_rect.as_ref(), rect, |pixmap| {
+            draw_linear_progress_meter(node, ctx, pixmap, tsk_rect);
+        });
+    }
+
+    let mut img = pixmap_to_rgba_image(pixmap)?;
+    let mut text_draw_order = draw_order.clone();
+    text_draw_order.sort_by(|left, right| {
+        let left_rect = ir_rect_to_layout_rect(left.computed_rect);
+        let right_rect = ir_rect_to_layout_rect(right.computed_rect);
+        let left_key = (
+            left_rect.x.round() as i32,
+            left_rect.y.round() as i32,
+            left_rect.w.round() as i32,
+            left_rect.h.round() as i32,
+        );
+        let right_key = (
+            right_rect.x.round() as i32,
+            right_rect.y.round() as i32,
+            right_rect.w.round() as i32,
+            right_rect.h.round() as i32,
+        );
+        let left_len = resolved_text_payload(left).map(|text| text.len()).unwrap_or(usize::MAX);
+        let right_len = resolved_text_payload(right)
+            .map(|text| text.len())
+            .unwrap_or(usize::MAX);
+
+        left_key
+            .cmp(&right_key)
+            .then(left_len.cmp(&right_len))
+            .then(left.id.cmp(&right.id))
+    });
+
+    let mut seen_text_rects: HashSet<(i32, i32, i32, i32)> = HashSet::new();
+    for node in &text_draw_order {
+        with_node_clip_image(
+            &mut img,
+            node.clip_rect.as_ref(),
+            ir_rect_to_layout_rect(node.computed_rect),
+            |img| {
+                draw_text_node(
+                    img,
+                    node,
+                    document,
+                    &text_renderer,
+                    ctx,
+                    &mut seen_text_rects,
+                );
+            },
+        );
+    }
+
+    Ok(img)
+}
+
+fn draw_non_text_node(
+    node: &UiIrNode,
+    document: &UiIrDocument,
+    ctx: &ComposeContext<'_>,
+    atlas: &AtlasLibrary<'_>,
+    pixmap: &mut Pixmap,
+) {
+    let rect = resolved_linear_progress_meter_rect(node, document)
+        .unwrap_or_else(|| ir_rect_to_layout_rect(node.computed_rect));
+    if rect.w < 0.5 || rect.h < 0.5 {
+        return;
+    }
+
+    let Some(tsk_rect) = TskRect::from_xywh(rect.x, rect.y, rect.w, rect.h) else {
+        return;
+    };
+
+    if node
+        .node_type
+        .eq_ignore_ascii_case("BuildingBlocks_WidgetCircle")
+        || node.node_type.eq_ignore_ascii_case("widget_circle")
+    {
+        draw_widget_circle(node, pixmap, tsk_rect);
+        return;
+    }
+
+    if node
+        .node_type
+        .eq_ignore_ascii_case("BuildingBlocks_WidgetSeparator")
+        || node.node_type.eq_ignore_ascii_case("widget_separator")
+    {
+        draw_widget_separator(ctx, pixmap, node, tsk_rect, node.alpha);
+        return;
+    }
+
+    if node.meter_progress.is_some() {
+        draw_linear_progress_meter(node, ctx, pixmap, tsk_rect);
+        return;
+    }
+
+    if node
+        .node_type
+        .eq_ignore_ascii_case("BuildingBlocks_WidgetManufacturerLogo")
+    {
+        draw_manufacturer_logo_ir(node, document, ctx, atlas, pixmap);
+    }
+
+    // A `WidgetList` is a pure layout container in the engine: it renders its
+    // items, never its own authored background (the power screen's
+    // `list_PowerAssignmentList` carries an enabled editor-yellow ColorSolid
+    // that does not appear in-game).
+    let is_list_container = node.node_type.eq_ignore_ascii_case("BuildingBlocks_WidgetList")
+        || node.node_type.eq_ignore_ascii_case("widget_list");
+    let skip_background_fill =
+        (node.custom_shape.is_some() && node.asset_ref.is_some()) || is_list_container;
+    if !skip_background_fill {
+        let resolved_background_fill = node.background_fill_colour.or_else(|| {
+            node.background_fill_colour_token
+                .as_deref()
+                .and_then(|token| resolve_surface_colour_token(ctx, token))
+                .map(|mut fill| {
+                    fill[3] *= node.background_fill_alpha.unwrap_or(1.0);
+                    fill
+                })
+        });
+        if let Some(fill) = resolved_background_fill
+            && fill[3] > 0.005
+        {
+            let fill_rect = inset_fill_rect_for_token_border(node, rect, tsk_rect);
+            if node.name.eq_ignore_ascii_case("Root")
+                && node.node_type.eq_ignore_ascii_case("display_widget")
+                && rect.w >= document.target_width as f32 * 0.95
+                && rect.h <= document.target_height as f32 * 0.16
+            {
+                // Header root containers are layout scaffolding, not visible chrome.
+            } else {
+                fill_rect_ts_with_mode(pixmap, fill_rect, fill, node.alpha, node_colour_blend_mode(node));
+            }
+        }
+    }
+
+    if let Some(polygon) = node.polygon.as_ref() {
+        draw_ir_polygon(node, polygon, rect, ctx, pixmap);
+    }
+
+    if let Some(asset_ref) = node.asset_ref.as_deref() {
+        let normalised_asset_ref = UiAssetResolver::normalise_path(asset_ref);
+        let iw = rect.w.round().max(1.0) as u32;
+        let ih = rect.h.round().max(1.0) as u32;
+        let fill_override = custom_shape_fill_override(node, ctx).or_else(|| {
+            if normalised_asset_ref.ends_with(".svg") {
+                node.icon_tint_colour.or_else(|| {
+                    node.icon_tint_colour_token
+                        .as_deref()
+                        .and_then(|token| resolve_colour_token(ctx, token))
+                })
+            } else {
+                None
+            }
+        });
+        let resolved_image = if UiAssetResolver::is_reference_overlay(asset_ref)
+            || UiAssetResolver::is_reference_overlay(&normalised_asset_ref)
+        {
+            None
+        } else if normalised_asset_ref.ends_with(".svg") {
+            atlas
+                .fetch_raw(asset_ref)
+                .or_else(|| {
+                    (normalised_asset_ref != asset_ref)
+                        .then(|| atlas.fetch_raw(&normalised_asset_ref))
+                        .flatten()
+                })
+                .and_then(|svg_bytes| rasterize_svg_for_node(node, &svg_bytes, iw, ih, fill_override))
+        } else {
+            atlas.resolve(asset_ref, iw, ih).or_else(|| {
+                (normalised_asset_ref != asset_ref)
+                    .then(|| atlas.resolve(&normalised_asset_ref, iw, ih))
+                    .flatten()
+            })
+        };
+        if let Some(mut img) = resolved_image {
+            let is_nine_slice_custom_shape = node
+                .custom_shape
+                .as_ref()
+                .is_some_and(|shape| shape.enable_nine_slice_rect.unwrap_or(false));
+            if normalised_asset_ref.ends_with(".svg")
+                && fill_override.is_some()
+                && !is_nine_slice_custom_shape
+            {
+                img = strip_custom_shape_uniform_matte(&img);
+            }
+            img = apply_asset_layout_flip(node, img);
+            let draw_x = rect.x as i32;
+            let draw_y = rect.y as i32;
+            let tint = image_tint_for_blit(node, asset_ref, fill_override, ctx);
+
+            let blend_mode = image_blend_mode_for_node(node, asset_ref);
+
+            blit_atlas_image_tinted_with_mode(pixmap, &img, draw_x, draw_y, tint, node.alpha, blend_mode);
+        }
+    }
+
+    if let Some(border) = &node.border
+        && !border_uses_colour_tokens(border)
+    {
+        draw_ir_border(pixmap, rect, border, node.alpha, ctx, node.corner_radius);
+    }
+
+    if let Some(stroke_colour) = node.stroke_colour
+        && node.stroke_extent.unwrap_or(0.0) > 0.0
+        && !node
+            .custom_shape
+            .as_ref()
+            .and_then(|shape| shape.render_shape)
+            .unwrap_or(false)
+    {
+        draw_rect_stroke_ts(
+            pixmap,
+            tsk_rect,
+            stroke_colour,
+            node.stroke_extent.unwrap_or(0.0),
+            node.alpha,
+        );
+    }
+}
+
+fn border_uses_colour_tokens(border: &UiIrBorder) -> bool {
+    border.top.colour_token.is_some()
+        || border.right.colour_token.is_some()
+        || border.bottom.colour_token.is_some()
+        || border.left.colour_token.is_some()
+}
+
+fn inset_fill_rect_for_token_border(node: &UiIrNode, rect: Rect, fallback: TskRect) -> TskRect {
+    let Some(border) = &node.border else {
+        return fallback;
+    };
+    if !border_uses_colour_tokens(border) {
+        return fallback;
+    }
+
+    let inset = border
+        .top
+        .width
+        .max(border.right.width)
+        .max(border.bottom.width)
+        .max(border.left.width)
+        .max(0.0);
+    if inset <= 0.0 {
+        return fallback;
+    }
+
+    let inset_w = rect.w - inset * 2.0;
+    let inset_h = rect.h - inset * 2.0;
+    if inset_w <= 0.5 || inset_h <= 0.5 {
+        return fallback;
+    }
+
+    TskRect::from_xywh(rect.x + inset, rect.y + inset, inset_w, inset_h).unwrap_or(fallback)
+}
+
+fn brand_slug_from_ir(document: &UiIrDocument, ctx: &ComposeContext<'_>) -> String {
+    let source = document.selected_style_source.as_deref().unwrap_or(&ctx.style.name);
+    let token = source
+        .split(':')
+        .next_back()
+        .unwrap_or(source)
+        .trim()
+        .trim_start_matches("s_")
+        .to_ascii_lowercase();
+
+    token
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric() || *ch == '_')
+        .collect::<String>()
+}
+
+fn draw_manufacturer_logo_ir(
+    node: &UiIrNode,
+    document: &UiIrDocument,
+    ctx: &ComposeContext<'_>,
+    atlas: &AtlasLibrary<'_>,
+    pixmap: &mut Pixmap,
+) {
+    let draw_rect = ir_rect_to_layout_rect(node.computed_rect);
+    if draw_rect.w < 0.5 || draw_rect.h < 0.5 {
+        return;
+    }
+
+    let brand = brand_slug_from_ir(document, ctx);
+    let logo_brand = brand_logo_slug(&brand);
+    let brand_title = brand_title(logo_brand);
+    let candidates = [
+        format!("UI/Textures/Signs/Brands/{logo_brand}/{brand_title}_logo.svg"),
+        format!("UI/Textures/Vector/General/BrandLogos/logo_{logo_brand}_a.svg"),
+        format!("UI/Textures/Signs/Brands/{logo_brand}/{brand_title}_logo.dds"),
+    ];
+
+    let iw = draw_rect.w.round().max(1.0) as u32;
+    let ih = draw_rect.h.round().max(1.0) as u32;
+    let tint = manufacturer_logo_tint(node, ctx);
+    let fill_override = Some(tint);
+
+    for raw_path in candidates {
+        let norm = UiAssetResolver::normalise_path(&raw_path);
+        if UiAssetResolver::is_reference_overlay(&norm) {
+            continue;
+        }
+
+        if norm.ends_with(".svg") {
+            if let Some(svg_bytes) = atlas.fetch_raw(&norm)
+                && let Some(img) = crate::bb_svg::rasterize_svg(&svg_bytes, iw, ih, fill_override)
+            {
+                let draw_y = draw_rect.y as i32 - vertical_alpha_balance_offset(&img);
+                blit_atlas_image_tinted(
+                    pixmap,
+                    &img,
+                    draw_rect.x as i32,
+                    draw_y,
+                    [1.0, 1.0, 1.0, 1.0],
+                    node.alpha,
+                );
+                return;
+            }
+            continue;
+        }
+
+        if let Some(img) = atlas.resolve(&norm, iw, ih) {
+            blit_atlas_image_tinted(
+                pixmap,
+                &img,
+                draw_rect.x as i32,
+                draw_rect.y as i32,
+                tint,
+                node.alpha,
+            );
+            return;
+        }
+    }
+}
+
+fn manufacturer_logo_tint(node: &UiIrNode, ctx: &ComposeContext<'_>) -> [f32; 4] {
+    node.icon_tint_colour
+        .or_else(|| {
+            node.icon_tint_colour_token
+                .as_deref()
+                .and_then(|token| resolve_colour_token(ctx, token))
+        })
+        .or(node.background_fill_colour)
+        .or_else(|| {
+            node.background_fill_colour_token
+                .as_deref()
+                .and_then(|token| resolve_colour_token(ctx, token))
+        })
+        .or(node.stroke_colour)
+        .or_else(|| {
+            node.stroke_colour_token
+                .as_deref()
+                .and_then(|token| resolve_colour_token(ctx, token))
+        })
+        .unwrap_or([1.0, 1.0, 1.0, 1.0])
+}
+
+fn vertical_alpha_balance_offset(img: &RgbaImage) -> i32 {
+    let mut top = 0i32;
+    let mut bottom = 0i32;
+
+    for y in 0..img.height() {
+        let has_alpha = (0..img.width()).any(|x| img.get_pixel(x, y)[3] > 0);
+        if has_alpha {
+            break;
+        }
+        top += 1;
+    }
+
+    for y in (0..img.height()).rev() {
+        let has_alpha = (0..img.width()).any(|x| img.get_pixel(x, y)[3] > 0);
+        if has_alpha {
+            break;
+        }
+        bottom += 1;
+    }
+
+    (top - bottom) / 2
+}
+
+fn brand_logo_slug(slug: &str) -> &str {
+    match slug {
+        "bioc" => "bioticorp",
+        other => other,
+    }
+}
+
+fn brand_title(slug: &str) -> String {
+    let mut chars = slug.chars();
+    match chars.next() {
+        Some(first) => first.to_ascii_uppercase().to_string() + chars.as_str(),
+        None => String::new(),
+    }
+}
+
+fn resolve_colour_token(ctx: &ComposeContext<'_>, token: &str) -> Option<[f32; 4]> {
+    let key = token.trim().to_ascii_lowercase();
+    if key.is_empty() {
+        return None;
+    }
+
+    match key.as_str() {
+        "accent1" | "base" => {
+            style_colour_slot_rgba(ctx, 0).or_else(|| Some(style_primary_rgba_local(ctx)))
+        },
+        // `Bright` is the muted light-grey role (BB_ColorStyle index 6), distinct
+        // from `Base`/`Accent1`. It backs dim secondary text such as a caption's
+        // value (e.g. the `Heading6` "200/200" under a `Heading3` label).
+        "bright" => style_colour_slot_rgba(ctx, 6),
+        "accent2" | "positive" | "success" => {
+            let primary = style_primary_rgba_local(ctx);
+            if let Some(slot_2) = style_colour_slot_rgba(ctx, 2)
+                && rgba4_near(slot_2, primary)
+            {
+                return Some(slot_2);
+            }
+            style_colour_slot_rgba(ctx, 1).or_else(|| Some(primary))
+        },
+        "accent3" | "warning" => style_colour_slot_rgba(ctx, 2),
+        "accent4" | "critical" | "negative" => style_colour_slot_rgba(ctx, 3),
+        "accent5" | "contactunknown" => style_colour_slot_rgba(ctx, 4),
+        "mid" | "contactneutral" => style_colour_slot_rgba(ctx, 5),
+        "light" => style_colour_slot_rgba(ctx, 6),
+        // `Disabled` is the near-black surface slot (BB_ColorStyle index 8),
+        // not the light slot 6 — same divergence the brand-apply resolver
+        // documents (the power screen's unpowered pip hitzones pin it).
+        "disabled" => style_colour_slot_rgba(ctx, 8),
+        "highlight" | "contactpositiverep" => style_colour_slot_rgba(ctx, 7),
+        "primarytext" | "text" | "foreground" | "fg" | "white" => Some([1.0, 1.0, 1.0, 1.0]),
+        "background" => Some([
+            ctx.style.background.r as f32 / 255.0,
+            ctx.style.background.g as f32 / 255.0,
+            ctx.style.background.b as f32 / 255.0,
+            ctx.style.background.a as f32 / 255.0,
+        ]),
+        "secondary" => ctx.style.secondary_tint.as_ref().map(|colour| {
+            [
+                colour.r as f32 / 255.0,
+                colour.g as f32 / 255.0,
+                colour.b as f32 / 255.0,
+                colour.a as f32 / 255.0,
+            ]
+        }),
+        "surface" => style_colour_slot_rgba(ctx, 8),
+        "bg" => style_colour_slot_rgba(ctx, 9),
+        "backlight" | "contactagressive" | "contactaggressive" => style_colour_slot_rgba(ctx, 11),
+        _ => None,
+    }
+}
+
+fn resolve_surface_colour_token(ctx: &ComposeContext<'_>, token: &str) -> Option<[f32; 4]> {
+    let key = token.trim().to_ascii_lowercase();
+    match key.as_str() {
+        "accent1" | "accent5" | "contactunknown" => style_colour_slot_rgba(ctx, 4),
+        _ => resolve_colour_token(ctx, token),
+    }
+}
+
+fn style_colour_slot_rgba(ctx: &ComposeContext<'_>, index: usize) -> Option<[f32; 4]> {
+    ctx.style.colour_slots.get(index).map(|colour| {
+        [
+            colour.r as f32 / 255.0,
+            colour.g as f32 / 255.0,
+            colour.b as f32 / 255.0,
+            colour.a as f32 / 255.0,
+        ]
+    })
+}
+
+fn style_primary_rgba_local(ctx: &ComposeContext<'_>) -> [f32; 4] {
+    let pt = &ctx.style.primary_tint;
+    [
+        pt.r as f32 / 255.0,
+        pt.g as f32 / 255.0,
+        pt.b as f32 / 255.0,
+        pt.a as f32 / 255.0,
+    ]
+}
+
+fn rgba4_near(left: [f32; 4], right: [f32; 4]) -> bool {
+    (left[0] - right[0]).abs() < 0.0001
+        && (left[1] - right[1]).abs() < 0.0001
+        && (left[2] - right[2]).abs() < 0.0001
+        && (left[3] - right[3]).abs() < 0.0001
+}
+
+fn custom_shape_fill_override(node: &UiIrNode, ctx: &ComposeContext<'_>) -> Option<[f32; 4]> {
+    let render_shape = node
+        .custom_shape
+        .as_ref()
+        .and_then(|shape| shape.render_shape)
+        .unwrap_or(false);
+    if !render_shape {
+        return None;
+    }
+
+    // A custom-shape fill/stroke is a *surface* element, so its colour tokens
+    // resolve with surface semantics (e.g. `Accent1` → surface slot 4), not the
+    // foreground semantics used for text/icons (where `Accent1` → slot 0). Using
+    // the foreground resolver here rendered authored `Accent1` shape fills (e.g.
+    // the medical "fingerprint") in the light slot-0 blue instead of the darker
+    // slot-4 blue.
+    node.icon_tint_colour
+        .or_else(|| {
+            node.icon_tint_colour_token
+                .as_deref()
+                .and_then(|token| resolve_surface_colour_token(ctx, token))
+        })
+        .or(node.background_fill_colour)
+        .or_else(|| {
+            node.background_fill_colour_token
+                .as_deref()
+                .and_then(|token| resolve_surface_colour_token(ctx, token))
+        })
+        .or(node.stroke_colour)
+        .or_else(|| {
+            node.stroke_colour_token
+                .as_deref()
+                .and_then(|token| resolve_surface_colour_token(ctx, token))
+        })
+}
+
+fn image_tint_for_blit(
+    node: &UiIrNode,
+    asset_ref: &str,
+    fill_override: Option<[f32; 4]>,
+    ctx: &ComposeContext<'_>,
+) -> [f32; 4] {
+    if fill_override.is_some()
+        && UiAssetResolver::normalise_path(asset_ref).ends_with(".svg")
+    {
+        [1.0, 1.0, 1.0, 1.0]
+    } else {
+        node.icon_tint_colour
+            .or_else(|| {
+                node.icon_tint_colour_token
+                    .as_deref()
+                    .and_then(|token| resolve_colour_token(ctx, token))
+            })
+            .unwrap_or([1.0, 1.0, 1.0, 1.0])
+    }
+}
+
+fn image_blend_mode_for_node(node: &UiIrNode, asset_ref: &str) -> BlendMode {
+    let normalised = UiAssetResolver::normalise_path(asset_ref);
+    let render_shape = node
+        .custom_shape
+        .as_ref()
+        .and_then(|shape| shape.render_shape)
+        .unwrap_or(false);
+    if !render_shape {
+        return BlendMode::SourceOver;
+    }
+
+    if normalised.ends_with(".svg") {
+        if matches!(node.colour_blend_mode, Some(UiIrColourBlendMode::Additive)) {
+            BlendMode::Plus
+        } else {
+            BlendMode::SourceOver
+        }
+    } else {
+        BlendMode::Plus
+    }
+}
+
+fn rasterize_custom_shape_svg(
+    node: &UiIrNode,
+    svg_bytes: &[u8],
+    target_w: u32,
+    target_h: u32,
+    fill_override: Option<[f32; 4]>,
+) -> Option<RgbaImage> {
+    let Some(shape) = node.custom_shape.as_ref() else {
+        return crate::bb_svg::rasterize_svg(svg_bytes, target_w, target_h, fill_override);
+    };
+
+    let rendered = if shape.enable_nine_slice_rect.unwrap_or(false)
+        && let Some(nine_slice_rect) = shape.nine_slice_rect
+    {
+        crate::bb_svg::rasterize_svg_nine_slice(
+            svg_bytes,
+            target_w,
+            target_h,
+            fill_override,
+            nine_slice_rect,
+            shape.nine_slice_scale.unwrap_or(1.0),
+        )
+    } else {
+        crate::bb_svg::rasterize_svg(svg_bytes, target_w, target_h, fill_override)
+    }?;
+
+    if shape.render_shape.unwrap_or(false) {
+        // Preserve authored SVG geometry without post-raster crop/stretch.
+        Some(rendered)
+    } else {
+        Some(rendered)
+    }
+}
+
+fn rasterize_svg_for_node(
+    node: &UiIrNode,
+    svg_bytes: &[u8],
+    target_w: u32,
+    target_h: u32,
+    fill_override: Option<[f32; 4]>,
+) -> Option<RgbaImage> {
+    // `scalingBehavior: Contain` is the universal authored default on
+    // `svgFill`, but the engine's rendering differs by widget role:
+    // icon-element instances (the expanded icon-widget glyph, framework tag
+    // "icon-element-instance") render aspect-preserved — the MFD footer's
+    // 7.3×12.8 pixel arrow draws 31×48 in-game, not stretched to its square
+    // icon box — while plain custom shapes keep the nine-slice/stretch
+    // pipeline (the medical menu cards' thin edge-line svgs stretch to full
+    // card height in-game despite the same authored Contain).
+    // The `icon` framework tag marks icon-ROLE custom shapes (the power
+    // screen's authored system/card glyphs) — same aspect-preserved rendering
+    // as expanded icon-widget instances. The tag must be the node's OWN
+    // (authored/implicit-host), not inherited: plain shapes inside icon-
+    // tagged containers keep the stretch pipeline.
+    let is_icon_element_instance = node
+        .resolved_style_tags
+        .iter()
+        .any(|tag| {
+            tag.tag_name
+                .as_deref()
+                .is_some_and(|name| name.eq_ignore_ascii_case("icon-element-instance"))
+        })
+        || node.resolved_style_tags.iter().any(|tag| {
+            tag.tag_name
+                .as_deref()
+                .is_some_and(|name| name.eq_ignore_ascii_case("icon"))
+                && node.style_tag_uuids.iter().any(|own| own == &tag.uuid)
+        });
+    if (node.custom_shape.is_none() || is_icon_element_instance)
+        && node
+            .asset_layout
+            .as_ref()
+            .and_then(|layout| layout.scaling_behavior.as_deref())
+            .is_some_and(|behavior| behavior.eq_ignore_ascii_case("Contain"))
+    {
+        let layout = node.asset_layout.as_ref().expect("contain layout");
+        return crate::bb_svg::rasterize_svg_contained(
+            svg_bytes,
+            target_w,
+            target_h,
+            fill_override,
+            layout.contain_position_x.unwrap_or(0.5),
+            layout.contain_position_y.unwrap_or(0.5),
+        );
+    }
+
+    rasterize_custom_shape_svg(node, svg_bytes, target_w, target_h, fill_override)
+}
+
+fn apply_asset_layout_flip(node: &UiIrNode, image: RgbaImage) -> RgbaImage {
+    let Some(layout) = node.asset_layout.as_ref() else {
+        return image;
+    };
+
+    let mut out = image;
+    if layout.flip_horizontal.unwrap_or(false) {
+        out = imageops::flip_horizontal(&out);
+    }
+    if layout.flip_vertical.unwrap_or(false) {
+        out = imageops::flip_vertical(&out);
+    }
+    out
+}
+
+
+fn strip_custom_shape_uniform_matte(img: &RgbaImage) -> RgbaImage {
+    let (width, height) = img.dimensions();
+    let total_pixels = (width as usize).saturating_mul(height as usize).max(1);
+
+    let mut opaque_counts: HashMap<[u8; 4], usize> = HashMap::new();
+    let mut transparent_count = 0usize;
+    for chunk in img.as_raw().chunks_exact(4) {
+        let px = [chunk[0], chunk[1], chunk[2], chunk[3]];
+        if px[3] == 0 {
+            transparent_count += 1;
+        }
+        if px[3] == 255 {
+            *opaque_counts.entry(px).or_insert(0) += 1;
+        }
+    }
+
+    if opaque_counts.is_empty() || transparent_count == 0 {
+        return img.clone();
+    }
+
+    // Pick the dominant opaque colour as the matte candidate. `opaque_counts` is
+    // a `HashMap`, so iteration order is non-deterministic; break count ties by
+    // the colour value itself (largest RGBA wins) so the chosen matte — and the
+    // resulting flood-fill — is reproducible across renders.
+    let Some((matte_px, matte_count)) = opaque_counts
+        .iter()
+        .max_by(|(px_a, count_a), (px_b, count_b)| count_a.cmp(count_b).then_with(|| px_a.cmp(px_b)))
+        .map(|(px, count)| (*px, *count))
+    else {
+        return img.clone();
+    };
+
+    let total_opaque: usize = opaque_counts.values().sum();
+    let matte_fraction = matte_count as f32 / total_opaque.max(1) as f32;
+    let full_image_fraction = matte_count as f32 / total_pixels as f32;
+    if matte_fraction < 0.85 || full_image_fraction < 0.9 {
+        return img.clone();
+    }
+
+    let is_matte = |px: image::Rgba<u8>| {
+        px[0] == matte_px[0] && px[1] == matte_px[1] && px[2] == matte_px[2] && px[3] == matte_px[3]
+    };
+
+    // Only strip matte that is actually connected to the asset border. This
+    // avoids deleting centered monochrome logos where the dominant opaque colour
+    // is the glyph itself, not an authored matte backdrop.
+    let mut queue: VecDeque<(u32, u32)> = VecDeque::new();
+    let mut visited = vec![false; total_pixels];
+    let push_seed = |x: u32, y: u32, queue: &mut VecDeque<(u32, u32)>, visited: &mut [bool]| {
+        let idx = (y as usize)
+            .saturating_mul(width as usize)
+            .saturating_add(x as usize);
+        if !visited[idx] && is_matte(*img.get_pixel(x, y)) {
+            visited[idx] = true;
+            queue.push_back((x, y));
+        }
+    };
+
+    for x in 0..width {
+        push_seed(x, 0, &mut queue, &mut visited);
+        if height > 1 {
+            push_seed(x, height - 1, &mut queue, &mut visited);
+        }
+    }
+    for y in 0..height {
+        push_seed(0, y, &mut queue, &mut visited);
+        if width > 1 {
+            push_seed(width - 1, y, &mut queue, &mut visited);
+        }
+    }
+
+    if queue.is_empty() {
+        return img.clone();
+    }
+
+    while let Some((x, y)) = queue.pop_front() {
+        if x > 0 {
+            let nx = x - 1;
+            let ny = y;
+            let idx = (ny as usize)
+                .saturating_mul(width as usize)
+                .saturating_add(nx as usize);
+            if !visited[idx] && is_matte(*img.get_pixel(nx, ny)) {
+                visited[idx] = true;
+                queue.push_back((nx, ny));
+            }
+        }
+        if x + 1 < width {
+            let nx = x + 1;
+            let ny = y;
+            let idx = (ny as usize)
+                .saturating_mul(width as usize)
+                .saturating_add(nx as usize);
+            if !visited[idx] && is_matte(*img.get_pixel(nx, ny)) {
+                visited[idx] = true;
+                queue.push_back((nx, ny));
+            }
+        }
+        if y > 0 {
+            let nx = x;
+            let ny = y - 1;
+            let idx = (ny as usize)
+                .saturating_mul(width as usize)
+                .saturating_add(nx as usize);
+            if !visited[idx] && is_matte(*img.get_pixel(nx, ny)) {
+                visited[idx] = true;
+                queue.push_back((nx, ny));
+            }
+        }
+        if y + 1 < height {
+            let nx = x;
+            let ny = y + 1;
+            let idx = (ny as usize)
+                .saturating_mul(width as usize)
+                .saturating_add(nx as usize);
+            if !visited[idx] && is_matte(*img.get_pixel(nx, ny)) {
+                visited[idx] = true;
+                queue.push_back((nx, ny));
+            }
+        }
+    }
+
+    let mut out = img.clone();
+    for y in 0..height {
+        for x in 0..width {
+            let idx = (y as usize)
+                .saturating_mul(width as usize)
+                .saturating_add(x as usize);
+            if visited[idx] {
+                let px = out.get_pixel_mut(x, y);
+                *px = image::Rgba([0, 0, 0, 0]);
+            }
+        }
+    }
+
+    out
+}
+
+fn draw_linear_progress_meter(
+    node: &UiIrNode,
+    ctx: &ComposeContext<'_>,
+    pixmap: &mut Pixmap,
+    rect: TskRect,
+) {
+    let glow = [
+        ctx.style.backlight.r as f32 / 255.0,
+        ctx.style.backlight.g as f32 / 255.0,
+        ctx.style.backlight.b as f32 / 255.0,
+        (ctx.style.backlight.a as f32 / 255.0).max(0.8),
+    ];
+
+    let progress = node.meter_progress.unwrap_or(1.0).clamp(0.0, 1.0);
+    if progress <= 0.0 {
+        return;
+    }
+
+    if let Some(segmented_fill) = node.segmented_fill.as_ref().filter(|fill| fill.enabled) {
+        let segment_width = if segmented_fill.segment_spacing_size > 0.0 {
+            segmented_fill.segment_spacing_size
+        } else {
+            segmented_fill.segment_size
+        }
+        .max(0.0);
+        let segment_gap = segmented_fill.segment_size.max(0.0);
+        let segment_stride = segment_width + segment_gap;
+        let segment_count = segmented_count_for_width(rect.width(), segment_width, segment_gap);
+        if segment_count > 0 && segment_stride > 0.0 {
+            let active_width = rect.width() * progress;
+            let segment_colour = segmented_fill.segment_colour.unwrap_or(glow);
+            for idx in 0..segment_count {
+                let x = rect.x() + segmented_fill.segment_x_offset + (idx as f32 * segment_stride);
+                if x >= rect.right() {
+                    break;
+                }
+                let right = (x + segment_width).min(rect.right());
+                if right <= x {
+                    continue;
+                }
+                let segment_end = right - rect.x();
+                if segment_end <= active_width {
+                    if let Some(segment_rect) =
+                        TskRect::from_xywh(x, rect.y(), right - x, rect.height())
+                    {
+                        fill_rect_ts(pixmap, segment_rect, segment_colour, node.alpha);
+                    }
+                }
+            }
+            return;
+        }
+    }
+
+    let filled_w = (rect.width() * progress).max(1.0);
+    if let Some(fill_rect) = TskRect::from_xywh(rect.x(), rect.y(), filled_w, rect.height()) {
+        fill_rect_ts(pixmap, fill_rect, glow, node.alpha);
+    }
+}
+
+pub fn debug_linear_progress_meter_rect(node: &UiIrNode, document: &UiIrDocument) -> Option<Rect> {
+    (node.meter_progress.is_some()).then(|| {
+        resolved_linear_progress_meter_rect(node, document)
+            .unwrap_or_else(|| ir_rect_to_layout_rect(node.computed_rect))
+    })
+}
+
+pub fn debug_node_draw_rect(node: &UiIrNode, document: &UiIrDocument) -> Rect {
+    if let Some(meter_rect) = debug_linear_progress_meter_rect(node, document) {
+        return meter_rect;
+    }
+
+    ir_rect_to_layout_rect(node.computed_rect)
+}
+
+fn resolved_linear_progress_meter_rect(node: &UiIrNode, document: &UiIrDocument) -> Option<Rect> {
+    if node.meter_progress.is_none() {
+        return None;
+    }
+
+    let parent = node
+        .parent_id
+        .and_then(|parent_id| document.nodes.iter().find(|candidate| candidate.id == parent_id))?;
+    if !parent
+        .node_type
+        .eq_ignore_ascii_case("BuildingBlocks_ComponentLabelCaptionPair")
+    {
+        return None;
+    }
+    if (node.anchor[1] - 1.0).abs() > 0.01 || node.pivot[1].abs() > 0.01 || node.authored_position[1].abs() > 0.01 {
+        return None;
+    }
+
+    let mut rect = ir_rect_to_layout_rect(node.computed_rect);
+    let text_rects = debug_text_rects(parent)?;
+    let (pair_offset_x, _pair_offset_y) = right_anchored_label_caption_pair_offset(
+        parent,
+        text_rects.primary.h,
+        text_rects.secondary.map(|secondary_rect| secondary_rect.h),
+    );
+    rect.x += pair_offset_x;
+    // Pin the meter to the value text's baseline — the bottom of its drawn glyphs —
+    // rather than the line-box bottom. The value (e.g. "200/200") has no descenders, so
+    // the line box's empty descent space would otherwise push the bar ~1 descent too low.
+    rect.y = debug_text_drawn_bounds(parent)
+        .and_then(|bounds| bounds.secondary)
+        .map(|secondary| secondary.y + secondary.h)
+        .or_else(|| {
+            text_rects
+                .secondary
+                .map(|secondary_rect| secondary_rect.y + secondary_rect.h)
+        })
+        .unwrap_or_else(|| text_rects.primary.y + text_rects.primary.h);
+    Some(rect)
+}
+
+fn segmented_count_for_width(total_width: f32, segment_width: f32, segment_gap: f32) -> usize {
+    if total_width <= 0.0 || segment_width <= 0.0 {
+        return 0;
+    }
+    let stride = segment_width + segment_gap.max(0.0);
+    if stride <= 0.0 {
+        return 0;
+    }
+    (total_width / stride).floor().max(0.0) as usize
+}
+
+fn draw_text_node(
+    img: &mut RgbaImage,
+    node: &UiIrNode,
+    document: &UiIrDocument,
+    renderer: &TextRenderer,
+    ctx: &ComposeContext<'_>,
+    seen_rects: &mut HashSet<(i32, i32, i32, i32)>,
+) {
+    let Some(text) = resolved_text_payload(node) else {
+        return;
+    };
+    if text.is_empty() {
+        return;
+    }
+
+    let rect = ir_rect_to_layout_rect(node.computed_rect);
+    if rect.w < 0.5 || rect.h < 0.5 {
+        return;
+    }
+
+    let key = (
+        rect.x.round() as i32,
+        rect.y.round() as i32,
+        rect.w.round() as i32,
+        rect.h.round() as i32,
+    );
+    if !seen_rects.insert(key) {
+        return;
+    }
+
+    let text_rects = debug_text_rects_with_renderer(node, renderer, Some(document))
+        .unwrap_or(DebugTextRects {
+            primary: rect,
+            secondary: None,
+            primary_text_origin: (rect.x, rect.y),
+            secondary_text_origin: None,
+        });
+    let primary_rect = text_rects.primary;
+    let secondary_rect = text_rects.secondary.unwrap_or(rect);
+    let nominal_font_size = node
+        .text_style
+        .as_ref()
+        .map(|style| ir_value_to_px(&style.font_size))
+        .unwrap_or(18.0)
+        .max(1.0);
+    let primary_font_style_scale = font_style_scale_modifier(node.text_style.as_ref());
+    let fallback_font_size =
+        (nominal_font_size * primary_font_style_scale * TEXT_RENDER_SIZE_CALIBRATION).max(1.0);
+    let secondary_nominal_font_size = node
+        .secondary_text_style
+        .as_ref()
+        .map(|style| ir_value_to_px(&style.font_size))
+        .unwrap_or(nominal_font_size)
+        .max(1.0);
+    let secondary_font_style_scale = font_style_scale_modifier(
+        node.secondary_text_style
+            .as_ref()
+            .or(node.text_style.as_ref()),
+    );
+    let secondary_fallback_font_size = (secondary_nominal_font_size
+        * secondary_font_style_scale
+        * TEXT_RENDER_SIZE_CALIBRATION)
+        .max(1.0);
+
+    let center_anchored_heading = node
+        .text_style
+        .as_ref()
+        .is_some_and(|style| {
+            node.node_type.eq_ignore_ascii_case("widget_text_field")
+                && style
+                    .label_style
+                    .as_deref()
+                    .is_some_and(|label| label.eq_ignore_ascii_case("Heading1"))
+                && style
+                    .anchor_to_parent_x
+                    .is_some_and(|anchor| (anchor - 0.5).abs() < f32::EPSILON)
+                && style
+                    .anchor_to_parent_y
+                    .is_some_and(|anchor| (anchor - 0.5).abs() < f32::EPSILON)
+                && node.anchor[0].abs() < f32::EPSILON
+                && node.anchor[1].abs() < f32::EPSILON
+                && node.pivot[0].abs() < f32::EPSILON
+                && node.pivot[1].abs() < f32::EPSILON
+        });
+
+    let align = if center_anchored_heading {
+        TextAlign::Centre
+    } else {
+        node
+        .text_style
+        .as_ref()
+        .map(|style| TextAlign::from_bb_str(&style.alignment))
+        .unwrap_or(TextAlign::Left)
+    };
+    let vertical_align = if center_anchored_heading && node.computed_rect.h > nominal_font_size * 3.0 {
+        // Anchor-centred heading whose rect is a PARENT-FILL placeholder (an
+        // authored Auto-sized card laid out at parent size — many times the
+        // line height): the engine auto-sizes the field, and its line box
+        // (the full em above the baseline) centres on the anchor, putting
+        // the cap band one descent below naive cap-centring (Clipper
+        // NO TARGET measured +18.6px at em 100 vs the in-game capture).
+        // A heading in an authored-sized field (e.g. the footer name card,
+        // rect ≈ 1.2 em) keeps line-box centring, which coincides with
+        // cap-centring for a 0.8-ascent font.
+        VerticalAlign::EmBaseline
+    } else if center_anchored_heading {
+        VerticalAlign::Centre
+    } else {
+        node
+        .text_style
+        .as_ref()
+        .map(|style| VerticalAlign::from_bb_str(&style.vertical_alignment))
+        .unwrap_or(VerticalAlign::Centre)
+    };
+
+    let mut colour = resolved_text_colour(node, node.text_style.as_ref(), ctx);
+    colour[3] = ((colour[3] as f32) * node.alpha.clamp(0.0, 1.0)).round() as u8;
+
+    let requested_font_symbol = font_symbol_from_text_style(node.text_style.as_ref()).unwrap_or("<none>");
+    let selected_font = select_imported_ui_font(ctx, node.text_style.as_ref());
+    let primary_line_spacing = draw_line_spacing_for_node(node, text, node.text_style.as_ref());
+    // Imported SWF glyph symbols already encode their authored shape/weight;
+    // applying style scaleModifier on top of SWF sizing causes undersized text
+    // on some screens (for example door status labels). Keep scaleModifier for
+    // fallback TTF path only.
+    let primary_ttf_font_scale = primary_font_style_scale * TEXT_RENDER_SIZE_CALIBRATION;
+    // DATA-BACKED MODEL: IR font size is the authored em-pixel size; the SWF renderer
+    // maps em→raster via the font's own units_per_em (= ascent + descent). No constant.
+    let mut primary_swf_font_size = nominal_font_size.max(1.0);
+    let mut primary_rect = apply_font_style_vertical_offset(primary_rect, node.text_style.as_ref());
+    if let Some(selection) = selected_font.as_ref() {
+        // Only `autoFontSize` text is fit to its rect (the engine grows/shrinks it to
+        // fill the field). Non-auto text renders at its resolved style/brand size and
+        // relies on word-wrap + clipping for overflow — it is never font-scaled, so a
+        // long heading or a wrapped paragraph keeps its authored size.
+        if node.auto_font_size {
+            primary_swf_font_size = fit_swf_font_size_to_rect(
+                renderer,
+                text,
+                selection.font,
+                primary_rect,
+                primary_swf_font_size,
+                align,
+                vertical_align,
+                primary_line_spacing,
+            );
+        }
+    }
+    // Key the optional SB_UI_FONT_DUMP audit line to this element (no-op otherwise).
+    crate::text::set_font_dump_ctx(
+        document.canvas_name.as_deref().unwrap_or("<unnamed>"),
+        &node.name,
+    );
+    let used_swf_font = selected_font.as_ref().is_some_and(|selection| {
+        let mut effective_vertical_align = vertical_align;
+        if let Some(inline_rect) = inline_nested_textfield_text_rect(
+            node,
+            primary_rect,
+            document,
+            renderer,
+            ctx,
+            primary_swf_font_size,
+        ) {
+            primary_rect = inline_rect;
+            // The nested-pair half-rect model is calibrated for cap-centring
+            // (footer heading cap centre on the nav-arrow line); the GFx
+            // line-box baseline placement applies only to plain anchored
+            // headings.
+            if effective_vertical_align == VerticalAlign::EmBaseline {
+                effective_vertical_align = VerticalAlign::Centre;
+            }
+        }
+        renderer.draw_swf_font(
+            img,
+            text,
+            primary_rect,
+            selection.font,
+            ctx.assets.font_edit_text_metrics(&selection.symbol),
+            primary_swf_font_size,
+            colour,
+            align,
+            effective_vertical_align,
+            primary_line_spacing,
+            node.text_style
+                .as_ref()
+                .and_then(|style| style.letter_spacing)
+                .unwrap_or(0.0),
+        )
+    });
+    if font_telemetry_enabled() {
+        if let Some(selection) = selected_font.as_ref() {
+            eprintln!(
+                "text-font canvas='{}' node='{}' requested='{}' selected='{}' source='{}' fallback={} swf_used={} nominal_size={:.2} swf_draw_size={:.2} ttf_draw_size={:.2} rect_h={:.2} text='{}'",
+                document.canvas_name.as_deref().unwrap_or("<unnamed-canvas>"),
+                node.name,
+                requested_font_symbol,
+                selection.symbol,
+                selection.source.as_str(),
+                selection.source.is_fallback(),
+                used_swf_font,
+                nominal_font_size,
+                primary_swf_font_size,
+                fallback_font_size,
+                primary_rect.h,
+                text
+            );
+        } else {
+            eprintln!(
+                "text-font canvas='{}' node='{}' requested='{}' selected='<none>' source='none' fallback=false swf_used=false nominal_size={:.2} swf_draw_size=0.00 ttf_draw_size={:.2} rect_h={:.2} text='{}'",
+                document.canvas_name.as_deref().unwrap_or("<unnamed-canvas>"),
+                node.name,
+                requested_font_symbol,
+                nominal_font_size,
+                fallback_font_size,
+                primary_rect.h,
+                text
+            );
+        }
+    }
+    if !used_swf_font {
+        let mut effective_vertical_align = vertical_align;
+        if let Some(inline_rect) = inline_nested_textfield_text_rect(
+            node,
+            primary_rect,
+            document,
+            renderer,
+            ctx,
+            fallback_font_size,
+        ) {
+            primary_rect = inline_rect;
+            if effective_vertical_align == VerticalAlign::EmBaseline {
+                effective_vertical_align = VerticalAlign::Centre;
+            }
+        }
+        renderer.draw(
+            img,
+            text,
+            primary_rect,
+            FontKind::Sans,
+            fallback_font_size,
+            colour,
+            align,
+            effective_vertical_align,
+            scale_line_spacing(primary_line_spacing, primary_ttf_font_scale),
+        );
+    }
+
+    if let Some(UiIrTextPayload::Resolved { text: secondary }) = node.secondary_text_payload.as_ref() {
+        let mut secondary_colour = resolved_text_colour(node, node.secondary_text_style.as_ref(), ctx);
+        secondary_colour[3] = ((secondary_colour[3] as f32) * node.alpha.clamp(0.0, 1.0)).round() as u8;
+        let secondary_align = node
+            .secondary_text_style
+            .as_ref()
+            .map(|style| TextAlign::from_bb_str(&style.alignment))
+            .unwrap_or(TextAlign::Left);
+        let secondary_vertical_align = node
+            .secondary_text_style
+            .as_ref()
+            .map(|style| VerticalAlign::from_bb_str(&style.vertical_alignment))
+            .unwrap_or(VerticalAlign::Centre);
+        let secondary_selected_font = select_imported_ui_font(
+            ctx,
+            node.secondary_text_style
+                .as_ref()
+                .or(node.text_style.as_ref()),
+        );
+        let secondary_line_spacing = node
+            .secondary_text_style
+            .as_ref()
+            .or(node.text_style.as_ref())
+            .and_then(|style| style.line_spacing);
+        let secondary_ttf_font_scale = secondary_font_style_scale * TEXT_RENDER_SIZE_CALIBRATION;
+        let mut secondary_swf_font_size = secondary_nominal_font_size.max(1.0);
+        let secondary_rect = apply_font_style_vertical_offset(
+            secondary_rect,
+            node.secondary_text_style.as_ref().or(node.text_style.as_ref()),
+        );
+        if let Some(selection) = secondary_selected_font.as_ref() {
+            if node.auto_font_size {
+                secondary_swf_font_size = fit_swf_font_size_to_rect(
+                    renderer,
+                    secondary,
+                    selection.font,
+                    secondary_rect,
+                    secondary_swf_font_size,
+                    secondary_align,
+                    secondary_vertical_align,
+                    secondary_line_spacing,
+                );
+            }
+        }
+            let secondary_used_swf = secondary_selected_font.as_ref().is_some_and(|selection| {
+            renderer.draw_swf_font(
+                img,
+                secondary,
+                secondary_rect,
+                selection.font,
+                ctx.assets.font_edit_text_metrics(&selection.symbol),
+                secondary_swf_font_size,
+                secondary_colour,
+                secondary_align,
+                secondary_vertical_align,
+                secondary_line_spacing,
+                node.secondary_text_style
+                    .as_ref()
+                    .or(node.text_style.as_ref())
+                    .and_then(|style| style.letter_spacing)
+                    .unwrap_or(0.0),
+            )
+        });
+        if !secondary_used_swf {
+            renderer.draw(
+                img,
+                secondary,
+                secondary_rect,
+                FontKind::Sans,
+                secondary_fallback_font_size,
+                secondary_colour,
+                secondary_align,
+                secondary_vertical_align,
+                scale_line_spacing(secondary_line_spacing, secondary_ttf_font_scale),
+            );
+        }
+    }
+}
+
+fn scale_line_spacing(line_spacing: Option<f32>, font_scale: f32) -> Option<f32> {
+    line_spacing.map(|spacing| spacing * font_scale)
+}
+
+fn draw_line_spacing_for_node(
+    node: &UiIrNode,
+    text: &str,
+    text_style: Option<&UiIrTextStyle>,
+) -> Option<f32> {
+    let spacing = text_style.and_then(|style| style.line_spacing);
+    let leading = font_style_leading_modifier_px(text_style);
+    let spacing = match (spacing, leading) {
+        (Some(spacing), 0.0) => Some(spacing),
+        (Some(spacing), leading) => Some(spacing + leading),
+        (None, 0.0) => None,
+        (None, leading) => Some(leading),
+    };
+    if is_large_wrapped_title3_heading(node, text, text_style) {
+        spacing.map(|value| value + 4.0)
+    } else {
+        spacing
+    }
+}
+
+fn apply_font_style_vertical_offset(rect: Rect, text_style: Option<&UiIrTextStyle>) -> Rect {
+    let offset = font_style_top_margin_offset_px(text_style);
+    if offset.abs() <= f32::EPSILON {
+        rect
+    } else {
+        Rect { y: rect.y + offset, ..rect }
+    }
+}
+
+fn is_large_wrapped_title3_heading(
+    node: &UiIrNode,
+    text: &str,
+    text_style: Option<&UiIrTextStyle>,
+) -> bool {
+    let Some(style) = text_style else {
+        return false;
+    };
+    if style.label_style.as_deref() != Some("Title3") {
+        return false;
+    }
+    if !matches!(VerticalAlign::from_bb_str(&style.vertical_alignment), VerticalAlign::Centre) {
+        return false;
+    }
+    let font_size = ir_value_to_px(&style.font_size);
+    font_size >= 90.0
+        && node.computed_rect.h >= font_size * 2.0
+        && text.split_whitespace().count() >= 3
+}
+
+fn resolved_text_colour(
+    node: &UiIrNode,
+    style: Option<&crate::ui_ir::UiIrTextStyle>,
+    ctx: &ComposeContext<'_>,
+) -> [u8; 4] {
+    let _ = node;
+    style
+        .and_then(|style| style.colour)
+        .or_else(|| {
+            style
+                .and_then(|style| style.colour_token.as_deref())
+                .and_then(|token| resolve_colour_token(ctx, token))
+        })
+        .map(rgba_to_u8)
+        .unwrap_or([255, 255, 255, 255])
+}
+
+pub fn debug_text_rects(node: &UiIrNode) -> Option<DebugTextRects> {
+    let renderer = TextRenderer::new();
+    debug_text_rects_with_renderer(node, &renderer, None)
+}
+
+/// Like [`debug_text_rects`], with sibling/parent context so relationship-gated
+/// rect models (the nested inline heading pair) resolve exactly as the render
+/// path does.
+pub fn debug_text_rects_in_document(
+    node: &UiIrNode,
+    document: &UiIrDocument,
+) -> Option<DebugTextRects> {
+    let renderer = TextRenderer::new();
+    debug_text_rects_with_renderer(node, &renderer, Some(document))
+}
+
+pub fn debug_text_drawn_bounds(node: &UiIrNode) -> Option<DebugTextDrawnBounds> {
+    let renderer = TextRenderer::new();
+    debug_text_drawn_bounds_with_renderer(node, &renderer)
+}
+
+fn debug_text_rects_with_renderer(
+    node: &UiIrNode,
+    renderer: &TextRenderer,
+    document: Option<&UiIrDocument>,
+) -> Option<DebugTextRects> {
+    let text = resolved_text_payload(node)?;
+    let rect = ir_rect_to_layout_rect(node.computed_rect);
+    if rect.w < 0.5 || rect.h < 0.5 {
+        return None;
+    }
+
+    let nominal_font_size = node
+        .text_style
+        .as_ref()
+        .map(|style| ir_value_to_px(&style.font_size))
+        .unwrap_or(18.0)
+        .max(1.0);
+    let fallback_font_size = (nominal_font_size * TEXT_RENDER_SIZE_CALIBRATION).max(1.0);
+    let is_label_caption_pair = node
+        .node_type
+        .eq_ignore_ascii_case("BuildingBlocks_ComponentLabelCaptionPair");
+    if is_label_caption_pair && node.secondary_text_payload.is_some() {
+        let secondary_nominal_font_size = node
+            .secondary_text_style
+            .as_ref()
+            .map(|style| ir_value_to_px(&style.font_size))
+            .unwrap_or(nominal_font_size)
+            .max(1.0);
+        let secondary_fallback_font_size =
+            (secondary_nominal_font_size * TEXT_RENDER_SIZE_CALIBRATION).max(1.0);
+        let (mut primary, mut secondary) = stacked_label_caption_pair_text_rects(
+            rect,
+            renderer.measure(text, FontKind::Sans, fallback_font_size).1,
+            node.secondary_text_payload
+                .as_ref()
+                .and_then(|payload| match payload {
+                    UiIrTextPayload::Resolved { text } => Some(text.as_str()),
+                    UiIrTextPayload::UnresolvedKey { .. }
+                    | UiIrTextPayload::IntentionallyEmpty { .. }
+                    | UiIrTextPayload::Empty => None,
+                })
+                .map(|secondary| renderer.measure(secondary, FontKind::Sans, secondary_fallback_font_size).1)
+                .unwrap_or(secondary_fallback_font_size),
+            node.text_style.as_ref().and_then(|style| style.anchor_to_parent_y),
+            node.anchor[0] >= 0.99 && node.pivot[0] >= 0.99,
+        );
+        let (pair_offset_x, pair_offset_y) = right_anchored_label_caption_pair_offset(
+            node,
+            primary.h,
+            Some(secondary.h),
+        );
+        primary.x += pair_offset_x;
+        primary.y += pair_offset_y;
+        secondary.x += pair_offset_x;
+        secondary.y += pair_offset_y;
+        let primary_align = node
+            .text_style
+            .as_ref()
+            .map(|style| TextAlign::from_bb_str(&style.alignment))
+            .unwrap_or(TextAlign::Left);
+        let primary_vertical = node
+            .text_style
+            .as_ref()
+            .map(|style| VerticalAlign::from_bb_str(&style.vertical_alignment))
+            .unwrap_or(VerticalAlign::Centre);
+        let secondary_text = node.secondary_text_payload.as_ref().and_then(|payload| match payload {
+            UiIrTextPayload::Resolved { text } => Some(text.as_str()),
+            UiIrTextPayload::UnresolvedKey { .. }
+            | UiIrTextPayload::IntentionallyEmpty { .. }
+            | UiIrTextPayload::Empty => None,
+        });
+        let primary_text_origin = text_origin_in_rect(
+            renderer,
+            text,
+            primary,
+            FontKind::Sans,
+            fallback_font_size,
+            primary_align,
+            primary_vertical,
+        );
+        let secondary_text_origin = secondary_text.map(|secondary_text| {
+            text_origin_in_rect(
+                renderer,
+                secondary_text,
+                secondary,
+                FontKind::Sans,
+                secondary_fallback_font_size,
+                TextAlign::Left,
+                VerticalAlign::Centre,
+            )
+        });
+        Some(DebugTextRects {
+            primary,
+            secondary: Some(secondary),
+            primary_text_origin,
+            secondary_text_origin,
+        })
+    } else {
+        let align = node
+            .text_style
+            .as_ref()
+            .map(|style| TextAlign::from_bb_str(&style.alignment))
+            .unwrap_or(TextAlign::Left);
+        let vertical = node
+            .text_style
+            .as_ref()
+            .map(|style| VerticalAlign::from_bb_str(&style.vertical_alignment))
+            .unwrap_or(VerticalAlign::Centre);
+        let primary_rect =
+            center_anchored_heading_textfield_text_rect(node, rect, document).unwrap_or(rect);
+        Some(DebugTextRects {
+            primary: primary_rect,
+            secondary: None,
+            primary_text_origin: text_origin_in_rect(renderer, text, primary_rect, FontKind::Sans, fallback_font_size, align, vertical),
+            secondary_text_origin: None,
+        })
+    }
+}
+
+fn center_anchored_heading_textfield_text_rect(
+    node: &UiIrNode,
+    rect: Rect,
+    document: Option<&UiIrDocument>,
+) -> Option<Rect> {
+    let style = node.text_style.as_ref()?;
+    if !node.node_type.eq_ignore_ascii_case("widget_text_field") {
+        return None;
+    }
+    // The anchored half-rect model belongs to the nested inline heading pair
+    // (the medical header: a Heading1 parent text field with a same-style
+    // text-field child sharing its band — both render in the band's lower
+    // half). A lone centre-anchored heading (the MFD footer's screen name)
+    // centres its glyph block ON the anchor line instead — verified against the
+    // Clipper target/power footer captures (cap centre == card midline).
+    if let Some(document) = document {
+        let has_same_style_text_child = document.nodes.iter().any(|candidate| {
+            candidate.parent_id == Some(node.id)
+                && candidate.node_type.eq_ignore_ascii_case("widget_text_field")
+                && candidate
+                    .text_style
+                    .as_ref()
+                    .is_some_and(|child| same_label_style(child, style))
+        });
+        if !has_same_style_text_child {
+            return None;
+        }
+    }
+    if !style
+        .label_style
+        .as_deref()
+        .is_some_and(|label| label.eq_ignore_ascii_case("Heading1"))
+    {
+        return None;
+    }
+    if !style.vertical_alignment.eq_ignore_ascii_case("Center") {
+        return None;
+    }
+    let anchor_to_parent_y = style.anchor_to_parent_y?;
+    if (anchor_to_parent_y - 0.5).abs() > f32::EPSILON || node.pivot[1].abs() > f32::EPSILON {
+        return None;
+    }
+    if node.anchor[1] > 0.0 && !(node.anchor[0] > 1.0 && node.pivot[0] >= 0.99) {
+        return None;
+    }
+
+    let top = rect.y + rect.h * anchor_to_parent_y;
+    let height = (rect.h * (1.0 - anchor_to_parent_y)).max(1.0);
+    Some(Rect { y: top, h: height, ..rect })
+}
+
+/// Registered fallback (docs/ui-fallback-register.md): the word-space gap inserted between
+/// an inline-chained parent text field and its nested child (e.g. header `TierLevel` "T3" →
+/// `MachineTypeNameText` "MEDICAL ASSISTANT"). Fraction of the child em; calibrated to the
+/// in-game reference (T3→MEDICAL ≈ 17px ≈ one word-space at the 0.33×em engine word gap).
+const INLINE_NESTED_TEXTFIELD_WORD_GAP: f32 = 0.33;
+
+fn inline_nested_textfield_text_rect(
+    node: &UiIrNode,
+    rect: Rect,
+    document: &UiIrDocument,
+    renderer: &TextRenderer,
+    ctx: &ComposeContext<'_>,
+    child_render_size_px: f32,
+) -> Option<Rect> {
+    let style = node.text_style.as_ref()?;
+    if !node.node_type.eq_ignore_ascii_case("widget_text_field")
+        || node.pivot[0] < 0.99
+        || node.anchor[0] <= 1.0
+        || !style.vertical_alignment.eq_ignore_ascii_case("Center")
+    {
+        return None;
+    }
+
+    let parent_id = node.parent_id?;
+    let parent = document.nodes.iter().find(|candidate| candidate.id == parent_id)?;
+    let parent_style = parent.text_style.as_ref()?;
+    if !parent.node_type.eq_ignore_ascii_case("widget_text_field")
+        || !same_label_style(style, parent_style)
+        || !parent_style.vertical_alignment.eq_ignore_ascii_case(&style.vertical_alignment)
+    {
+        return None;
+    }
+
+    let parent_text = resolved_text_payload(parent)?;
+    let parent_rect = center_anchored_heading_textfield_text_rect(
+        parent,
+        ir_rect_to_layout_rect(parent.computed_rect),
+        Some(document),
+    )
+    .unwrap_or_else(|| ir_rect_to_layout_rect(parent.computed_rect));
+    let parent_nominal_size = parent_style_font_size(parent_style);
+    let parent_font_style_scale = font_style_scale_modifier(Some(parent_style));
+    let parent_swf_size = (parent_nominal_size * parent_font_style_scale * SWF_TEXT_RENDER_SIZE_CALIBRATION).max(1.0);
+    let parent_width = select_imported_ui_font(ctx, Some(parent_style))
+        .and_then(|selection| {
+            renderer.measure_swf_advance_width(
+                parent_text,
+                selection.font,
+                parent_swf_size,
+                parent_style.letter_spacing.unwrap_or(0.0),
+            )
+        })
+        .unwrap_or_else(|| {
+            renderer.measure(
+                parent_text,
+                FontKind::Sans,
+                (parent_nominal_size * parent_font_style_scale * TEXT_RENDER_SIZE_CALIBRATION).max(1.0),
+            ).0
+        });
+    // The parent and child read as one inline sentence ("T3 MEDICAL ASSISTANT"); the engine
+    // separates them by a single word-space, NOT `anchor_to_parent_x × size` (which rendered
+    // ~2× too wide: 0.5 × 55.86 ≈ 28px → 26px gap vs the reference ~17px). Use the engine
+    // word-space fraction (0.33×em, the same constant the SWF renderer uses for inter-word
+    // gaps), which lands the T3→MEDICAL gap at ~17px to match the reference.
+    let inline_gap = child_render_size_px * INLINE_NESTED_TEXTFIELD_WORD_GAP;
+    let inline_x = parent_rect.x + parent_width + inline_gap;
+    if !inline_x.is_finite() || inline_x >= rect.x || inline_x <= parent_rect.x {
+        return None;
+    }
+
+    let right = rect.x + rect.w;
+    Some(Rect {
+        x: inline_x,
+        w: (right - inline_x).max(1.0),
+        ..rect
+    })
+}
+
+fn same_label_style(left: &UiIrTextStyle, right: &UiIrTextStyle) -> bool {
+    match (left.label_style.as_deref(), right.label_style.as_deref()) {
+        (Some(left), Some(right)) => left.eq_ignore_ascii_case(right),
+        _ => false,
+    }
+}
+
+fn parent_style_font_size(style: &UiIrTextStyle) -> f32 {
+    ir_value_to_px(&style.font_size).max(1.0)
+}
+
+fn debug_text_drawn_bounds_with_renderer(
+    node: &UiIrNode,
+    renderer: &TextRenderer,
+) -> Option<DebugTextDrawnBounds> {
+    let text = resolved_text_payload(node)?;
+    let rects = debug_text_rects_with_renderer(node, renderer, None)?;
+
+    let nominal_font_size = node
+        .text_style
+        .as_ref()
+        .map(|style| ir_value_to_px(&style.font_size))
+        .unwrap_or(18.0)
+        .max(1.0);
+    let fallback_font_size = (nominal_font_size * TEXT_RENDER_SIZE_CALIBRATION).max(1.0);
+    let primary_align = node
+        .text_style
+        .as_ref()
+        .map(|style| TextAlign::from_bb_str(&style.alignment))
+        .unwrap_or(TextAlign::Left);
+    let primary_vertical = node
+        .text_style
+        .as_ref()
+        .map(|style| VerticalAlign::from_bb_str(&style.vertical_alignment))
+        .unwrap_or(VerticalAlign::Centre);
+
+    let primary = renderer.measure_drawn_bounds(
+        text,
+        apply_font_style_vertical_offset(rects.primary, node.text_style.as_ref()),
+        FontKind::Sans,
+        fallback_font_size,
+        primary_align,
+        primary_vertical,
+        draw_line_spacing_for_node(node, text, node.text_style.as_ref()),
+    )?;
+
+    let secondary = if let Some(UiIrTextPayload::Resolved { text: secondary_text }) = node.secondary_text_payload.as_ref() {
+        let secondary_nominal_font_size = node
+            .secondary_text_style
+            .as_ref()
+            .map(|style| ir_value_to_px(&style.font_size))
+            .unwrap_or(nominal_font_size)
+            .max(1.0);
+        let secondary_fallback_font_size =
+            (secondary_nominal_font_size * TEXT_RENDER_SIZE_CALIBRATION).max(1.0);
+        rects.secondary.and_then(|secondary_rect| {
+            renderer.measure_drawn_bounds(
+                secondary_text,
+                apply_font_style_vertical_offset(
+                    secondary_rect,
+                    node.secondary_text_style.as_ref().or(node.text_style.as_ref()),
+                ),
+                FontKind::Sans,
+                secondary_fallback_font_size,
+                TextAlign::Left,
+                VerticalAlign::Centre,
+                draw_line_spacing_for_node(
+                    node,
+                    secondary_text,
+                    node.secondary_text_style.as_ref().or(node.text_style.as_ref()),
+                ),
+            )
+        })
+    } else {
+        None
+    };
+
+    Some(DebugTextDrawnBounds { primary, secondary })
+}
+
+fn text_origin_in_rect(
+    renderer: &TextRenderer,
+    text: &str,
+    rect: Rect,
+    kind: FontKind,
+    size_px: f32,
+    align: TextAlign,
+    vertical_align: VerticalAlign,
+) -> (f32, f32) {
+    let (text_w, text_h) = renderer.measure(text, kind, size_px.max(1.0));
+    let x = match align {
+        TextAlign::Left => rect.x,
+        TextAlign::Centre => rect.x + ((rect.w - text_w) * 0.5).max(0.0),
+        TextAlign::Right => rect.x + (rect.w - text_w).max(0.0),
+    };
+    let y = match vertical_align {
+        VerticalAlign::Top => rect.y,
+        VerticalAlign::Centre => rect.y + ((rect.h - text_h) * 0.5).max(0.0),
+        VerticalAlign::Bottom => rect.y + (rect.h - text_h).max(0.0),
+        // Baseline at rect centre + em/2 → block top one half-em below centre
+        // minus the block height (see `VerticalAlign::EmBaseline`).
+        VerticalAlign::EmBaseline => rect.y + rect.h * 0.5 + size_px * 0.5 - text_h,
+    };
+    (x, y)
+}
+
+/// Registered fallback (docs/ui-fallback-register.md): the compose-time overlap that
+/// stands in for the engine's line-box stacking of the caption-pair flex Column. The
+/// decompiled flex carries `rowSpacing = 0`, so the visible label→value handoff comes
+/// entirely from the engine's own line-box geometry (which lives in engine code, not
+/// DataCore). Calibrated to the in-game Clipper medical reference: MEDGELS→200/200
+/// top-to-top ≈ 28px. Design-space pixels (≈1:1 for full-screen canvases).
+const LABEL_CAPTION_PAIR_FLEX_ROW_SPACING: f32 = -8.0;
+
+fn stacked_label_caption_pair_text_rects(
+    rect: Rect,
+    primary_text_h: f32,
+    secondary_text_h: f32,
+    primary_anchor_y: Option<f32>,
+    right_anchored_pair: bool,
+) -> (Rect, Rect) {
+    let primary_h = primary_text_h.max(1.0).min(rect.h.max(1.0));
+    let secondary_h = secondary_text_h.max(1.0).min(rect.h.max(1.0));
+    let total_h = primary_h + secondary_h;
+    let max_top_padding = (rect.h - total_h).max(0.0);
+    let anchor_y = primary_anchor_y.unwrap_or(0.0).clamp(0.0, 0.999);
+    let derived_top_padding = if anchor_y > 0.0 {
+        ((anchor_y * (primary_h + secondary_h)) - (primary_h * 0.5)) / (1.0 - anchor_y)
+    } else {
+        0.0
+    };
+    let top_padding = if right_anchored_pair {
+        derived_top_padding.max(0.0)
+    } else {
+        derived_top_padding.clamp(0.0, max_top_padding)
+    };
+    let primary_y = rect.y + top_padding;
+    // Right-anchored metric stacks (e.g. MEDGELS/value) use two text bands
+    // with different font sizes; collapse their handoff by the measured line
+    // box delta so the visual gap follows typography instead of fixed pixels.
+    // The caption-pair component (`labelcaptionpaircomponentstandard.json`) stacks the
+    // label and caption in a flex Column whose `Root: FlexRowSpacing = -5` tightens the
+    // handoff; apply it so the value sits ~5px higher (verified vs the Clipper medical
+    // reference: MEDGELS→200/200 top-to-top 36px → ~29px). Registered fallback.
+    let line_box_overlap = (primary_h - secondary_h).max(0.0);
+    let secondary_y =
+        (primary_y + primary_h - line_box_overlap + LABEL_CAPTION_PAIR_FLEX_ROW_SPACING).max(rect.y);
+    (
+        Rect {
+            x: rect.x,
+            y: primary_y,
+            w: rect.w,
+            h: primary_h,
+        },
+        Rect {
+            x: rect.x,
+            y: secondary_y,
+            w: rect.w,
+            h: secondary_h,
+        },
+    )
+}
+
+fn right_anchored_label_caption_pair_offset(
+    node: &UiIrNode,
+    primary_text_h: f32,
+    secondary_text_h: Option<f32>,
+) -> (f32, f32) {
+    if !node
+        .node_type
+        .eq_ignore_ascii_case("BuildingBlocks_ComponentLabelCaptionPair")
+        || node.secondary_text_payload.is_none()
+        || node.anchor[0] < 0.99
+        || node.pivot[0] < 0.99
+    {
+        return (0.0, 0.0);
+    }
+
+    let primary_h = primary_text_h.max(0.0);
+    let secondary_h = secondary_text_h.unwrap_or(primary_h).max(0.0);
+    let line_box_delta = (primary_h - secondary_h).max(0.0);
+    let stroke_pair_span = node.stroke_extent.unwrap_or(0.0).max(0.0) * 2.0;
+    // EXPERIMENT: zero the vertical offset (keep horizontal). The Y offset pushed
+    // the right-anchored MEDGELS label down a stretched header band.
+    (-(line_box_delta + stroke_pair_span), 0.0)
+}
+
+fn font_telemetry_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        std::env::var("SB_UI_FONT_TELEMETRY")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes"))
+            .unwrap_or(false)
+    })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FontSelectionSource {
+    ResolvedRecordSymbol,
+    Title3ExportFallback,
+    PreferredExportFallback,
+    PreferredNameFallback,
+}
+
+impl FontSelectionSource {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::ResolvedRecordSymbol => "resolved-record-symbol",
+            Self::Title3ExportFallback => "title3-export-fallback",
+            Self::PreferredExportFallback => "preferred-export-fallback",
+            Self::PreferredNameFallback => "preferred-name-fallback",
+        }
+    }
+
+    fn is_fallback(self) -> bool {
+        !matches!(self, Self::ResolvedRecordSymbol)
+    }
+}
+
+struct SelectedImportedFont<'a> {
+    symbol: String,
+    font: &'a FontGlyphSet,
+    source: FontSelectionSource,
+}
+
+fn select_imported_ui_font<'a>(
+    ctx: &'a ComposeContext<'_>,
+    text_style: Option<&UiIrTextStyle>,
+) -> Option<SelectedImportedFont<'a>> {
+    if let Some(symbol) = font_symbol_from_text_style(text_style)
+        && let Some(id) = ctx.assets.lookup_export(symbol)
+        && let Some(font) = ctx.assets.get_font(id)
+    {
+        return Some(SelectedImportedFont {
+            symbol: symbol.to_string(),
+            font,
+            source: FontSelectionSource::ResolvedRecordSymbol,
+        });
+    }
+
+    let label_style = text_style.and_then(|style| style.label_style.as_deref());
+
+    if matches!(label_style, Some("Title3")) {
+        let mut text1_fonts: Vec<(String, &'a FontGlyphSet)> = ctx
+            .assets
+            .export_entries()
+            .filter(|(symbol, _)| symbol.starts_with("$Text1"))
+            .filter_map(|(symbol, id)| ctx.assets.get_font(id).map(|font| (symbol.to_string(), font)))
+            .collect();
+
+        text1_fonts.sort_by(|(left_name, left_font), (right_name, right_font)| {
+            title3_font_weight_rank(left_name, left_font)
+                .cmp(&title3_font_weight_rank(right_name, right_font))
+                .then_with(|| left_name.cmp(right_name))
+        });
+
+        if let Some((symbol, font)) = text1_fonts.into_iter().next() {
+            return Some(SelectedImportedFont {
+                symbol,
+                font,
+                source: FontSelectionSource::Title3ExportFallback,
+            });
+        }
+    }
+
+    let preferred_symbols: &[&str] = &["$Text1Book", "$Text1Med", "$OutfitRegular", "$Text1Bold", "$CIGDrake"];
+
+    for symbol in preferred_symbols {
+        if let Some(id) = ctx.assets.lookup_export(symbol)
+            && let Some(font) = ctx.assets.get_font(id)
+        {
+            return Some(SelectedImportedFont {
+                symbol: symbol.to_string(),
+                font,
+                source: FontSelectionSource::PreferredExportFallback,
+            });
+        }
+    }
+
+    let preferred_font_names: &[(&str, &str)] = match label_style {
+        Some("Title3") => &[
+            ("Blender Pro Light", "Blender Pro Light"),
+            ("Blender Pro Regular", "Blender Pro Regular"),
+            ("Blender Pro Thin", "Blender Pro Thin"),
+            ("Blender Pro Book", "Blender Pro Book"),
+            ("Blender Pro Medium", "Blender Pro Medium"),
+            ("CIG Drake Font", "CIGDrake"),
+        ],
+        _ => &[
+            ("Blender Pro Book", "Blender Pro Book"),
+            ("Blender Pro Medium", "Blender Pro Medium"),
+            ("Outfit", "Outfit"),
+            ("Open Sans", "Open Sans"),
+            ("CIG Drake Font", "CIGDrake"),
+        ],
+    };
+    for (query, label) in preferred_font_names {
+        if let Some(font) = ctx.assets.find_font_by_name(query) {
+            return Some(SelectedImportedFont {
+                symbol: label.to_string(),
+                font,
+                source: FontSelectionSource::PreferredNameFallback,
+            });
+        }
+    }
+    None
+}
+
+fn resolved_font_record_value(style: Option<&UiIrTextStyle>) -> Option<&serde_json::Value> {
+    let record = style?.resolved_font_record.as_ref()?;
+    Some(record.get("_RecordValue_").unwrap_or(record))
+}
+
+fn font_symbol_from_text_style(style: Option<&UiIrTextStyle>) -> Option<&str> {
+    resolved_font_record_value(style)
+        .and_then(|value| value.get("font"))
+        .and_then(|value| value.as_str())
+        .filter(|symbol| !symbol.is_empty())
+}
+
+/// Fit a SWF text size to its container rect using *real glyph metrics*.
+///
+/// The constraint the engine enforces is that the **visible glyph box** (cap /
+/// ascender-to-descender extent of the actual characters — not the full em line-box)
+/// fits the rect, in both axes:
+///   * height: the per-line glyph height must fit `rect.h / line_count`;
+///   * width: a single line's advance width must fit `rect.w` (wrapped paragraphs
+///     are width-bounded by the wrap, so width-fit is single-line only).
+///
+/// This is only invoked for `autoFontSize` nodes, so it always *fills* the rect — the
+/// size becomes the largest that still fits both axes. Because every metric is linear
+/// in the size, the result is independent of `requested_size`'s magnitude (it only
+/// seeds the measurement). Non-`autoFontSize` text is never passed here; it renders at
+/// its resolved style size and relies on word-wrap/clipping for overflow.
+fn fit_swf_font_size_to_rect(
+    renderer: &TextRenderer,
+    text: &str,
+    font: &FontGlyphSet,
+    rect: Rect,
+    requested_size: f32,
+    _align: TextAlign,
+    _vertical_align: VerticalAlign,
+    _line_spacing_px: Option<f32>,
+) -> f32 {
+    if text.trim().is_empty() || requested_size <= 1.0 || rect.w <= 1.0 || rect.h <= 1.0 {
+        return requested_size.max(1.0);
+    }
+
+    let line_count = text.lines().filter(|line| !line.trim().is_empty()).count().max(1);
+    let single_line = line_count <= 1;
+
+    // Height: the text's line-box (one font em = the rendered `size_px`) must fit
+    // `rect.h / line_count`. This is the engine's "a line of text fits the field"
+    // rule: the glyphs sit within their em-box, which the field bounds. Using the em
+    // (not just the cap extent) keeps short labels from ballooning until their width
+    // happens to bind, so sibling labels in equal-height cells size uniformly.
+    let line_box = swf_line_box_px(font, requested_size);
+    let per_line_limit = rect.h / line_count as f32;
+    let size_for_height = if line_box > 0.0 {
+        requested_size * per_line_limit / line_box
+    } else {
+        requested_size
+    };
+
+    // Width: largest size whose single-line advance fits rect.w. Multi-line text is
+    // already width-bounded by wrapping, so it imposes no extra width constraint — it
+    // only acts as a safety bound for an over-long single line.
+    let size_for_width = if single_line {
+        match renderer
+            .measure_swf_advance_width(text, font, requested_size, 0.0)
+            .filter(|value| *value > 0.0)
+        {
+            Some(advance) => requested_size * rect.w / advance,
+            None => f32::INFINITY,
+        }
+    } else {
+        f32::INFINITY
+    };
+
+    size_for_height.min(size_for_width).max(1.0)
+}
+
+/// The rendered line-box height (px) of one text line at `size_px`: the font's full
+/// em (`ascent + |descent|`) plus its leading, scaled to `size_px`. This is the
+/// vertical space one line of this font occupies — what an `autoFontSize` field sizes
+/// against so the line fits its rect.
+fn swf_line_box_px(font: &FontGlyphSet, size_px: f32) -> f32 {
+    let ascent = font.ascent.map(|value| value as f32).unwrap_or(820.0);
+    let descent = font.descent.map(|value| value as f32).unwrap_or(-204.0);
+    let leading = font.leading.map(|value| value as f32).unwrap_or(0.0);
+    let units_per_em = (ascent.abs() + descent.abs()).max(1.0);
+    ((units_per_em + leading) / units_per_em) * size_px
+}
+
+fn font_style_scale_modifier(style: Option<&UiIrTextStyle>) -> f32 {
+    resolved_font_record_value(style)
+        .and_then(|value| value.get("scaleModifier"))
+        .and_then(|value| value.as_f64())
+        .map(|value| value as f32)
+        .unwrap_or(1.0)
+}
+
+fn font_style_leading_modifier_px(style: Option<&UiIrTextStyle>) -> f32 {
+    let modifier = resolved_font_record_value(style)
+        .and_then(|value| value.get("leadingModifier"))
+        .and_then(|value| value.as_f64())
+        .map(|value| value as f32)
+        .unwrap_or(0.0);
+    let size_px = style.map(|style| ir_value_to_px(&style.font_size)).unwrap_or(0.0);
+    modifier * size_px
+}
+
+fn font_style_top_margin_offset_px(style: Option<&UiIrTextStyle>) -> f32 {
+    let modifier = resolved_font_record_value(style)
+        .and_then(|value| value.get("topMarginModifier"))
+        .and_then(|value| value.as_f64())
+        .map(|value| value as f32)
+        .unwrap_or(0.0);
+    let size_px = style.map(|style| ir_value_to_px(&style.font_size)).unwrap_or(0.0);
+    modifier * size_px
+}
+
+fn title3_font_weight_rank(symbol: &str, font: &FontGlyphSet) -> i32 {
+    let symbol_lower = symbol.to_ascii_lowercase();
+    let name_lower = font.name.to_ascii_lowercase();
+    let combined = format!("{} {}", symbol_lower, name_lower);
+    let name_rank = if combined.contains("thin") {
+        0
+    } else if combined.contains("light") {
+        1
+    } else if combined.contains("book") {
+        2
+    } else if combined.contains("regular") {
+        3
+    } else if combined.contains("med") || combined.contains("medium") {
+        4
+    } else if combined.contains("bold") {
+        6
+    } else {
+        5
+    };
+    name_rank + if font.is_bold { 10 } else { 0 }
+}
+
+fn resolved_text_payload(node: &UiIrNode) -> Option<&str> {
+    let payload = node.text_payload.as_ref()?;
+    match payload {
+        UiIrTextPayload::Resolved { text } => Some(text.as_str()),
+        UiIrTextPayload::Empty
+        | UiIrTextPayload::IntentionallyEmpty { .. }
+        | UiIrTextPayload::UnresolvedKey { .. } => None,
+    }
+}
+
+fn draw_ir_border(
+    pixmap: &mut Pixmap,
+    rect: Rect,
+    border: &UiIrBorder,
+    alpha: f32,
+    ctx: &ComposeContext<'_>,
+    corner_radius: Option<f32>,
+) {
+    if let Some(radius) = corner_radius.filter(|r| *r > 0.0)
+        && draw_rounded_uniform_border(pixmap, rect, border, radius, alpha, ctx)
+    {
+        return;
+    }
+
+    let top_colour = border_side_colour(&border.top, ctx);
+    draw_border_side(
+        pixmap,
+        Rect { x: rect.x, y: rect.y, w: rect.w, h: border.top.width },
+        top_colour,
+        alpha,
+    );
+
+    let right_colour = border_side_colour(&border.right, ctx);
+    draw_border_side(
+        pixmap,
+        Rect {
+            x: rect.x + rect.w - border.right.width,
+            y: rect.y,
+            w: border.right.width,
+            h: rect.h,
+        },
+        right_colour,
+        alpha,
+    );
+
+    let bottom_colour = border_side_colour(&border.bottom, ctx);
+    draw_border_side(
+        pixmap,
+        Rect {
+            x: rect.x,
+            y: rect.y + rect.h - border.bottom.width,
+            w: rect.w,
+            h: border.bottom.width,
+        },
+        bottom_colour,
+        alpha,
+    );
+
+    let left_colour = border_side_colour(&border.left, ctx);
+    draw_border_side(
+        pixmap,
+        Rect { x: rect.x, y: rect.y, w: border.left.width, h: rect.h },
+        left_colour,
+        alpha,
+    );
+}
+
+fn border_side_colour(side: &crate::ui_ir::UiIrBorderSide, ctx: &ComposeContext<'_>) -> Option<[f32; 4]> {
+    side.colour.or_else(|| {
+        side.colour_token
+            .as_deref()
+            .and_then(|token| resolve_surface_colour_token(ctx, token))
+    })
+}
+
+fn draw_border_side(pixmap: &mut Pixmap, rect: Rect, colour: Option<[f32; 4]>, alpha: f32) {
+    let Some(colour) = colour else {
+        return;
+    };
+    if rect.w <= 0.0 || rect.h <= 0.0 {
+        return;
+    }
+    let Some(tsk_rect) = TskRect::from_xywh(rect.x, rect.y, rect.w, rect.h) else {
+        return;
+    };
+    fill_rect_ts(pixmap, tsk_rect, colour, alpha);
+}
+
+fn draw_widget_circle(node: &UiIrNode, pixmap: &mut Pixmap, rect: TskRect) {
+    let stroke_colour = node.stroke_colour.or(node.background_fill_colour);
+    let Some(stroke_colour) = stroke_colour else {
+        return;
+    };
+
+    let cx = rect.x() + rect.width() * 0.5;
+    let cy = rect.y() + rect.height() * 0.5;
+    let radius = rect.width().min(rect.height()) * 0.5;
+    if radius <= 0.5 {
+        return;
+    }
+
+    let mut pb = PathBuilder::new();
+    pb.push_circle(cx, cy, radius - 0.5);
+    let Some(path) = pb.finish() else {
+        return;
+    };
+
+    let mut paint = Paint::default();
+    paint.set_color(to_skia_color(stroke_colour, node.alpha));
+    paint.anti_alias = true;
+
+    let mut stroke = Stroke::default();
+    stroke.width = node.stroke_extent.unwrap_or(1.5).max(0.5);
+    pixmap
+        .as_mut()
+        .stroke_path(&path, &paint, &stroke, Transform::identity(), None);
+}
+
+fn draw_widget_separator(
+    ctx: &ComposeContext<'_>,
+    pixmap: &mut Pixmap,
+    node: &UiIrNode,
+    rect: TskRect,
+    alpha: f32,
+) {
+    let draw_rect = widget_separator_draw_rect(rect, node.stroke_extent);
+    let colour = node
+        .stroke_colour
+        .or_else(|| {
+            node.stroke_colour_token
+                .as_deref()
+                .and_then(|token| resolve_surface_colour_token(ctx, token))
+        })
+        .or(node.background_fill_colour)
+        .or_else(|| {
+            node.background_fill_colour_token
+                .as_deref()
+                .and_then(|token| resolve_surface_colour_token(ctx, token))
+        });
+    let Some(colour) = colour else {
+        return;
+    };
+    fill_rect_ts_with_mode(pixmap, draw_rect, colour, alpha, node_colour_blend_mode(node));
+}
+
+fn node_colour_blend_mode(node: &UiIrNode) -> BlendMode {
+    match node.colour_blend_mode {
+        Some(UiIrColourBlendMode::Additive) => BlendMode::Plus,
+        Some(UiIrColourBlendMode::SourceOver) | None => BlendMode::SourceOver,
+    }
+}
+
+fn widget_separator_draw_rect(rect: TskRect, stroke_extent: Option<f32>) -> TskRect {
+    let Some(stroke_extent) = stroke_extent else {
+        return rect;
+    };
+    let thickness = (stroke_extent.max(0.5) * 2.0).min(rect.height()).max(1.0);
+    TskRect::from_xywh(
+        rect.x(),
+        rect.y() + (rect.height() - thickness) * 0.5,
+        rect.width(),
+        thickness,
+    )
+    .unwrap_or(rect)
+}
+
+fn draw_rect_stroke_ts(
+    pixmap: &mut Pixmap,
+    rect: TskRect,
+    rgba: [f32; 4],
+    width: f32,
+    alpha: f32,
+) {
+    let mut pb = PathBuilder::new();
+    pb.push_rect(rect);
+    let Some(path) = pb.finish() else {
+        return;
+    };
+
+    let mut paint = Paint::default();
+    paint.set_color(to_skia_color(rgba, alpha));
+    paint.anti_alias = false;
+
+    let mut stroke = Stroke::default();
+    stroke.width = width.max(0.5);
+    pixmap
+        .as_mut()
+        .stroke_path(&path, &paint, &stroke, Transform::identity(), None);
+}
+
+fn fill_rect_ts(pixmap: &mut Pixmap, rect: TskRect, rgba: [f32; 4], alpha: f32) {
+    fill_rect_ts_with_mode(pixmap, rect, rgba, alpha, BlendMode::SourceOver);
+}
+
+fn fill_rect_ts_with_mode(
+    pixmap: &mut Pixmap,
+    rect: TskRect,
+    rgba: [f32; 4],
+    alpha: f32,
+    blend_mode: BlendMode,
+) {
+    let mut paint = Paint::default();
+    paint.set_color(to_skia_color(rgba, alpha));
+    paint.blend_mode = blend_mode;
+    paint.anti_alias = false;
+    pixmap
+        .as_mut()
+        .fill_rect(rect, &paint, Transform::identity(), None);
+}
+
+fn blit_atlas_image_tinted(
+    pixmap: &mut Pixmap,
+    img: &RgbaImage,
+    dx: i32,
+    dy: i32,
+    tint: [f32; 4],
+    alpha: f32,
+) {
+    blit_atlas_image_tinted_with_mode(
+        pixmap,
+        img,
+        dx,
+        dy,
+        tint,
+        alpha,
+        BlendMode::SourceOver,
+    );
+}
+
+fn blit_atlas_image_tinted_with_mode(
+    pixmap: &mut Pixmap,
+    img: &RgbaImage,
+    dx: i32,
+    dy: i32,
+    tint: [f32; 4],
+    alpha: f32,
+    blend_mode: BlendMode,
+) {
+    let w = img.width();
+    let h = img.height();
+
+    let mut premul: Vec<u8> = Vec::with_capacity((w * h * 4) as usize);
+    for chunk in img.as_raw().chunks_exact(4) {
+        let r = chunk[0] as f32 / 255.0 * tint[0];
+        let g = chunk[1] as f32 / 255.0 * tint[1];
+        let b = chunk[2] as f32 / 255.0 * tint[2];
+        let a = chunk[3] as f32 / 255.0 * tint[3];
+        premul.push((r * a * 255.0).clamp(0.0, 255.0) as u8);
+        premul.push((g * a * 255.0).clamp(0.0, 255.0) as u8);
+        premul.push((b * a * 255.0).clamp(0.0, 255.0) as u8);
+        premul.push((a * 255.0).clamp(0.0, 255.0) as u8);
+    }
+
+    let Some(size) = tiny_skia::IntSize::from_wh(w, h) else {
+        return;
+    };
+    let Some(src_pixmap) = Pixmap::from_vec(premul, size) else {
+        return;
+    };
+
+    let mut paint = PixmapPaint::default();
+    paint.opacity = alpha.clamp(0.0, 1.0);
+    paint.blend_mode = blend_mode;
+    pixmap
+        .as_mut()
+        .draw_pixmap(dx, dy, src_pixmap.as_ref(), &paint, Transform::identity(), None);
+}
+
+fn pixmap_to_rgba_image(pixmap: Pixmap) -> Result<RgbaImage, UiError> {
+    let w = pixmap.width();
+    let h = pixmap.height();
+    let mut out = Vec::with_capacity((w * h * 4) as usize);
+    for chunk in pixmap.data().chunks_exact(4) {
+        let a = chunk[3] as f32 / 255.0;
+        if a <= 0.0 {
+            out.extend_from_slice(&[0, 0, 0, 0]);
+            continue;
+        }
+        out.push(((chunk[0] as f32 / a).clamp(0.0, 255.0)) as u8);
+        out.push(((chunk[1] as f32 / a).clamp(0.0, 255.0)) as u8);
+        out.push(((chunk[2] as f32 / a).clamp(0.0, 255.0)) as u8);
+        out.push(chunk[3]);
+    }
+    RgbaImage::from_raw(w, h, out)
+        .ok_or_else(|| UiError::RenderError("failed to build image from pixmap".into()))
+}
+
+fn to_skia_color(rgba: [f32; 4], global_alpha: f32) -> Color {
+    let a = (rgba[3] * global_alpha).clamp(0.0, 1.0);
+    Color::from_rgba8(
+        (rgba[0].clamp(0.0, 1.0) * 255.0) as u8,
+        (rgba[1].clamp(0.0, 1.0) * 255.0) as u8,
+        (rgba[2].clamp(0.0, 1.0) * 255.0) as u8,
+        (a * 255.0) as u8,
+    )
+}
+
+#[cfg(test)]
+fn style_primary_rgba(ctx: &ComposeContext<'_>) -> [f32; 4] {
+    let pt = &ctx.style.primary_tint;
+    [
+        pt.r as f32 / 255.0,
+        pt.g as f32 / 255.0,
+        pt.b as f32 / 255.0,
+        pt.a as f32 / 255.0,
+    ]
+}
+
+fn rgba_to_u8(rgba: [f32; 4]) -> [u8; 4] {
+    [
+        (rgba[0].clamp(0.0, 1.0) * 255.0).round() as u8,
+        (rgba[1].clamp(0.0, 1.0) * 255.0).round() as u8,
+        (rgba[2].clamp(0.0, 1.0) * 255.0).round() as u8,
+        (rgba[3].clamp(0.0, 1.0) * 255.0).round() as u8,
+    ]
+}
+
+fn ir_rect_to_layout_rect(rect: UiIrRect) -> Rect {
+    Rect {
+        x: rect.x,
+        y: rect.y,
+        w: rect.w,
+        h: rect.h,
+    }
+}
+
+fn ir_value_to_px(value: &UiIrValue) -> f32 {
+    match value {
+        UiIrValue::Fixed { value } | UiIrValue::Percent { value } | UiIrValue::Other { value, .. } => *value,
+    }
+}
