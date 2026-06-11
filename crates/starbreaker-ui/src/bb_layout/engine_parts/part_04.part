@@ -42,7 +42,6 @@ fn layout_flex_no_grow_children(
     let mut sizes: Vec<(BbNodeId, f32, f32, bool)> = Vec::with_capacity(children.len());
     let mut right_aligned_flow_items = 0usize;
     let mut total_main = 0.0f32;
-    let all_flow_children_auto_main = flow_children_all_auto_main(children, scene, is_row);
     for &child_id in children {
         let Some(node) = scene.nodes.get(&child_id) else { continue };
         if !node.is_active {
@@ -277,15 +276,16 @@ fn layout_flex_no_grow_children(
                     auto_main = false;
                 }
             } else if is_row
-                && all_flow_children_auto_main
                 && let Some(intrinsic) =
                     auto_text_intrinsic_main(child_id, scene, csx, true)
             {
-                // Text-backed Auto children in an all-Auto ROW flow at their
-                // measured intrinsic width (the OUTPUT card's "2" + "/ 16"
-                // value pair, which the zero rule collapses onto one spot).
-                // Column flows keep the downstream auto_main placement the
-                // medical baselines pin.
+                // Text-backed Auto children in a ROW flow at their measured
+                // intrinsic width — both all-Auto value pairs (the OUTPUT
+                // card's "2" + "/ 16", which the zero rule collapses onto one
+                // spot) and mixed rows (the battery header's icon + separator
+                // + Auto BATTERY title, which the fill placement paints over
+                // the icon). Column flows keep the downstream auto_main
+                // placement the medical baselines pin.
                 w = intrinsic;
                 auto_main = false;
             } else if is_row {

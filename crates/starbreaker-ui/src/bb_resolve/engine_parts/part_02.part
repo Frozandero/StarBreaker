@@ -372,4 +372,9 @@ fn apply_canvas_style_cascade(
         };
         crate::bb_brand_apply::apply_brand_modifiers(scene, &brand, loc_fetcher);
     }
+    // Node-authored `inlineStyles` are the final cascade stage. Every entry
+    // pass above already re-applies them last, but a canvas with no brand /
+    // shared / embedded entries would otherwise never run a pass at all —
+    // an empty-entry pass guarantees they apply.
+    crate::bb_brand_apply::apply_scene_style_entries(scene, &[], shared_fills, loc_fetcher);
 }

@@ -61,26 +61,6 @@ fn auto_text_intrinsic_main(
     best
 }
 
-/// Intrinsic TEXT measurement applies only when the zero-size Auto rule
-/// would collapse the WHOLE flow (every active flow child is Auto on the
-/// main axis — the OUTPUT card's "2" + "/ 16" value pair). Mixed flows
-/// keep the long-verified zero rule.
-fn flow_children_all_auto_main(children: &[BbNodeId], scene: &BbScene, is_row: bool) -> bool {
-    let mut any = false;
-    let all = children.iter().all(|child_id| {
-        let Some(node) = scene.nodes.get(child_id) else { return true };
-        if !node.is_active
-            || node.raw.get("affectsLayout").and_then(|v| v.as_bool()) == Some(false)
-        {
-            return true;
-        }
-        any = true;
-        let main = if is_row { &node.sizing.width } else { &node.sizing.height };
-        matches!(main, BbValue::Other { behavior, .. } if behavior == "Auto")
-    });
-    any && all
-}
-
 /// Standard flex SHRINK: overflowing no-grow children scale down
 /// proportionally to fit (CSS flex-shrink; the battery card's column authors
 /// 0.9 + 0.5 Auto fractions overflowing a 227px container). Exemptions where
@@ -221,6 +201,70 @@ mod auto_text_flex_tests {
         let group_right = total.x + total.w;
         let centre_offset = ((group_left + group_right) / 2.0 - 200.0).abs();
         assert!(centre_offset < 1.0, "group centred, offset {centre_offset}");
+    }
+
+    /// A text-backed Auto child in a MIXED row (the battery card's header:
+    /// fixed icon + fixed separator + Auto title card) flows after its
+    /// siblings at measured width instead of filling the container from the
+    /// origin (which paints BATTERY over the icon).
+    #[test]
+    fn mixed_row_auto_text_child_flows_after_siblings() {
+        let canvas = serde_json::json!({
+            "_RecordValue_": {
+                "_Type_": "BuildingBlocks_Canvas",
+                "size": {"x": 339.0, "y": 114.0},
+                "coordinateMethod": "useRaw",
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "header", "isActive": true,
+                     "layoutPolicy": {"_Type_": "BuildingBlocks_FlexContainer",
+                                      "direction": "Row", "axisJustification": "Start",
+                                      "columnSpacing": 5.0},
+                     "sizing": {"width": {"value": 1.0, "behavior": "Percent"},
+                                "height": {"value": 1.0, "behavior": "Percent"}}},
+                    {"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_WidgetCard",
+                     "name": "icon_card", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "sizing": {"width": {"value": 80.0, "behavior": "Fixed"},
+                                "height": {"value": 80.0, "behavior": "Fixed"}}},
+                    {"_Pointer_": "ptr:3", "_Type_": "BuildingBlocks_WidgetCard",
+                     "name": "separator_card", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "sizing": {"width": {"value": 34.0, "behavior": "Fixed"},
+                                "height": {"value": 68.0, "behavior": "Fixed"}}},
+                    {"_Pointer_": "ptr:4", "_Type_": "BuildingBlocks_WidgetCard",
+                     "name": "title_card", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "sizing": {"width": {"value": 32.0, "behavior": "Auto"},
+                                "height": {"value": 32.0, "behavior": "Auto"}}},
+                    {"_Pointer_": "ptr:5", "_Type_": "BuildingBlocks_WidgetTextField",
+                     "name": "title_text", "parent": "_PointsTo_:ptr:4", "isActive": true,
+                     "_ResolvedText_": "BATTERY",
+                     "text": "BATTERY",
+                     "fontSize": {"value": 20.0, "behavior": "Fixed"},
+                     "sizing": {"width": {"value": 1.0, "behavior": "Percent"},
+                                "height": {"value": 1.0, "behavior": "Percent"}}}
+                ],
+                "operations": []
+            }
+        });
+        let scene = parse_bb_canvas(&canvas).expect("fixture parses");
+        let result = layout(&scene, 339, 114);
+        let icon = result.rects[&2];
+        let sep = result.rects[&3];
+        let title = result.rects[&4];
+        assert!(
+            (sep.x - (icon.x + icon.w + 5.0)).abs() < 0.6,
+            "separator flows after the icon"
+        );
+        assert!(
+            (title.x - (sep.x + sep.w + 5.0)).abs() < 0.6,
+            "title flows after the separator, got title.x {} vs sep end {}",
+            title.x,
+            sep.x + sep.w
+        );
+        assert!(
+            title.w > 5.0 && title.w < 339.0,
+            "title takes its measured width, got {}",
+            title.w
+        );
     }
 }
 

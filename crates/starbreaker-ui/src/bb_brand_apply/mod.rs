@@ -31,6 +31,8 @@ mod tests_colors;
 #[cfg(test)]
 mod tests_conditions;
 #[cfg(test)]
+mod tests_inline_styles;
+#[cfg(test)]
 mod tests_conditions_ancestor;
 #[cfg(test)]
 mod tests_modifiers;
@@ -136,7 +138,7 @@ fn apply_style_entries(
     let style_probe = std::env::var("BB_A3_STYLE_PROBE").as_deref() == Ok("1");
     let node_ids: Vec<_> = scene.nodes.keys().copied().collect();
     for node_id in node_ids {
-        let matching_entries: Vec<&serde_json::Value> = {
+        let (matching_entries, inline_entries): (Vec<&serde_json::Value>, Vec<serde_json::Value>) = {
             let Some(node) = scene.nodes.get(&node_id) else {
                 continue;
             };
@@ -163,7 +165,19 @@ fn apply_style_entries(
                     matched_names
                 );
             }
-            matches
+            let inline: Vec<serde_json::Value> = node
+                .raw
+                .get("inlineStyles")
+                .and_then(|v| v.as_array())
+                .map(|entries| {
+                    entries
+                        .iter()
+                        .filter(|entry| entry_matches_scene(entry, node_id, node, scene))
+                        .cloned()
+                        .collect()
+                })
+                .unwrap_or_default();
+            (matches, inline)
         };
 
         let Some(node) = scene.nodes.get_mut(&node_id) else {
@@ -182,6 +196,28 @@ fn apply_style_entries(
         for entry in &matching_entries {
             apply_entry_modifiers(entry, node, palettes, loc_fetcher);
             record_applied_style_entry(node, entry);
+        }
+        // The node's own authored `inlineStyles` are the FINAL cascade stage
+        // (highest specificity, above brand/default entries; the power
+        // screen's `text_BatteryTitle` / `text_OutputTitle` author an inline
+        // `FontSize 30` that overrides their brand-standard size). Applied at
+        // the end of every entry pass so a later pass cannot bury them. An
+        // inline `FontSize` is additionally marked so font resolution prefers
+        // it over the brand-table standard.
+        for entry in &inline_entries {
+            let sets_font_size = entry
+                .get("modifiers")
+                .and_then(|v| v.as_array())
+                .is_some_and(|mods| {
+                    mods.iter()
+                        .any(|m| m.get("field").and_then(|f| f.as_str()) == Some("FontSize"))
+                });
+            apply_entry_modifiers(entry, node, palettes, loc_fetcher);
+            if sets_font_size
+                && let Some(obj) = node.raw.as_object_mut()
+            {
+                obj.insert("__InlineFontSize".to_string(), serde_json::Value::Bool(true));
+            }
         }
     }
 }

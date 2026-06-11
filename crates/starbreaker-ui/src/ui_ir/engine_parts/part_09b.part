@@ -1,3 +1,45 @@
+/// Read a node's raw `fontSize`/`FontSize` (authored field, applied style
+/// modifier, or `modifiers` passthrough) as a UI IR value.
+fn font_size_from_raw(node: &crate::bb_scene::BbNode) -> Option<UiIrValue> {
+    let value = node
+        .raw
+        .get("fontSize")
+        .or_else(|| node.raw.get("FontSize"))
+        .or_else(|| {
+            node.raw
+                .get("modifiers")
+                .and_then(|mods| mods.get("fontSize").or_else(|| mods.get("FontSize")))
+        })?;
+
+    if let Some(number) = value.as_f64() {
+        return Some(UiIrValue::Fixed {
+            value: number as f32,
+        });
+    }
+
+    let obj = value.as_object()?;
+    let raw_value = obj.get("value").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
+    let behavior = obj
+        .get("behavior")
+        .and_then(|b| b.as_str())
+        .unwrap_or("Fixed");
+    Some(match behavior {
+        "Fixed" => UiIrValue::Fixed { value: raw_value },
+        "Percent" => UiIrValue::Percent { value: raw_value },
+        other => UiIrValue::Other {
+            value: raw_value,
+            behavior: other.to_owned(),
+        },
+    })
+}
+
+fn font_size_fixed_value_from_raw(node: &crate::bb_scene::BbNode) -> Option<f32> {
+    match font_size_from_raw(node)? {
+        UiIrValue::Fixed { value } => Some(value),
+        _ => None,
+    }
+}
+
 fn classify_text_payload(
     resolved_text: Option<&str>,
     raw: &serde_json::Value,

@@ -46,7 +46,10 @@ def load(path):
         cells = [c for c in line.rstrip("\n").split("\t") if c != "FONTDUMP"]
         if len(cells) < 7:
             continue
-        canvas, node, _font, _size, visible, _em, text = cells[:7]
+        # Head fields are positional; text is always LAST (the dump gained a
+        # width_px column after the baseline was captured — both layouts parse).
+        canvas, node, _font, _size, visible, _em = cells[:6]
+        text = cells[-1]
         canvas = canvas.replace("BuildingBlocks_Canvas.", "")
         if canvas not in TARGETS:
             continue

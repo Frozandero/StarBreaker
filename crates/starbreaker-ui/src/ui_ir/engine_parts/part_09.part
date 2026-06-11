@@ -96,6 +96,17 @@ fn resolve_effective_font_size(
         }
     }
 
+    // A node-authored inline style FontSize (applied by bb_brand_apply as the
+    // FINAL cascade stage, marked `__InlineFontSize`) outranks the brand-table
+    // standard — the power card titles author an inline FontSize 30 over the
+    // drak heading standard. Inline sizes are style-system em design sizes,
+    // used verbatim like the brand table's.
+    if node.raw.get("__InlineFontSize").and_then(|v| v.as_bool()) == Some(true)
+        && let Some(raw_font_size) = font_size_from_raw(node)
+    {
+        return (scale_design_font_value(raw_font_size, design_text_scale), true);
+    }
+
     // Engine-faithful default: a styled textfield renders at its named style's
     // authored brand-table FontSize. The BuildingBlocks style FontSize modifier is
     // applied *after* the widget's default `fontSize`, so it overrides the node's raw
@@ -433,46 +444,6 @@ fn line_spacing_from_raw(node: &crate::bb_scene::BbNode) -> Option<f32> {
         .and_then(|value| value.as_f64())
         .map(|value| value as f32)
         .filter(|value| value.is_finite())
-}
-
-fn font_size_from_raw(node: &crate::bb_scene::BbNode) -> Option<UiIrValue> {
-    let value = node
-        .raw
-        .get("fontSize")
-        .or_else(|| node.raw.get("FontSize"))
-        .or_else(|| {
-            node.raw
-                .get("modifiers")
-                .and_then(|mods| mods.get("fontSize").or_else(|| mods.get("FontSize")))
-        })?;
-
-    if let Some(number) = value.as_f64() {
-        return Some(UiIrValue::Fixed {
-            value: number as f32,
-        });
-    }
-
-    let obj = value.as_object()?;
-    let raw_value = obj.get("value").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
-    let behavior = obj
-        .get("behavior")
-        .and_then(|b| b.as_str())
-        .unwrap_or("Fixed");
-    Some(match behavior {
-        "Fixed" => UiIrValue::Fixed { value: raw_value },
-        "Percent" => UiIrValue::Percent { value: raw_value },
-        other => UiIrValue::Other {
-            value: raw_value,
-            behavior: other.to_owned(),
-        },
-    })
-}
-
-fn font_size_fixed_value_from_raw(node: &crate::bb_scene::BbNode) -> Option<f32> {
-    match font_size_from_raw(node)? {
-        UiIrValue::Fixed { value } => Some(value),
-        _ => None,
-    }
 }
 
 fn label_style_name_from_raw(node: &crate::bb_scene::BbNode) -> Option<String> {
