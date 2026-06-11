@@ -1,0 +1,2055 @@
+// Consolidated engine chunk 03 (formerly: part_11.part, part_12.part, part_13.part).
+
+#[cfg(test)]
+mod tests {
+    #![allow(unused_imports, dead_code)]
+
+    use super::*;
+
+    struct TestCanvasFetcher {
+        by_guid: std::collections::HashMap<String, serde_json::Value>,
+        by_path: std::collections::HashMap<String, serde_json::Value>,
+    }
+
+    impl CanvasFetcher for TestCanvasFetcher {
+        fn fetch_canvas_json(&self, guid: &str) -> Result<serde_json::Value, crate::UiError> {
+            self.by_guid
+                .get(guid)
+                .cloned()
+                .ok_or_else(|| crate::UiError::RenderError(format!("missing guid: {guid}")))
+        }
+
+        fn fetch_canvas_by_name(
+            &self,
+            record_name: &str,
+        ) -> Result<serde_json::Value, crate::UiError> {
+            self.by_guid
+                .values()
+                .chain(self.by_path.values())
+                .find(|value| {
+                    value
+                        .get("_RecordName_")
+                        .and_then(|v| v.as_str())
+                        .is_some_and(|name| name == record_name)
+                })
+                .cloned()
+                .ok_or_else(|| crate::UiError::RenderError(format!("missing name: {record_name}")))
+        }
+
+        fn fetch_canvas_by_path(&self, path: &str) -> Result<serde_json::Value, crate::UiError> {
+            self.by_path
+                .get(path)
+                .cloned()
+                .ok_or_else(|| crate::UiError::RenderError(format!("missing path: {path}")))
+        }
+    }
+
+    fn defaults() -> crate::defaults::DefaultValueRegistry {
+        crate::defaults::DefaultValueRegistry::with_well_known_path_defaults()
+    }
+
+    #[test]
+    fn resolve_style_tag_record_uses_matched_tag_instead_of_full_database() {
+        let tag_db_path = "libs/foundry/records/tagdatabase/tagdatabase.tagdatabase.json";
+        let fetcher = TestCanvasFetcher {
+            by_guid: std::collections::HashMap::new(),
+            by_path: std::collections::HashMap::from([(tag_db_path.to_string(), serde_json::json!({
+                "_RecordId_": "66ee5bfc-d90b-41bd-ad2e-e0a2b3efe359",
+                "_RecordName_": "TagDatabase.TagDatabase",
+                "_RecordValue_": {
+                    "_Type_": "TagDatabase",
+                    "tags": [
+                        {
+                            "_RecordId_": "parent-tag",
+                            "tagName": "Parent",
+                            "children": [
+                                {
+                                    "_RecordId_": "target-tag",
+                                    "tagName": "Target",
+                                    "children": [
+                                        {
+                                            "_RecordId_": "descendant-tag",
+                                            "tagName": "Descendant"
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }))]),
+        };
+
+        let tag_reference = serde_json::json!({
+            "_RecordId_": "target-tag",
+            "_RecordName_": "Tag.target-tag",
+            "_RecordPath_": tag_db_path,
+        });
+
+        let resolved = resolve_style_tag_record(
+            Some(&fetcher),
+            &tag_reference,
+            tag_db_path,
+            "Tag.target-tag",
+            "target-tag",
+        )
+        .expect("tag should resolve");
+
+        assert_eq!(resolved.get("_Type_").and_then(|v| v.as_str()), Some("Tag"));
+        assert_eq!(resolved.get("_RecordId_").and_then(|v| v.as_str()), Some("target-tag"));
+
+        let record_value = resolved.get("_RecordValue_").expect("record value");
+        assert_eq!(record_value.get("_RecordId_").and_then(|v| v.as_str()), Some("target-tag"));
+        assert_eq!(record_value.get("tagName").and_then(|v| v.as_str()), Some("Target"));
+        assert!(record_value.get("tags").is_none(), "full tag database leaked into record");
+        assert!(record_value.get("children").is_none(), "descendant tags leaked into record");
+    }
+
+    #[test]
+    fn compile_ir_style_tags_are_compact() {
+        let tag_db_path = "libs/foundry/records/tagdatabase/tagdatabase.tagdatabase.json";
+        let fetcher = TestCanvasFetcher {
+            by_guid: std::collections::HashMap::new(),
+            by_path: std::collections::HashMap::from([(tag_db_path.to_string(), serde_json::json!({
+                "_RecordId_": "66ee5bfc-d90b-41bd-ad2e-e0a2b3efe359",
+                "_RecordName_": "TagDatabase.TagDatabase",
+                "_RecordValue_": {
+                    "_Type_": "TagDatabase",
+                    "tags": [
+                        {
+                            "_RecordId_": "target-tag",
+                            "tagName": "Target"
+                        }
+                    ]
+                }
+            }))]),
+        };
+
+        let canvas = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.TestTags",
+            "_RecordValue_": {
+                "size": {"x": 100, "y": 100},
+                "scene": [
+                    {
+                        "_Pointer_": "ptr:1",
+                        "_Type_": "BuildingBlocks_WidgetCanvas",
+                        "name": "root",
+                        "isActive": true,
+                        "size": {
+                            "width": {"behavior": "Fixed", "value": 100.0},
+                            "height": {"behavior": "Fixed", "value": 100.0}
+                        },
+                        "styleTags": [
+                            {
+                                "_RecordId_": "target-tag",
+                                "_RecordName_": "Tag.target-tag",
+                                "_RecordPath_": tag_db_path
+                            }
+                        ]
+                    }
+                ],
+                "operations": []
+            }
+        });
+
+        let mut scene = crate::bb_scene::parse_bb_canvas(&canvas).expect("scene parse");
+        let target = scene.nodes.values_mut().next().expect("target node");
+        target.raw["FontSize"] = serde_json::Value::from(40.0);
+        target.raw["__AppliedStyleEntries"] = serde_json::json!([
+            {
+                "name": "ParentTitleSize",
+                "conditionsList": [
+                    {
+                        "conditions": [
+                            {
+                                "_Type_": "BuildingBlocks_StyleSelectorConditionParent",
+                                "conditions": [
+                                    {"_Type_": "BuildingBlocks_StyleSelectorConditionTag"}
+                                ]
+                            }
+                        ]
+                    }
+                ],
+                "modifiers": [
+                    {"_Type_": "BuildingBlocks_FieldModifierNumber", "field": "FontSize", "value": 40.0}
+                ]
+            }
+        ]);
+        let ir = compile_ui_ir_from_scene(
+            &scene,
+            Some(&fetcher),
+            "guid-tags",
+            Some("BuildingBlocks_Canvas.TestTags"),
+            (100, 100),
+            &defaults(),
+            None,
+            None,
+            &[],
+            Vec::new(),
+            Vec::new(),
+            100,
+        );
+
+        let actual = serde_json::to_value(ir).expect("serialize ir");
+        let style_tag = actual
+            .get("nodes")
+            .and_then(|v| v.as_array())
+            .and_then(|nodes| nodes.first())
+            .and_then(|node| node.get("resolved_style_tags"))
+            .and_then(|v| v.as_array())
+            .and_then(|tags| tags.first())
+            .and_then(|v| v.as_object())
+            .expect("resolved style tag object");
+
+        assert_eq!(style_tag.get("uuid").and_then(|v| v.as_str()), Some("target-tag"));
+        assert_eq!(style_tag.get("tag_name").and_then(|v| v.as_str()), Some("Target"));
+        assert_eq!(style_tag.len(), 2, "resolved style tags should serialize only essential fields");
+    }
+
+    #[test]
+    fn collect_node_asset_refs_includes_brand_applied_paths() {
+        let canvas = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.TestAssets",
+            "_RecordValue_": {
+                "size": {"x": 100, "y": 100},
+                "scene": [
+                    {
+                        "_Pointer_": "ptr:1",
+                        "_Type_": "BuildingBlocks_WidgetImage",
+                        "name": "asset_node",
+                        "isActive": true,
+                        "size": {
+                            "width": {"behavior": "Fixed", "value": 100.0},
+                            "height": {"behavior": "Fixed", "value": 100.0}
+                        }
+                    }
+                ],
+                "operations": []
+            }
+        });
+
+        let mut scene = crate::bb_scene::parse_bb_canvas(&canvas).expect("scene parse");
+        let node = scene.nodes.values_mut().next().expect("node");
+        node.raw
+            .as_object_mut()
+            .expect("raw object")
+            .insert(
+                "ImagePath".to_string(),
+                serde_json::Value::String(
+                    "UI/Textures/I_InteractiveScreens/Med/i_med_bioc_bottom-bar.tif".to_string(),
+                ),
+            );
+        node.raw
+            .as_object_mut()
+            .expect("raw object")
+            .insert(
+                "SvgPath".to_string(),
+                serde_json::Value::String(
+                    "UI/Textures/Vector/General/BrandLogos/logo_bioticorp_a.svg".to_string(),
+                ),
+            );
+
+        let asset_refs = collect_node_asset_refs(node);
+        assert_eq!(
+            asset_refs,
+            vec![
+                "UI/Textures/I_InteractiveScreens/Med/i_med_bioc_bottom-bar.tif".to_string(),
+                "UI/Textures/Vector/General/BrandLogos/logo_bioticorp_a.svg".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn compile_ir_emits_semantic_colour_tokens() {
+        let canvas = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.TestColours",
+            "_RecordValue_": {
+                "size": {"x": 100, "y": 100},
+                "scene": [
+                    {
+                        "_Pointer_": "ptr:1",
+                        "_Type_": "BuildingBlocks_WidgetTextField",
+                        "name": "label",
+                        "isActive": true,
+                        "text": "HELLO",
+                        "textColor": {
+                            "_Type_": "BuildingBlocks_ColorStyle",
+                            "color": "Bright",
+                            "alpha": 1.0
+                        },
+                        "background": {
+                            "enable": true,
+                            "color": {
+                                "_Type_": "BuildingBlocks_ColorStyle",
+                                "color": "Accent2",
+                                "alpha": 1.0
+                            }
+                        },
+                        "size": {
+                            "width": {"behavior": "Fixed", "value": 80.0},
+                            "height": {"behavior": "Fixed", "value": 20.0}
+                        }
+                    },
+                    {
+                        "_Pointer_": "ptr:2",
+                        "_Type_": "BuildingBlocks_WidgetIcon",
+                        "name": "icon",
+                        "isActive": true,
+                        "iconProperties": {
+                            "customIcon": "UI/Textures/icon.svg",
+                            "color": {
+                                "_Type_": "BuildingBlocks_ColorStyle",
+                                "color": "Accent3",
+                                "alpha": 1.0
+                            }
+                        },
+                        "size": {
+                            "width": {"behavior": "Fixed", "value": 20.0},
+                            "height": {"behavior": "Fixed", "value": 20.0}
+                        }
+                    },
+                    {
+                        "_Pointer_": "ptr:3",
+                        "_Type_": "BuildingBlocks_WidgetCustomShape",
+                        "name": "shape",
+                        "isActive": true,
+                        "renderShape": true,
+                        "svgPath": "UI/Textures/Vector/General/FingerPrint.svg",
+                        "FillColor": {"r": 0.25, "g": 0.5, "b": 0.75, "a": 1.0},
+                        "size": {
+                            "width": {"behavior": "Fixed", "value": 20.0},
+                            "height": {"behavior": "Fixed", "value": 20.0}
+                        }
+                    }
+                ],
+                "operations": []
+            }
+        });
+
+        let scene = crate::bb_scene::parse_bb_canvas(&canvas).expect("scene parse");
+        let ir = compile_ui_ir_from_scene(
+            &scene,
+            None,
+            "guid-colours",
+            Some("BuildingBlocks_Canvas.TestColours"),
+            (100, 100),
+            &defaults(),
+            None,
+            None,
+            &[],
+            Vec::new(),
+            Vec::new(),
+            100,
+        );
+
+        let label = ir.nodes.iter().find(|node| node.name == "label").expect("label node");
+        assert_eq!(label.background_fill_colour, None);
+        assert_eq!(label.background_fill_colour_token.as_deref(), Some("Accent2"));
+        assert_eq!(
+            label.text_style.as_ref().and_then(|style| style.colour_token.as_deref()),
+            Some("Bright")
+        );
+
+        let icon = ir.nodes.iter().find(|node| node.name == "icon").expect("icon node");
+        assert_eq!(icon.icon_tint_colour, None);
+        assert_eq!(icon.icon_tint_colour_token.as_deref(), Some("Accent3"));
+
+        let shape = ir.nodes.iter().find(|node| node.name == "shape").expect("shape node");
+        assert_eq!(shape.icon_tint_colour, Some([0.25, 0.5, 0.75, 1.0]));
+    }
+
+    #[test]
+    fn compile_ir_maps_primary_text_colour_tag_to_base_token() {
+        let tag_db_path = "file://tagdatabase.tagdatabase.json";
+        let primary_tag_id = "primary-tag-id";
+        let canvas = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.TestPrimaryTextColourTag",
+            "_RecordValue_": {
+                "size": {"x": 100, "y": 100},
+                "scene": [
+                    {
+                        "_Pointer_": "ptr:1",
+                        "_Type_": "BuildingBlocks_WidgetTextField",
+                        "name": "primary_title",
+                        "isActive": true,
+                        "text": "DIGITAL MEDICAL ASSISTANT",
+                        "labelProperties": {
+                            "style": "Title3"
+                        },
+                        "styleTags": [
+                            {
+                                "_RecordPath_": tag_db_path,
+                                "_RecordName_": "Tag.primary-tag-id",
+                                "_RecordId_": primary_tag_id
+                            }
+                        ],
+                        "size": {
+                            "width": {"behavior": "Fixed", "value": 80.0},
+                            "height": {"behavior": "Fixed", "value": 20.0}
+                        }
+                    },
+                    {
+                        "_Pointer_": "ptr:2",
+                        "_Type_": "BuildingBlocks_WidgetTextField",
+                        "name": "primary_heading",
+                        "isActive": true,
+                        "text": "VIEW CURRENT STATUS",
+                        "labelProperties": {
+                            "style": "Heading6"
+                        },
+                        "styleTags": [
+                            {
+                                "_RecordPath_": tag_db_path,
+                                "_RecordName_": "Tag.primary-tag-id",
+                                "_RecordId_": primary_tag_id
+                            }
+                        ],
+                        "size": {
+                            "width": {"behavior": "Fixed", "value": 80.0},
+                            "height": {"behavior": "Fixed", "value": 20.0}
+                        }
+                    }
+                ],
+                "operations": []
+            }
+        });
+        let tag_db = serde_json::json!({
+            "_RecordName_": "TagDatabase",
+            "_RecordValue_": {
+                "tags": [
+                    {
+                        "_RecordId_": primary_tag_id,
+                        "_RecordName_": "Tag.primary-tag-id",
+                        "_Type_": "Tag",
+                        "tagName": "Primary",
+                        "children": []
+                    }
+                ]
+            }
+        });
+        let fetcher = TestCanvasFetcher {
+            by_guid: std::collections::HashMap::new(),
+            by_path: [(tag_db_path.to_string(), tag_db)].into_iter().collect(),
+        };
+
+        let scene = crate::bb_scene::parse_bb_canvas(&canvas).expect("scene parse");
+        let ir = compile_ui_ir_from_scene(
+            &scene,
+            Some(&fetcher),
+            "guid-primary-text-colour-tag",
+            Some("BuildingBlocks_Canvas.TestPrimaryTextColourTag"),
+            (100, 100),
+            &defaults(),
+            None,
+            None,
+            &[],
+            Vec::new(),
+            Vec::new(),
+            100,
+        );
+
+        // A Title-style node carrying the colourless `Primary` state tag takes the
+        // brand title FillColor (BiotiCorp s_bioc = Base light-blue), matching the
+        // in-game Clipper Medical2 "DIGITAL MEDICAL ASSISTANT" title. The `Primary`
+        // tag is a state marker, not a `Bright` (grey) colour override.
+        let node = ir.nodes.iter().find(|node| node.name == "primary_title").expect("primary title node");
+        assert_eq!(
+            node.text_style.as_ref().and_then(|style| style.colour_token.as_deref()),
+            Some("Base")
+        );
+        assert_eq!(node.resolved_style_tags.first().and_then(|tag| tag.tag_name.as_deref()), Some("Primary"));
+
+        let heading = ir.nodes.iter().find(|node| node.name == "primary_heading").expect("primary heading node");
+        assert_eq!(
+            heading.text_style.as_ref().and_then(|style| style.colour_token.as_deref()),
+            None
+        );
+        assert_eq!(heading.resolved_style_tags.first().and_then(|tag| tag.tag_name.as_deref()), Some("Primary"));
+    }
+
+    #[test]
+    fn compile_ir_maps_untagged_heading1_text_to_base_token() {
+        let canvas = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.TestHeadingBase",
+            "_RecordValue_": {
+                "size": {"x": 100, "y": 100},
+                "scene": [
+                    {
+                        "_Pointer_": "ptr:1",
+                        "_Type_": "BuildingBlocks_WidgetTextField",
+                        "name": "untagged_heading",
+                        "isActive": true,
+                        "text": "VIEW CURRENT STATUS",
+                        "labelProperties": {
+                            "style": "Heading1"
+                        },
+                        "size": {
+                            "width": {"behavior": "Fixed", "value": 80.0},
+                            "height": {"behavior": "Fixed", "value": 20.0}
+                        }
+                    }
+                ],
+                "operations": []
+            }
+        });
+
+        let scene = crate::bb_scene::parse_bb_canvas(&canvas).expect("scene parse");
+        let ir = compile_ui_ir_from_scene(
+            &scene,
+            None,
+            "guid-heading-base",
+            Some("BuildingBlocks_Canvas.TestHeadingBase"),
+            (100, 100),
+            &defaults(),
+            None,
+            None,
+            &[],
+            Vec::new(),
+            Vec::new(),
+            100,
+        );
+
+        let heading = ir.nodes.iter().find(|node| node.name == "untagged_heading").expect("heading node");
+        assert_eq!(
+            heading.text_style.as_ref().and_then(|style| style.colour_token.as_deref()),
+            Some("Base")
+        );
+    }
+
+    #[test]
+    fn compile_ir_maps_ui_generic_flag_03_to_foreground_token() {
+        let tag_db_path = "file://tagdatabase.tagdatabase.json";
+        let emphasis_tag_id = "emphasis-tag-id";
+        let canvas = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.TestEmphasisTextColourTag",
+            "_RecordValue_": {
+                "size": {"x": 100, "y": 100},
+                "scene": [
+                    {
+                        "_Pointer_": "ptr:1",
+                        "_Type_": "BuildingBlocks_WidgetTextField",
+                        "name": "emphasis_heading",
+                        "isActive": true,
+                        "text": "MODE",
+                        "labelProperties": {
+                            "style": "Heading6"
+                        },
+                        "styleTags": [
+                            {
+                                "_RecordPath_": tag_db_path,
+                                "_RecordName_": "Tag.emphasis-tag-id",
+                                "_RecordId_": emphasis_tag_id
+                            }
+                        ],
+                        "size": {
+                            "width": {"behavior": "Fixed", "value": 80.0},
+                            "height": {"behavior": "Fixed", "value": 20.0}
+                        }
+                    }
+                ],
+                "operations": []
+            }
+        });
+        let tag_db = serde_json::json!({
+            "_RecordName_": "TagDatabase",
+            "_RecordValue_": {
+                "tags": [
+                    {
+                        "_RecordId_": emphasis_tag_id,
+                        "_RecordName_": "Tag.emphasis-tag-id",
+                        "_Type_": "Tag",
+                        "tagName": "UI_Generic_Flag_03",
+                        "children": []
+                    }
+                ]
+            }
+        });
+        let fetcher = TestCanvasFetcher {
+            by_guid: std::collections::HashMap::new(),
+            by_path: [(tag_db_path.to_string(), tag_db)].into_iter().collect(),
+        };
+
+        let scene = crate::bb_scene::parse_bb_canvas(&canvas).expect("scene parse");
+        let ir = compile_ui_ir_from_scene(
+            &scene,
+            Some(&fetcher),
+            "guid-emphasis-text-colour-tag",
+            Some("BuildingBlocks_Canvas.TestEmphasisTextColourTag"),
+            (100, 100),
+            &defaults(),
+            None,
+            None,
+            &[],
+            Vec::new(),
+            Vec::new(),
+            100,
+        );
+
+        let node = ir.nodes.iter().find(|node| node.name == "emphasis_heading").expect("emphasis node");
+        assert_eq!(
+            node.text_style.as_ref().and_then(|style| style.colour_token.as_deref()),
+            Some("Foreground")
+        );
+    }
+
+    #[test]
+    fn compile_ir_maps_custom_shape_modify_tag_to_accent5_icon_tint_token() {
+        let tag_db_path = "file://tagdatabase.tagdatabase.json";
+        let modify_tag_id = "modify-tag-id";
+        let canvas = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.TestCustomShapeModifyTag",
+            "_RecordValue_": {
+                "size": {"x": 100, "y": 100},
+                "scene": [
+                    {
+                        "_Pointer_": "ptr:1",
+                        "_Type_": "BuildingBlocks_WidgetCustomShape",
+                        "name": "modify_shape",
+                        "isActive": true,
+                        "svgFill": {
+                            "svgPath": "UI/Textures/Vector/General/FingerPrint.svg",
+                            "renderShape": true,
+                            "enableColorOverlay": true
+                        },
+                        "styleTags": [
+                            {
+                                "_RecordPath_": tag_db_path,
+                                "_RecordName_": "Tag.modify-tag-id",
+                                "_RecordId_": modify_tag_id
+                            }
+                        ],
+                        "size": {
+                            "width": {"behavior": "Fixed", "value": 40.0},
+                            "height": {"behavior": "Fixed", "value": 40.0}
+                        }
+                    }
+                ],
+                "operations": []
+            }
+        });
+        let tag_db = serde_json::json!({
+            "_RecordName_": "TagDatabase",
+            "_RecordValue_": {
+                "tags": [
+                    {
+                        "_RecordId_": modify_tag_id,
+                        "_RecordName_": "Tag.modify-tag-id",
+                        "_Type_": "Tag",
+                        "tagName": "Modify",
+                        "children": []
+                    }
+                ]
+            }
+        });
+        let fetcher = TestCanvasFetcher {
+            by_guid: std::collections::HashMap::new(),
+            by_path: [(tag_db_path.to_string(), tag_db)].into_iter().collect(),
+        };
+
+        let scene = crate::bb_scene::parse_bb_canvas(&canvas).expect("scene parse");
+        let ir = compile_ui_ir_from_scene(
+            &scene,
+            Some(&fetcher),
+            "guid-custom-shape-modify-tag",
+            Some("BuildingBlocks_Canvas.TestCustomShapeModifyTag"),
+            (100, 100),
+            &defaults(),
+            None,
+            None,
+            &[],
+            Vec::new(),
+            Vec::new(),
+            100,
+        );
+
+        let node = ir.nodes.iter().find(|node| node.name == "modify_shape").expect("modify shape node");
+        assert_eq!(node.icon_tint_colour_token.as_deref(), Some("Accent5"));
+        assert_eq!(node.colour_blend_mode, Some(crate::ui_ir::UiIrColourBlendMode::Additive));
+    }
+
+    #[test]
+    fn compile_ir_maps_footer_logo_and_bar_style_tags_to_accent1_icon_tint_token() {
+        let tag_db_path = "file://tagdatabase.tagdatabase.json";
+        let logo_tag_id = "logo-tag-id";
+        let animate_tag_id = "animate8-tag-id";
+        let canvas = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.TestFooterTintTags",
+            "_RecordValue_": {
+                "size": {"x": 100, "y": 100},
+                "scene": [
+                    {
+                        "_Pointer_": "ptr:1",
+                        "_Type_": "BuildingBlocks_WidgetManufacturerLogo",
+                        "name": "Logo",
+                        "styleTags": [{
+                            "_RecordPath_": tag_db_path,
+                            "_RecordName_": "Tag.logo-tag-id",
+                            "_RecordId_": logo_tag_id
+                        }],
+                        "size": {
+                            "width": {"behavior": "Fixed", "value": 20.0},
+                            "height": {"behavior": "Fixed", "value": 20.0}
+                        }
+                    },
+                    {
+                        "_Pointer_": "ptr:2",
+                        "_Type_": "BuildingBlocks_WidgetImage",
+                        "name": "Image_bottom_bar",
+                        "styleTags": [{
+                            "_RecordPath_": tag_db_path,
+                            "_RecordName_": "Tag.animate8-tag-id",
+                            "_RecordId_": animate_tag_id
+                        }],
+                        "size": {
+                            "width": {"behavior": "Fixed", "value": 20.0},
+                            "height": {"behavior": "Fixed", "value": 20.0}
+                        }
+                    }
+                ],
+                "operations": []
+            }
+        });
+        let tag_db = serde_json::json!({
+            "_RecordName_": "TagDatabase",
+            "_RecordValue_": {
+                "tags": [
+                    {
+                        "_RecordId_": logo_tag_id,
+                        "_RecordName_": "Tag.logo-tag-id",
+                        "_Type_": "Tag",
+                        "tagName": "UI_Generic_Flag_01",
+                        "children": []
+                    },
+                    {
+                        "_RecordId_": animate_tag_id,
+                        "_RecordName_": "Tag.animate8-tag-id",
+                        "_Type_": "Tag",
+                        "tagName": "Animate_8",
+                        "children": []
+                    }
+                ]
+            }
+        });
+        let fetcher = TestCanvasFetcher {
+            by_guid: std::collections::HashMap::new(),
+            by_path: [(tag_db_path.to_string(), tag_db)].into_iter().collect(),
+        };
+
+        let scene = crate::bb_scene::parse_bb_canvas(&canvas).expect("scene parse");
+        let ir = compile_ui_ir_from_scene(
+            &scene,
+            Some(&fetcher),
+            "guid-footer-tint-tags",
+            Some("BuildingBlocks_Canvas.TestFooterTintTags"),
+            (100, 100),
+            &defaults(),
+            None,
+            None,
+            &[],
+            Vec::new(),
+            Vec::new(),
+            100,
+        );
+
+        let logo = ir.nodes.iter().find(|node| node.name == "Logo").expect("logo node");
+        assert_eq!(logo.icon_tint_colour_token.as_deref(), Some("Accent1"));
+
+        let footer = ir
+            .nodes
+            .iter()
+            .find(|node| node.name == "Image_bottom_bar")
+            .expect("bottom bar node");
+        assert_eq!(footer.icon_tint_colour_token.as_deref(), Some("Accent1"));
+    }
+
+    #[test]
+    fn compile_ir_maps_annunciator_item_state_tag_to_background_token() {
+        let tag_db_path = "file://tagdatabase.tagdatabase.json";
+        let screen_tag_id = "ann-screen";
+        let item_tag_id = "ann-item";
+        let moderate_tag_id = "ann-moderate";
+        let canvas = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.TestAnnunciatorItemState",
+            "_RecordValue_": {
+                "size": {"x": 100, "y": 100},
+                "scene": [
+                    {
+                        "_Pointer_": "ptr:1",
+                        "_Type_": "BuildingBlocks_DisplayWidget",
+                        "name": "ann_item",
+                        "styleTags": [
+                            {"_RecordPath_": tag_db_path, "_RecordName_": "Tag.ann-screen", "_RecordId_": screen_tag_id},
+                            {"_RecordPath_": tag_db_path, "_RecordName_": "Tag.ann-item", "_RecordId_": item_tag_id},
+                            {"_RecordPath_": tag_db_path, "_RecordName_": "Tag.ann-moderate", "_RecordId_": moderate_tag_id}
+                        ],
+                        "size": {
+                            "width": {"behavior": "Fixed", "value": 50.0},
+                            "height": {"behavior": "Fixed", "value": 50.0}
+                        }
+                    }
+                ],
+                "operations": []
+            }
+        });
+        let tag_db = serde_json::json!({
+            "_RecordName_": "TagDatabase",
+            "_RecordValue_": {
+                "tags": [
+                    {"_RecordId_": screen_tag_id, "_RecordName_": "Tag.ann-screen", "_Type_": "Tag", "tagName": "AnnunciatorScreen", "children": []},
+                    {"_RecordId_": item_tag_id, "_RecordName_": "Tag.ann-item", "_Type_": "Tag", "tagName": "AnnunciatorItem", "children": []},
+                    {"_RecordId_": moderate_tag_id, "_RecordName_": "Tag.ann-moderate", "_Type_": "Tag", "tagName": "StateModerate", "children": []}
+                ]
+            }
+        });
+        let fetcher = TestCanvasFetcher {
+            by_guid: std::collections::HashMap::new(),
+            by_path: [(tag_db_path.to_string(), tag_db)].into_iter().collect(),
+        };
+
+        let scene = crate::bb_scene::parse_bb_canvas(&canvas).expect("scene parse");
+        let ir = compile_ui_ir_from_scene(
+            &scene,
+            Some(&fetcher),
+            "guid-ann-item-state",
+            Some("BuildingBlocks_Canvas.TestAnnunciatorItemState"),
+            (100, 100),
+            &defaults(),
+            None,
+            None,
+            &[],
+            Vec::new(),
+            Vec::new(),
+            100,
+        );
+
+        let node = ir.nodes.iter().find(|node| node.name == "ann_item").expect("annunciator item node");
+        assert_eq!(node.background_fill_colour_token.as_deref(), None);
+        assert_eq!(node.stroke_colour_token.as_deref(), None);
+        assert_eq!(node.stroke_extent, None);
+        let border = node.border.as_ref().expect("annunciator moderate border");
+        assert_eq!(border.top.width, 2.0);
+        assert_eq!(border.right.width, 2.0);
+        assert_eq!(border.bottom.width, 2.0);
+        assert_eq!(border.left.width, 2.0);
+        assert_eq!(border.top.colour_token.as_deref(), Some("Accent3"));
+        assert_eq!(border.right.colour_token.as_deref(), Some("Accent3"));
+        assert_eq!(border.bottom.colour_token.as_deref(), Some("Accent3"));
+        assert_eq!(border.left.colour_token.as_deref(), Some("Accent3"));
+    }
+
+
+// Continuation of semantic_colour_mapping_tests.part (split to stay under the line cap).
+    #[test]
+    fn compile_ir_fills_critical_annunciator_inner_item_without_inner_border() {
+        let tag_db_path = "file://tagdatabase.tagdatabase.json";
+        let screen_tag_id = "ann-screen";
+        let item_tag_id = "ann-item";
+        let critical_tag_id = "ann-critical";
+        let canvas = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.TestAnnunciatorInnerItem",
+            "_RecordValue_": {
+                "size": {"x": 100, "y": 100},
+                "scene": [
+                    {
+                        "_Pointer_": "ptr:1",
+                        "_Type_": "BuildingBlocks_DisplayWidget",
+                        "name": "root_annunciator_items",
+                        "size": {
+                            "width": {"behavior": "Fixed", "value": 100.0},
+                            "height": {"behavior": "Fixed", "value": 100.0}
+                        }
+                    },
+                    {
+                        "_Pointer_": "ptr:2",
+                        "_Type_": "BuildingBlocks_DisplayWidget",
+                        "name": "Item 0",
+                        "parent": "_PointsTo_:ptr:1",
+                        "styleTags": [
+                            {"_RecordPath_": tag_db_path, "_RecordName_": "Tag.ann-screen", "_RecordId_": screen_tag_id},
+                            {"_RecordPath_": tag_db_path, "_RecordName_": "Tag.ann-item", "_RecordId_": item_tag_id},
+                            {"_RecordPath_": tag_db_path, "_RecordName_": "Tag.ann-critical", "_RecordId_": critical_tag_id}
+                        ],
+                        "size": {
+                            "width": {"behavior": "Fixed", "value": 80.0},
+                            "height": {"behavior": "Fixed", "value": 80.0}
+                        }
+                    },
+                    {
+                        "_Pointer_": "ptr:3",
+                        "_Type_": "BuildingBlocks_DisplayWidget",
+                        "name": "base_SubItem",
+                        "parent": "_PointsTo_:ptr:2",
+                        "size": {
+                            "width": {"behavior": "Fixed", "value": 60.0},
+                            "height": {"behavior": "Fixed", "value": 60.0}
+                        }
+                    }
+                ],
+                "operations": []
+            }
+        });
+        let tag_db = serde_json::json!({
+            "_RecordName_": "TagDatabase",
+            "_RecordValue_": {
+                "tags": [
+                    {"_RecordId_": screen_tag_id, "_RecordName_": "Tag.ann-screen", "_Type_": "Tag", "tagName": "AnnunciatorScreen", "children": []},
+                    {"_RecordId_": item_tag_id, "_RecordName_": "Tag.ann-item", "_Type_": "Tag", "tagName": "AnnunciatorItem", "children": []},
+                    {"_RecordId_": critical_tag_id, "_RecordName_": "Tag.ann-critical", "_Type_": "Tag", "tagName": "StateCritical", "children": []}
+                ]
+            }
+        });
+        let fetcher = TestCanvasFetcher {
+            by_guid: std::collections::HashMap::new(),
+            by_path: [(tag_db_path.to_string(), tag_db)].into_iter().collect(),
+        };
+
+        let scene = crate::bb_scene::parse_bb_canvas(&canvas).expect("scene parse");
+        let ir = compile_ui_ir_from_scene(
+            &scene,
+            Some(&fetcher),
+            "guid-ann-inner-item",
+            Some("BuildingBlocks_Canvas.TestAnnunciatorInnerItem"),
+            (100, 100),
+            &defaults(),
+            None,
+            None,
+            &[],
+            Vec::new(),
+            Vec::new(),
+            100,
+        );
+
+        let inner = ir
+            .nodes
+            .iter()
+            .find(|node| node.name == "base_SubItem")
+            .expect("inner annunciator item node");
+        assert_eq!(inner.background_fill_colour_token.as_deref(), Some("Accent3"));
+        assert!(inner.border.is_none(), "inner item must not draw inherited item border");
+    }
+
+    #[test]
+    fn enable_background_false_suppresses_background_fill_even_with_background_color_present() {
+        // Regression: DRAK brand style "Page Greebles Notarget Right" sets both
+        // EnableBackground: false AND BackgroundColor: rgba(255,255,255,50) on
+        // an image node. The explicit disable must win — background_fill_colour
+        // should be None in the compiled IR.
+        let canvas = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.TestEnableBackground",
+            "_RecordValue_": {
+                "size": {"x": 100, "y": 100},
+                "scene": [
+                    {
+                        "_Pointer_": "ptr:1",
+                        "_Type_": "BuildingBlocks_WidgetImage",
+                        "name": "image_WithDisabledBackground",
+                        "isActive": true,
+                        "size": {
+                            "width": {"behavior": "Fixed", "value": 80.0},
+                            "height": {"behavior": "Fixed", "value": 20.0}
+                        },
+                        "EnableBackground": false,
+                        "BackgroundColor": {
+                            "r": 1.0, "g": 1.0, "b": 1.0, "a": 0.196
+                        }
+                    }
+                ],
+                "operations": []
+            }
+        });
+
+        let scene = crate::bb_scene::parse_bb_canvas(&canvas).expect("scene parse");
+        let ir = compile_ui_ir_from_scene(
+            &scene,
+            None,
+            "guid-enable-background-test",
+            Some("BuildingBlocks_Canvas.TestEnableBackground"),
+            (100, 100),
+            &defaults(),
+            None,
+            None,
+            &[],
+            Vec::new(),
+            Vec::new(),
+            100,
+        );
+
+        let node = ir
+            .nodes
+            .iter()
+            .find(|n| n.name == "image_WithDisabledBackground")
+            .expect("image node");
+        assert!(
+            node.background_fill_colour.is_none(),
+            "EnableBackground: false must suppress background_fill_colour (was {:?})",
+            node.background_fill_colour
+        );
+    }
+
+    #[test]
+    fn brand_text_style_fillcolor_is_authoritative_caption_role() {
+        // A standard text-style entry's `FillColor` modifier is the game's own
+        // colour role for that named style (e.g. `Heading6`/`H6` -> `Bright`).
+        // `brand_text_style_colour_token` exposes it so a caption value resolves
+        // to its real role instead of defaulting to white.
+        let entry = serde_json::json!({
+            "name": "H6",
+            "modifiers": [
+                { "field": "FontSize", "value": 21.0 },
+                {
+                    "field": "FillColor",
+                    "color": {
+                        "_Type_": "BuildingBlocks_ColorStyle",
+                        "color": "Bright",
+                        "alpha": 1.0
+                    }
+                }
+            ]
+        });
+        let style = standard_text_style_from_entry(&entry);
+        assert_eq!(style.fill_colour_token.as_deref(), Some("Bright"));
+
+        let mut styles = std::collections::HashMap::new();
+        styles.insert("H6".to_string(), style);
+        assert_eq!(
+            brand_text_style_colour_token(Some("Heading6"), &styles).as_deref(),
+            Some("Bright")
+        );
+        // A style with no entry (no authored FillColor) yields no token.
+        assert_eq!(brand_text_style_colour_token(Some("Heading3"), &styles), None);
+    }
+
+    #[test]
+    fn title_node_with_explicit_bright_tag_keeps_bright_even_when_primary_tag_also_present() {
+        let tag_db_path = "file://tagdatabase.tagdatabase.json";
+        let bright_tag_id = "bright-tag-id";
+        let primary_tag_id = "primary-tag-id";
+        let canvas = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.TierBrightPrimaryConflict",
+            "_RecordValue_": {
+                "size": {"x": 100, "y": 100},
+                "scene": [
+                    {
+                        "_Pointer_": "ptr:1",
+                        "_Type_": "BuildingBlocks_WidgetTextField",
+                        "name": "tier_level",
+                        "isActive": true,
+                        "text": "T3",
+                        "labelProperties": {"style": "Title3"},
+                        "styleTags": [
+                            {"_RecordPath_": tag_db_path, "_RecordName_": "Tag.bright-tag-id", "_RecordId_": bright_tag_id},
+                            {"_RecordPath_": tag_db_path, "_RecordName_": "Tag.primary-tag-id", "_RecordId_": primary_tag_id}
+                        ],
+                        "size": {"width": {"behavior": "Fixed", "value": 40.0}, "height": {"behavior": "Fixed", "value": 40.0}}
+                    }
+                ],
+                "operations": []
+            }
+        });
+        let tag_db = serde_json::json!({
+            "_RecordName_": "TagDatabase",
+            "_RecordValue_": {
+                "tags": [
+                    {"_RecordId_": bright_tag_id, "_RecordName_": "Tag.bright-tag-id", "_Type_": "Tag", "tagName": "Bright", "children": []},
+                    {"_RecordId_": primary_tag_id, "_RecordName_": "Tag.primary-tag-id", "_Type_": "Tag", "tagName": "Primary", "children": []}
+                ]
+            }
+        });
+        let fetcher = TestCanvasFetcher {
+            by_guid: std::collections::HashMap::new(),
+            by_path: [(tag_db_path.to_string(), tag_db)].into_iter().collect(),
+        };
+        let scene = crate::bb_scene::parse_bb_canvas(&canvas).expect("scene parse");
+        let ir = compile_ui_ir_from_scene(
+            &scene,
+            Some(&fetcher),
+            "guid-tier-bright-primary",
+            Some("BuildingBlocks_Canvas.TierBrightPrimaryConflict"),
+            (100, 100),
+            &defaults(),
+            None, None, &[],
+            Vec::new(), Vec::new(),
+            100,
+        );
+        // An explicit `Bright` colour tag on a Title-style node must win over the state
+        // tag `Primary` → `Base` mapping. TierLevel nodes carry Bright to force white
+        // rendering; the Primary tag is a state marker, not a colour override.
+        let node = ir.nodes.iter().find(|n| n.name == "tier_level").expect("tier_level node");
+        assert_eq!(
+            node.text_style.as_ref().and_then(|s| s.colour_token.as_deref()),
+            Some("Bright"),
+            "explicit Bright tag must override Primary→Base for Title-style nodes"
+        );
+    }
+
+
+}
+
+#[cfg(test)]
+mod tests_b {
+    #![allow(unused_imports, dead_code)]
+
+    use super::*;
+
+    struct TestCanvasFetcher {
+        by_guid: std::collections::HashMap<String, serde_json::Value>,
+        by_path: std::collections::HashMap<String, serde_json::Value>,
+    }
+
+    impl CanvasFetcher for TestCanvasFetcher {
+        fn fetch_canvas_json(&self, guid: &str) -> Result<serde_json::Value, crate::UiError> {
+            self.by_guid
+                .get(guid)
+                .cloned()
+                .ok_or_else(|| crate::UiError::RenderError(format!("missing guid: {guid}")))
+        }
+
+        fn fetch_canvas_by_name(
+            &self,
+            record_name: &str,
+        ) -> Result<serde_json::Value, crate::UiError> {
+            self.by_guid
+                .values()
+                .chain(self.by_path.values())
+                .find(|value| {
+                    value
+                        .get("_RecordName_")
+                        .and_then(|v| v.as_str())
+                        .is_some_and(|name| name == record_name)
+                })
+                .cloned()
+                .ok_or_else(|| crate::UiError::RenderError(format!("missing name: {record_name}")))
+        }
+
+        fn fetch_canvas_by_path(&self, path: &str) -> Result<serde_json::Value, crate::UiError> {
+            self.by_path
+                .get(path)
+                .cloned()
+                .ok_or_else(|| crate::UiError::RenderError(format!("missing path: {path}")))
+        }
+    }
+
+    fn defaults() -> crate::defaults::DefaultValueRegistry {
+        crate::defaults::DefaultValueRegistry::with_well_known_path_defaults()
+    }
+
+
+    #[test]
+    fn compile_ir_resolves_standard_textfield_line_spacing_for_label_style() {
+        let canvas = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.TestStandardLineSpacing",
+            "_RecordValue_": {
+                "size": {"x": 100, "y": 100},
+                "scene": [
+                    {
+                        "_Pointer_": "ptr:1",
+                        "_Type_": "BuildingBlocks_WidgetTextField",
+                        "name": "title",
+                        "isActive": true,
+                        "text": "DIGITAL MEDICAL ASSISTANT",
+                        "FontSize": 100.0,
+                        "labelProperties": {
+                            "style": "Title3",
+                            "anchorToParentX": 0.5,
+                            "anchorToParentY": 0.5
+                        },
+                        "size": {
+                            "width": {"behavior": "Fixed", "value": 80.0},
+                            "height": {"behavior": "Fixed", "value": 40.0}
+                        }
+                    }
+                ],
+                "operations": []
+            }
+        });
+        let standard = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.TextFieldWidgetStandard",
+            "_RecordValue_": {
+                "defaultStyles": {
+                    "entries": [
+                        {
+                            "name": "T3",
+                            "modifiers": [
+                                    {"_Type_": "BuildingBlocks_FieldModifierNumber", "field": "FontSize", "value": 115.0},
+                                {"_Type_": "BuildingBlocks_FieldModifierNumber", "field": "LineSpacing", "value": -55.0}
+                            ]
+                        }
+                    ]
+                },
+                "brandStyles": [
+                    {
+                        "brandIdentifier": "file://./styles/s_bioc.json",
+                        "entries": [
+                            {
+                                "name": "T3",
+                                "modifiers": [
+                                    {"_Type_": "BuildingBlocks_FieldModifierNumber", "field": "FontSize", "value": 115.0},
+                                    {
+                                        "_Type_": "BuildingBlocks_FieldModifierRecordRef",
+                                        "field": {
+                                            "_Type_": "BuildingBlocks_FieldModifierRecordRefTypeFontStyleRecord",
+                                            "value": "file://./fontstyles/blenderpro-thin.json"
+                                        }
+                                    },
+                                    {"_Type_": "BuildingBlocks_FieldModifierNumber", "field": "LineSpacing", "value": -35.0}
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }
+        });
+        let fetcher = TestCanvasFetcher {
+            by_guid: std::collections::HashMap::new(),
+            by_path: [(standard_text_field_widget_path().to_string(), standard)]
+                .into_iter()
+                .collect(),
+        };
+
+        let scene = crate::bb_scene::parse_bb_canvas(&canvas).expect("scene parse");
+        let ir = compile_ui_ir_from_scene(
+            &scene,
+            Some(&fetcher),
+            "guid-standard-line-spacing",
+            Some("BuildingBlocks_Canvas.TestStandardLineSpacing"),
+            (100, 100),
+            &defaults(),
+            Some("canvas:s_bioc".to_string()),
+            None,
+            &[],
+            Vec::new(),
+            Vec::new(),
+            100,
+        );
+
+        let node = ir.nodes.iter().find(|node| node.name == "title").expect("title node");
+        assert_eq!(
+            node.text_style.as_ref().and_then(|style| style.line_spacing),
+            Some(-35.0)
+        );
+        assert_eq!(
+            node.text_style.as_ref().and_then(|style| style.font_record.as_deref()),
+            Some("file://./fontstyles/blenderpro-thin.json")
+        );
+    }
+
+    #[test]
+    fn compile_ir_uses_standard_heading_font_size_for_unsized_textfield() {
+        let canvas = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.TestStandardHeadingSize",
+            "_RecordValue_": {
+                "size": {"x": 100, "y": 100},
+                "scene": [
+                    {
+                        "_Pointer_": "ptr:1",
+                        "_Type_": "BuildingBlocks_WidgetTextField",
+                        "name": "location",
+                        "isActive": true,
+                        "text": "Drake Clipper",
+                        "labelProperties": {
+                            "style": "Heading3",
+                            "caseModifier": "None",
+                            "anchorToParentX": 0.5,
+                            "anchorToParentY": 0.5
+                        },
+                        "size": {
+                            "width": {"behavior": "Fixed", "value": 80.0},
+                            "height": {"behavior": "Fixed", "value": 40.0}
+                        }
+                    },
+                    {
+                        "_Pointer_": "ptr:2",
+                        "_Type_": "BuildingBlocks_WidgetTextField",
+                        "name": "machine_type",
+                        "isActive": true,
+                        "text": "MEDICAL ASSISTANT",
+                        "labelProperties": {
+                            "style": "Heading1",
+                            "caseModifier": "Upper",
+                            "anchorToParentX": 0.5,
+                            "anchorToParentY": 0.5
+                        },
+                        "size": {
+                            "width": {"behavior": "Fixed", "value": 80.0},
+                            "height": {"behavior": "Fixed", "value": 40.0}
+                        }
+                    }
+                ],
+                "operations": []
+            }
+        });
+        let standard = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.TextFieldWidgetStandard",
+            "_RecordValue_": {
+                "defaultStyles": {"entries": []},
+                "brandStyles": [
+                    {
+                        "brandIdentifier": "file://./styles/s_bioc.json",
+                        "entries": [
+                            {
+                                "name": "H3",
+                                "modifiers": [
+                                    {"_Type_": "BuildingBlocks_FieldModifierNumber", "field": "FontSize", "value": 30.0},
+                                    {
+                                        "_Type_": "BuildingBlocks_FieldModifierRecordRef",
+                                        "field": {
+                                            "_Type_": "BuildingBlocks_FieldModifierRecordRefTypeFontStyleRecord",
+                                            "value": "file://./fontstyles/blenderpro-thin.json"
+                                        }
+                                    },
+                                    {"_Type_": "BuildingBlocks_FieldModifierNumber", "field": "LineSpacing", "value": 0.0}
+                                ]
+                            },
+                            {
+                                "name": "H1",
+                                "modifiers": [
+                                    {"_Type_": "BuildingBlocks_FieldModifierNumber", "field": "FontSize", "value": 57.0},
+                                    {
+                                        "_Type_": "BuildingBlocks_FieldModifierRecordRef",
+                                        "field": {
+                                            "_Type_": "BuildingBlocks_FieldModifierRecordRefTypeFontStyleRecord",
+                                            "value": "file://./fontstyles/blenderpro-thin.json"
+                                        }
+                                    },
+                                    {"_Type_": "BuildingBlocks_FieldModifierNumber", "field": "LineSpacing", "value": 0.0}
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }
+        });
+        let fetcher = TestCanvasFetcher {
+            by_guid: std::collections::HashMap::new(),
+            by_path: [(standard_text_field_widget_path().to_string(), standard)]
+                .into_iter()
+                .collect(),
+        };
+
+        let scene = crate::bb_scene::parse_bb_canvas(&canvas).expect("scene parse");
+        let ir = compile_ui_ir_from_scene(
+            &scene,
+            Some(&fetcher),
+            "guid-standard-heading-size",
+            Some("BuildingBlocks_Canvas.TestStandardHeadingSize"),
+            (100, 100),
+            &defaults(),
+            Some("canvas:s_bioc".to_string()),
+            None,
+            &[],
+            Vec::new(),
+            Vec::new(),
+            100,
+        );
+
+        // Data-backed model: a styled textfield renders at its named style's authored
+        // brand FontSize verbatim (no nominal-scale constant). `caseModifier: None`, so the
+        // H3 brand FontSize = 30 is used exactly (no caps reduction).
+        let node = ir.nodes.iter().find(|node| node.name == "location").expect("location node");
+        assert_eq!(
+            node.text_style.as_ref().map(|style| &style.font_size),
+            Some(&UiIrValue::Fixed { value: 30.0 })
+        );
+
+        // H1 brand FontSize = 57, used verbatim. `caseModifier: Upper` no longer applies
+        // an all-caps size reduction (the ~0.98 fudge was removed), so the size is 57.
+        let node = ir.nodes.iter().find(|node| node.name == "machine_type").expect("machine_type node");
+        let style = node.text_style.as_ref().expect("machine_type text style");
+        assert!(
+            matches!(style.font_size, UiIrValue::Fixed { value } if (value - 57.0).abs() < 0.02),
+            "caseModifier Upper uses full H1 57 (no caps reduction): {:?}",
+            style.font_size,
+        );
+    }
+
+    #[test]
+    fn compile_ir_uses_standard_title4_font_size_before_scene_style_borrow() {
+        let canvas = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.TestStandardTitleSize",
+            "_RecordValue_": {
+                "size": {"x": 100, "y": 100},
+                "scene": [
+                    {
+                        "_Pointer_": "ptr:1",
+                        "_Type_": "BuildingBlocks_WidgetTextField",
+                        "name": "small_title_reference",
+                        "isActive": true,
+                        "text": "SMALL",
+                        "FontSize": 40.0,
+                        "labelProperties": {"style": "Title4"},
+                        "size": {
+                            "width": {"behavior": "Fixed", "value": 80.0},
+                            "height": {"behavior": "Fixed", "value": 40.0}
+                        }
+                    },
+                    {
+                        "_Pointer_": "ptr:2",
+                        "_Type_": "BuildingBlocks_WidgetTextField",
+                        "name": "standard_title",
+                        "isActive": true,
+                        "text": "T3",
+                        "labelProperties": {"style": "Title4"},
+                        "size": {
+                            "width": {"behavior": "Fixed", "value": 80.0},
+                            "height": {"behavior": "Fixed", "value": 40.0}
+                        }
+                    }
+                ],
+                "operations": []
+            }
+        });
+        let standard = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.TextFieldWidgetStandard",
+            "_RecordValue_": {
+                "defaultStyles": {"entries": [
+                    {
+                        "name": "Title4",
+                        "modifiers": [
+                            {"_Type_": "BuildingBlocks_FieldModifierNumber", "field": "FontSize", "value": 40.0},
+                            {
+                                "_Type_": "BuildingBlocks_FieldModifierRecordRef",
+                                "field": {
+                                    "_Type_": "BuildingBlocks_FieldModifierRecordRefTypeFontStyleRecord",
+                                    "value": "file://./fontstyles/blenderpro-thin.json"
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "name": "T4",
+                        "modifiers": [
+                            {"_Type_": "BuildingBlocks_FieldModifierNumber", "field": "FontSize", "value": 75.0},
+                            {
+                                "_Type_": "BuildingBlocks_FieldModifierRecordRef",
+                                "field": {
+                                    "_Type_": "BuildingBlocks_FieldModifierRecordRefTypeFontStyleRecord",
+                                    "value": "file://./fontstyles/blenderpro-medium.json"
+                                }
+                            }
+                        ]
+                    }
+                ]},
+                "brandStyles": []
+            }
+        });
+        let fetcher = TestCanvasFetcher {
+            by_guid: std::collections::HashMap::new(),
+            by_path: [(standard_text_field_widget_path().to_string(), standard)]
+                .into_iter()
+                .collect(),
+        };
+
+        let scene = crate::bb_scene::parse_bb_canvas(&canvas).expect("scene parse");
+        let ir = compile_ui_ir_from_scene(
+            &scene,
+            Some(&fetcher),
+            "guid-standard-title-size",
+            Some("BuildingBlocks_Canvas.TestStandardTitleSize"),
+            (100, 100),
+            &defaults(),
+            None,
+            None,
+            &[],
+            Vec::new(),
+            Vec::new(),
+            100,
+        );
+
+        // Data-backed model: the named style's brand FontSize is used verbatim. The
+        // `Title4` style maps to the `T4` brand entry (FontSize 75).
+        let node = ir
+            .nodes
+            .iter()
+            .find(|node| node.name == "standard_title")
+            .expect("standard title node");
+        assert_eq!(
+            node.text_style.as_ref().map(|style| &style.font_size),
+            Some(&UiIrValue::Fixed { value: 75.0 })
+        );
+    }
+
+    #[test]
+    fn short_heading1_uses_header_size_while_long_prompt_stays_shallow() {
+        use crate::bb_scene::{BbNode, BbNodeType, BbSizing, BbTrbl, Vec2, Vec3};
+
+        let textfield = |style: &str| BbNode {
+            id: 1,
+            parent: None,
+            children: vec![],
+            ty: BbNodeType::WidgetTextField,
+            name: "text".to_string(),
+            style_tag_uuids: vec![],
+            is_active: true,
+            layer: 0,
+            alpha: 1.0,
+            position: Vec3::default(),
+            position_offset: Vec3::default(),
+            sizing: BbSizing::default(),
+            padding: BbTrbl::default(),
+            margin: BbTrbl::default(),
+            pivot: Vec2::default(),
+            anchor: Vec2::default(),
+            background: None,
+            border: None,
+            radial: None,
+            text: None,
+            icon: None,
+            raw: serde_json::json!({"labelProperties": {"style": style}}),
+        };
+
+        let short_heading = textfield("Heading1");
+        assert_eq!(
+            textfield_fallback_font_size_from_signals(&short_heading, 78.0, Some("MEDICAL ASSISTANT")),
+            Some(40.0)
+        );
+
+        let long_prompt = textfield("Heading1");
+        assert_eq!(
+            textfield_fallback_font_size_from_signals(
+                &long_prompt,
+                105.0,
+                Some("PLEASE SELECT AN OPTION FROM THE AVAILABLE SERVICES"),
+            ),
+            Some(LONG_HEADING1_PROMPT_FONT_SIZE)
+        );
+    }
+
+    #[test]
+    fn compile_ir_limits_style_palette_text_default_to_label_caption() {
+        let canvas = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.TestStylePaletteTextColour",
+            "_RecordValue_": {
+                "size": {"x": 100, "y": 100},
+                "scene": [
+                    {
+                        "_Pointer_": "ptr:1",
+                        "_Type_": "BuildingBlocks_WidgetTextField",
+                        "name": "palette_text",
+                        "isActive": true,
+                        "text": "PATIENT NAME",
+                        "__BrandIdentifier": "s_bioc",
+                        "size": {
+                            "width": {"behavior": "Fixed", "value": 80.0},
+                            "height": {"behavior": "Fixed", "value": 20.0}
+                        }
+                    },
+                    {
+                        "_Pointer_": "ptr:2",
+                        "_Type_": "BuildingBlocks_ComponentLabelCaptionPair",
+                        "name": "palette_pair",
+                        "isActive": true,
+                        "__BrandIdentifier": "s_bioc",
+                        "labelProperties": {
+                            "label": "PATIENT NAME",
+                            "style": "Heading3"
+                        },
+                        "alignment": "Left",
+                        "size": {
+                            "width": {"behavior": "Fixed", "value": 80.0},
+                            "height": {"behavior": "Fixed", "value": 20.0}
+                        }
+                    }
+                ],
+                "operations": []
+            }
+        });
+
+        let scene = crate::bb_scene::parse_bb_canvas(&canvas).expect("scene parse");
+        let ir = compile_ui_ir_from_scene(
+            &scene,
+            None,
+            "guid-style-palette-text-colour",
+            Some("BuildingBlocks_Canvas.TestStylePaletteTextColour"),
+            (100, 100),
+            &defaults(),
+            None,
+            None,
+            &[],
+            Vec::new(),
+            Vec::new(),
+            100,
+        );
+
+        let node = ir.nodes.iter().find(|node| node.name == "palette_text").expect("palette text node");
+        assert_eq!(
+            node.text_style.as_ref().and_then(|style| style.colour_token.as_deref()),
+            None
+        );
+
+        let pair = ir.nodes.iter().find(|node| node.name == "palette_pair").expect("palette pair node");
+        assert_eq!(
+            pair.text_style.as_ref().and_then(|style| style.colour_token.as_deref()),
+            Some("Base")
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests_c {
+    #![allow(unused_imports, dead_code)]
+
+    use super::*;
+
+    struct TestCanvasFetcher {
+        by_guid: std::collections::HashMap<String, serde_json::Value>,
+        by_path: std::collections::HashMap<String, serde_json::Value>,
+    }
+
+    impl CanvasFetcher for TestCanvasFetcher {
+        fn fetch_canvas_json(&self, guid: &str) -> Result<serde_json::Value, crate::UiError> {
+            self.by_guid
+                .get(guid)
+                .cloned()
+                .ok_or_else(|| crate::UiError::RenderError(format!("missing guid: {guid}")))
+        }
+
+        fn fetch_canvas_by_name(
+            &self,
+            record_name: &str,
+        ) -> Result<serde_json::Value, crate::UiError> {
+            self.by_guid
+                .values()
+                .chain(self.by_path.values())
+                .find(|value| {
+                    value
+                        .get("_RecordName_")
+                        .and_then(|v| v.as_str())
+                        .is_some_and(|name| name == record_name)
+                })
+                .cloned()
+                .ok_or_else(|| crate::UiError::RenderError(format!("missing name: {record_name}")))
+        }
+
+        fn fetch_canvas_by_path(&self, path: &str) -> Result<serde_json::Value, crate::UiError> {
+            self.by_path
+                .get(path)
+                .cloned()
+                .ok_or_else(|| crate::UiError::RenderError(format!("missing path: {path}")))
+        }
+    }
+
+    fn defaults() -> crate::defaults::DefaultValueRegistry {
+        crate::defaults::DefaultValueRegistry::with_well_known_path_defaults()
+    }
+
+
+    #[test]
+    fn compile_ir_keeps_asset_fill_colour_as_tint_not_background() {
+        let canvas = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.TestAssetFillTint",
+            "_RecordValue_": {
+                "size": {"x": 100, "y": 100},
+                "scene": [
+                    {
+                        "_Pointer_": "ptr:1",
+                        "_Type_": "BuildingBlocks_WidgetImage",
+                        "name": "bottom_bar",
+                        "isActive": true,
+                        "ImagePath": "UI/Textures/I_InteractiveScreens/Med/i_med_bioc_bottom-bar.tif",
+                        "FillColor": {
+                            "_Type_": "BuildingBlocks_ColorStyle",
+                            "color": "Base",
+                            "alpha": 1.0
+                        },
+                        "size": {
+                            "width": {"behavior": "Fixed", "value": 80.0},
+                            "height": {"behavior": "Fixed", "value": 20.0}
+                        }
+                    }
+                ],
+                "operations": []
+            }
+        });
+
+        let scene = crate::bb_scene::parse_bb_canvas(&canvas).expect("scene parse");
+        let ir = compile_ui_ir_from_scene(
+            &scene,
+            None,
+            "guid-asset-fill-tint",
+            Some("BuildingBlocks_Canvas.TestAssetFillTint"),
+            (100, 100),
+            &defaults(),
+            None,
+            None,
+            &[],
+            Vec::new(),
+            Vec::new(),
+            100,
+        );
+
+        let node = ir.nodes.iter().find(|node| node.name == "bottom_bar").expect("bottom bar node");
+        assert_eq!(node.background_fill_colour, None);
+        assert_eq!(node.background_fill_colour_token.as_deref(), None);
+        assert_eq!(node.icon_tint_colour_token.as_deref(), Some("Base"));
+    }
+
+    #[test]
+    fn compile_ir_does_not_draw_fill_colour_on_disabled_background_containers() {
+        let canvas = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.TestDisabledContainerFillTint",
+            "_RecordValue_": {
+                "size": {"x": 100, "y": 100},
+                "scene": [
+                    {
+                        "_Pointer_": "ptr:1",
+                        "_Type_": "BuildingBlocks_DisplayWidget",
+                        "name": "card_root",
+                        "isActive": true,
+                        "background": {
+                            "enable": false,
+                            "color": null
+                        },
+                        "FillColor": {
+                            "_Type_": "BuildingBlocks_ColorStyle",
+                            "color": "Bright",
+                            "alpha": 1.0
+                        },
+                        "size": {
+                            "width": {"behavior": "Fixed", "value": 80.0},
+                            "height": {"behavior": "Fixed", "value": 80.0}
+                        }
+                    },
+                    {
+                        "_Pointer_": "ptr:3",
+                        "_Type_": "BuildingBlocks_DisplayWidget",
+                        "name": "disabled_border_strip",
+                        "isActive": true,
+                        "background": {
+                            "enable": false,
+                            "color": {
+                                "_Type_": "BuildingBlocks_ColorStyle",
+                                "color": "Base",
+                                "alpha": 0.2
+                            }
+                        },
+                        "svgFill": {
+                            "svgPath": "UI/Textures/Vector/Drake/Hazardlines_header1.svg",
+                            "renderShape": true,
+                            "enableColorOverlay": true,
+                            "color": {
+                                "_Type_": "BuildingBlocks_ColorStyle",
+                                "color": "Base",
+                                "alpha": 0.2
+                            }
+                        },
+                        "size": {
+                            "width": {"behavior": "Fixed", "value": 80.0},
+                            "height": {"behavior": "Fixed", "value": 20.0}
+                        }
+                    },
+                    {
+                        "_Pointer_": "ptr:2",
+                        "_Type_": "BuildingBlocks_DisplayWidget",
+                        "name": "enabled_panel",
+                        "isActive": true,
+                        "background": {
+                            "enable": true,
+                            "color": {
+                                "_Type_": "BuildingBlocks_ColorStyle",
+                                "color": "Bright",
+                                "alpha": 1.0
+                            }
+                        },
+                        "size": {
+                            "width": {"behavior": "Fixed", "value": 80.0},
+                            "height": {"behavior": "Fixed", "value": 20.0}
+                        }
+                    }
+                ],
+                "operations": []
+            }
+        });
+
+        let scene = crate::bb_scene::parse_bb_canvas(&canvas).expect("scene parse");
+        let ir = compile_ui_ir_from_scene(
+            &scene,
+            None,
+            "guid-disabled-container-fill-tint",
+            Some("BuildingBlocks_Canvas.TestDisabledContainerFillTint"),
+            (100, 100),
+            &defaults(),
+            None,
+            None,
+            &[],
+            Vec::new(),
+            Vec::new(),
+            100,
+        );
+
+        let card_root = ir.nodes.iter().find(|node| node.name == "card_root").expect("card root node");
+        assert_eq!(card_root.background_fill_colour, None);
+        assert_eq!(card_root.background_fill_colour_token, None);
+
+        let disabled_border_strip = ir
+            .nodes
+            .iter()
+            .find(|node| node.name == "disabled_border_strip")
+            .expect("disabled border strip node");
+        assert_eq!(disabled_border_strip.background_fill_colour, None);
+        assert_eq!(disabled_border_strip.background_fill_colour_token, None);
+        assert_eq!(disabled_border_strip.background_fill_alpha, None);
+
+        let enabled_panel = ir.nodes.iter().find(|node| node.name == "enabled_panel").expect("enabled panel node");
+        assert_eq!(enabled_panel.background_fill_colour, None);
+        assert_eq!(enabled_panel.background_fill_colour_token.as_deref(), Some("Bright"));
+    }
+
+    #[test]
+    fn compile_ir_draws_explicit_background_color_on_disabled_base_background() {
+        let canvas = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.TestExplicitBackgroundColor",
+            "_RecordValue_": {
+                "size": {"x": 100, "y": 100},
+                "scene": [
+                    {
+                        "_Pointer_": "ptr:1",
+                        "_Type_": "BuildingBlocks_DisplayWidget",
+                        "name": "style_background_panel",
+                        "isActive": true,
+                        "background": {
+                            "enable": false,
+                            "color": null
+                        },
+                        "BackgroundColor": {"r": 0.015, "g": 0.031, "b": 0.09, "a": 0.5},
+                        "BackgroundColorToken": "Background",
+                        "size": {
+                            "width": {"behavior": "Fixed", "value": 80.0},
+                            "height": {"behavior": "Fixed", "value": 20.0}
+                        }
+                    }
+                ],
+                "operations": []
+            }
+        });
+
+        let scene = crate::bb_scene::parse_bb_canvas(&canvas).expect("scene parse");
+        let ir = compile_ui_ir_from_scene(
+            &scene,
+            None,
+            "guid-explicit-background-color",
+            Some("BuildingBlocks_Canvas.TestExplicitBackgroundColor"),
+            (100, 100),
+            &defaults(),
+            None,
+            None,
+            &[],
+            Vec::new(),
+            Vec::new(),
+            100,
+        );
+
+        let panel = ir.nodes.iter().find(|node| node.name == "style_background_panel").expect("panel node");
+        assert_eq!(panel.background_fill_colour, Some([0.015, 0.031, 0.09, 0.5]));
+        assert_eq!(panel.background_fill_colour_token.as_deref(), Some("Background"));
+    }
+
+    #[test]
+    fn compile_ir_marks_authored_accent_backgrounds_as_additive() {
+        let canvas = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.TestAccentBackgroundBlend",
+            "_RecordValue_": {
+                "size": {"x": 100, "y": 100},
+                "scene": [
+                    {
+                        "_Pointer_": "ptr:1",
+                        "_Type_": "BuildingBlocks_DisplayWidget",
+                        "name": "accent_panel",
+                        "isActive": true,
+                        "background": {
+                            "enable": true,
+                            "color": {
+                                "_Type_": "BuildingBlocks_ColorStyle",
+                                "color": "Accent1",
+                                "alpha": 1.0
+                            }
+                        },
+                        "size": {
+                            "width": {"behavior": "Fixed", "value": 80.0},
+                            "height": {"behavior": "Fixed", "value": 20.0}
+                        }
+                    }
+                ],
+                "operations": []
+            }
+        });
+
+        let scene = crate::bb_scene::parse_bb_canvas(&canvas).expect("scene parse");
+        let ir = compile_ui_ir_from_scene(
+            &scene,
+            None,
+            "guid-accent-background-blend",
+            Some("BuildingBlocks_Canvas.TestAccentBackgroundBlend"),
+            (100, 100),
+            &defaults(),
+            None,
+            None,
+            &[],
+            Vec::new(),
+            Vec::new(),
+            100,
+        );
+
+        let panel = ir.nodes.iter().find(|node| node.name == "accent_panel").expect("panel node");
+        assert_eq!(panel.background_fill_colour_token.as_deref(), Some("Accent1"));
+        assert_eq!(panel.colour_blend_mode, Some(UiIrColourBlendMode::Additive));
+    }
+
+    #[test]
+    fn compile_ir_uses_representative_animation_alpha_for_static_render() {
+        let canvas = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.TestAnimationStart",
+            "_RecordValue_": {
+                "size": {"x": 100, "y": 100},
+                "scene": [
+                    {
+                        "_Pointer_": "ptr:1",
+                        "_Type_": "BuildingBlocks_WidgetCircle",
+                        "name": "pulse",
+                        "isActive": true,
+                        "alpha": 1.0,
+                        "strokeExtent": 3.0,
+                        "animation": {
+                            "animationTimeline": {
+                                "keyframes": [
+                                    {
+                                        "percent": 0.0,
+                                        "modifiers": [
+                                            {
+                                                "modifier": {
+                                                    "_Type_": "BuildingBlocks_FieldModifierNumber",
+                                                    "field": "Alpha",
+                                                    "value": 0.0
+                                                }
+                                            },
+                                            {
+                                                "modifier": {
+                                                    "_Type_": "BuildingBlocks_FieldModifierNumber",
+                                                    "field": "SizeX",
+                                                    "value": 0.44
+                                                }
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        "percent": 0.4,
+                                        "modifiers": [
+                                            {
+                                                "modifier": {
+                                                    "_Type_": "BuildingBlocks_FieldModifierNumber",
+                                                    "field": "Alpha",
+                                                    "value": 1.0
+                                                }
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        "percent": 0.8,
+                                        "modifiers": [
+                                            {
+                                                "modifier": {
+                                                    "_Type_": "BuildingBlocks_FieldModifierNumber",
+                                                    "field": "Alpha",
+                                                    "value": 0.0
+                                                }
+                                            },
+                                            {
+                                                "modifier": {
+                                                    "_Type_": "BuildingBlocks_FieldModifierNumber",
+                                                    "field": "SizeX",
+                                                    "value": 1.33
+                                                }
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            "loopIndefinitely": true
+                        },
+                        "size": {
+                            "width": {"behavior": "Fixed", "value": 20.0},
+                            "height": {"behavior": "Fixed", "value": 20.0}
+                        }
+                    },
+                    {
+                        "_Pointer_": "ptr:2",
+                        "_Type_": "BuildingBlocks_WidgetTextField",
+                        "name": "label",
+                        "isActive": true,
+                        "alpha": 1.0,
+                        "text": "TOUCH TO START",
+                        "animation": {
+                            "animationTimeline": {
+                                "keyframes": [
+                                    {
+                                        "percent": 0.0,
+                                        "modifiers": [
+                                            {
+                                                "modifier": {
+                                                    "_Type_": "BuildingBlocks_FieldModifierNumber",
+                                                    "field": "Alpha",
+                                                    "value": 0.0
+                                                }
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        "percent": 0.33,
+                                        "modifiers": [
+                                            {
+                                                "modifier": {
+                                                    "_Type_": "BuildingBlocks_FieldModifierNumber",
+                                                    "field": "Alpha",
+                                                    "value": 0.66
+                                                }
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        "percent": 0.99,
+                                        "modifiers": [
+                                            {
+                                                "modifier": {
+                                                    "_Type_": "BuildingBlocks_FieldModifierNumber",
+                                                    "field": "Alpha",
+                                                    "value": 0.0
+                                                }
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        },
+                        "size": {
+                            "width": {"behavior": "Fixed", "value": 20.0},
+                            "height": {"behavior": "Fixed", "value": 20.0}
+                        }
+                    }
+                ],
+                "operations": []
+            }
+        });
+
+        let scene = crate::bb_scene::parse_bb_canvas(&canvas).expect("scene parse");
+        let ir = compile_ui_ir_from_scene(
+            &scene,
+            None,
+            "guid-animation-start",
+            Some("BuildingBlocks_Canvas.TestAnimationStart"),
+            (100, 100),
+            &defaults(),
+            None,
+            None,
+            &[],
+            Vec::new(),
+            Vec::new(),
+            100,
+        );
+
+        let pulse = ir.nodes.iter().find(|node| node.name == "pulse").expect("pulse node");
+        assert_eq!(pulse.alpha, 0.0);
+        assert_eq!(pulse.stroke_extent, Some(3.0));
+
+        let label = ir.nodes.iter().find(|node| node.name == "label").expect("label node");
+        assert_eq!(label.alpha, 0.66);
+    }
+}
