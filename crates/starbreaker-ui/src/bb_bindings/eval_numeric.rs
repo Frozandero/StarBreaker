@@ -70,6 +70,16 @@ impl BindingResolver {
                     Value::Str(s) | Value::Guid(s) => s.parse::<i64>().ok(),
                 }
             }
+            "BuildingBlocks_BindingsIntegerFromNumber" => {
+                // Number → integer bridge (the OUTPUT card's
+                // `LocalizedFromInteger(IntegerFromNumber(availablepower))`).
+                let mut seen_num = std::collections::HashSet::new();
+                op.get("input")
+                    .and_then(|v| v.as_str())
+                    .and_then(parse_points_to_or_ptr_str)
+                    .and_then(|p| self.eval_number_ptr(p, defaults, &mut seen_num))
+                    .map(|value| value.round() as i64)
+            }
             "BuildingBlocks_BindingsIntegerFromBoolean" => {
                 // A boolean variable's at-rest value is its type default
                 // (`false`), so an unresolved input selects the `isFalse`

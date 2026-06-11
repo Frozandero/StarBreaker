@@ -160,3 +160,34 @@ fn pip_slot_size_y_chain_resolves_one_sixth() {
         .expect("resolves");
     assert!((value - 0.167).abs() < 1e-9, "slot height = round3(1/6), got {value}");
 }
+
+/// `IntegerFromNumber` bridges the number domain into the integer/localized
+/// chain: the OUTPUT card's "2" / "/ 16" run
+/// `LocalizedFromInteger(IntegerFromNumber(NumberVariable))`.
+#[test]
+fn localized_from_integer_resolves_through_integer_from_number() {
+    let ops = serde_json::json!([
+        {"_Type_": "BuildingBlocks_BindingsLocalizedField",
+         "widget": "_PointsTo_:ptr:1", "field": "ParamInput0", "input": "_PointsTo_:ptr:10"},
+        {"_Pointer_": "ptr:10", "_Type_": "BindingsOperations_LocalizationCombine",
+         "inputL": null, "inputR": "_PointsTo_:ptr:11", "value": "@LOC_FORWARDSLASH",
+         "withSpace": true},
+        {"_Pointer_": "ptr:11", "_Type_": "BuildingBlocks_BindingsLocalizedFromInteger",
+         "defaultNZeros": 0, "nZeros": null, "withSeparators": true,
+         "input": "_PointsTo_:ptr:12"},
+        {"_Pointer_": "ptr:12", "_Type_": "BuildingBlocks_BindingsIntegerFromNumber",
+         "input": "_PointsTo_:ptr:13"},
+        {"_Pointer_": "ptr:13", "_Type_": "BuildingBlocks_BindingsNumberVariable",
+         "path": [], "binding": "totalpossiblepower", "inheritsNamespace": true}
+    ]);
+    let resolver = resolver_for(ops);
+
+    let mut defaults = DefaultValueRegistry::default();
+    defaults.insert_localization("loc_forwardslash", "/".to_string());
+    defaults.insert_path("totalpossiblepower", Value::Float(16.0));
+    assert_eq!(
+        resolver.resolve_field_text(1, "ParamInput0", &defaults).as_deref(),
+        Some("/ 16"),
+        "the OUTPUT total renders the slash-prefixed integer"
+    );
+}

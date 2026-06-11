@@ -9,12 +9,13 @@
 fn child_component_parameter_targets(
     child_operations: &[serde_json::Value],
 ) -> std::collections::HashMap<(String, &'static str), Vec<BbNodeId>> {
-    // Last-wins single target preserves the long-verified merge semantics
-    // (the medical platinum baselines). Relay clones (`_ParamRelay_`, created
-    // by the list/array materialisation machinery) are ADDITIONAL receivers:
-    // every materialised instance of a slot consumes the same wiring (the
-    // power pip chain's 'Max Piplist' across three canvas levels). Scenes
-    // without relays behave exactly as before.
+    // A parameter SLOT broadcasts: EVERY live authored def reading the slot
+    // receives the wiring (gen_mc_s_poweroutputinfo declares 'availablepower'
+    // twice — the value text and the icon/title gate). Relay clones
+    // (`_ParamRelay_`, created on injection/materialisation hops) are
+    // additional receivers: every materialised instance of a slot consumes
+    // the same wiring (the power pip chain's 'Max Piplist' across three
+    // canvas levels).
     // Injection replaces a pointer's definition by appending a shadowing op
     // (evaluation is last-wins), so only each pointer's LIVE (last) definition
     // is a candidate: a stale shadowed def still carries its previous slot
@@ -36,7 +37,7 @@ fn child_component_parameter_targets(
             live_index.insert(ptr, index);
         }
     }
-    let mut primary: std::collections::HashMap<(String, &'static str), BbNodeId> =
+    let mut primaries: std::collections::HashMap<(String, &'static str), Vec<BbNodeId>> =
         std::collections::HashMap::new();
     let mut relays: std::collections::HashMap<(String, &'static str), Vec<BbNodeId>> =
         std::collections::HashMap::new();
@@ -72,13 +73,12 @@ fn child_component_parameter_targets(
         {
             continue;
         }
-        primary.insert(key, ptr);
+        primaries.entry(key).or_default().push(ptr);
     }
     let mut targets: std::collections::HashMap<(String, &'static str), Vec<BbNodeId>> =
         std::collections::HashMap::new();
-    for (key, ptr) in primary {
-        let slot = targets.entry(key).or_default();
-        slot.push(ptr);
+    for (key, ptrs) in primaries {
+        targets.entry(key).or_default().extend(ptrs);
     }
     for (key, ptrs) in relays {
         let slot = targets.entry(key).or_default();

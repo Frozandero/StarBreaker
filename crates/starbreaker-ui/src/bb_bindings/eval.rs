@@ -41,6 +41,13 @@ impl BindingResolver {
                     .and_then(|p| self.eval_localized_ptr(p, defaults, seen))
                     .or_else(|| right_ptr.and_then(|p| self.eval_integer_ptr(p, defaults, &mut std::collections::HashSet::new())).map(|v| v.to_string()))
                     .unwrap_or_default();
+                // `withSpace` joins the parts with single spaces (the OUTPUT
+                // card's "2 / 16": the total combine is `"/" + 16` withSpace).
+                let sep = if op.get("withSpace").and_then(|v| v.as_bool()).unwrap_or(false) {
+                    " "
+                } else {
+                    ""
+                };
                 let mut out = base.to_string();
                 if out.contains("%d") {
                     out = out.replacen("%d", if !right.is_empty() { &right } else { &left }, 1);
@@ -49,11 +56,11 @@ impl BindingResolver {
                 } else if left.is_empty() && right.is_empty() {
                     // keep base
                 } else if left.is_empty() {
-                    out = format!("{out}{right}");
+                    out = format!("{out}{sep}{right}");
                 } else if right.is_empty() {
-                    out = format!("{left}{out}");
+                    out = format!("{left}{sep}{out}");
                 } else {
-                    out = format!("{left}{out}{right}");
+                    out = format!("{left}{sep}{out}{sep}{right}");
                 }
                 Some(out)
             }

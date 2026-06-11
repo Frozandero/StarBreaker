@@ -238,11 +238,15 @@ fn inject_dynamic_param_field_bindings(
         };
 
         for &target_ptr in target_ptrs {
-            // A clone is a RELAY (eligible for the NEXT hop's wiring) only on
-            // a materialised-instance hop or when it replaces an existing
-            // relay (the pip chain's higher hops). Plain canvases keep the
-            // long-verified dead-end semantics the medical baselines pin.
-            let tag_relay = namespaced_hop || relay_ptrs.contains(&target_ptr);
+            // Every ComponentParameter replacement clone is a RELAY (eligible
+            // for the NEXT hop's wiring): the OUTPUT card's number params run
+            // master → power → outputinfo through a PLAIN (un-namespaced)
+            // canvas hop, exactly like the pip chain's materialised hops.
+            // Primaries stay scoped to the child's OWN defs (merged non-relay
+            // defs are excluded above), so relays only ADD receivers keyed by
+            // their cloned (slot, kind).
+            let tag_relay = true;
+            let _ = (namespaced_hop, &relay_ptrs);
             let mut ptr_remap = std::collections::HashMap::new();
             let _ = clone_binding_subgraph_into_child(
                 input_ptr,
