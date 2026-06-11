@@ -204,10 +204,12 @@ Flows (commands in the reference doc §2/§7):
 - To launch fresh-context work on a screen, instantiate
   `crates/starbreaker-ui/docs/ui-matching-agent-prompt.md` with the screen
   name — the dossier (reference doc §3) supplies everything else.
-- At arc boundaries, run the process retrospective
-  (`crates/starbreaker-ui/docs/ui-process-retro-prompt.md`): findings append
-  to the `docs/ui-process-improvements.md` ledger and get implemented, so
-  each arc lowers the next one's bootstrap cost.
+- At the END of an arc — in the SAME session, before clearing context —
+  paste the process retrospective prompt
+  (`crates/starbreaker-ui/docs/ui-process-retro-prompt.md`): it runs on the
+  session's lived experience (the friction only that session knows);
+  findings append to the `docs/ui-process-improvements.md` ledger and get
+  implemented, so each arc lowers the next one's bootstrap cost.
 
 ## 10. Known pain points & don't-retry list
 
