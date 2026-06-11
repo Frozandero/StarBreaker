@@ -197,6 +197,33 @@ fn derived_clipper_paths_match_reference_model() {
     assert!(paths.get("piplist/[0003]/piplist/selectedindex").is_none());
 }
 
+/// The battery card's `batteryremaining` / `batterytotal` engine variables
+/// come from the fitted Battery items: none fitted (the Clipper) shows
+/// "0 / 0" in the in-game reference; fitted batteries count as charged at
+/// rest.
+#[test]
+fn battery_counts_come_from_fitted_items() {
+    let pools = power_pools_from_vehicle(&clipper_pools_json());
+
+    let no_batteries = clipper_fitted_items();
+    let paths =
+        derive_power_paths(&pools, &no_batteries, &PoolDefaults::default(), &clipper_pool_icons());
+    assert_eq!(paths.get("batteryremaining"), Some(&UiValue::Int(0)));
+    assert_eq!(paths.get("batterytotal"), Some(&UiValue::Int(0)));
+
+    let mut with_batteries = clipper_fitted_items();
+    with_batteries.push(item_json("Battery", 0, None));
+    with_batteries.push(item_json("Battery", 0, None));
+    let paths = derive_power_paths(
+        &pools,
+        &with_batteries,
+        &PoolDefaults::default(),
+        &clipper_pool_icons(),
+    );
+    assert_eq!(paths.get("batteryremaining"), Some(&UiValue::Int(2)));
+    assert_eq!(paths.get("batterytotal"), Some(&UiValue::Int(2)));
+}
+
 /// The gauge scale ceiling tracks the ITEM's real overheat threshold (the
 /// Clipper's flight controller overheats at 450 K, its shields at 372 K), so
 /// the heat-bar band ratios stay coherent (overheat never exceeds the scale).

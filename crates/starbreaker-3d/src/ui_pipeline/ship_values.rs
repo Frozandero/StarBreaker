@@ -338,6 +338,15 @@ pub(crate) fn derive_power_paths(
 
     let mut paths: HashMap<String, UiValue> = HashMap::new();
     paths.insert("piplist".into(), UiValue::Int(sized.len() as i64));
+    // Battery card: counts of fitted Battery items. At rest every fitted
+    // battery is charged, so remaining == total (the Clipper fits none and
+    // the in-game card reads "0 / 0").
+    let battery_count = fitted_items
+        .iter()
+        .filter(|item| item_attach_type(item).as_deref() == Some("Battery"))
+        .count() as i64;
+    paths.insert("batteryremaining".into(), UiValue::Int(battery_count));
+    paths.insert("batterytotal".into(), UiValue::Int(battery_count));
     let max_total = sized.iter().map(|(_, total, _)| *total).max().unwrap_or(0);
     paths.insert(
         "resourcenetworkui/powermanagement/pipsLengthMax".into(),

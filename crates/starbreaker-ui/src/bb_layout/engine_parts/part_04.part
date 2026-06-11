@@ -3,6 +3,7 @@ fn layout_flex_no_grow_children(
     container: Rect,
     flex: &serde_json::Value,
     container_pivot_x: f32,
+    container_scrollable: bool,
     scene: &BbScene,
     csx: f32,
     csy: f32,
@@ -41,25 +42,7 @@ fn layout_flex_no_grow_children(
     let mut sizes: Vec<(BbNodeId, f32, f32, bool)> = Vec::with_capacity(children.len());
     let mut right_aligned_flow_items = 0usize;
     let mut total_main = 0.0f32;
-    // Intrinsic TEXT measurement applies only when the zero-size Auto rule
-    // would collapse the WHOLE flow (every active flow child is Auto on the
-    // main axis — the OUTPUT card's "2" + "/ 16" value pair). Mixed flows
-    // keep the long-verified zero rule.
-    let all_flow_children_auto_main = {
-        let mut any = false;
-        let all = children.iter().all(|child_id| {
-            let Some(node) = scene.nodes.get(child_id) else { return true };
-            if !node.is_active
-                || node.raw.get("affectsLayout").and_then(|v| v.as_bool()) == Some(false)
-            {
-                return true;
-            }
-            any = true;
-            let main = if is_row { &node.sizing.width } else { &node.sizing.height };
-            matches!(main, BbValue::Other { behavior, .. } if behavior == "Auto")
-        });
-        any && all
-    };
+    let all_flow_children_auto_main = flow_children_all_auto_main(children, scene, is_row);
     for &child_id in children {
         let Some(node) = scene.nodes.get(&child_id) else { continue };
         if !node.is_active {
@@ -334,6 +317,11 @@ fn layout_flex_no_grow_children(
     }
 
     total_main += item_spacing * (sizes.len().saturating_sub(1) as f32);
+    // Standard flex SHRINK — policy and exemptions in `apply_flex_no_grow_shrink`.
+    total_main = apply_flex_no_grow_shrink(
+        &mut sizes, scene, container, is_row, item_spacing, total_main,
+        container_scrollable, wrap_enabled,
+    );
     // Reverse-direction flex lays authored order from the container's far
     // end: lay the REVERSED order top-down/left-right with the block aligned
     // to the end (Start justification means the far edge there).

@@ -61,6 +61,110 @@ fn auto_text_intrinsic_main(
     best
 }
 
+/// Intrinsic TEXT measurement applies only when the zero-size Auto rule
+/// would collapse the WHOLE flow (every active flow child is Auto on the
+/// main axis — the OUTPUT card's "2" + "/ 16" value pair). Mixed flows
+/// keep the long-verified zero rule.
+fn flow_children_all_auto_main(children: &[BbNodeId], scene: &BbScene, is_row: bool) -> bool {
+    let mut any = false;
+    let all = children.iter().all(|child_id| {
+        let Some(node) = scene.nodes.get(child_id) else { return true };
+        if !node.is_active
+            || node.raw.get("affectsLayout").and_then(|v| v.as_bool()) == Some(false)
+        {
+            return true;
+        }
+        any = true;
+        let main = if is_row { &node.sizing.width } else { &node.sizing.height };
+        matches!(main, BbValue::Other { behavior, .. } if behavior == "Auto")
+    });
+    any && all
+}
+
+/// Standard flex SHRINK: overflowing no-grow children scale down
+/// proportionally to fit (CSS flex-shrink; the battery card's column authors
+/// 0.9 + 0.5 Auto fractions overflowing a 227px container). Exemptions where
+/// the engine lets content overflow instead:
+/// - scrolling containers (the power pip columns),
+/// - wrap-enabled rows,
+/// - flows with any non-flex-managed child — sizing-method "None" resolves
+///   via the fill fallback and overflows by design (the medical footer's
+///   TextLayout row keeps both full-width label-caption pairs).
+///
+/// Returns the (possibly reduced) total main extent including spacing.
+fn apply_flex_no_grow_shrink(
+    sizes: &mut [(BbNodeId, f32, f32, bool)],
+    scene: &BbScene,
+    container: Rect,
+    is_row: bool,
+    item_spacing: f32,
+    total_main: f32,
+    container_scrollable: bool,
+    wrap_enabled: bool,
+) -> f32 {
+    let shrink_avail = if is_row { container.w } else { container.h };
+    if container_scrollable || wrap_enabled || shrink_avail <= 0.0 || total_main <= shrink_avail {
+        return total_main;
+    }
+    let all_items_flex_managed = sizes.iter().all(|(child_id, _, _, _)| {
+        scene
+            .nodes
+            .get(child_id)
+            .is_some_and(|node| main_axis_flex_managed(node, is_row))
+    });
+    if !all_items_flex_managed {
+        return total_main;
+    }
+    let spacing_total = item_spacing * (sizes.len().saturating_sub(1) as f32);
+    let items_main = total_main - spacing_total;
+    let target_items = (shrink_avail - spacing_total).max(0.0);
+    if items_main <= 0.0 || target_items >= items_main {
+        return total_main;
+    }
+    let scale = target_items / items_main;
+    if std::env::var("BB_SHRINK_PROBE").as_deref() == Ok("1") {
+        for (child_id, w, h, _) in sizes.iter() {
+            let node = scene.nodes.get(child_id);
+            eprintln!(
+                "BB_SHRINK_PROBE: scale={scale} is_row={is_row} child={child_id} name={:?} ty={:?} main_sizing={:?} w={w} h={h}",
+                node.map(|n| n.name.as_str()),
+                node.map(|n| &n.ty),
+                node.map(|n| if is_row { &n.sizing.width } else { &n.sizing.height }),
+            );
+        }
+    }
+    for (_, w, h, _) in sizes.iter_mut() {
+        if is_row {
+            *w *= scale;
+        } else {
+            *h *= scale;
+        }
+    }
+    sizes
+        .iter()
+        .map(|(_, w, h, _)| if is_row { *w } else { *h })
+        .sum::<f32>()
+        + spacing_total
+}
+
+/// A child participates in flex main-axis sizing when its authored sizing is
+/// an extent the layout engine actually distributes: Fixed, Percent,
+/// normalized Auto fractions (0,1] and cross-axis percent (mirroring
+/// `resolve_value`'s taxonomy). Auto content hints (value > 1) and unknown
+/// behaviors ("None" in authored data) resolve via the fill fallback and are
+/// not flex-managed.
+fn main_axis_flex_managed(node: &crate::bb_scene::BbNode, is_row: bool) -> bool {
+    let main = if is_row { &node.sizing.width } else { &node.sizing.height };
+    match main {
+        BbValue::Fixed(_) | BbValue::Percent(_) => true,
+        BbValue::Other { value, behavior } => {
+            (behavior == "Auto" && *value > 0.0 && *value <= 1.0)
+                || (is_row && behavior == "PercentOfY")
+                || (!is_row && behavior == "PercentOfX")
+        }
+    }
+}
+
 #[cfg(test)]
 mod auto_text_flex_tests {
     use super::*;
@@ -117,5 +221,188 @@ mod auto_text_flex_tests {
         let group_right = total.x + total.w;
         let centre_offset = ((group_left + group_right) / 2.0 - 200.0).abs();
         assert!(centre_offset < 1.0, "group centred, offset {centre_offset}");
+    }
+}
+
+#[cfg(test)]
+mod flex_shrink_tests {
+    use super::*;
+    use crate::bb_scene::parse_bb_canvas;
+
+    /// Overflowing no-grow flex children shrink proportionally to fit (CSS
+    /// flex-shrink): the battery card's column authors 0.9 + 0.5 fractions
+    /// (318px in a 227px container) and the in-game card keeps all three
+    /// rows inside. Scrolling lists are exempt (the pip columns overflow by
+    /// design).
+    #[test]
+    fn overflowing_no_grow_children_shrink_to_fit() {
+        let canvas = serde_json::json!({
+            "_RecordValue_": {
+                "_Type_": "BuildingBlocks_Canvas",
+                "size": {"x": 300.0, "y": 227.0},
+                "coordinateMethod": "useRaw",
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "column", "isActive": true,
+                     "layoutPolicy": {"_Type_": "BuildingBlocks_FlexContainer",
+                                      "direction": "Column", "axisJustification": "Start"},
+                     "sizing": {"width": {"value": 1.0, "behavior": "Percent"},
+                                "height": {"value": 1.0, "behavior": "Percent"}}},
+                    {"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "values", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "sizing": {"width": {"value": 1.0, "behavior": "Percent"},
+                                "height": {"value": 0.9, "behavior": "Auto"}}},
+                    {"_Pointer_": "ptr:3", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "offline_row", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "sizing": {"width": {"value": 1.0, "behavior": "Percent"},
+                                "height": {"value": 0.5, "behavior": "Auto"}}}
+                ],
+                "operations": []
+            }
+        });
+        let scene = parse_bb_canvas(&canvas).expect("fixture parses");
+        let result = layout(&scene, 300, 227);
+        let values = result.rects[&2];
+        let offline = result.rects[&3];
+        let shrink = 227.0 / (0.9 * 227.0 + 0.5 * 227.0);
+        assert!(
+            (values.h - 0.9 * 227.0 * shrink).abs() < 1.0,
+            "values row shrinks proportionally, got {}",
+            values.h
+        );
+        assert!(
+            (offline.y - (values.y + values.h)).abs() < 0.6,
+            "rows stack sequentially after shrink"
+        );
+        assert!(
+            offline.y + offline.h <= 227.5,
+            "rows fit the container, bottom {}",
+            offline.y + offline.h
+        );
+    }
+
+    /// Sizing-method "None" children are not flex-managed: they fall back to
+    /// container fill and visibly overflow (the medical footer's TextLayout
+    /// row holds two 604.8px-wide label-caption pairs in a 604.8px row with
+    /// overflow Visible). Shrink must not redistribute them.
+    #[test]
+    fn fill_fallback_children_do_not_shrink() {
+        let canvas = serde_json::json!({
+            "_RecordValue_": {
+                "_Type_": "BuildingBlocks_Canvas",
+                "size": {"x": 604.8, "y": 108.0},
+                "coordinateMethod": "useRaw",
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "text_layout", "isActive": true,
+                     "layoutPolicy": {"_Type_": "BuildingBlocks_FlexContainer",
+                                      "direction": "Row", "axisJustification": "Start",
+                                      "columnSpacing": 30.0},
+                     "sizing": {"width": {"value": 1.0, "behavior": "Percent"},
+                                "height": {"value": 1.0, "behavior": "Percent"}}},
+                    {"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "operator_name", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "sizing": {"width": {"value": 64.0, "behavior": "None"},
+                                "height": {"value": 64.0, "behavior": "None"}}},
+                    {"_Pointer_": "ptr:3", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "patient_name", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "sizing": {"width": {"value": 64.0, "behavior": "None"},
+                                "height": {"value": 64.0, "behavior": "None"}}}
+                ],
+                "operations": []
+            }
+        });
+        let scene = parse_bb_canvas(&canvas).expect("fixture parses");
+        let result = layout(&scene, 605, 108);
+        assert!(
+            (result.rects[&2].w - 604.8).abs() < 1.5 && (result.rects[&3].w - 604.8).abs() < 1.5,
+            "fill-fallback children keep container width, got {} and {}",
+            result.rects[&2].w,
+            result.rects[&3].w
+        );
+    }
+
+    /// The flex-managed taxonomy mirrors `resolve_value`: Fixed, Percent and
+    /// normalized Auto fractions (0,1] are engine-distributed extents; Auto
+    /// content hints (>1, e.g. the medical label-caption pairs' Auto 64) and
+    /// method "None" resolve via the fill fallback and must not shrink.
+    #[test]
+    fn auto_content_hints_are_not_flex_managed() {
+        let canvas = serde_json::json!({
+            "_RecordValue_": {
+                "_Type_": "BuildingBlocks_Canvas",
+                "size": {"x": 100.0, "y": 100.0},
+                "coordinateMethod": "useRaw",
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "fixed", "isActive": true,
+                     "sizing": {"width": {"value": 80.0, "behavior": "Fixed"},
+                                "height": {"value": 80.0, "behavior": "Fixed"}}},
+                    {"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "auto_fraction", "isActive": true,
+                     "sizing": {"width": {"value": 0.9, "behavior": "Auto"},
+                                "height": {"value": 0.9, "behavior": "Auto"}}},
+                    {"_Pointer_": "ptr:3", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "auto_hint", "isActive": true,
+                     "sizing": {"width": {"value": 64.0, "behavior": "Auto"},
+                                "height": {"value": 64.0, "behavior": "Auto"}}},
+                    {"_Pointer_": "ptr:4", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "method_none", "isActive": true,
+                     "sizing": {"width": {"value": 64.0, "behavior": "None"},
+                                "height": {"value": 64.0, "behavior": "None"}}}
+                ],
+                "operations": []
+            }
+        });
+        let scene = parse_bb_canvas(&canvas).expect("fixture parses");
+        let by_name = |name: &str| {
+            scene
+                .nodes
+                .values()
+                .find(|n| n.name == name)
+                .expect("fixture node")
+        };
+        assert!(main_axis_flex_managed(by_name("fixed"), true));
+        assert!(main_axis_flex_managed(by_name("auto_fraction"), true));
+        assert!(!main_axis_flex_managed(by_name("auto_hint"), true));
+        assert!(!main_axis_flex_managed(by_name("method_none"), true));
+    }
+
+    /// A scrolling list keeps its overflow (the power screen's pip columns
+    /// scroll horizontally past the viewport).
+    #[test]
+    fn scrolling_list_children_do_not_shrink() {
+        let canvas = serde_json::json!({
+            "_RecordValue_": {
+                "_Type_": "BuildingBlocks_Canvas",
+                "size": {"x": 100.0, "y": 50.0},
+                "coordinateMethod": "useRaw",
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_WidgetList",
+                     "name": "list", "isActive": true,
+                     "scrollPolicy": {"_Type_": "BuildingBlocks_UnidirectionalScroller",
+                                      "scrollDirection": "Horizontal"},
+                     "layoutPolicy": {"_Type_": "BuildingBlocks_FlexContainer",
+                                      "direction": "Row", "axisJustification": "Start"},
+                     "sizing": {"width": {"value": 1.0, "behavior": "Percent"},
+                                "height": {"value": 1.0, "behavior": "Percent"}}},
+                    {"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "item_a", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "sizing": {"width": {"value": 80.0, "behavior": "Fixed"},
+                                "height": {"value": 1.0, "behavior": "Percent"}}},
+                    {"_Pointer_": "ptr:3", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "item_b", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "sizing": {"width": {"value": 80.0, "behavior": "Fixed"},
+                                "height": {"value": 1.0, "behavior": "Percent"}}}
+                ],
+                "operations": []
+            }
+        });
+        let scene = parse_bb_canvas(&canvas).expect("fixture parses");
+        let result = layout(&scene, 100, 50);
+        assert!(
+            (result.rects[&2].w - 80.0).abs() < 0.5 && (result.rects[&3].w - 80.0).abs() < 0.5,
+            "scroll-list items keep their authored size"
+        );
     }
 }

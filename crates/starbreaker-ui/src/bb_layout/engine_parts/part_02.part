@@ -67,11 +67,18 @@ fn layout_node_with_rect(
                 .and_then(|v| v.as_i64())
                 .unwrap_or(0)
         });
+        // Scrolling containers keep child overflow (the pip list's columns
+        // run past the viewport by design); plain flows flex-shrink to fit.
+        let container_scrollable = node
+            .raw
+            .get("scrollPolicy")
+            .is_some_and(|policy| !policy.is_null());
         layout_flex_children(
             &flow_children,
             inner_rect,
             flex,
             node.pivot.x,
+            container_scrollable,
             scene,
             csx,
             csy,
