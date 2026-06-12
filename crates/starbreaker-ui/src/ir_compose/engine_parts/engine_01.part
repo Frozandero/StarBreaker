@@ -533,7 +533,7 @@ fn brand_title(slug: &str) -> String {
 /// - `Background` resolves the parsed style background field (kept as a
 ///   field reference rather than a slot index).
 /// Non-enum aliases were deleted 2026-06-12 — they occur in no DataCore
-/// record (docs/ui-hardcoding-remediation-plan.md Phase 1 audit).
+/// record (2026-06-12 token audit — no game record contains them).
 fn resolve_colour_token(ctx: &ComposeContext<'_>, token: &str) -> Option<[f32; 4]> {
     let key = token.trim().to_ascii_lowercase();
     if key.is_empty() {

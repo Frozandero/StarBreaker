@@ -670,3 +670,137 @@ When executing this plan, track progress IN THIS FILE by appending `[done
 agent can resume mid-phase without re-deriving state. The companion
 work-state doc for the parity arc itself remains
 `docs/ui-clipper-parity-handoff.md` — do not mix the two.
+
+---
+
+## Part D — third retrospective (2026-06-12, hard-coding remediation + MFD text-size arc)
+
+Evidence base: the 2026-06-12 session (commits 5bf1d7f84 … 891f20725 —
+RgbaColor guard/fixture, BB-enum colour realignment, the text-format style
+route + freeze, eight empirically-deleted rules, the MFD
+`imageSizePercent` host division + artifact re-freeze, the Ruffle
+post-mortem). Implementation plan for everything below:
+**`docs/ui-improvement-plan.md`** (checkbox-phased; less-capable-agent
+detail). Items here record the findings; the plan carries the work.
+
+### 19. Ad-hoc pixel measurement is the top error source → measurement tool + bank
+
+**Observed:** ~15 throwaway python snippets were written in one session to
+measure glyph cap heights, row/column runs, and colour ratios. Two of them
+produced WRONG conclusions that cost hours: the power footer "ink ×1.4"
+claim (the measurement box included the footer bar line — the real glyph
+cap was 52, not 81) and a "2"-glyph cap of 218 (box caught the card
+underline). The capture-cast colour method (ui-reference §3) also had to be
+re-derived as an ADDITIVE-haze model mid-session.
+
+**Improvement:** one measurement tool with contamination guards (single
+glyph-run extraction, bar-line exclusion, per-element boxes from IR rects)
+and a once-per-capture **measurement bank** checked in as a provenance
+fixture, so adjudications become lookups instead of re-measurements.
+
+**Action:** plan Phase 1 (`scripts/ui_measure.py`, measurement-bank
+fixtures, rectification — see item 21).
+
+### 20. Stale exported PNGs silently mis-adjudicate → export stamp + hard staleness failure
+
+**Observed:** the whole-image visual guard compares
+`ships/Data/UI/Generated/*.png`, which only refresh on export. A rule
+deletion (`ScreenNameBackground` suppression) was judged "zero drift"
+against WEEKS-old files; a fresh export showed a real regression
+(annunciator strip warm haze). The guard gave a wrong-but-plausible PASS —
+the exact failure class of item 3.
+
+**Improvement:** the export writes a stamp; the visual guard HARD-FAILS
+when the compared PNGs predate the stamp's expectations or the stamp is
+missing/stale. Docs already say "re-export before any artifact comparison
+(~50s)" — the guard must enforce it.
+
+**Action:** plan Phase 0.
+
+### 21. Reference perspective skew burns sessions → rectification helper
+
+**Observed (Tom):** captures are manual, often low-res and
+non-perpendicular, compensated by hand in GIMP. The power-screen padding
+investigation burned hours inside ±10px skew ambiguity; several layout
+models were UNDECIDABLE against the capture.
+
+**Improvement:** `ui_compare.py --rectify` — a homography from four
+screen-corner points (clicked once per capture, persisted next to the
+reference) rectifies the capture to render dimensions before comparison.
+
+**Action:** plan Phase 1.
+
+### 22. The empirical disable→adjudicate audit — codify with its limits
+
+**Observed:** disabling a suspect rule and letting the frozen pins
+adjudicate proved EIGHT hard-coded rules deletable and THREE load-bearing
+in one session — far cheaper than per-rule reference archaeology. But its
+verdict is only "no FROZEN PIN references this" (five screens, one ship),
+and item 20 shows it can lie when comparison inputs are stale.
+
+**Improvement:** document the method in `docs/ui-workflow.md` §5 with its
+two preconditions (fresh export; lib+IR+visual suites all consulted) and
+its scope caveat.
+
+**Action:** plan Phase 6.
+
+### 23. IR-dump query helpers lived in /tmp → promote
+
+**Observed:** `/tmp/irq.py` (per-node rect/payload/tag queries over a
+`--dump-ir-dir` JSON) and `/tmp/irtree.py` (ancestor-chain printer) were
+rewritten from memory during the session and used dozens of times.
+
+**Action:** plan Phase 1 (`scripts/ui_ir_query.py`).
+
+### 24. Engine-model knowledge discovered this arc is not in the runbook
+
+**Observed:** four hard-won models live only in code comments / the
+handoff: (a) authored TRBL padding scales with the canvas geometry scale
+(×2 on the 800×600 MFD content canvas — pinned by pip-top/stride
+measurements); (b) `Parent(...)`-wrapped style entries select the
+textfield's implicit TEXT-FORMAT child (the text-format route, with the
+literal-match precedence caveat from T3); (c) the GFx-host
+`imageSizePercent` division applies to ALL size classes on the host path;
+(d) the additive-haze photometric model for capture colour adjudication.
+Plus the Ruffle/AVM1 facts (now in the runbook §"Why Ruffle…").
+
+**Action:** plan Phase 6 (runbook "engine model" entries with their
+citations).
+
+### 25. Probe output channels are inconsistent
+
+**Observed:** `BB_A3_STYLE_PROBE` logs via `log::info!` (invisible without
+`RUST_LOG=info`, which cost a blank-output round trip); `BB_TEXT_FORMAT_PROBE`
+prints via `eprintln!` (always visible). The probe registry doesn't say
+which is which.
+
+**Improvement:** standardize env-gated probes on `eprintln!`; note the
+channel per probe in the registry table.
+
+**Action:** plan Phase 0.
+
+### 26. Examples are outside the check battery → freeze runs break late
+
+**Observed:** the IR snapshot freeze failed mid-flow because two EXAMPLES
+(`freeze_ui_snapshot_ir.rs`, `dump_ui_ir_targets.rs`) still called the
+deleted `drake_amber_fallback` — `ui_check.sh` never compiles examples.
+
+**Improvement:** `cargo check -p starbreaker-ui --examples` joins the
+battery (TDD tier — it is fast).
+
+**Action:** plan Phase 0.
+
+### 27. Truth mining beats capture calibration — AVM1 facts verified
+
+**Observed:** the costliest derivations (44px content inset, slider
+formula, text scale) are runtime ActionScript. VERIFIED this session:
+`BuildingBlocks_root.swf` is SWF v8 / **AVM1** (127 `DoInitAction` tags,
+no DoABC); the already-vendored `swf = "0.2"` crate exposes
+`avm1::types::{Action, ConstantPool, Push}`; the file extracts in <1s via
+`starbreaker p4k extract --output /tmp/bbswf --filter
+"**/BuildingBlocks_root.swf"`.
+
+**Improvement:** a static AVM1 constant/bytecode dumper turns measured
+framework constants into data-derived ones.
+
+**Action:** plan Phase 2.

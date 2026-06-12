@@ -12,7 +12,7 @@
 //! hand-mapped aliases (`Accent3..5`, `Mid`, `Light`, `Highlight`, `Gold`,
 //! `Special`, `Surface`, `BG`, `FG`, `Warning`, `Success`, `Negative`,
 //! `Text`, `White`, …) occur in no game record and were deleted
-//! (docs/ui-hardcoding-remediation-plan.md Phase 1).
+//! (2026-06-12 token audit; see docs/ui-process-improvements.md Part D).
 //!
 //! Role divergences (foreground vs surface) are real engine behaviour but
 //! live at the two call sites with their reference citations; this module
