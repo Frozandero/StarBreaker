@@ -557,6 +557,10 @@ fn resolve_colour_token(ctx: &ComposeContext<'_>, token: &str) -> Option<[f32; 4
         "disabled" => style_colour_slot_rgba(ctx, 8),
         "highlight" | "contactpositiverep" => style_colour_slot_rgba(ctx, 7),
         "primarytext" | "text" | "foreground" | "fg" | "white" => Some([1.0, 1.0, 1.0, 1.0]),
+        // BB_ColorStyle enum index 16 — the design system's generic icon
+        // colour (the power system/card icons; HUD records author
+        // `FillColor=MissionObjectives` for their generic Icon Styles).
+        "missionobjectives" => style_colour_slot_rgba(ctx, 16),
         "background" => Some([
             ctx.style.background.r as f32 / 255.0,
             ctx.style.background.g as f32 / 255.0,

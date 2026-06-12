@@ -260,6 +260,72 @@ mod tests {
     }
 
     #[test]
+    fn compile_ir_entry_less_overlay_custom_shape_defaults_to_missionobjectives() {
+        // The power screen's system/card icons (shape_SystemIcon,
+        // shape_OutputIcon…) are WidgetCustomShapes with
+        // svgFill.enableColorOverlay and a null colour, and the DRAK brand
+        // authors NO at-rest colour entry for them (other brands do: misc/orig
+        // author "System Icon Color"). In-game they render the brand's
+        // MissionObjectives slot — the design system's generic icon colour
+        // (HUD records author `FillColor=MissionObjectives` for Icon Styles).
+        // Entry-coloured shapes (the target chevrons' embedded Base, the
+        // medical fingerprint's Accent1) resolve from raw first and are
+        // unaffected.
+        let canvas = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.TestIconShapeDefault",
+            "_RecordValue_": {
+                "size": {"x": 100, "y": 100},
+                "scene": [
+                    {
+                        "_Pointer_": "ptr:1",
+                        "_Type_": "BuildingBlocks_WidgetCustomShape",
+                        "name": "shape_SystemIcon",
+                        "isActive": true,
+                        "svgFill": {
+                            "svgPath": "UI/Textures/Vector/General/CommonIcons/icon_common_weapon_gun.svg",
+                            "renderShape": true,
+                            "enableColorOverlay": true,
+                            "color": null
+                        },
+                        "size": {
+                            "width": {"behavior": "Fixed", "value": 99.0},
+                            "height": {"behavior": "Fixed", "value": 99.0}
+                        }
+                    }
+                ],
+                "operations": []
+            }
+        });
+
+        let scene = crate::bb_scene::parse_bb_canvas(&canvas).expect("scene parse");
+        let ir = compile_ui_ir_from_scene(
+            &scene,
+            None,
+            "guid-icon-shape-default",
+            Some("BuildingBlocks_Canvas.TestIconShapeDefault"),
+            (100, 100),
+            &defaults(),
+            None,
+            None,
+            &[],
+            Vec::new(),
+            Vec::new(),
+            100,
+        );
+
+        let node = ir
+            .nodes
+            .iter()
+            .find(|n| n.name == "shape_SystemIcon")
+            .expect("icon shape node");
+        assert_eq!(
+            node.icon_tint_colour_token.as_deref(),
+            Some("MissionObjectives"),
+            "an entry-less colour-overlay custom shape takes the generic icon colour"
+        );
+    }
+
+    #[test]
     fn compile_ir_style_tagged_textfield_inherits_brand_style_fill_colour() {
         // The medical menu option headers (OptionNameText, Heading2) carry
         // style tags with no colour semantics (UI_Generic_Flag_03); their

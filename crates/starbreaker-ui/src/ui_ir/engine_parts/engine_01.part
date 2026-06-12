@@ -1232,7 +1232,16 @@ fn build_ui_ir_nodes(
             &node.raw,
             true,
         )
-        .or_else(|| icon_tint_colour_token_from_style_tags(&own_style_tags, &node.ty));
+        .or_else(|| icon_tint_colour_token_from_style_tags(&own_style_tags, &node.ty))
+        .or_else(|| {
+            custom_shape_overlay_icon_default(
+                node,
+                icon_tint_colour.is_some()
+                    || background_fill_colour.is_some()
+                    || background_fill_colour_token.is_some(),
+                asset_ref.as_deref(),
+            )
+        });
 
     {
         nodes.push(UiIrNode {
@@ -1532,6 +1541,48 @@ fn overflow_mode_from_raw(raw: &serde_json::Value) -> Option<String> {
     }
 
     None
+}
+
+/// The generic icon colour for an entry-less colour-overlay custom shape:
+/// `BB_ColorStyle` MissionObjectives (enum 16). The power screen's
+/// system/card icons (`shape_SystemIcon`, `shape_OutputIcon`…) author
+/// `svgFill.enableColorOverlay` with a null colour and the DRAK brand has NO
+/// at-rest colour entry for them (misc/orig author explicit "System Icon
+/// Color" entries) — in-game they render the MissionObjectives slot, the same
+/// role HUD records author as `FillColor=MissionObjectives` for their generic
+/// Icon Styles. Entry-coloured shapes (the target chevrons' embedded `Base`,
+/// the medical fingerprint's `Accent1`) resolve from raw first and never
+/// reach this default.
+fn custom_shape_overlay_icon_default(
+    node: &BbNode,
+    has_resolved_colour: bool,
+    asset_ref: Option<&str>,
+) -> Option<String> {
+    if has_resolved_colour || !matches!(node.ty, BbNodeType::WidgetCustomShape) {
+        return None;
+    }
+    let svg = node.raw.get("svgFill")?;
+    let overlay_enabled = svg
+        .get("enableColorOverlay")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let render_shape = svg
+        .get("renderShape")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    // The icon's vector source can be authored (`svgFill.svgPath`), styled
+    // (an `SvgPath` entry — the card icons), or binding-resolved into the
+    // asset ref (the system icons' per-system glyph).
+    let has_svg_source = svg
+        .get("svgPath")
+        .and_then(|v| v.as_str())
+        .is_some_and(|path| !path.trim().is_empty())
+        || asset_ref.is_some_and(|path| {
+            path.trim_end().to_ascii_lowercase().ends_with(".svg")
+        });
+    let colour_is_null = svg.get("color").is_none_or(|v| v.is_null());
+    (overlay_enabled && render_shape && has_svg_source && colour_is_null)
+        .then(|| "MissionObjectives".to_string())
 }
 
 pub(crate) fn collect_node_asset_refs(node: &BbNode) -> Vec<String> {

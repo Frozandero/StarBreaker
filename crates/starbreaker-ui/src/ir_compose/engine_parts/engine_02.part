@@ -1107,6 +1107,31 @@ mod tests_c {
 
 
     #[test]
+    fn missionobjectives_token_resolves_to_slot_16() {
+        // BB_ColorStyle enum index 16 = MissionObjectives — the design
+        // system's generic icon colour (the power system/card icons render
+        // it in-game; HUD records author `FillColor=MissionObjectives` for
+        // their generic Icon Styles).
+        let mut style = stub_style();
+        while style.colour_slots.len() < 16 {
+            style.colour_slots.push(RgbaColor { r: 0, g: 0, b: 0, a: 255 });
+        }
+        style.colour_slots.push(RgbaColor { r: 243, g: 220, b: 110, a: 255 });
+        let defaults = crate::defaults::DefaultValueRegistry::with_well_known_path_defaults();
+        let assets = minimal_swf_assets();
+        let ctx = ComposeContext {
+            style: &style,
+            defaults: &defaults,
+            assets: &assets,
+        };
+        assert_eq!(
+            resolve_colour_token(&ctx, "MissionObjectives"),
+            Some([243.0 / 255.0, 220.0 / 255.0, 110.0 / 255.0, 1.0])
+        );
+    }
+
+
+    #[test]
     fn white_mask_overlay_composites_in_linear_light() {
         // The engine composites in linear light; sRGB-space blending crushes
         // low-alpha bright-over-dark blends (the annunciator glow rendered
