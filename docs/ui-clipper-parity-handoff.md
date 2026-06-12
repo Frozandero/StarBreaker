@@ -483,7 +483,27 @@ viewport may genuinely differ; the slider-width math suggested
 0.7×padding-box, but the card-width/scroll-position evidence is
 capture-skew-limited) — both documented in this session's analysis; defer.
 
-### 14. USER PRIORITY ITEMS 2026-06-12 (tasks #8–#11) — IN PROGRESS, DO FIRST
+### 15. Route LANDED + hard-coding remediation — DONE 2026-06-12
+
+Commits 5bf1d7f84 (RgbaColor guard/fixture/neutral-fallback), b09c2d98a
+(Phase 1 colour maps → BB enum), 46b81a25a (register refresh + phases 2–5
+docs), 07c821a83 (**the text-format route LANDED** — T3 resolved: a
+LITERAL widget match does not outrank the named-style table, only
+TEXT-FORMAT-routed FontSizes do; `__EntryFontSize` set only by the route;
+audited IR re-freeze approver tom, 6-line delta: banner Base→Bright +
+40.005→40.0, NO TARGET Base→Accent2 token-only), 4803d3c48
+(FIXED_BAND_HEADING_FILL RETIRED — the authored mainmenu entry sizes the
+banner; harness 26/26 zero drift).
+
+§13's catalog state updates: the route is now COMMITTED, both
+adjudications frozen. STILL OPEN for the next power session: the MFD
+content text scale ×4/3 (ºC discriminator), IR/EM/CS colour (shared
+'Icon Color' restyling question), P13 side bars, P3 separator dots, P7
+slider width, the §12 P4 pips. The remediation backlog lives in
+`docs/ui-hardcoding-remediation-plan.md` (Phase 3 directive-arm audit now
+UNBLOCKED; TTF calibrations registered for their own arc).
+
+### 14. USER PRIORITY ITEMS 2026-06-12 (tasks #8–#11) — DONE (see §15)
 
 Tom found hard-coded `RgbaColor { r:.., g:.., b:.. }` literals (e.g.
 `ir_compose/engine_parts/engine_02.part:725` — `r:115,g:198,b:254` bioc Base
