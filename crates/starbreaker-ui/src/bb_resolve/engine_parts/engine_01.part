@@ -129,11 +129,34 @@ fn body_background_uses_texture(node: &crate::bb_scene::BbNode) -> bool {
         return false;
     }
 
-    match node.raw.get("backgroundType") {
+    background_type_is_texture(node.raw.get("backgroundType"))
+}
+
+fn background_type_is_texture(background_type: Option<&serde_json::Value>) -> bool {
+    match background_type {
         Some(serde_json::Value::String(value)) => value.eq_ignore_ascii_case("Texture"),
         Some(serde_json::Value::Number(value)) => value.as_i64() == Some(1),
         _ => false,
     }
+}
+
+/// Whether THIS record's authored `scene[]` contains a texture-mode body
+/// background widget. The standard's styles bind to the widget at its defining
+/// canvas with that canvas's brand context (`M_Eng_MFDContent` selects
+/// `s_drak_hud`); outer levels see the node only via merge and must not
+/// re-apply the standard with their own (often absent) brand context — the
+/// manufacturer-prefix fallback would hit `s_drak_env` first and overwrite.
+fn record_authors_texture_body_background(record_value: &serde_json::Value) -> bool {
+    record_value
+        .get("scene")
+        .and_then(|v| v.as_array())
+        .into_iter()
+        .flatten()
+        .any(|node| {
+            node.get("_Type_").and_then(|v| v.as_str())
+                == Some("BuildingBlocks_WidgetBodyBackground")
+                && background_type_is_texture(node.get("backgroundType"))
+        })
 }
 
 fn extract_body_background_texture_tag_id(standard_record: &serde_json::Value) -> Option<String> {
@@ -1107,10 +1130,11 @@ fn resolve_canvas_graph_inner(
         // canvases are inactive at startup and must not be followed in Pass 2.
         // For canvases without any `Instantiated` bindings (e.g. MFD screens)
         // the set is empty and all WidgetCanvas URLs are followed normally.
-        let mut instantiated_false = crate::bb_state_filter::instantiated_false_widgets_with_param_inputs_and_inherited_bindings(
+        let mut instantiated_false = crate::bb_state_filter::instantiated_false_widgets_with_param_inputs_inherited_bindings_and_defaults(
             record_value,
             inherited_param_inputs.unwrap_or(&[]),
             inherited_boolean_bindings,
+            Some(defaults),
         );
 
         // MFD frame content-view selection: the frame embeds a landscape
@@ -1282,16 +1306,28 @@ fn resolve_canvas_graph_inner(
     // single-entry for IC_*) or the canvas-level `style` record (e.g. `s_bioc`
     // on medical canvases) override it, then canvas embeddedStyles.
     let preferred_brand = local_style_identifier.as_deref();
-    if scene.nodes.values().any(body_background_uses_texture) {
+    if record_authors_texture_body_background(record_value)
+        && scene.nodes.values().any(body_background_uses_texture)
+    {
         let module_path = standard_body_background_widget_path();
         match fetch_by_path(&module_path) {
-            Ok(standard_record) => apply_body_background_standard_styles(
-                &mut scene,
-                &standard_record,
-                manufacturer_id,
-                preferred_brand,
-                loc_fetcher,
-            ),
+            Ok(standard_record) => {
+                // The standard's brand container is matched by brand-record
+                // identity: prefer the identifier of the brand THIS canvas
+                // selected (the MFD content view's `s_drak_hud`) over the
+                // manufacturer-prefix scan, which cannot distinguish the
+                // hud/env container pair the shared standard carries.
+                let canvas_brand =
+                    bb_brand_style::resolve_brand_style(root_json, manufacturer_id, preferred_brand)
+                        .map(|brand| brand.identifier);
+                apply_body_background_standard_styles(
+                    &mut scene,
+                    &standard_record,
+                    manufacturer_id,
+                    canvas_brand.as_deref().or(preferred_brand),
+                    loc_fetcher,
+                );
+            }
             Err(e) => {
                 log::debug!("bb_resolve: no standard body-background widget '{module_path}': {e}");
             }

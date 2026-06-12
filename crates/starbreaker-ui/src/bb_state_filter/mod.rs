@@ -137,9 +137,47 @@ pub fn instantiated_false_widgets_with_param_inputs_and_inherited_bindings(
     param_inputs: &[serde_json::Value],
     inherited_bindings: &HashMap<String, bool>,
 ) -> HashSet<BbNodeId> {
+    instantiated_false_widgets_with_param_inputs_inherited_bindings_and_defaults(
+        record_value,
+        param_inputs,
+        inherited_bindings,
+        None,
+    )
+}
+
+/// Like [`instantiated_false_widgets_with_param_inputs_and_inherited_bindings`]
+/// but also consults the default-value registry for boolean variable bindings
+/// that have no authored/inherited static value (runtime host data like the
+/// MFD content view's `backgroundenabled`).
+pub fn instantiated_false_widgets_with_param_inputs_inherited_bindings_and_defaults(
+    record_value: &serde_json::Value,
+    param_inputs: &[serde_json::Value],
+    inherited_bindings: &HashMap<String, bool>,
+    defaults: Option<&crate::defaults::DefaultValueRegistry>,
+) -> HashSet<BbNodeId> {
     let mut static_vals = parse_static_variables(record_value);
     for (binding, value) in inherited_bindings {
         static_vals.entry(binding.clone()).or_insert(*value);
+    }
+    if let Some(defaults) = defaults
+        && let Some(ops) = record_value.get("operations").and_then(|v| v.as_array())
+    {
+        for op in ops {
+            if op.get("_Type_").and_then(|v| v.as_str())
+                != Some("BuildingBlocks_BindingsBooleanVariable")
+            {
+                continue;
+            }
+            let Some(binding) = op.get("binding").and_then(|v| v.as_str()) else {
+                continue;
+            };
+            if static_vals.contains_key(binding) {
+                continue;
+            }
+            if let Some(crate::canvas::Value::Bool(value)) = defaults.lookup_path(binding) {
+                static_vals.insert(binding.to_owned(), *value);
+            }
+        }
     }
     let param_overrides = parse_boolean_param_inputs(param_inputs);
     let ops = match record_value.get("operations").and_then(|v| v.as_array()) {

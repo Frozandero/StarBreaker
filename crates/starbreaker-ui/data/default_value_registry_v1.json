@@ -2,7 +2,7 @@
   "paths": {
     "/vehicle/targetname": "NO TARGET",
     "/vehicle/target/distance": "0.0km",
-    "/vehicle/target/bearing": "0\u00b0",
+    "/vehicle/target/bearing": "0°",
     "/targetselector/lockedtarget/isvalidtarget": false,
     "/commscontroller/canhailtarget": false,
     "/TargetSelector/LockedTarget/Hostility": 1,
@@ -16,6 +16,7 @@
     "/AnnunciatorProvider/Issues/[0004]/Severity": 5,
     "/seatdashboard/powercurrent": 2,
     "/seatdashboard/powermax": 16,
+    "backgroundenabled": true,
     "/vehicle/gungroup": "(ALL)",
     "CloneLocationInfo/MedicalTier": 2,
     "Bed/MedBed/MedBedStatus/MedicalTier": 2,
@@ -130,7 +131,7 @@
     "dfm_ui_target": "TARGET",
     "hud_label_velocity": "VELOCITY",
     "scan_data_faction": "FACTION",
-    "ui_nodata": "\u2014",
+    "ui_nodata": "—",
     "innerthought_hail": "HAIL",
     "panel_call": "CALL",
     "hud_gimbalmode": "GIMBAL MODE",
@@ -154,7 +155,7 @@
     "hud_label_max": "MAX",
     "hud_label_weapon": "Weapon",
     "rn_offline": "OFFLINE",
-    "rn_celsiussymbol": "\u00b0C",
+    "rn_celsiussymbol": "°C",
     "loc_empty": "",
     "loc_placeholder": ""
   }

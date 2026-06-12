@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "frozen_at": "2026-06-12T00:10:36Z",
+  "frozen_at": "2026-06-12T00:42:24Z",
   "approver": "tom",
-  "reason": "Annunciator: DRAK near-black backplate via styled ImagePath override + round-2 entry-driven state styling (square borders, WPN/COOL text, authored gradient alpha)",
+  "reason": "MFD body backplate: BodyBackgroundWidgetStandard s_drak_hud entry (GroundVehicle_Dashboard_background_2 @ authored Alpha 0.2, Fill) now renders — backgroundenabled registry pin + owning-canvas brand container match",
   "signature": null,
   "manifest_path": "crates/starbreaker-ui/tests/fixtures/ui_ir/ui_snapshot_manifest.json",
   "artifacts": [
@@ -51,7 +51,7 @@
       "tier": "gold",
       "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_mc_s_target_master.png",
       "artifact_path": "test-artifacts/ui/clipper_target_master.png",
-      "sha256": "f952ca5d2d1fca95be34eb0bfc2eb172c0cff879886927a4bcab5d4c722520cd",
+      "sha256": "ae4d7e697f812d45fd060f851867290c87967874e38b3a52253be50a0a8148ec",
       "width": 1600,
       "height": 1200,
       "channels": "srgba"
