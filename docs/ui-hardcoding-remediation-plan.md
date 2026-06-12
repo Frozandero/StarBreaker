@@ -67,11 +67,12 @@ Outcome 2026-06-12: every constant is now an explicit
 Drake-amber and ×0.98 all-caps entries moved to Retired). The deep
 derivations stay open with their criteria recorded in the register:
 
-- [x] `FIXED_BAND_HEADING_FILL = 0.381` — register entry updated;
-      RETIREMENT PATH IDENTIFIED: equals the authored mainmenu bioc
-      `FontSize=40` entry via the text-format route (handoff §13). Delete
-      the fallback when that route lands; blocked on the open T3
-      adjudication.
+- [x] `FIXED_BAND_HEADING_FILL = 0.381` — **RETIRED** (2026-06-12): the
+      text-format route landed (T3 resolved: literal widget matches do
+      not outrank the named-style table; only text-format-routed
+      FontSizes do) and the authored mainmenu bioc `FontSize=40` entry
+      now sizes the banner. Fallback deleted; full battery + font
+      harness green, zero drift.
 - [x] `LONG_HEADING1_PROMPT_FONT_SIZE = 28.7` — registered (new entry);
       same authored-entry derivation attempt queued on the route landing.
 - [x] `TEXT_RENDER_SIZE_CALIBRATION = 1.5` /
@@ -87,7 +88,8 @@ derivations stay open with their criteria recorded in the register:
 - [ ] MFD content text scale (open item, handoff §13): the ×4/3 gap is
       currently unexplained — derive structurally (candidate: the
       0.9-scaled content stage height), never land as a bare multiplier.
-      Blocked on the text-format route arc.
+      The route arc landed (07c821a83); derive next power-arc session
+      (the ºC glyph is the clean discriminator).
 
 ## Phase 3 — tag/style NAME-keyed semantic decisions
 
@@ -101,8 +103,8 @@ behaviour that the cascade should produce instead:
       `semantic_text_colour_token_from_style_tags`
       (`Text_Header`/heading→`Base`) — the 2026-06-12 text-format-route
       work shows authored entries carry much of this; re-audit each arm
-      once the route lands and delete arms the data now covers. BLOCKED
-      on the route arc (open T3 adjudication).
+      now that the route LANDED (commit 07c821a83) and delete arms the
+      data covers — each deletion adjudicated per reference.
 - [ ] `src/pipeline/mod.rs` `ScreenNameBackground` tag-name check
       (placeholder-background suppression) — find the structural signal
       (authored background enable/state) instead of the tag name.

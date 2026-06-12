@@ -921,7 +921,7 @@ fn resolve_effective_font_size(
     node_id: BbNodeId,
     node: &crate::bb_scene::BbNode,
     text: &crate::bb_scene::BbText,
-    node_rect_h: f32,
+    _node_rect_h: f32,
     _resolved_text: Option<&str>,
     scene: &BbScene,
     binding_resolver: &BindingResolver,
@@ -999,15 +999,6 @@ fn resolve_effective_font_size(
         standard_textfield_font_size_from_styles(node, label_style.as_deref(), standard_text_styles)
     {
         let size = size * design_text_scale;
-        // Documented fallback (docs/ui-fallback-register.md): a heading rendered in a
-        // FIXED-height band (its `sizing.height.behavior == "Fixed"`, vs the `Auto`
-        // content-sizing every full-size heading uses) is fit to that band by the
-        // engine at a reduced "banner prompt" size — a layout behavior not carried in
-        // DataCore. Without it, long welcome/prompt headings render at the full title
-        // size (e.g. the Clipper medical "PLEASE SELECT AN OPTION…").
-        if let Some(reduced) = fixed_band_heading_prompt_size(node, label_style.as_deref(), node_rect_h, size) {
-            return (UiIrValue::Fixed { value: reduced }, true);
-        }
         return (UiIrValue::Fixed { value: size }, true);
     }
 
@@ -1056,46 +1047,6 @@ struct StandardTextStyle {
 /// Fallback font size for a long Heading1 prompt that overflows a short field — used
 /// by the secondary/payload `textfield_fallback_font_size_from_signals` ladder.
 const LONG_HEADING1_PROMPT_FONT_SIZE: f32 = 28.7;
-
-/// Registered fallback (docs/ui-fallback-register.md): the fraction of a fixed-height
-/// heading band that the heading's design size fills. The engine fits a `Heading1` in a
-/// `Fixed`-height band to the band (a compiled-layout behaviour not in DataCore); attempts
-/// to re-derive it from font/band metrics have been proven to bottom out here, so it stays
-/// a calibrated fallback. Calibrated to the in-game Clipper medical "PLEASE SELECT AN
-/// OPTION…" reference: band height 105 × 0.381 ≈ 40.0 px (the all-caps font-size reduction
-/// that previously also applied to this banner was removed, so the fill is no longer
-/// further scaled at the call site).
-const FIXED_BAND_HEADING_FILL: f32 = 0.381;
-
-/// Reduced "banner prompt" size for a `Heading1` drawn in a fixed-height band. Returns
-/// `None` (full brand FontSize) unless the field is a *tight* fixed band — height set
-/// explicitly (`Fixed`, not the `Auto` full-size headings use) and short relative to the
-/// heading size. See `FIXED_BAND_HEADING_FILL`.
-fn fixed_band_heading_prompt_size(
-    node: &crate::bb_scene::BbNode,
-    label_style: Option<&str>,
-    node_rect_h: f32,
-    style_size: f32,
-) -> Option<f32> {
-    if !matches!(label_style, Some("Heading1")) {
-        return None;
-    }
-    let height_behavior = node
-        .raw
-        .get("sizing")
-        .and_then(|sizing| sizing.get("height"))
-        .and_then(|height| height.get("behavior"))
-        .and_then(|behavior| behavior.as_str())?;
-    if !height_behavior.eq_ignore_ascii_case("Fixed") {
-        return None;
-    }
-    // Only reduce a genuinely tight band (a prompt/subtitle strip); a large fixed area
-    // keeps the full heading size.
-    if node_rect_h <= 1.0 || node_rect_h >= style_size * 2.5 {
-        return None;
-    }
-    Some((node_rect_h * FIXED_BAND_HEADING_FILL).max(1.0))
-}
 
 fn standard_text_field_widget_path() -> &'static str {
     "file://./../../../../../../../libs/foundry/records/ui/buildingblocks/modularkit/standard/widgets/textfieldwidgetstandard.json"
