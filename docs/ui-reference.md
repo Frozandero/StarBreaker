@@ -117,7 +117,7 @@ PNGs in `ships/Data/UI/Generated/ship/drak/Clipper/` named
 
 | Screen | Helper / scene | Canvas | Reference image | Preset | Tier / target id | Open issues |
 |---|---|---|---|---|---|---|
-| Power MFD | `Screen_Left_Lower_RTT` / LOD0 scene | `MC_S_Power_Master` (via `M_MFD_Screen` frame) | `Screen_Left_Lower_RTT.png` | `power` | not frozen (arc in progress) | `docs/ui-clipper-parity-handoff.md` |
+| Power MFD | `Screen_Left_Lower_RTT` / LOD0 scene | `MC_S_Power_Master` (via `M_MFD_Screen` frame) | `Screen_Left_Lower_RTT.png` | `power` | not frozen (arc in progress) | text parity reached 2026-06-12; open: P3 separator dots, P4 pip brightness, P13 header side bars, P7 slider width (engine `_SizeRatio` input — plan P2.2b), P8 letter pitch (`docs/ui-clipper-parity-handoff.md`) |
 | Target MFD | `Screen_Right_Upper_RTT` / LOD0 scene | `MC_S_Target_Master` | `Screen_Right_Upper_RTT.png` | `target` | GOLD `clipper_target_master` | A7 backdrop stack remainder (handoff) |
 | Medical bed | usable screen / LOD1 scene | `I_Med_MedicalBed_A` | `screen_16x9_a-[medical1].png` | — (add) | PLATINUM `ui_target_a` | handoff steps 10–13 |
 | Medical end-of-bed | usable screen / LOD1 scene | `I_Med_MedicalEndOfBed_A` | `mesh_end_screen_plane-[medical2].png` | — (add) | PLATINUM `ui_target_b` | logo −12px check (handoff) |
@@ -172,6 +172,7 @@ client.
 | Regression manifest | `crates/starbreaker-ui/tests/fixtures/ui_ir/ui_snapshot_manifest.json` |
 | IR freeze (baselines) | `crates/starbreaker-ui/tests/fixtures/ui_ir/ui_snapshot_freeze.json` (schema: `crates/starbreaker-ui/docs/ir-freeze-schema.md`) |
 | Known outliers | `crates/starbreaker-ui/tests/fixtures/ui_ir/ui_known_outliers.json` |
+| Measurement bank (settled reference numbers — consult FIRST, workflow §4) | `crates/starbreaker-ui/tests/fixtures/ui_ir/reference_measurements_v1.json` + `.notes.md` |
 | Font baseline | `crates/starbreaker-ui/tests/fixtures/font_size_baseline.tsv` (`docs/ui-font-size-harness.md`) |
 | Default-value registry + provenance | `crates/starbreaker-ui/data/default_value_registry_v1.json` + `.notes.md` |
 | Ship-value derivation | `crates/starbreaker-3d/src/ui_pipeline/ship_values.rs` (+ `ship_values/tests.rs`) |

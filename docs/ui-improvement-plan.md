@@ -447,7 +447,7 @@ surviving name-keyed rules and ledger item 17 land here.)
 
 ## Phase 6 — documentation and bootstrap closure
 
-- [ ] **P6.1 Runbook "engine model" entries** (ledger item 24): add to
+- [x] (2026-06-12, commit "plan P6.1-P6.3") **P6.1 Runbook "engine model" entries** (ledger item 24): add to
       `docs/ui-architecture-runbook.md` short sections for (a) padding ×
       canvas geometry scale (evidence: power pip-top/stride pins), (b)
       the text-format route + literal-match precedence (T3
@@ -456,11 +456,11 @@ surviving name-keyed rules and ledger item 17 land here.)
       measurements), (d) the additive-haze photometric model (now in
       `scripts/ui_measure.py`'s docstring — cross-link). Each with its
       capture/commit citations.
-- [ ] **P6.2 Workflow §5: the empirical audit method** (ledger item 22):
+- [x] (2026-06-12, commit "plan P6.1-P6.3") **P6.2 Workflow §5: the empirical audit method** (ledger item 22):
       document disable→adjudicate with preconditions (FRESH EXPORT — cite
       the stamp guard; consult lib + live-IR + visual suites) and the
       scope caveat (proves "no frozen pin", not "correct everywhere").
-- [ ] **P6.3 Dossier hygiene**: `docs/ui-reference.md` §3 — the power row
+- [x] (2026-06-12, commit "plan P6.1-P6.3") **P6.3 Dossier hygiene**: `docs/ui-reference.md` §3 — the power row
       gains its current state (text parity reached 2026-06-12; open: P3
       dots, P4 pips, P13 bars, P7 slider, P8 pitch); add a
       `reference_measurements_v1.json` pointer to §5's data table.

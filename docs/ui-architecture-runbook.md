@@ -216,6 +216,39 @@ buttonsecondarystyles`) supplies padding/borders/corner radii; a padded
 parent's content box caps fixed-size children in layout (overlay and
 flex no-grow paths).
 
+## Reference: engine models settled by the 2026-06-12 arcs (ledger item 24)
+
+Four capture-derived models that previously lived only in code comments
+and handoffs:
+
+- **Padding × canvas geometry scale.** Authored TRBL padding scales with
+  the canvas's geometry scale to the render target — the 800×600 MFD
+  content canvas renders its authored paddings ×2 on the 1600×1200 RTT.
+  Evidence: the power screen's pip-top/stride values, pinned by the
+  frozen power pins after the content-scale fix; owning code in
+  `bb_layout`.
+- **The text-format style route + literal-match precedence.** A
+  Parent-wrapped style entry on a brand `s_*` container styles a
+  textfield's TEXT FORMAT (FontSize/FillColor) rather than the widget;
+  only a text-format-routed FontSize (`__EntryFontSize`) outranks the
+  named-style table — a LITERAL widget match does not. Counterexample
+  that pinned it: the medical header T3 (commit `07c821a83`).
+- **Host-path `imageSizePercent` division.** On the GFx-host (framed
+  MFD) path, EVERY font-size class divides by the font record's
+  `imageSizePercent` (0.75 → ×4/3) at draw; non-host canvases use styled
+  sizes verbatim. Verified per element on both MFD captures (commit
+  `15d1e3b99`); AVM1 corroboration: the AS2 framework applies
+  `TextFormat.size` verbatim, so the compensation is engine-side
+  (`apply_font_image_size_percent` in `ui_ir`, plan P2.2c).
+- **The additive-haze photometric model.** Capture casts add a roughly
+  constant offset to R-normalised channel ratios in a local region:
+  `measured_ratio ≈ true_ratio + haze_offset`, solved from an anchor of
+  known colour on the SAME capture (footer text = Base, pip slabs =
+  Bright). Implemented in `scripts/ui_measure.py` (`--anchor`/
+  `--anchor-rgb`; model documented in its docstring); settled values
+  live in the measurement bank
+  (`crates/starbreaker-ui/tests/fixtures/ui_ir/reference_measurements_v1.json`).
+
 ## Reference-capture measurement methodology
 
 - Anchor the capture scale on **frame footer arrows** (x) and measure x
@@ -228,6 +261,11 @@ flex no-grow paths).
 - Derive content mappings from at least two authored-rect features
   (e.g. card box tops), then cross-check the second capture before
   concluding.
+- Skewed captures are rectifiable: store the four screen-corner pixels
+  as `<reference>.corners.json` and `ui_compare.py` warps the capture
+  onto the render rectangle automatically (plan P1.3); prefer
+  `scripts/ui_measure.py` over ad-hoc pixel maths and consult the
+  measurement bank FIRST (workflow §4).
 
 ## Troubleshooting Flow
 

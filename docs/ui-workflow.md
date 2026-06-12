@@ -159,6 +159,21 @@ Method (never name-gate your way out):
 6. If the deviation is known but the true fix is deferred: register a
    known-outlier (§6) instead of freezing the miss.
 
+**The empirical disable→adjudicate audit** (ledger item 22): to test whether
+a suspect rule (hard-coded constant, name match, special pass) is
+load-bearing, disable it and let the frozen pins adjudicate — one session
+proved eight rules deletable and three load-bearing this way, far cheaper
+than per-rule reference archaeology. Preconditions, both mandatory:
+(1) **fresh export first** — the whole-image guard compares
+`ships/Data/UI/Generated/*.png`, which only refresh on export; the P0.2
+staleness guard (`.export_stamp.json`) now hard-fails stale comparisons,
+but don't lean on it: re-export (~50s) before judging "zero drift";
+(2) consult ALL THREE suites — lib tests, the live-IR guard, AND the
+visual/snapshot suites — a rule can be invisible to two and pinned by the
+third. Scope caveat: a clean pass proves "**no frozen pin references
+this**" (five screens, one ship today), NOT "correct everywhere" — record
+the deletion in the fallback register's retired table with that bound.
+
 ## 6. Known-outlier overrides (reference-anchored)
 
 For elements knowingly off-reference where the true fix is deferred:
