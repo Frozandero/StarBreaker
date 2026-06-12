@@ -260,6 +260,82 @@ mod tests {
     }
 
     #[test]
+    fn compile_ir_keeps_state_tagged_inactive_image_inactive() {
+        // State visibility is entry-driven: the annunciator's "Show Glow in
+        // online state" NotTag-gates the glow, so a Moderate chiclet's glow
+        // stays authored-inactive. A tag-name-keyed activation arm flipped it
+        // back on (WPN showed a gradient it must not have).
+        let tag_db_path = "libs/foundry/records/tagdatabase/tagdatabase.tagdatabase.json";
+        let state_tag = "33333333-3333-3333-3333-333333333333";
+        let fetcher = TestCanvasFetcher {
+            by_guid: std::collections::HashMap::new(),
+            by_path: std::collections::HashMap::from([(tag_db_path.to_string(), serde_json::json!({
+                "_RecordId_": "66ee5bfc-d90b-41bd-ad2e-e0a2b3efe359",
+                "_RecordName_": "TagDatabase.TagDatabase",
+                "_RecordValue_": {
+                    "_Type_": "TagDatabase",
+                    "tags": [
+                        {"_RecordId_": state_tag, "tagName": "StateModerate"}
+                    ]
+                }
+            }))]),
+        };
+
+        let canvas = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.TestStateInactiveImage",
+            "_RecordValue_": {
+                "size": {"x": 100, "y": 100},
+                "scene": [
+                    {
+                        "_Pointer_": "ptr:1",
+                        "_Type_": "BuildingBlocks_WidgetImage",
+                        "name": "Image_Gradient",
+                        "isActive": false,
+                        "imagePath": "UI/Textures/H_HUDscreens/Ships/General/Annunciator_On.tif",
+                        "styleTags": [
+                            {"_RecordId_": state_tag,
+                             "_RecordName_": format!("Tag.{state_tag}"),
+                             "_RecordPath_": tag_db_path}
+                        ],
+                        "size": {
+                            "width": {"behavior": "Fixed", "value": 100.0},
+                            "height": {"behavior": "Fixed", "value": 100.0}
+                        }
+                    }
+                ],
+                "operations": []
+            }
+        });
+
+        let scene = crate::bb_scene::parse_bb_canvas(&canvas).expect("scene parse");
+        let ir = compile_ui_ir_from_scene(
+            &scene,
+            Some(&fetcher),
+            "guid-state-inactive",
+            Some("BuildingBlocks_Canvas.TestStateInactiveImage"),
+            (100, 100),
+            &defaults(),
+            None,
+            None,
+            &[],
+            Vec::new(),
+            Vec::new(),
+            100,
+        );
+
+        let node = ir
+            .nodes
+            .iter()
+            .find(|n| n.name == "Image_Gradient")
+            .expect("image node");
+        assert!(
+            !node.is_active,
+            "an authored-inactive image stays inactive unless a style entry activates it \
+             — state tags alone are not a visibility signal"
+        );
+    }
+
+    #[test]
     fn compile_ir_records_image_colour_overlay_flag() {
         let canvas = serde_json::json!({
             "_RecordName_": "BuildingBlocks_Canvas.TestOverlayFlag",

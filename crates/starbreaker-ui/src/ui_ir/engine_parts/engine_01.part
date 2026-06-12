@@ -867,17 +867,6 @@ fn build_ui_ir_nodes(
             &binding_resolver,
             defaults,
         );
-        let state_driven_image_activation = !node.is_active
-            && matches!(node.ty, BbNodeType::WidgetImage)
-            && resolved_style_tags.iter().any(|tag| {
-                tag.tag_name
-                    .as_deref()
-                    .is_some_and(|name| {
-                        let trimmed = name.trim();
-                        (trimmed.starts_with("State") && !trimmed.eq_ignore_ascii_case("StateCool"))
-                            || trimmed.eq_ignore_ascii_case("Flashing")
-                    })
-            });
                     // A brand entry that REPLACES the image (styled raw
                     // `ImagePath` differing from the authored `imagePath`) is
                     // real screen art, not a placeholder: the annunciator's
@@ -1252,7 +1241,7 @@ fn build_ui_ir_nodes(
             children: node.children.clone(),
             node_type: node_type_name(&node.ty).to_string(),
             name: node.name.clone(),
-            is_active: (node.is_active || state_driven_image_activation)
+            is_active: node.is_active
                 && !suppress_placeholder_background_image
                 && !suppress_placeholder_only_label_caption_pair
                 && !suppress_duplicate_function_title,

@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "frozen_at": "2026-06-12T01:11:40Z",
+  "frozen_at": "2026-06-12T01:38:57Z",
   "approver": "tom",
-  "reason": "Annunciator round 4: near pure black strip background (EnableBackground=false registry pin) + brand-Base tinted white-mask chiclet glow",
+  "reason": "Annunciator gold re-freeze (user-directed): WPN gradient removed (state-tag-name activation arm deleted — entry-driven IsActive only) + glow composited in linear light on the white-mask overlay path (edge (64,35,6) vs reference (71,48,15))",
   "signature": null,
   "manifest_path": "crates/starbreaker-ui/tests/fixtures/ui_ir/ui_snapshot_manifest.json",
   "artifacts": [
@@ -31,7 +31,7 @@
       "tier": "gold",
       "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_i_door_small_drak.png",
       "artifact_path": "test-artifacts/ui/clipper_small_door.png",
-      "sha256": "c6a149cba6406359173ebb771380ea944f7d4a1e834e0a2863696987e0804f27",
+      "sha256": "da6c20c3156456f558ee2bb5833ae8c20f2be15137c57c278ae5629265a0d88b",
       "width": 1920,
       "height": 1080,
       "channels": "srgba"
@@ -41,7 +41,7 @@
       "tier": "gold",
       "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_h_eng_annunciator_master_left.png",
       "artifact_path": "test-artifacts/ui/eng_annunciator_master_left.png",
-      "sha256": "3f46081abe4097d233deb4eb9451604c6bd6a31149bcbbe983cfba55d5e31bdb",
+      "sha256": "a32f7fd78fe1c6fa40cebd39fad3d5cb37045dfdc83c6b1644b78f45e79b540d",
       "width": 1920,
       "height": 432,
       "channels": "srgba"
