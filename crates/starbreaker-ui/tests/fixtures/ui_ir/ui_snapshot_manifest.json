@@ -49,7 +49,7 @@
       "baseline_path": "eng_annunciator_master_left.baseline",
       "current_path": "eng_annunciator_master_left.current",
       "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_h_eng_annunciator_master_left.png",
-      "tier": "gold",
+      "tier": "platinum",
       "roi": {
         "x": 0,
         "y": 0,
@@ -63,7 +63,7 @@
       "baseline_path": "clipper_target_master.baseline",
       "current_path": "clipper_target_master.current",
       "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_mc_s_target_master.png",
-      "tier": "gold",
+      "tier": "platinum",
       "roi": {
         "x": 0,
         "y": 0,

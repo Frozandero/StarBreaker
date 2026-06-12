@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "frozen_at": "2026-06-12T02:14:43Z",
+  "frozen_at": "2026-06-12T08:37:04Z",
   "approver": "tom",
-  "reason": "P1: flag directive deleted + brand text-style FillColor fallback un-gated; medical tokens now sourced from authored s_bioc H1/H2/H6 entries (Base/Bright)",
+  "reason": "Tier promotion (user-directed): eng_annunciator_master_left and clipper_target_master gold -> platinum; artifacts byte-identical to the prior freeze (no pixel change — promotion only tightens the budget to 0.5%)",
   "signature": null,
   "manifest_path": "crates/starbreaker-ui/tests/fixtures/ui_ir/ui_snapshot_manifest.json",
   "artifacts": [
@@ -38,7 +38,7 @@
     },
     {
       "id": "eng_annunciator_master_left",
-      "tier": "gold",
+      "tier": "platinum",
       "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_h_eng_annunciator_master_left.png",
       "artifact_path": "test-artifacts/ui/eng_annunciator_master_left.png",
       "sha256": "a32f7fd78fe1c6fa40cebd39fad3d5cb37045dfdc83c6b1644b78f45e79b540d",
@@ -48,7 +48,7 @@
     },
     {
       "id": "clipper_target_master",
-      "tier": "gold",
+      "tier": "platinum",
       "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_mc_s_target_master.png",
       "artifact_path": "test-artifacts/ui/clipper_target_master.png",
       "sha256": "ae4d7e697f812d45fd060f851867290c87967874e38b3a52253be50a0a8148ec",
