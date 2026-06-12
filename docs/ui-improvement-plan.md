@@ -137,8 +137,9 @@ Goal: the failure modes that produced wrong verdicts this arc become loud.
       the output channel for every probe. Acceptance: `BB_A3_STYLE_PROBE=1
       bash scripts/ui_render.sh --helper Screen_Annunciator_L` prints
       probe lines WITHOUT `RUST_LOG` set. Cite ledger item 25.
-- [ ] **P0.5 Battery green.** `bash scripts/ui_check.sh --full` after the
+- [x] (2026-06-12, commit "plan P0.5") **P0.5 Battery green.** `bash scripts/ui_check.sh --full` after the
       phase; no baseline changes expected (P0 must not alter rendering).
+      ALL GREEN, no baseline changes.
 
 ## Phase 1 — measurement tooling and the measurement bank
 
