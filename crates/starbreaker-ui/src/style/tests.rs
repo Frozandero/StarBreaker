@@ -8,33 +8,18 @@ fn loader() -> StyleLoader {
 }
 
 #[test]
-fn drake_amber_fallback_name() {
-    assert_eq!(loader().drake_amber_fallback().name, "drak");
+fn neutral_fallback_name() {
+    assert_eq!(loader().neutral_fallback().name, "drak");
 }
 
 #[test]
-fn drake_amber_fallback_primary_tint_is_amber() {
-    let style = loader().drake_amber_fallback();
-    let r = style.primary_tint.r as f32 / 255.0;
-    let g = style.primary_tint.g as f32 / 255.0;
-    let b = style.primary_tint.b as f32 / 255.0;
-    assert!(r > 0.6, "expected R > 0.6, got {r}");
-    assert!(r > g, "expected R > G ({r} > {g})");
-    assert!(g > b, "expected G > B ({g} > {b})");
-}
-
-#[test]
-fn drake_amber_fallback_backlight_is_cyan() {
-    let style = loader().drake_amber_fallback();
-    assert_eq!(
-        style.backlight,
-        RgbaColor {
-            r: 102,
-            g: 214,
-            b: 255,
-            a: 255
-        }
-    );
+fn neutral_fallback_is_white_on_black_with_no_palette() {
+    // The no-data fallback is deliberately NEUTRAL (white foreground, black
+    // background, no palette slots) — never an invented brand palette.
+    let style = loader().neutral_fallback();
+    assert_eq!(style.primary_tint, RgbaColor { r: 255, g: 255, b: 255, a: 255 });
+    assert_eq!(style.background, RgbaColor { r: 0, g: 0, b: 0, a: 255 });
+    assert!(style.colour_slots.is_empty());
 }
 
 fn full_fixture() -> serde_json::Value {
@@ -56,6 +41,7 @@ fn full_fixture() -> serde_json::Value {
 #[test]
 fn parse_record_primary_tint() {
     let style = loader().parse_record(&full_fixture()).unwrap();
+    // hardcoding-guard: synthetic — round-trip of the synthetic full_fixture() JSON
     assert_eq!(
         style.primary_tint,
         RgbaColor {
@@ -70,6 +56,7 @@ fn parse_record_primary_tint() {
 #[test]
 fn parse_record_secondary_tint() {
     let style = loader().parse_record(&full_fixture()).unwrap();
+    // hardcoding-guard: synthetic — round-trip of the synthetic full_fixture() JSON
     assert_eq!(
         style.secondary_tint,
         Some(RgbaColor {
@@ -84,6 +71,7 @@ fn parse_record_secondary_tint() {
 #[test]
 fn parse_record_background() {
     let style = loader().parse_record(&full_fixture()).unwrap();
+    // hardcoding-guard: synthetic — round-trip of the synthetic full_fixture() JSON
     assert_eq!(
         style.background,
         RgbaColor {
@@ -98,6 +86,7 @@ fn parse_record_background() {
 #[test]
 fn parse_record_backlight() {
     let style = loader().parse_record(&full_fixture()).unwrap();
+    // hardcoding-guard: synthetic — round-trip of the synthetic full_fixture() JSON
     assert_eq!(
         style.backlight,
         RgbaColor {
@@ -179,7 +168,7 @@ fn snapshot_drake_style_print() {
     use crate::defaults::DefaultValueRegistry;
 
     let loader = StyleLoader::for_manufacturer("drak");
-    let style = loader.drake_amber_fallback();
+    let style = loader.neutral_fallback();
 
     println!("=== Drake Manufacturer Style (fallback) ===");
     println!("name:          {}", style.name);

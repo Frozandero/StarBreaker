@@ -307,22 +307,9 @@ mod tests {
 
 
     fn stub_style() -> ManufacturerStyle {
-        ManufacturerStyle {
-            name: "drak".to_string(),
-            primary_tint: RgbaColor { r: 240, g: 168, b: 104, a: 255 },
-            secondary_tint: None,
-            colour_slots: vec![
-                RgbaColor { r: 240, g: 168, b: 104, a: 255 },
-                RgbaColor { r: 67, g: 221, b: 147, a: 255 },
-                RgbaColor { r: 228, g: 218, b: 77, a: 255 },
-                RgbaColor { r: 201, g: 51, b: 51, a: 255 },
-                RgbaColor { r: 0, g: 113, b: 188, a: 255 },
-            ],
-            background: RgbaColor { r: 48, g: 32, b: 16, a: 255 },
-            backlight: RgbaColor { r: 102, g: 214, b: 255, a: 255 },
-            font_family_hints: Vec::new(),
-            crt: CrtParams::default(),
-        }
+        // Real s_drak_hud palette via the provenance fixture (no hard-coded
+        // colour values in test source — see test_palettes).
+        crate::test_palettes::brand_style("s_drak_hud")
     }
 
 
@@ -719,18 +706,11 @@ mod tests {
 
 
     fn style_with_seven_slots() -> ManufacturerStyle {
-        // Distinct slot 0 (Base, light blue) and slot 6 (Bright, light grey) so a
+        // Real s_bioc slots 0..7 from the provenance fixture: slot 0 (Base,
+        // light blue) and slot 6 (Bright, muted grey) are distinct, so a
         // resolver that lumps `Bright` onto `Base` is caught.
         let mut style = stub_style();
-        style.colour_slots = vec![
-            RgbaColor { r: 115, g: 198, b: 254, a: 255 }, // 0 Base
-            RgbaColor { r: 67, g: 221, b: 147, a: 255 },  // 1 Positive
-            RgbaColor { r: 228, g: 218, b: 77, a: 255 },  // 2 Moderate
-            RgbaColor { r: 201, g: 51, b: 51, a: 255 },   // 3 Critical
-            RgbaColor { r: 0, g: 113, b: 188, a: 255 },   // 4 Accent1
-            RgbaColor { r: 161, g: 163, b: 178, a: 255 }, // 5 Accent2
-            RgbaColor { r: 197, g: 200, b: 216, a: 255 }, // 6 Bright (muted grey)
-        ];
+        style.colour_slots = crate::test_palettes::brand_colour_slots("s_bioc")[..7].to_vec();
         style
     }
 
@@ -763,8 +743,9 @@ mod tests {
         // 20,13,5) — the power screen's unpowered pip hitzones paint it. The
         // old mapping lumped it onto the LIGHT slot 6, rendering grey pips.
         let mut style = style_with_seven_slots();
-        style.colour_slots.push(RgbaColor { r: 255, g: 119, b: 0, a: 255 }); // 7 Selected
-        style.colour_slots.push(RgbaColor { r: 20, g: 13, b: 5, a: 255 });   // 8 Disabled
+        // Real s_drak_hud slots 7 (Selected) and 8 (Disabled, near-black).
+        style.colour_slots.push(crate::test_palettes::brand_slot("s_drak_hud", 7));
+        style.colour_slots.push(crate::test_palettes::brand_slot("s_drak_hud", 8));
         let defaults = crate::defaults::DefaultValueRegistry::with_well_known_path_defaults();
         let assets = minimal_swf_assets();
         let ctx = ComposeContext {
@@ -977,22 +958,9 @@ mod tests_c {
 
 
     fn stub_style() -> ManufacturerStyle {
-        ManufacturerStyle {
-            name: "drak".to_string(),
-            primary_tint: RgbaColor { r: 240, g: 168, b: 104, a: 255 },
-            secondary_tint: None,
-            colour_slots: vec![
-                RgbaColor { r: 240, g: 168, b: 104, a: 255 },
-                RgbaColor { r: 67, g: 221, b: 147, a: 255 },
-                RgbaColor { r: 228, g: 218, b: 77, a: 255 },
-                RgbaColor { r: 201, g: 51, b: 51, a: 255 },
-                RgbaColor { r: 0, g: 113, b: 188, a: 255 },
-            ],
-            background: RgbaColor { r: 48, g: 32, b: 16, a: 255 },
-            backlight: RgbaColor { r: 102, g: 214, b: 255, a: 255 },
-            font_family_hints: Vec::new(),
-            crt: CrtParams::default(),
-        }
+        // Real s_drak_hud palette via the provenance fixture (no hard-coded
+        // colour values in test source — see test_palettes).
+        crate::test_palettes::brand_style("s_drak_hud")
     }
 
 
@@ -1113,10 +1081,12 @@ mod tests_c {
         // it in-game; HUD records author `FillColor=MissionObjectives` for
         // their generic Icon Styles).
         let mut style = stub_style();
+        style.colour_slots.truncate(16);
         while style.colour_slots.len() < 16 {
             style.colour_slots.push(RgbaColor { r: 0, g: 0, b: 0, a: 255 });
         }
-        style.colour_slots.push(RgbaColor { r: 243, g: 220, b: 110, a: 255 });
+        // Real s_drak_hud slot 16 (MissionObjectives).
+        style.colour_slots.push(crate::test_palettes::brand_slot("s_drak_hud", 16));
         let defaults = crate::defaults::DefaultValueRegistry::with_well_known_path_defaults();
         let assets = minimal_swf_assets();
         let ctx = ComposeContext {
@@ -1251,11 +1221,13 @@ mod tests_c {
 
         assert_eq!(resolve_colour_token(&ctx, "Base"), Some(style_primary_rgba(&ctx)));
         assert_eq!(resolve_colour_token(&ctx, "Accent1"), Some(style_primary_rgba(&ctx)));
+        // Surface `Accent1` / foreground `Accent5` both resolve slot 4
+        // (asserted relative to the fixture palette, not a copied value).
         assert_eq!(
             resolve_surface_colour_token(&ctx, "Accent1"),
-            Some([0.0, 113.0 / 255.0, 188.0 / 255.0, 1.0])
+            style_colour_slot_rgba(&ctx, 4)
         );
-        assert_eq!(resolve_colour_token(&ctx, "Accent5"), Some([0.0, 113.0 / 255.0, 188.0 / 255.0, 1.0]));
+        assert_eq!(resolve_colour_token(&ctx, "Accent5"), style_colour_slot_rgba(&ctx, 4));
         // `Moderate` is BB_ColorStyle index 2 — the same slot the `Accent3` /
         // `Warning` aliases resolve (the annunciator's "Moderate - SubItem"
         // BackgroundColor lights the WPN chiclet amber).
@@ -1264,14 +1236,12 @@ mod tests_c {
             style_colour_slot_rgba(&ctx, 2)
         );
 
+        // `Accent2` is BB_ColorStyle enum index 5: the target screen's
+        // `NO TARGET` (drak `Base/Bright Elements` FillColor=Accent2) renders
+        // s_drak_hud slot 5 (222,88,3) on the in-game capture — the brand H1
+        // deep orange, not the light slot-0/2 orange.
         let drake_hud_like_style = ManufacturerStyle {
-            colour_slots: vec![
-                style.primary_tint,
-                RgbaColor { r: 207, g: 211, b: 0, a: 255 },
-                style.primary_tint,
-                RgbaColor { r: 201, g: 52, b: 43, a: 255 },
-                RgbaColor { r: 243, g: 80, b: 77, a: 255 },
-            ],
+            colour_slots: crate::test_palettes::brand_colour_slots("s_drak_hud"),
             ..style.clone()
         };
         let drake_ctx = ComposeContext {
@@ -1279,7 +1249,10 @@ mod tests_c {
             defaults: &defaults,
             assets: &assets,
         };
-        assert_eq!(resolve_colour_token(&drake_ctx, "Accent2"), Some(style_primary_rgba(&drake_ctx)));
+        assert_eq!(
+            resolve_colour_token(&drake_ctx, "Accent2"),
+            style_colour_slot_rgba(&drake_ctx, 5)
+        );
 
         let mut node = blank_node("widget_text_field");
         assert_eq!(resolved_text_colour(&node, None, &ctx), [255, 255, 255, 255]);
@@ -1360,7 +1333,7 @@ mod tests_c {
         });
         node.icon_tint_colour_token = Some("Accent5".to_string());
 
-        assert_eq!(custom_shape_fill_override(&node, &ctx), Some([0.0, 113.0 / 255.0, 188.0 / 255.0, 1.0]));
+        assert_eq!(custom_shape_fill_override(&node, &ctx), style_colour_slot_rgba(&ctx, 4));
     }
 
 
@@ -1514,7 +1487,7 @@ mod tests_c {
         // Contain in the 40×80 box is width-bound: the 10-unit viewBox maps
         // to 40px anchored at containY 0.0, so the y=6..8 glyph occupies
         // rect-relative rows 24..32 → absolute rows 34..42.
-        let bg = [48u8, 32, 16, 255];
+        let bg = [ctx.style.background.r, ctx.style.background.g, ctx.style.background.b, ctx.style.background.a];
         let glyph_rows: Vec<u32> = (0..img.height())
             .filter(|&y| {
                 (0..img.width()).any(|x| {
@@ -1854,22 +1827,9 @@ mod tests_d {
 
 
     fn stub_style() -> ManufacturerStyle {
-        ManufacturerStyle {
-            name: "drak".to_string(),
-            primary_tint: RgbaColor { r: 240, g: 168, b: 104, a: 255 },
-            secondary_tint: None,
-            colour_slots: vec![
-                RgbaColor { r: 240, g: 168, b: 104, a: 255 },
-                RgbaColor { r: 67, g: 221, b: 147, a: 255 },
-                RgbaColor { r: 228, g: 218, b: 77, a: 255 },
-                RgbaColor { r: 201, g: 51, b: 51, a: 255 },
-                RgbaColor { r: 0, g: 113, b: 188, a: 255 },
-            ],
-            background: RgbaColor { r: 48, g: 32, b: 16, a: 255 },
-            backlight: RgbaColor { r: 102, g: 214, b: 255, a: 255 },
-            font_family_hints: Vec::new(),
-            crt: CrtParams::default(),
-        }
+        // Real s_drak_hud palette via the provenance fixture (no hard-coded
+        // colour values in test source — see test_palettes).
+        crate::test_palettes::brand_style("s_drak_hud")
     }
 
 
@@ -2028,7 +1988,8 @@ mod tests_d {
         let img_b = render_ui_ir_document(&document, &ctx, &atlas).expect("second render should succeed");
 
         assert_eq!(img_a.as_raw(), img_b.as_raw(), "same IR should render bit-stably");
-        assert_eq!(img_a.get_pixel(1, 1).0, [48, 32, 16, 255], "background pixel should remain style background");
+        let bg = ctx.style.background;
+        assert_eq!(img_a.get_pixel(1, 1).0, [bg.r, bg.g, bg.b, bg.a], "background pixel should remain style background");
         assert!(img_a.get_pixel(5, 6).0[0] > 200 && img_a.get_pixel(5, 6).0[1] > 200, "border origin should be yellow");
         assert!(img_a.get_pixel(12, 10).0[2] > 200, "panel interior should render blue fill at the authored position");
     }
@@ -2297,22 +2258,9 @@ mod tests_e {
 
 
     fn stub_style() -> ManufacturerStyle {
-        ManufacturerStyle {
-            name: "drak".to_string(),
-            primary_tint: RgbaColor { r: 240, g: 168, b: 104, a: 255 },
-            secondary_tint: None,
-            colour_slots: vec![
-                RgbaColor { r: 240, g: 168, b: 104, a: 255 },
-                RgbaColor { r: 67, g: 221, b: 147, a: 255 },
-                RgbaColor { r: 228, g: 218, b: 77, a: 255 },
-                RgbaColor { r: 201, g: 51, b: 51, a: 255 },
-                RgbaColor { r: 0, g: 113, b: 188, a: 255 },
-            ],
-            background: RgbaColor { r: 48, g: 32, b: 16, a: 255 },
-            backlight: RgbaColor { r: 102, g: 214, b: 255, a: 255 },
-            font_family_hints: Vec::new(),
-            crt: CrtParams::default(),
-        }
+        // Real s_drak_hud palette via the provenance fixture (no hard-coded
+        // colour values in test source — see test_palettes).
+        crate::test_palettes::brand_style("s_drak_hud")
     }
 
 

@@ -64,7 +64,7 @@ impl StyleLoader {
         &self,
         record_json: &serde_json::Value,
     ) -> Result<ManufacturerStyle, UiError> {
-        let fallback = self.drake_amber_fallback();
+        let fallback = self.neutral_fallback();
         let color_styles = record_json
             .get("_RecordValue_")
             .and_then(|v| v.get("colorStyles"))
@@ -97,36 +97,26 @@ impl StyleLoader {
         })
     }
 
-    /// Non-authoritative Drake amber fallback used when no style record exists.
-    pub fn drake_amber_fallback(&self) -> ManufacturerStyle {
+    /// NEUTRAL fallback used when no style record (or palette slot) exists.
+    ///
+    /// Pure white foreground / black background only — absence-of-data
+    /// constants, deliberately NOT a brand palette: the previous "Drake
+    /// amber" fallback hard-coded invented colours (240,168,104 etc. exist
+    /// in no DataCore record), which masked missing-data failures as
+    /// plausible-looking output. Brand colours must come from the fetched
+    /// `BuildingBlocks_Style` record; if that record is missing, the render
+    /// is visibly unstyled rather than silently wrong.
+    pub fn neutral_fallback(&self) -> ManufacturerStyle {
+        let white = RgbaColor { r: 255, g: 255, b: 255, a: 255 };
+        let black = RgbaColor { r: 0, g: 0, b: 0, a: 255 };
         ManufacturerStyle {
             name: self.manufacturer.clone(),
-            primary_tint: RgbaColor {
-                r: 240,
-                g: 168,
-                b: 104,
-                a: 255,
-            },
+            primary_tint: white,
             secondary_tint: None,
-            colour_slots: vec![RgbaColor {
-                r: 240,
-                g: 168,
-                b: 104,
-                a: 255,
-            }],
-            background: RgbaColor {
-                r: 48,
-                g: 32,
-                b: 16,
-                a: 255,
-            },
-            backlight: RgbaColor {
-                r: 102,
-                g: 214,
-                b: 255,
-                a: 255,
-            },
-            font_family_hints: vec!["Rajdhani".into(), "Orbitron".into()],
+            colour_slots: Vec::new(),
+            background: black,
+            backlight: white,
+            font_family_hints: Vec::new(),
             crt: CrtParams::default(),
         }
     }

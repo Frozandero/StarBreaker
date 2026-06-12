@@ -117,16 +117,9 @@ mod tests {
     }
 
     fn stub_style() -> ManufacturerStyle {
-        ManufacturerStyle {
-            name: "drak".to_string(),
-            primary_tint: RgbaColor { r: 240, g: 168, b: 104, a: 255 },
-            secondary_tint: None,
-            colour_slots: vec![RgbaColor { r: 240, g: 168, b: 104, a: 255 }],
-            background: RgbaColor { r: 48, g: 32, b: 16, a: 255 },
-            backlight: RgbaColor { r: 102, g: 214, b: 255, a: 255 },
-            font_family_hints: Vec::new(),
-            crt: CrtParams::default(),
-        }
+        // Real s_drak_hud palette via the provenance fixture (no hard-coded
+        // colour values in test source — see test_palettes).
+        crate::test_palettes::brand_style("s_drak_hud")
     }
 
     #[test]

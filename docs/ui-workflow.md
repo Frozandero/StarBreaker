@@ -18,9 +18,16 @@ per-screen prompt template is
 1. **Engine-faithful and generic.** No hard-coding, no name-matching, no
    ship-/screen-/manufacturer-specific branches in production code. No
    heuristic blend factors, hand-tuned percentages, or magic offsets unless
-   derived from source data. If one asset misbehaves, find the structural
-   property of its category and fix the rule for the whole category. Ask:
-   *how does the engine handle this?* — mirror its model.
+   derived from source data. Hard-coded game-data VALUES (palette
+   `RgbaColor` literals, font sizes, brand font lists — fallbacks included)
+   are hard-coding: derive from DataCore/P4K, or use a provenance-noted
+   extracted fixture for offline tests (registry pattern; guard:
+   `tests/hardcoding_guard.rs` + `scripts/check_ui_hardcoding.sh`). The rule
+   is SELF-CORRECTING: encountering pre-existing hard-coding obliges you to
+   replace it or flag it in the same change — never extend it because it is
+   already there. If one asset misbehaves, find the structural property of
+   its category and fix the rule for the whole category. Ask: *how does the
+   engine handle this?* — mirror its model.
 2. **TDD.** When a bug is found, write a failing test that reproduces it
    BEFORE changing code; verify it fails; fix; verify it passes.
 3. **Frozen platinum/gold = regressions in source behaviour.** Never silence

@@ -47,7 +47,7 @@ fn empty_bb_scene() -> BbScene {
 
 #[test]
 fn placeholder_is_predominantly_magenta() {
-    let style = StyleLoader::for_manufacturer("drak").drake_amber_fallback();
+    let style = crate::test_palettes::brand_style("s_drak_hud");
     let defaults = DefaultValueRegistry::with_well_known_path_defaults();
     let assets = empty_assets();
     let ctx = ComposeContext {
@@ -83,7 +83,7 @@ fn placeholder_is_predominantly_magenta() {
 
 #[test]
 fn placeholder_rejects_zero_size() {
-    let style = StyleLoader::for_manufacturer("drak").drake_amber_fallback();
+    let style = crate::test_palettes::brand_style("s_drak_hud");
     let defaults = DefaultValueRegistry::with_well_known_path_defaults();
     let assets = empty_assets();
     let ctx = ComposeContext {
@@ -105,7 +105,7 @@ fn placeholder_rejects_zero_size() {
 
 #[test]
 fn render_bb_scene_empty_is_background_colour() {
-    let style = StyleLoader::for_manufacturer("drak").drake_amber_fallback();
+    let style = crate::test_palettes::brand_style("s_drak_hud");
     let defaults = DefaultValueRegistry::with_well_known_path_defaults();
     let assets = empty_assets();
     let ctx = ComposeContext {
@@ -147,7 +147,7 @@ fn render_bb_scene_empty_is_background_colour() {
 
 #[test]
 fn render_bb_scene_rejects_zero_size() {
-    let style = StyleLoader::for_manufacturer("drak").drake_amber_fallback();
+    let style = crate::test_palettes::brand_style("s_drak_hud");
     let defaults = DefaultValueRegistry::with_well_known_path_defaults();
     let assets = empty_assets();
     let ctx = ComposeContext {

@@ -24,6 +24,24 @@ visual fixes stop converging. To launch a per-screen parity pass, use
 
 - No hard-coding, no name-matching, no ship-specific branches, and no screen-specific branches in production code.
 - No heuristic placement rules, blend factors, hand-tuned percentages, or magic offsets unless the surrounding rule is already structurally defined by source data and the new math is derived from that data.
+- **No hard-coded game-data VALUES either** — palette colours
+  (`RgbaColor { r: .., g: .., b: .. }` literals), font sizes, brand font
+  lists, layout constants. This includes "fallback" palettes: an invented
+  colour is hard-coding even when labelled non-authoritative. Resolve from
+  DataCore/P4K, or use a provenance-noted extracted fixture (registry
+  pattern) where tests need real values offline. The
+  `rgba_colour_hardcoding_guard` test (tests/hardcoding_guard.rs) enforces
+  this crate-wide — including test fixtures: a real palette value copied
+  into a test is still a copy; load it from the extracted fixture instead.
+  Genuinely arbitrary test colours must be neutral (pure black/white) or
+  carry a `// hardcoding-guard: synthetic` annotation.
+- **Self-correction is mandatory.** If you find hard-coding that predates
+  your change: replace it with the data-derived source, or flag it
+  explicitly (task/handoff entry) in the same change. Never copy or extend
+  an existing hard-coded pattern because precedent exists — precedent of a
+  banned pattern is a defect, not a licence. Extend the guards
+  (`scripts/check_ui_hardcoding.sh`, tests/hardcoding_guard.rs) when you
+  discover a category they miss.
 - Fix the structural cause. Do not patch symptoms in one renderer path if the real issue is authored metadata, IR compilation, layout, or text measurement.
 - IR is the source of truth for render values. The renderer must not override IR-provided font size, position, alignment, scale, margin, padding, text colour, stroke colour, icon tint, or visibility based on widget names, parent context, or screen-specific checks.
 - If rendered output is wrong, correct the owning upstream stage (`bb_layout.rs` / `ui_ir.rs` / source data resolution) so IR values are correct before rendering.

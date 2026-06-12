@@ -97,6 +97,7 @@ fn ingest_screen_states_parses_normal_state() {
     ]);
     let mut reg = DefaultValueRegistry::new();
     reg.ingest_screen_states(&fixture);
+    // hardcoding-guard: synthetic — round-trip of the synthetic fixture above
     assert_eq!(
         reg.screen_state_color("Normal"),
         Some(RgbaColor {
@@ -118,6 +119,7 @@ fn ingest_screen_states_skips_malformed_entries() {
     let mut reg = DefaultValueRegistry::new();
     reg.ingest_screen_states(&fixture);
     assert_eq!(reg.screen_state_color("Broken"), None);
+    // hardcoding-guard: synthetic — round-trip of the synthetic fixture above
     assert_eq!(
         reg.screen_state_color("Good"),
         Some(RgbaColor {

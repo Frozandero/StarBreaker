@@ -54,6 +54,28 @@ Shared across every language in the repo:
   flag, alpha usage, etc.) and fix the rule for the whole category.
   Named-asset branches rot the moment upstream renames or adds
   siblings, and they are not acceptable production fixes.
+- **Hard-coded game DATA VALUES are hard-coding too.** Copying a value
+  that exists in (or should come from) game data — a palette colour
+  (`RgbaColor { r: 240, g: 168, b: 104, .. }`), a font size, a layout
+  constant, a font-family list — into source code is banned in
+  production code, including "documented fallbacks": an invented
+  fallback palette is still invented. Derive the value from DataCore/P4K
+  at run time, or, where unit tests need real values without game data,
+  check in an EXTRACTED fixture with a provenance note and a validator
+  that re-checks it against live data when data is present (the
+  `default_value_registry_v1.json` + `.notes.md` pattern). Test-only
+  colours/values that are genuinely arbitrary must be visibly synthetic
+  and annotated where a guard requires it — never copies of real game
+  values.
+- **The ban is self-correcting.** Finding existing hard-coded values
+  while working is part of the task: replace them with the data-derived
+  source, or — when out of scope — flag them explicitly (a tracking
+  entry/todo and a note in your handoff), in the same change. NEVER
+  extend an existing hard-coded pattern because it is already there;
+  "the file already does this" is evidence the file needs fixing, not
+  permission. Guards that detect hard-coding (e.g.
+  `scripts/check_ui_hardcoding.sh`, the starbreaker-ui hardcoding guard
+  test) must be extended alongside any newly discovered category.
 - **Match existing conventions.** Read the neighbours before
   inventing a new pattern. Dataclass style in `manifest.py`, naming
   in `blender-material-contract-naming-rules.md`, error taxonomy in

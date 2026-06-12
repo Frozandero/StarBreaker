@@ -5,33 +5,16 @@ use image::{Rgba, RgbaImage};
 use super::passes::{pass_scanlines, pass_tint, pass_vignette};
 
 fn drake_style() -> ManufacturerStyle {
+    // Real s_drak_hud palette via the provenance fixture; the postprocess
+    // passes only need SOME tint/background/backlight, never invented ones.
+    let palette = crate::test_palettes::brand_colour_slots("s_drak_hud");
     ManufacturerStyle {
         name: "drak".into(),
-        primary_tint: RgbaColor {
-            r: 255,
-            g: 176,
-            b: 76,
-            a: 255,
-        },
+        primary_tint: palette[0],
         secondary_tint: None,
-        colour_slots: vec![RgbaColor {
-            r: 255,
-            g: 176,
-            b: 76,
-            a: 255,
-        }],
-        background: RgbaColor {
-            r: 10,
-            g: 10,
-            b: 10,
-            a: 255,
-        },
-        backlight: RgbaColor {
-            r: 102,
-            g: 214,
-            b: 255,
-            a: 255,
-        },
+        colour_slots: vec![palette[0]],
+        background: palette[9],
+        backlight: palette[11],
         font_family_hints: vec![],
         crt: CrtParams {
             scanline_period_px: 3.0,

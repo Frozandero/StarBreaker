@@ -535,7 +535,13 @@ fn resolve_colour_token(ctx: &ComposeContext<'_>, token: &str) -> Option<[f32; 4
         // from `Base`/`Accent1`. It backs dim secondary text such as a caption's
         // value (e.g. the `Heading6` "200/200" under a `Heading3` label).
         "bright" => style_colour_slot_rgba(ctx, 6),
-        "accent2" | "positive" | "success" => {
+        // `Accent2` is BB_ColorStyle enum index 5 (authoritative order above):
+        // the target screen's `NO TARGET` carries the drak brand entry
+        // `Base/Bright Elements` FillColor=Accent2 and renders s_drak_hud
+        // slot 5 (222,88,3) in the in-game capture — identical to the brand
+        // H1 deep orange, NOT the light slot-0/2 orange.
+        "accent2" => style_colour_slot_rgba(ctx, 5),
+        "positive" | "success" => {
             let primary = style_primary_rgba_local(ctx);
             if let Some(slot_2) = style_colour_slot_rgba(ctx, 2)
                 && rgba4_near(slot_2, primary)

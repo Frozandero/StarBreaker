@@ -490,11 +490,11 @@ pub(super) fn load_style(
         Ok(style) => style,
         Err(e) => {
             log::debug!(
-                "pipeline: manufacturer style fetch failed for '{}': {}; using Drake fallback",
+                "pipeline: manufacturer style fetch failed for '{}': {}; using neutral fallback",
                 id,
                 e,
             );
-            StyleLoader::for_manufacturer("drak").drake_amber_fallback()
+            StyleLoader::for_manufacturer(id).neutral_fallback()
         }
     }
 }

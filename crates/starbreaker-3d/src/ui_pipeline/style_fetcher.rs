@@ -75,17 +75,17 @@ impl<'a> StyleFetcher for ManufacturerStyleFetcher<'a> {
                     ),
                 },
                 Err(e) => warn!(
-                    "ui: failed to export BuildingBlocks_Style record '{}' for manufacturer '{}': {}; using Drake amber fallback",
+                    "ui: failed to export BuildingBlocks_Style record '{}' for manufacturer '{}': {}; using neutral fallback",
                     full_name, manufacturer_id, e
                 ),
             }
         } else {
             warn!(
-                "ui: no BuildingBlocks_Style record matches manufacturer '{}'; using Drake amber fallback",
+                "ui: no BuildingBlocks_Style record matches manufacturer '{}'; using neutral fallback",
                 manufacturer_id
             );
         }
 
-        Ok(loader.drake_amber_fallback())
+        Ok(loader.neutral_fallback())
     }
 }

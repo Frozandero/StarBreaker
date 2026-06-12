@@ -59,6 +59,160 @@ fn hardcoding_guard_tests_exist_in_core_renderer_files() {
     }
 }
 
+/// Crate-wide ban on hard-coded `RgbaColor { .. }` colour literals.
+///
+/// A colour value copied into source (production OR test fixtures — e.g. the
+/// s_bioc Base `r: 115, g: 198, b: 254` once embedded in ir_compose tests, or
+/// the invented "Drake amber" fallback palette) is hard-coded game data: it
+/// silently diverges from DataCore and normalises extending the pattern.
+/// Colours must be parsed from game data at run time, or — for offline test
+/// fixtures — loaded from a provenance-noted extracted fixture
+/// (`tests/fixtures/ui_ir/brand_palettes_v1.json`).
+///
+/// Allowed without annotation:
+/// - constructions whose fields are all expressions/variables (parsers);
+/// - NEUTRAL literals: every numeric component 0 or 255 (pure
+///   black/white/transparent — absence-of-light constants, not palette data).
+/// Anything else requires a `hardcoding-guard: synthetic` annotation within
+/// a few lines above the literal, reserved for genuinely arbitrary test
+/// colours that are NOT copies of real game values.
+#[test]
+fn rgba_colour_literals_are_not_hardcoded() {
+    let src_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut violations: Vec<String> = Vec::new();
+    let mut stack = vec![src_root];
+    while let Some(dir) = stack.pop() {
+        for entry in fs::read_dir(&dir).expect("read src dir").flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+            if !matches!(ext, "rs" | "part" | "inc") {
+                continue;
+            }
+            let source = fs::read_to_string(&path).expect("read source file");
+            scan_rgba_literals(&path, &source, &mut violations);
+        }
+    }
+    assert!(
+        violations.is_empty(),
+        "hard-coded RgbaColor literals found (parse from game data or load the \
+         provenance fixture; see crates/starbreaker-ui/AGENTS.md Core rules):\n{}",
+        violations.join("\n")
+    );
+}
+
+fn scan_rgba_literals(path: &Path, source: &str, violations: &mut Vec<String>) {
+    let mut search_from = 0;
+    while let Some(rel) = source[search_from..].find("RgbaColor") {
+        let start = search_from + rel;
+        search_from = start + "RgbaColor".len();
+        let Some(brace_rel) = source[start..].find('{') else { continue };
+        let brace = start + brace_rel;
+        // Struct-definition / non-literal uses have code between the name and
+        // the brace (e.g. `pub struct RgbaColor {`): only `RgbaColor {`
+        // (whitespace only) is a literal construction.
+        if !source[start + "RgbaColor".len()..brace].trim().is_empty() {
+            continue;
+        }
+        let Some(end_rel) = source[brace..].find('}') else { continue };
+        let span = &source[brace + 1..brace + end_rel];
+
+        let mut numeric_values: Vec<u32> = Vec::new();
+        let mut has_literal_field = false;
+        for field in span.split(',') {
+            let Some((_, value)) = field.split_once(':') else { continue };
+            let value = value.trim();
+            if value.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+                has_literal_field = true;
+                let digits: String =
+                    value.chars().take_while(|c| c.is_ascii_digit()).collect();
+                if let Ok(n) = digits.parse::<u32>() {
+                    numeric_values.push(n);
+                }
+            }
+        }
+        if !has_literal_field {
+            continue;
+        }
+        if numeric_values.iter().all(|&n| n == 0 || n == 255) {
+            continue;
+        }
+        let line_no = source[..start].lines().count();
+        let annotated = source[..start]
+            .lines()
+            .rev()
+            .take(4)
+            .any(|line| line.contains("hardcoding-guard: synthetic"));
+        if annotated {
+            continue;
+        }
+        violations.push(format!("{}:{}", path.display(), line_no));
+    }
+}
+
+/// The extracted brand-palette fixture must stay in sync with the live
+/// DataCore records: when the decompiled record mirror is present (same
+/// skip-if-missing pattern as `manifest_live_ir_guard`), every fixture slot
+/// is compared against the record's authored `colorStyles`. Refresh
+/// `brand_palettes_v1.json` (+ its `.notes.md`) when an upstream patch
+/// changes a palette.
+#[test]
+fn brand_palette_fixture_matches_live_records() {
+    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../..")
+        .canonicalize()
+        .expect("workspace root should resolve");
+    let styles_root =
+        workspace_root.join("ships/dcb_canvas/libs/foundry/records/ui/buildingblocks/styles");
+    if !styles_root.is_dir() {
+        eprintln!(
+            "skipping brand palette fixture validation (missing records root: {})",
+            styles_root.display()
+        );
+        return;
+    }
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/ui_ir/brand_palettes_v1.json"))
+            .expect("fixture parses");
+    let brands = fixture["brands"].as_object().expect("brands object");
+    for (brand, entry) in brands {
+        let record_path = styles_root.join(format!("{brand}.json"));
+        let record: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(&record_path)
+                .unwrap_or_else(|e| panic!("read {}: {e}", record_path.display())),
+        )
+        .expect("record parses");
+        let live = record["_RecordValue_"]["colorStyles"]
+            .as_array()
+            .expect("record colorStyles");
+        let frozen = entry["colorStyles"].as_array().expect("fixture colorStyles");
+        assert_eq!(
+            frozen.len(),
+            live.len(),
+            "{brand}: fixture slot count diverged from the live record"
+        );
+        for (i, (frozen_slot, live_slot)) in frozen.iter().zip(live).enumerate() {
+            let live_colour = live_slot.get("color").filter(|c| !c.is_null());
+            match (frozen_slot.is_null(), live_colour) {
+                (true, None) => {}
+                (false, Some(colour)) => {
+                    for k in ["r", "g", "b"] {
+                        assert_eq!(
+                            frozen_slot[k].as_u64(),
+                            colour[k].as_u64(),
+                            "{brand} slot {i} channel {k} diverged from the live record"
+                        );
+                    }
+                }
+                _ => panic!("{brand} slot {i}: null-ness diverged from the live record"),
+            }
+        }
+    }
+}
+
 #[test]
 fn bb_layout_source_has_no_forbidden_heuristic_markers() {
     let source = load_engine_module_source("bb_layout");

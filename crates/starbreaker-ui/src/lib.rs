@@ -47,6 +47,8 @@ pub mod style;
 pub mod swf_assets;
 pub mod swf_render;
 pub mod text;
+#[cfg(test)]
+pub(crate) mod test_palettes;
 pub mod ui_ir;
 pub mod ui_regression_manifest;
 pub mod ui_snapshot;
