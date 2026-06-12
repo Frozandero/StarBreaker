@@ -268,6 +268,34 @@ MFD body backplate (power/target/radar/all MFD content screens):
 - Artifact freeze: clipper_target_master hash changed (gains the plate,
   matches Screen_Right_Upper_RTT.png); other targets byte-identical.
 
+### 10. Annunciator round 4 — near-black bg + tinted glow — LANDED 2026-06-12 (16d595dbb)
+
+- Registry `EnableBackground` -> FALSE (single consumer in the whole UI
+  tree: `H_Eng_Annunciator.image_BG.IsActive`). In-game the strips are
+  near pure black (cockpit screenshot beside backplated MFDs); round-3's
+  full-brightness backplate is overturned. MFD body plates (item 9) are
+  the separate BodyBackground mechanism and stay.
+- White alpha-mask textures (shape entirely in the alpha channel:
+  Annunciator_On.tif, F_Common_Gradient_128px.tif) with
+  `svgFill.enableColorOverlay` take the brand `Base` overlay at the image
+  blit (`image_tint_for_blit` + `image_is_white_alpha_mask`;
+  `UiIrNode.colour_overlay_enabled` render-only hint). MRAI authors the
+  same mechanism as explicit FillColor entries on its white masks.
+  Coloured textures stay untinted (medical photos / MFD plates).
+  Door artifact changed with the same rule (warm bottom haze, matches
+  the door reference's warm body).
+
+**OPEN — GATED ON TOM: linear-light compositing.** The glow renders
+darker than the reference because the engine composites in LINEAR light
+and our renderer blends in sRGB space. Numbers: predicted linear-light
+(39,20,3)/(68,38,8) vs reference (45,25,7)/(71,48,15) at the chiclet
+top/side edges; our sRGB-space blend reproduces the rendered
+(6,4,1)/(13,8,3) exactly (texture alpha 52/146 of 255 x widget 0.1 x
+Base). Switching the compositor is renderer-wide (every alpha blend,
+text AA included) => full gold/platinum re-freeze + re-adjudication of
+all targets. Do not partially apply (image-only carve-outs are not
+engine-faithful).
+
 ## Key mechanisms quick reference
 
 - **Derivation**: `crates/starbreaker-3d/src/ui_pipeline/ship_values.rs`
