@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "frozen_at": "2026-06-12T01:38:57Z",
+  "frozen_at": "2026-06-12T02:14:43Z",
   "approver": "tom",
-  "reason": "Annunciator gold re-freeze (user-directed): WPN gradient removed (state-tag-name activation arm deleted — entry-driven IsActive only) + glow composited in linear light on the white-mask overlay path (edge (64,35,6) vs reference (71,48,15))",
+  "reason": "P1: flag directive deleted + brand text-style FillColor fallback un-gated; medical tokens now sourced from authored s_bioc H1/H2/H6 entries (Base/Bright)",
   "signature": null,
   "manifest_path": "crates/starbreaker-ui/tests/fixtures/ui_ir/ui_snapshot_manifest.json",
   "artifacts": [
@@ -11,7 +11,7 @@
       "tier": "platinum",
       "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_i_med_medicalbed_a.png",
       "artifact_path": "test-artifacts/ui/ui_target_a.png",
-      "sha256": "c8df25d7a4381798221ba251387684d46633414ed9c912504e1d0bf84111da33",
+      "sha256": "460cd594f9e6e0f700154fdd3e676fb514e557c87eef593f6ccf649c1ad7fcd2",
       "width": 1920,
       "height": 1080,
       "channels": "srgba"
@@ -21,7 +21,7 @@
       "tier": "platinum",
       "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_i_med_medicalendofbed_a.png",
       "artifact_path": "test-artifacts/ui/ui_target_b.png",
-      "sha256": "3ebe66abea0754281c0b1c9036bdfe14f4bc6ed624d8453e765b05d5a42cb49c",
+      "sha256": "550a7f4bb9f295a0051882e1ba84077a054572be7f7449dc168571e1fb5993b9",
       "width": 1920,
       "height": 1080,
       "channels": "srgba"

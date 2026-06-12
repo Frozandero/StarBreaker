@@ -617,14 +617,12 @@ fn node_colour_directive_token(
         .unwrap_or_default();
     let is_title_style = !style_name.is_empty() && style_name.starts_with("Title");
 
-    if tags.iter().any(|tag| {
-        tag.tag_name
-            .as_deref()
-            .is_some_and(|name| name.eq_ignore_ascii_case("UI_Generic_Flag_03"))
-    }) {
-        return Some("Foreground".to_string());
-    }
-
+    // `UI_Generic_Flag_03` is NOT a colour directive: the power OUTPUT "2"
+    // carries it and renders cream/Base in-game (no DRAK entry maps the flag
+    // to a colour — the only flag-conditioned entry in the card is GRIN's
+    // geometric one). Text colour comes from brand text styles / authored
+    // entries; the medical card headers' white is platinum-adjudicated on
+    // that basis, not on this tag.
     if tags.iter().any(|tag| {
         tag.tag_name
             .as_deref()

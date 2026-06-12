@@ -260,6 +260,100 @@ mod tests {
     }
 
     #[test]
+    fn compile_ir_style_tagged_textfield_inherits_brand_style_fill_colour() {
+        // The medical menu option headers (OptionNameText, Heading2) carry
+        // style tags with no colour semantics (UI_Generic_Flag_03); their
+        // white comes from the bioc brand text-style table's H2 entry
+        // (FillColor=Bright in TextFieldWidgetStandard). A style tag that
+        // resolves no colour must not block the brand-style fallback.
+        let standard_path =
+            "file://./../../../../../../../libs/foundry/records/ui/buildingblocks/modularkit/standard/widgets/textfieldwidgetstandard.json";
+        let standard = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.TextFieldWidgetStandard",
+            "_RecordValue_": {
+                "size": {"x": 100, "y": 100},
+                "defaultStyles": {"entries": []},
+                "brandStyles": [
+                    {"brandIdentifier": "file://./styles/s_bioc.json",
+                     "entries": [
+                        {"_Type_": "BuildingBlocks_StyleEntry",
+                         "name": "H2",
+                         "conditionsList": [],
+                         "modifiers": [
+                            {"_Type_": "BuildingBlocks_FieldModifierNumber",
+                             "field": "FontSize", "value": 30.0},
+                            {"_Type_": "BuildingBlocks_FieldModifierColor",
+                             "field": "FillColor",
+                             "color": {"_Type_": "BuildingBlocks_ColorStyle",
+                                       "color": "Bright", "alpha": 1.0}}
+                         ],
+                         "transitions": []}
+                     ]}
+                ],
+                "scene": [],
+                "operations": []
+            }
+        });
+        let fetcher = TestCanvasFetcher {
+            by_guid: std::collections::HashMap::new(),
+            by_path: std::collections::HashMap::from([(standard_path.to_string(), standard)]),
+        };
+
+        let canvas = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.TestBrandStyleColourFallback",
+            "_RecordValue_": {
+                "size": {"x": 100, "y": 100},
+                "scene": [
+                    {
+                        "_Pointer_": "ptr:1",
+                        "_Type_": "BuildingBlocks_WidgetTextField",
+                        "name": "OptionNameText",
+                        "isActive": true,
+                        "text": "MEDICAL CARE",
+                        "labelProperties": {"style": "Heading2"},
+                        "styleTags": [
+                            {"_RecordId_": "44444444-4444-4444-4444-444444444444",
+                             "_RecordName_": "Tag.44444444-4444-4444-4444-444444444444"}
+                        ],
+                        "size": {
+                            "width": {"behavior": "Fixed", "value": 80.0},
+                            "height": {"behavior": "Fixed", "value": 20.0}
+                        }
+                    }
+                ],
+                "operations": []
+            }
+        });
+
+        let scene = crate::bb_scene::parse_bb_canvas(&canvas).expect("scene parse");
+        let ir = compile_ui_ir_from_scene(
+            &scene,
+            Some(&fetcher),
+            "guid-brand-style-colour",
+            Some("BuildingBlocks_Canvas.TestBrandStyleColourFallback"),
+            (100, 100),
+            &defaults(),
+            Some("canvas:s_bioc".to_string()),
+            None,
+            &[],
+            Vec::new(),
+            Vec::new(),
+            100,
+        );
+
+        let node = ir
+            .nodes
+            .iter()
+            .find(|n| n.name == "OptionNameText")
+            .expect("text node");
+        assert_eq!(
+            node.text_style.as_ref().and_then(|s| s.colour_token.as_deref()),
+            Some("Bright"),
+            "a colour-less style tag must not block the brand text-style FillColor fallback"
+        );
+    }
+
+    #[test]
     fn compile_ir_keeps_state_tagged_inactive_image_inactive() {
         // State visibility is entry-driven: the annunciator's "Show Glow in
         // online state" NotTag-gates the glow, so a Moderate chiclet's glow
@@ -790,9 +884,15 @@ mod tests {
         );
 
         let node = ir.nodes.iter().find(|node| node.name == "emphasis_heading").expect("emphasis node");
-        assert_eq!(
+        // `UI_Generic_Flag_03` is NOT a colour signal: the power OUTPUT card's
+        // "2" carries it and renders cream/Base in-game (no DRAK entry maps
+        // the flag to a colour; the only flag-conditioned entry anywhere near
+        // is a GRIN geometric one). Text colour comes from the brand text
+        // style / authored entries, never from this tag.
+        assert_ne!(
             node.text_style.as_ref().and_then(|style| style.colour_token.as_deref()),
-            Some("Foreground")
+            Some("Foreground"),
+            "the flag tag alone must not force a Foreground directive"
         );
     }
 

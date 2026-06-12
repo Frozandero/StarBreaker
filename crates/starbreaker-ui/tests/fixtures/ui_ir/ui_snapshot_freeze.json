@@ -1,73 +1,73 @@
 {
   "schema_version": 1,
-  "frozen_at": "2026-06-12T01:08:33Z",
+  "frozen_at": "2026-06-12T02:11:12Z",
   "approver": "tom",
-  "reason": "Annunciator round 4: EnableBackground registry flip to FALSE (single consumer = annunciator image_BG.IsActive; in-game strips are near pure black per Screen_Annunciator_L + cockpit screenshot, MFD backplates are the separate BodyBackground mechanism) removes element 15 and renumbers draw order; white-mask overlay Base tint is draw-only (colour_overlay_enabled is serialization-skipped)",
+  "reason": "P1 power '2' cream: UI_Generic_Flag_03 directive deleted (the flag is not a colour signal — no DRAK entry maps it; power card's only flag entry is GRIN geometric) and the brand text-style FillColor fallback no longer blocked by colour-less style tags. The medical option headers' white now sources from the authored s_bioc H2 entry (TextFieldWidgetStandard, FillColor=Bright — same Bright white family as the platinum MEDGELS) instead of the invented directive: tokens Foreground->Bright on the three OptionNameText fields",
   "signature": null,
   "manifest_path": "/home/tom/projects/scorg_tools/StarBreaker/crates/starbreaker-ui/tests/fixtures/ui_ir/ui_snapshot_manifest.json",
   "delta": [
     {
-      "target": "eng_annunciator_master_left",
-      "identity": "10:widget_text",
-      "field": "draw_order_index",
-      "old": 24,
-      "new": 23
+      "target": "ui_target_a",
+      "identity": "2147483654:widget_text_field",
+      "field": "text_tint_token",
+      "old": null,
+      "new": "Base"
     },
     {
-      "target": "eng_annunciator_master_left",
-      "identity": "11:widget_text",
-      "field": "draw_order_index",
-      "old": 25,
-      "new": 24
+      "target": "ui_target_a",
+      "identity": "2147483698:widget_text_field",
+      "field": "text_tint_token",
+      "old": null,
+      "new": "Base"
     },
     {
-      "target": "eng_annunciator_master_left",
-      "identity": "12:widget_text",
-      "field": "draw_order_index",
-      "old": 26,
-      "new": 25
+      "target": "ui_target_a",
+      "identity": "2147483705:widget_text_field",
+      "field": "text_tint_token",
+      "old": "Foreground",
+      "new": "Bright"
     },
     {
-      "target": "eng_annunciator_master_left",
-      "identity": "13:widget_text",
-      "field": "draw_order_index",
-      "old": 27,
-      "new": 26
+      "target": "ui_target_a",
+      "identity": "2147483706:widget_text_field",
+      "field": "text_tint_token",
+      "old": null,
+      "new": "Bright"
     },
     {
-      "target": "eng_annunciator_master_left",
-      "identity": "14:widget_text",
-      "field": "draw_order_index",
-      "old": 28,
-      "new": 27
+      "target": "ui_target_a",
+      "identity": "2147483714:widget_text_field",
+      "field": "text_tint_token",
+      "old": "Foreground",
+      "new": "Bright"
     },
     {
-      "target": "eng_annunciator_master_left",
-      "identity": "15:widget_image",
-      "field": "<removed>",
-      "old": "element",
-      "new": null
+      "target": "ui_target_a",
+      "identity": "2147483715:widget_text_field",
+      "field": "text_tint_token",
+      "old": null,
+      "new": "Bright"
     },
     {
-      "target": "eng_annunciator_master_left",
-      "identity": "27:widget_image",
-      "field": "draw_order_index",
-      "old": 3,
-      "new": 2
+      "target": "ui_target_a",
+      "identity": "2147483723:widget_text_field",
+      "field": "text_tint_token",
+      "old": "Foreground",
+      "new": "Bright"
     },
     {
-      "target": "eng_annunciator_master_left",
-      "identity": "31:widget_image",
-      "field": "draw_order_index",
-      "old": 4,
-      "new": 3
+      "target": "ui_target_a",
+      "identity": "2147483724:widget_text_field",
+      "field": "text_tint_token",
+      "old": null,
+      "new": "Bright"
     },
     {
-      "target": "eng_annunciator_master_left",
-      "identity": "33:widget_image",
-      "field": "draw_order_index",
-      "old": 5,
-      "new": 4
+      "target": "ui_target_b",
+      "identity": "2147483652:widget_text_field",
+      "field": "text_tint_token",
+      "old": null,
+      "new": "Bright"
     }
   ],
   "targets": [
@@ -632,7 +632,7 @@
             "stroke_rgba": null,
             "stroke_tint_token": null,
             "text_rgba": null,
-            "text_tint_token": null,
+            "text_tint_token": "Base",
             "icon_tint_rgba": null,
             "icon_tint_token": null,
             "stroke_extent": 1.0,
@@ -982,7 +982,7 @@
             "stroke_rgba": null,
             "stroke_tint_token": null,
             "text_rgba": null,
-            "text_tint_token": null,
+            "text_tint_token": "Base",
             "icon_tint_rgba": null,
             "icon_tint_token": null,
             "stroke_extent": 1.0,
@@ -1017,7 +1017,7 @@
             "stroke_rgba": null,
             "stroke_tint_token": null,
             "text_rgba": null,
-            "text_tint_token": "Foreground",
+            "text_tint_token": "Bright",
             "icon_tint_rgba": null,
             "icon_tint_token": null,
             "stroke_extent": 1.0,
@@ -1052,7 +1052,7 @@
             "stroke_rgba": null,
             "stroke_tint_token": null,
             "text_rgba": null,
-            "text_tint_token": null,
+            "text_tint_token": "Bright",
             "icon_tint_rgba": null,
             "icon_tint_token": null,
             "stroke_extent": 1.0,
@@ -1087,7 +1087,7 @@
             "stroke_rgba": null,
             "stroke_tint_token": null,
             "text_rgba": null,
-            "text_tint_token": "Foreground",
+            "text_tint_token": "Bright",
             "icon_tint_rgba": null,
             "icon_tint_token": null,
             "stroke_extent": 1.0,
@@ -1122,7 +1122,7 @@
             "stroke_rgba": null,
             "stroke_tint_token": null,
             "text_rgba": null,
-            "text_tint_token": null,
+            "text_tint_token": "Bright",
             "icon_tint_rgba": null,
             "icon_tint_token": null,
             "stroke_extent": 1.0,
@@ -1157,7 +1157,7 @@
             "stroke_rgba": null,
             "stroke_tint_token": null,
             "text_rgba": null,
-            "text_tint_token": "Foreground",
+            "text_tint_token": "Bright",
             "icon_tint_rgba": null,
             "icon_tint_token": null,
             "stroke_extent": 1.0,
@@ -1192,7 +1192,7 @@
             "stroke_rgba": null,
             "stroke_tint_token": null,
             "text_rgba": null,
-            "text_tint_token": null,
+            "text_tint_token": "Bright",
             "icon_tint_rgba": null,
             "icon_tint_token": null,
             "stroke_extent": 1.0,
@@ -1424,7 +1424,7 @@
             "stroke_rgba": null,
             "stroke_tint_token": null,
             "text_rgba": null,
-            "text_tint_token": null,
+            "text_tint_token": "Bright",
             "icon_tint_rgba": null,
             "icon_tint_token": null,
             "stroke_extent": 1.0,

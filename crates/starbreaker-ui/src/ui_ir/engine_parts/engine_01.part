@@ -981,15 +981,15 @@ fn build_ui_ir_nodes(
                 colour_token: text_colour_token_from_raw(&node.raw).or_else(|| {
                     semantic_text_colour_token_from_style_tags(&resolved_style_tags, label_style.as_deref())
                 }).or_else(|| {
-                    // A text field with no per-node style tag inherits its brand text
-                    // style's authored FillColor (the game's per-style colour role, e.g.
-                    // s_bioc H1/H3 = Base light-blue → "Drake Clipper"/tier "T3"). Nodes
-                    // that carry their own style tag have a per-node colour override
-                    // resolved above, so the brand default is not re-applied to them.
-                    own_style_tags
-                        .is_empty()
-                        .then(|| brand_text_style_colour_token(label_style.as_deref(), &standard_text_styles))
-                        .flatten()
+                    // A text field inherits its brand text style's authored
+                    // FillColor (the game's per-style colour role, e.g. s_bioc
+                    // H1/H3 = Base light-blue → "Drake Clipper"/tier "T3";
+                    // s_bioc H2 = Bright → the medical menu option headers).
+                    // Style tags that resolve no colour (UI_Generic_Flag_03)
+                    // do NOT block this fallback — a tag is only an override
+                    // when an entry/directive actually maps it to a colour
+                    // (resolved above).
+                    brand_text_style_colour_token(label_style.as_deref(), &standard_text_styles)
                 }).or_else(|| {
                     default_style_text_colour_token_from_raw(&node.raw, &node.ty, false)
                 }),
