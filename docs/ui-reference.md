@@ -92,7 +92,11 @@ and bloom lifts B near bright elements. Before judging an unknown colour,
 measure a known anchor on the SAME capture (footer text = Base, pip slabs =
 Bright); a colour matches a palette slot when the RATIOS line up under that
 cast. This method identified the linear-light compositing gap and the
-MissionObjectives icon slot.
+MissionObjectives icon slot. The refined additive-haze form (measured_ratio
+≈ true_ratio + haze_offset, solved from the anchor) is implemented in
+`scripts/ui_measure.py` (`--anchor` / `--anchor-rgb`; model documented in
+its docstring), which also measures glyph cap heights with
+edge-contamination flagging — prefer it over ad-hoc pixel maths.
 The reference is auto-scaled to the render width before cropping; READ the
 emitted `cmp_*.png` files with vision. Reference screenshots are imperfect
 (skew/bloom/capture artifacts; power-screen pip outlines are mouse-hover
@@ -193,6 +197,7 @@ Example: `BB_SHRINK_PROBE=1 ./target/debug/starbreaker ui render --scene
 |---|---|
 | `python3 scripts/ui_ir_query.py query <ir.json> <regex> [--fields a.b,c]` | list IR nodes whose name or text matches the regex: id, parent, type, rect, is_active + dotted-path extras (input: `ui render --dump-ir-dir` output) |
 | `python3 scripts/ui_ir_query.py tree <ir.json> <node_id>` | ancestor chain for one node with rect, authored_size, anchor/pivot, padding, margin |
+| `python3 scripts/ui_measure.py <image> --box x0,y0,x1,y1 [--ir <ir.json> --node <id>] [--delta N] [--anchor … --anchor-rgb …]` | glyph-run cap heights (contamination-flagged) + colour ratios with optional additive-haze correction (JSON to stdout) |
 | `ui_stage_diff <canvas.json> [WxH] [--records-root <dir>] [--filter <substr>]` | parse-only vs full-resolve layout diff; flags first name-matched divergence (cracks "which stage broke the geometry") |
 | `mfd_ir_dump <canvas-guid> <content-guid> [name-filter] [WxH]` | framed MFD IR dump from the record mirror (filter = lowercase name substring) |
 | `query_ui_layout --canvas-guid <guid> --query <pattern>` | per-node layout/draw/text rects + drawn glyph bounds |

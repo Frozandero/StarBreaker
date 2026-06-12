@@ -158,8 +158,11 @@ python. (Ledger items 19, 21, 23.)
       `docs/ui-reference.md` §7 (diagnostics table) — run each once
       (verify-on-write). Acceptance: `python3 scripts/ui_ir_query.py query
       /tmp/<any>.ir.json 'text_'` lists textfields.
-- [ ] **P1.2 `scripts/ui_measure.py` — the contamination-guarded
-      measurer.** Inputs: an image + an element box (`--box x0,y0,x1,y1`
+- [x] (2026-06-12, commit "plan P1.2") **P1.2 `scripts/ui_measure.py` — the contamination-guarded
+      measurer.** (Default delta 45; suspect = run crossing BOTH side
+      edges or abutting top/bottom — single-edge contact is reported in
+      `touches` without the flag, since the reference P-glyph itself
+      nudges one box edge.) Inputs: an image + an element box (`--box x0,y0,x1,y1`
       or `--ir <ir.json> --node <id>` to derive the box from the IR rect).
       Outputs (JSON to stdout):
       - `glyph_runs`: bright-row runs inside the box (threshold = median +
