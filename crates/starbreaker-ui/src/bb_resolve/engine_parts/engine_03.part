@@ -11,6 +11,51 @@ mod tests_f {
     use super::*;
     use crate::record_name::extract_record_name;
 
+    /// `exportNode: false` marks editor-only nodes (mock layouts, DEL/Old
+    /// leftovers, ambient-greeble groups like the medical footer's
+    /// `base_animatedelements`): the engine build drops them. The parse stage
+    /// already deactivates the node itself; the resolver must deactivate the
+    /// SUBTREE — children author `exportNode: true` and would otherwise
+    /// render. Structural rule, no name matching (plan P5.1).
+    #[test]
+    fn export_node_false_subtree_is_deactivated() {
+        let canvas = serde_json::json!({
+            "_RecordName_": "test_export_node",
+            "_RecordId_": "00000000-0000-0000-0000-00000000000e",
+            "_RecordValue_": {
+                "_Type_": "BuildingBlocks_Canvas",
+                "size": {"_Type_": "Vec3", "x": 100.0, "y": 100.0, "z": 0.0},
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget", "name": "Root"},
+                    {"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "ambient_group", "parent": "_PointsTo_:ptr:1", "exportNode": false},
+                    {"_Pointer_": "ptr:3", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "greeble_child", "parent": "_PointsTo_:ptr:2", "exportNode": true},
+                    {"_Pointer_": "ptr:4", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "visible_sibling", "parent": "_PointsTo_:ptr:1", "exportNode": true}
+                ]
+            }
+        });
+        let scene = resolve_canvas_graph(&canvas, None, &|url| {
+            Err(format!("no follows in fixture: {url}"))
+        })
+        .expect("resolve failed");
+
+        let by_name = |name: &str| {
+            scene
+                .nodes
+                .values()
+                .find(|n| n.name == name)
+                .unwrap_or_else(|| panic!("node {name} missing"))
+        };
+        assert!(!by_name("ambient_group").is_active, "container must be inactive");
+        assert!(
+            !by_name("greeble_child").is_active,
+            "exportNode=false subtree must be deactivated even though the child authors exportNode=true"
+        );
+        assert!(by_name("visible_sibling").is_active, "sibling untouched");
+    }
+
 
     fn load_fixture(name: &str) -> serde_json::Value {
         let path = format!("{}/tests/fixtures/canvas/{name}", env!("CARGO_MANIFEST_DIR"));

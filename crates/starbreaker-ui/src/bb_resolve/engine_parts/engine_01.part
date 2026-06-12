@@ -1506,14 +1506,26 @@ fn resolve_canvas_graph_inner(
     }
     finalize_widget_standard_fields(&mut scene, &Default::default());
 
-    let animated_roots: std::collections::HashSet<BbNodeId> = scene
+    // `exportNode: false` marks editor-only authored nodes (mock layout
+    // images, "...DEL"/"(Old)"/"TEST" leftovers, ambient-greeble groups like
+    // the medical footer's `base_animatedelements`): the engine build drops
+    // them. Parse already deactivates the node itself; descendants author
+    // `exportNode: true`, so the subtree is deactivated here. Structural
+    // replacement for the former `base_animatedelements` name match
+    // (plan P5.1, 2026-06-12) — the duplicate `card_OutputTitleTextContainer`
+    // under the power output card's `base_MinBatteryAssignment` (one false,
+    // one true sibling) is the discriminating counterexample showing the flag,
+    // not the name, carries the semantics.
+    let export_disabled_roots: std::collections::HashSet<BbNodeId> = scene
         .nodes
         .iter()
-        .filter(|(_, node)| node.name.eq_ignore_ascii_case("base_animatedelements"))
+        .filter(|(_, node)| {
+            node.raw.get("exportNode").and_then(|v| v.as_bool()) == Some(false)
+        })
         .map(|(id, _)| *id)
         .collect();
-    if !animated_roots.is_empty() {
-        deactivate_subtrees(&mut scene, &animated_roots);
+    if !export_disabled_roots.is_empty() {
+        deactivate_subtrees(&mut scene, &export_disabled_roots);
     }
 
     Ok(scene)

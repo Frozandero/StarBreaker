@@ -397,12 +397,24 @@ surviving name-keyed rules and ledger item 17 land here.)
 
 ## Phase 5 — remaining structural derivations (each its own mini-arc)
 
-- [ ] **P5.1 `base_animatedelements`** (load-bearing, ui_target_a
+- [x] (2026-06-12, commit "plan P5.1") **P5.1 `base_animatedelements`** (load-bearing, ui_target_a
       draw-order pins): find the structural at-rest-hidden signal —
       compare the authored `animation` blocks of those containers vs
       animated-but-visible nodes (suspect: additive looped timelines that
       START from alpha 0 / off-screen). Replace the name match with the
       data property; battery adjudicates.
+      The ANIMATION hypothesis was falsified (BGDots/MeasureVert share
+      the looped-additive-timeline shape and are visible). The real
+      signal: **`exportNode: false`** — the container authors it (its
+      children author true); the flag marks editor-only nodes repo-wide
+      ("…DEL", "(Old)", "TEST", mock layout images, a duplicate
+      card_OutputTitleTextContainer next to its true sibling). Parse
+      already deactivated the node itself; the resolver now deactivates
+      the SUBTREE of any exportNode=false node, name match deleted.
+      Adjudicated: medical renders byte-identical (the two dropped
+      elements are zero-rect text carriers absent from both captures);
+      IR snapshot re-frozen (approver tom) with the per-identity delta;
+      fresh-export `--full` ALL GREEN.
 - [x] (2026-06-12, commit "plan P5.2") **P5.2 Annunciator 25px frame** (`root_annunciator_items`): check
       the Phase 2 AVM1 dump first (the frame inset may be host-side like
       the 44px); else search the annunciator canvas/standards for the
