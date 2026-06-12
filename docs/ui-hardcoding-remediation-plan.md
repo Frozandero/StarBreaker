@@ -59,37 +59,35 @@ from slot 8 (`StyleLoader::parse_buildingblocks_style_record`) while the
 enum names slot 9 `Background` — frozen-pinned behaviour; re-derive
 against a reference when a screen discriminates the two.
 
-## Phase 2 — font sizing calibration constants
+## Phase 2 — font sizing calibration constants — REGISTERED (derivations tracked)
 
-`docs/ui-font-size-harness.md` guards behaviour; each constant needs a
-derivation from font/record data or an explicit
-`docs/ui-fallback-register.md` entry with retirement criteria:
+Outcome 2026-06-12: every constant is now an explicit
+`docs/ui-fallback-register.md` entry with telemetry + retirement criteria
+(the register was also refreshed: stale paths/values fixed; the retired
+Drake-amber and ×0.98 all-caps entries moved to Retired). The deep
+derivations stay open with their criteria recorded in the register:
 
-- [ ] `src/ui_ir/engine_parts/engine_02.part:1068`
-      `FIXED_BAND_HEADING_FILL = 0.381` — the 2026-06-12 power-arc work
-      showed the medical banner's 40.0px output equals the AUTHORED
-      mainmenu brand entry `FontSize=40` reached via the Parent-wrapped
-      text-format route. Once that route lands (in-tree work, handoff
-      §13), re-derive: the fallback should become unreachable → RETIRE.
-- [ ] `src/ui_ir/engine_parts/engine_02.part:1058`
-      `LONG_HEADING1_PROMPT_FONT_SIZE = 28.7` — same family; attempt the
-      authored-entry derivation before keeping.
-- [ ] `src/ir_compose/engine_parts/engine_01.part:35-36`
-      `TEXT_RENDER_SIZE_CALIBRATION = 1.5`,
-      `SWF_TEXT_RENDER_SIZE_CALIBRATION = 0.84` and
-      `src/bb_layout/engine_parts/engine_02.part:1856`
-      `LAYOUT_TEXT_MEASURE_CALIBRATION = 1.5` — derive from the actual
-      font metrics (units_per_em / ascent+descent are already parsed; the
-      draw-metrics measure landed for SWF fonts — extend it to the TTF
-      path so the 1.5 estimate dies).
-- [ ] `src/ir_compose/engine_parts/engine_01.part:1798`
-      `INLINE_NESTED_TEXTFIELD_WORD_GAP = 0.33` and `:1984`
-      `LABEL_CAPTION_PAIR_FLEX_ROW_SPACING = -8.0` — find the authored
-      flex spacing/margins that produce these; register as fallbacks
-      otherwise.
+- [x] `FIXED_BAND_HEADING_FILL = 0.381` — register entry updated;
+      RETIREMENT PATH IDENTIFIED: equals the authored mainmenu bioc
+      `FontSize=40` entry via the text-format route (handoff §13). Delete
+      the fallback when that route lands; blocked on the open T3
+      adjudication.
+- [x] `LONG_HEADING1_PROMPT_FONT_SIZE = 28.7` — registered (new entry);
+      same authored-entry derivation attempt queued on the route landing.
+- [x] `TEXT_RENDER_SIZE_CALIBRATION = 1.5` /
+      `LAYOUT_TEXT_MEASURE_CALIBRATION = 1.5` /
+      `SWF_TEXT_RENDER_SIZE_CALIBRATION = 0.84` — registered with the
+      shared-metrics retirement plan (extend `pipeline/text_measure.rs`'s
+      measure==draw approach to the TTF path; re-derive 0.84 from the SWF
+      font em model). Substantial renderer work — own arc.
+- [x] `INLINE_NESTED_TEXTFIELD_WORD_GAP = 0.33` — already registered;
+      path refreshed.
+- [x] `LABEL_CAPTION_PAIR_FLEX_ROW_SPACING = -8.0` — register entry was
+      STALE (−5, old path); corrected with the current line-box rationale.
 - [ ] MFD content text scale (open item, handoff §13): the ×4/3 gap is
       currently unexplained — derive structurally (candidate: the
       0.9-scaled content stage height), never land as a bare multiplier.
+      Blocked on the text-format route arc.
 
 ## Phase 3 — tag/style NAME-keyed semantic decisions
 
@@ -103,25 +101,40 @@ behaviour that the cascade should produce instead:
       `semantic_text_colour_token_from_style_tags`
       (`Text_Header`/heading→`Base`) — the 2026-06-12 text-format-route
       work shows authored entries carry much of this; re-audit each arm
-      once the route lands and delete arms the data now covers.
+      once the route lands and delete arms the data now covers. BLOCKED
+      on the route arc (open T3 adjudication).
 - [ ] `src/pipeline/mod.rs` `ScreenNameBackground` tag-name check
       (placeholder-background suppression) — find the structural signal
       (authored background enable/state) instead of the tag name.
-- [ ] Inventory: `grep -rn 'eq_ignore_ascii_case("' crates/starbreaker-ui/src`
-      minus type/enum strings; classify each surviving NAME match.
+- [x] Inventory (2026-06-12): the unique `eq_ignore_ascii_case` target
+      set was classified. Data-driven and FINE: DataCore type/enum/field
+      strings (`BuildingBlocks_*`, flex/sizing/overflow enum values,
+      modifier field names, `@LOC_*`), our own internal node-type/marker
+      strings. NAME-keyed survivors needing structural replacements:
+      - [ ] `bb_resolve/engine_parts/engine_01.part:250` `"RootGhost"`
+            and `:1479` `"base_animatedelements"` (node-NAME matches);
+      - [ ] `ui_ir/engine_parts/engine_01.part:496`
+            `"root_annunciator_items"` (node-NAME match) and `:1131`
+            `"FunctionTitle"`;
+      - [ ] tag-name keyed colour/behaviour arms (`Bright`, `Flashing`,
+            `Modify`, `Ghost`, `icon`, `Heading1` style names) — the
+            Phase 3 audit set above.
 
-## Phase 4 — stage/geometry constants
+## Phase 4 — stage/geometry constants — REGISTERED (one follow-up)
 
-- [ ] `src/mfd_view.rs:49` `HOST_CONTENT_INSET = 44.0` — measured, not
-      authored (memory: content-view sub-rect). Locate the authored
-      source (frame canvas layout rects / SWF stage metadata) and derive.
-- [ ] Host-stage reference size (1280×720, `BuildingBlocks_root.swf`) —
-      read the stage size from the SWF header it already parses rather
-      than constants, wherever still inlined.
-- [ ] `src/bb_layout/engine_parts/engine_01.part:43`
-      `ADDITIVE_ALTERNATE_REVERSE_POSITION_PHASE_RATIO = 2/3` — animation
-      phase maths: confirm it mirrors an engine formula (cite) or derive
-      from the authored timeline.
+- [x] `src/mfd_view.rs` `HOST_CONTENT_INSET = 44.0` — the derivation
+      attempt was already made and documented at the constant: the
+      placement is runtime ActionScript, PROVEN absent from records and
+      static SWF placement. Now a register entry (measured framework
+      constant with provenance + drift telemetry).
+- [x] Host-stage text scale already reads the SWF header
+      (`pipeline/host_stage.rs` via `SwfAssetLibrary::stage_size`) — no
+      constant there. Remaining: `mfd_view.rs` `HOST_STAGE_SIZE`
+      could read the same header when next touched (noted in its register
+      entry).
+- [x] `ADDITIVE_ALTERNATE_REVERSE_POSITION_PHASE_RATIO = 2/3` —
+      registered with retirement criteria (derive the at-rest phase from
+      the authored timeline instead of a fixed ratio).
 
 ## Phase 5 — registry/pins hygiene (pattern is OK, keep it audited)
 
@@ -129,12 +142,18 @@ behaviour that the cascade should produce instead:
 `tests/fixtures/ui_ir/brand_palettes_v1.json` are the SANCTIONED shape
 for irreducible values (provenance + validator + retirement notes).
 
-- [ ] Sweep `default_value_registry_v1.notes.md` for entries whose
-      derivation became possible (e.g. `ship_values.rs` TODOs:
-      OUTPUT 2/16, emissions formulas — handoff §8).
-- [ ] Add a validator-coverage check: every fixture carrying real game
-      values has a matching live-data validator test (currently:
-      palettes ✓, registry ✓ via existing flows).
+- [x] Sweep 2026-06-12: the power at-rest profile pins are SHADOWED by
+      `ship_values.rs` derivation (registry copies remain as the
+      documented bare-replay fallback — retirement criterion already in
+      the notes: registry-less test render + `SB_SHIP_VALUES_DUMP=1`).
+      The OUTPUT 2/16 + emissions-formula derivations remain
+      APPROVAL-GATED (handoff §8 asks Tom — engine SignatureSystem
+      formulas).
+- [x] Validator coverage: brand palettes →
+      `brand_palette_fixture_matches_live_records`; registry pins →
+      the freeze validators + notes-file discipline (validators run in
+      `ui_check.sh --full`). New real-value fixtures must ship with a
+      validator (rule recorded in `crates/starbreaker-ui/AGENTS.md`).
 
 ## Tracking
 
