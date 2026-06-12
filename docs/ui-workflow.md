@@ -88,7 +88,10 @@ provenance entry in `default_value_registry_v1.notes.md`.
    first (rule 2). Don't chain speculative layout changes between
    measurements.
 3. **Validate:** `bash scripts/ui_check.sh` (every cycle), then re-render
-   via the ~1-minute replay and compare with `scripts/ui_compare.py`.
+   via the ~1-minute replay (`bash scripts/ui_render.sh --helper <name>` —
+   it rebuilds first and prints the binary mtime, so a stale binary can't
+   masquerade as "the fix had no effect") and compare with
+   `scripts/ui_compare.py`.
 4. **Update the catalog** (fixed / still open / new finding) and the arc's
    memory/handoff notes for any non-trivial diagnosis — at discovery time,
    not at session end.
@@ -107,7 +110,11 @@ re-measure numerically, only then ask for visual confirmation.
 1. Re-render the screen (replay; full export only when refreshing canonical
    PNGs).
 2. `python3 scripts/ui_compare.py <render> <reference> --regions <preset>`
-   and READ each crop with vision.
+   and READ each crop with vision. For any colour question add `--stats`
+   (bright/dark means + R-normalised ratios per region): judge hue from
+   ratios, calibrate the capture's cast from a known anchor on the SAME
+   reference (footer text = Base, pip slabs = Bright) — method details in
+   the reference doc §3.
 3. Build/extend the numbered **diff catalog**: region | difference |
    severity | root-cause hypothesis | fix-or-defer decision. Deferrals are
    explicit entries, not omissions. Reference screenshots are imperfect
@@ -166,6 +173,11 @@ Flows (commands in the reference doc §2/§7):
   --approver <name> --reason "..."` → re-export →
   `generate_ui_regression_artifacts.sh` → `freeze_ui_regression_artifacts.sh`
   → both validators → `ui_check.sh --full`.
+- **The artifact cycle as one command**: `bash scripts/ui_freeze_cycle.sh
+  --approver <name> --reason "..."` runs release build → export → stale
+  `*-current.png` cleanup → artifact freeze → both validators →
+  `ui_check.sh --full`. The IR snapshot freeze stays a separate, deliberate
+  step: its printed delta must be read and accounted for.
 - **Re-freeze after an intentional improvement**: same freeze command; the
   tool prints the per-identity delta — the reason and the commit message
   must account for every changed identity. AUDIT RULE: a re-freeze whose
