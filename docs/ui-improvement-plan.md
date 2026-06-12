@@ -146,7 +146,7 @@ Goal: the failure modes that produced wrong verdicts this arc become loud.
 Goal: pixel adjudication becomes a tool call + a lookup, not throwaway
 python. (Ledger items 19, 21, 23.)
 
-- [ ] **P1.1 `scripts/ui_ir_query.py`.** Promote the session's /tmp
+- [x] (2026-06-12, commit "plan P1.1") **P1.1 `scripts/ui_ir_query.py`.** Promote the session's /tmp
       helpers: input = an IR JSON produced by `ui render --dump-ir-dir`
       (see `docs/ui-reference.md` §6). Subcommands:
       `query <ir.json> <regex> [--fields a,b,c]` — print id, parent,

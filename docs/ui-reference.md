@@ -187,10 +187,12 @@ in the same commit that introduces them.
 Example: `BB_SHRINK_PROBE=1 ./target/debug/starbreaker ui render --scene
 "<scene>" --out-dir /tmp/x --helper Screen_Left_Lower_RTT 2>&1 | grep PROBE`.
 
-## 7. Diagnostic examples (`cargo run -p starbreaker-ui --example <name> --`)
+## 7. Diagnostics (`cargo run -p starbreaker-ui --example <name> --`, plus scripts)
 
 | Example | Use |
 |---|---|
+| `python3 scripts/ui_ir_query.py query <ir.json> <regex> [--fields a.b,c]` | list IR nodes whose name or text matches the regex: id, parent, type, rect, is_active + dotted-path extras (input: `ui render --dump-ir-dir` output) |
+| `python3 scripts/ui_ir_query.py tree <ir.json> <node_id>` | ancestor chain for one node with rect, authored_size, anchor/pivot, padding, margin |
 | `ui_stage_diff <canvas.json> [WxH] [--records-root <dir>] [--filter <substr>]` | parse-only vs full-resolve layout diff; flags first name-matched divergence (cracks "which stage broke the geometry") |
 | `mfd_ir_dump <canvas-guid> <content-guid> [name-filter] [WxH]` | framed MFD IR dump from the record mirror (filter = lowercase name substring) |
 | `query_ui_layout --canvas-guid <guid> --query <pattern>` | per-node layout/draw/text rects + drawn glyph bounds |
