@@ -483,6 +483,24 @@ viewport may genuinely differ; the slider-width math suggested
 0.7×padding-box, but the card-width/scroll-position evidence is
 capture-skew-limited) — both documented in this session's analysis; defer.
 
+### 16. MFD text size RESOLVED — host-path imageSizePercent division (2026-06-12, 15d1e3b99)
+
+Tom: "all fonts across the entire image are smaller than the reference."
+Root cause: on the GFx-HOST path the imported fontlib glyphs are authored
+at the font record's imageSizePercent (0.75) of their em square — the
+engine compensates at draw, so EVERY size class divides by it there
+(`apply_font_image_size_percent`), not just plain text. Verified per
+element on both MFD captures; medical (non-host) verbatim behaviour
+unchanged. Artifact re-freeze: target master +0.95% (text ×4/3 toward
+ref), small door +2.16% (the Accent2 enum fix's deep-orange bottom bar,
+matches Door-closed.png). CAUTION/learning: the whole-image guard compares
+`ships/Data/UI/Generated` PNGs — they are only as fresh as the last
+export; the ScreenNameBackground suppression deletion looked drift-free
+against stale files and regressed the annunciator on a fresh export —
+REINSTATED. Power symptom list: sizes/colours now match (1–4, 6–8 sizes
+✓); still open: P3 separator dots, P4 pip brightness, P13 side bars, P7
+slider width, P8 pitch.
+
 ### 15. Route LANDED + hard-coding remediation — DONE 2026-06-12
 
 Commits 5bf1d7f84 (RgbaColor guard/fixture/neutral-fallback), b09c2d98a
