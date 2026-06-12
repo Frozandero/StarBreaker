@@ -336,7 +336,62 @@ tag only overrides when an entry/directive maps it to a colour). "2" now
 cream like "/ 16". Medical re-frozen: headers Foreground->Bright (the
 authored s_bioc H2 entry), H1 Base + H6 Bright tokens added to the
 previously token-less fields; visually adjudicated vs medical1.
-NEXT: P2+P5 (card icons + chevron glyph dark vs bright orange).
+P2+P5 LANDED 2026-06-12 (next commit): entry-less colour-overlay
+WidgetCustomShapes (renderShape + svg source + no resolved tint/fill)
+take icon token `MissionObjectives` (BB_ColorStyle enum 16; drak slot 16
+(243,220,110)); compose maps the token to slot 16. Evidence: all five
+power icons (gun/thrusters/shield system icons + OUTPUT/BATTERY card
+glyphs) share the slot-16 hue on the reference capture, distinct from
+Base (footer) and Bright (slabs) on the SAME capture; misc/orig author
+explicit at-rest "System Icon Color" entries while DRAK authors only the
+hover state; HUD records author FillColor=MissionObjectives for generic
+Icon Styles. The thrusters >> chevron (black SVG) is visible for the
+first time. No frozen-target drift.
+
+### P3 separator dots — PARKED 2026-06-12 (full diagnosis, ~30min to land)
+
+The dotted icon/title separators are `BuildingBlocks_WidgetSeparator`
+widgets (direction Vertical, style Tertiary on the power cards) — a
+modularkit standard family: 6 records
+`modularkit/standard/widgets/{vertical,horizontal}separator{primary,secondary,tertiary}widgetstandard.json`,
+each a single ComponentRoot WidgetCustomShape whose PER-BRAND container
+authors the visual (drak env: `DRAK_S42_seperator_vertical_2.svg`,
+EnableColorOverlay=false, nine-slice). A working implementation was
+built and REVERTED for two blockers (the diff survives in this
+session's transcript; all pieces below were verified):
+
+1. bb_scene: add `BbNodeType::WidgetSeparator` (+3 exhaustive matches:
+   bb_layout type_name_str, ui_ir node_type_name "widget_separator",
+   compose draw_node no-op host arm) and convert the 3 existing
+   `Other("BuildingBlocks_WidgetSeparator")` matches in ui_ir
+   engine_02.part; add `"Separator"` to node_type_matches.
+2. Expansion (bb_resolve engine_04 expand_widget_standards): include
+   WidgetSeparator hosts, template by direction/style, no params.
+   **BLOCKER A**: instances consume the shared 0xF000_0000 band counter
+   and SHIFT the frozen platinum instance ids (medical close-button X
+   4026531855 became a separator). Fix: a second band (e.g.
+   0xF800_0000) for separator merges in merge_child_scene
+   (engine_01.part EXPANSION_ID_BASE), or per-host-type band lanes.
+3. Brand application (apply_separator_standard_styles, engine_01.part,
+   subtree-scoped via apply_scene_style_entries_in_subtree with brand
+   fills + Style-record chrome): **BLOCKER B**: brand selection. Exact
+   canvas-selected identifier + hud<->env sibling works for power
+   (s_drak_hud -> s_drak_env) and medical bed (s_bioc container exists
+   in the standards), but the medical FOOTER component selects
+   s_aegs_env via the IC_* single-container rule and exactly matches
+   the standard's s_aegs_env => AEGS divider leaks into platinum. Needs
+   the typography-table model (collect_standard_text_styles
+   selected_style_name: canvas:<style-link> else s_<mfr>_{hud|env} by
+   canvas family) instead of resolve_brand_style on the component
+   record.
+4. The overlay-icon default (P2) must respect a styled
+   `EnableColorOverlay=false` (PascalCase raw override) so the
+   separator SVGs are not MissionObjectives-tinted.
+5. Test fixtures need the tag database served (expansion bails without
+   it).
+
+NEXT after P3: P4 pip slab brightness (Bright vs washed reference —
+bloom caveat), P7 scrollbar geometry, P8 letterspacing.
 
 ## Key mechanisms quick reference
 
