@@ -196,7 +196,12 @@ python. (Ledger items 19, 21, 23.)
       glyph regions). Add a one-line how-to (how to pick corners in GIMP:
       pointer coordinates of the screen bezel corners) to
       `docs/ui-reference.md` §3. Cite ledger item 21.
-- [ ] **P1.4 Measurement bank.** New fixture
+- [x] (2026-06-12, commit "plan P1.4") **P1.4 Measurement bank.**
+      All boxes re-measured with ui_measure.py; 10 of 13 arc numbers
+      reproduced exactly. Three battery-card values did NOT (zeros 51
+      vs arc 53, slash 55 vs 58, OFFLINE 49 vs 43 — the 43 was already
+      "unexplained" in the handoff): bank records the tool-reproduced
+      values flagged SOFT, with the arc numbers in the notes. New fixture
       `crates/starbreaker-ui/tests/fixtures/ui_ir/reference_measurements_v1.json`
       + `.notes.md` (provenance: capture file, date, method=ui_measure.py,
       rectified or not). Schema per entry: `{ "capture": "<file>",

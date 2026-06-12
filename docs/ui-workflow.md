@@ -121,7 +121,11 @@ re-measure numerically, only then ask for visual confirmation.
    (bright/dark means + R-normalised ratios per region): judge hue from
    ratios, calibrate the capture's cast from a known anchor on the SAME
    reference (footer text = Base, pip slabs = Bright) — method details in
-   the reference doc §3.
+   the reference doc §3. Pixel adjudications consult the **measurement
+   bank FIRST** (`crates/starbreaker-ui/tests/fixtures/ui_ir/
+   reference_measurements_v1.json` + its `.notes.md`): settled reference
+   numbers are lookups, not re-measurements; new measurements use
+   `scripts/ui_measure.py` and get appended to the bank with provenance.
 3. Build/extend the numbered **diff catalog**: region | difference |
    severity | root-cause hypothesis | fix-or-defer decision. Deferrals are
    explicit entries, not omissions. Reference screenshots are imperfect
