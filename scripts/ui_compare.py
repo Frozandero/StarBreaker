@@ -10,6 +10,15 @@ The reference is auto-scaled to the render's width BEFORE cropping, so
 mismatched capture resolutions (e.g. a 1959x1513 screenshot vs a 1600x1200
 render) compare correctly. Region boxes are in the RENDER's pixel space.
 
+Rectification (plan P1.3, ledger item 21): manual captures are skewed.
+When `<reference>.corners.json` exists next to the reference (or `--rectify
+<corners.json>` is passed), the reference is warped onto the render's
+rectangle via the homography from the capture's four screen-corner pixel
+coordinates `{"tl":[x,y],"tr":[x,y],"br":[x,y],"bl":[x,y]}` (pure-python
+DLT 8x8 solve + numpy bilinear warp — no OpenCV) instead of width-scaled.
+Pick the corners in GIMP: hover the screen bezel corners and read the
+pointer coordinates from the status bar.
+
 Writes <out-dir>/cmp_full.png plus one cmp_<region>.png per preset region
 (render on top / left, reference below / right). Review phases use this
 script exclusively — no ad-hoc crop snippets.
@@ -58,6 +67,64 @@ REGION_PRESETS = {
 def harness_error(msg):
     print(f"HARNESS ERROR: {msg}", file=sys.stderr)
     sys.exit(2)
+
+
+def homography_from_corners(width, height, corners):
+    """3x3 homography H mapping render-space (x,y,1) to capture-space, from
+    the four capture-pixel screen corners. Direct Linear Transform: each
+    correspondence (x,y)->(u,v) contributes two rows of the 8x8 system in
+    the unknowns a..h of H = [[a,b,c],[d,e,f],[g,h,1]]."""
+    import numpy as np
+
+    src = [(0, 0), (width, 0), (width, height), (0, height)]
+    try:
+        dst = [corners[key] for key in ("tl", "tr", "br", "bl")]
+    except KeyError as missing:
+        harness_error(f"corners file missing key {missing} (need tl/tr/br/bl)")
+    rows, rhs = [], []
+    for (x, y), (u, v) in zip(src, dst):
+        rows.append([x, y, 1, 0, 0, 0, -u * x, -u * y])
+        rhs.append(u)
+        rows.append([0, 0, 0, x, y, 1, -v * x, -v * y])
+        rhs.append(v)
+    p = np.linalg.solve(np.array(rows, dtype=float), np.array(rhs, dtype=float))
+    return np.array([[p[0], p[1], p[2]], [p[3], p[4], p[5]], [p[6], p[7], 1.0]])
+
+
+def warp_capture_to_rect(capture, width, height, h_matrix):
+    """Bilinear-warp `capture` onto a width x height rectangle: output pixel
+    (x,y) samples the capture at H @ (x,y,1) (clamped at the borders)."""
+    import numpy as np
+
+    src = np.asarray(capture, dtype=float)
+    ys, xs = np.mgrid[0:height, 0:width]
+    denom = h_matrix[2, 0] * xs + h_matrix[2, 1] * ys + h_matrix[2, 2]
+    u = (h_matrix[0, 0] * xs + h_matrix[0, 1] * ys + h_matrix[0, 2]) / denom
+    v = (h_matrix[1, 0] * xs + h_matrix[1, 1] * ys + h_matrix[1, 2]) / denom
+    u = np.clip(u, 0, src.shape[1] - 1.001)
+    v = np.clip(v, 0, src.shape[0] - 1.001)
+    u0 = np.floor(u).astype(int)
+    v0 = np.floor(v).astype(int)
+    fu = (u - u0)[..., None]
+    fv = (v - v0)[..., None]
+    out = (
+        src[v0, u0] * (1 - fu) * (1 - fv)
+        + src[v0, u0 + 1] * fu * (1 - fv)
+        + src[v0 + 1, u0] * (1 - fu) * fv
+        + src[v0 + 1, u0 + 1] * fu * fv
+    )
+    return Image.fromarray(out.round().astype("uint8"))
+
+
+def rectify_reference(ref, render_width, render_height, corners_path):
+    import json
+
+    with open(corners_path) as handle:
+        corners = json.load(handle)
+    h_matrix = homography_from_corners(render_width, render_height, corners)
+    warped = warp_capture_to_rect(ref, render_width, render_height, h_matrix)
+    print(f"rectified via {corners_path}")
+    return warped
 
 
 def stack(a, b, gap=8, bg=(15, 15, 15)):
@@ -129,6 +196,13 @@ def main():
         help="print per-region bright/dark pixel means + R-normalised ratios "
         "for render and reference (the photometric review method)",
     )
+    ap.add_argument(
+        "--rectify",
+        default=None,
+        help="corners.json ({\"tl\":[x,y],\"tr\":..,\"br\":..,\"bl\":..} capture "
+        "coords of the screen corners); default: <reference>.corners.json "
+        "is used automatically when present",
+    )
     args = ap.parse_args()
 
     if args.regions == "list":
@@ -143,8 +217,17 @@ def main():
 
     render = Image.open(args.render).convert("RGB")
     ref = Image.open(args.reference).convert("RGB")
-    # Scale the reference into the render's pixel space.
-    ref = ref.resize((render.width, round(ref.height * render.width / ref.width)))
+    corners_path = args.rectify
+    if corners_path is None and os.path.isfile(args.reference + ".corners.json"):
+        corners_path = args.reference + ".corners.json"
+    if corners_path is not None:
+        if not os.path.isfile(corners_path):
+            harness_error(f"corners file not found: {corners_path}")
+        # Homography warp puts the reference exactly in the render's space.
+        ref = rectify_reference(ref, render.width, render.height, corners_path)
+    else:
+        # Scale the reference into the render's pixel space.
+        ref = ref.resize((render.width, round(ref.height * render.width / ref.width)))
 
     os.makedirs(args.out_dir, exist_ok=True)
     written = []

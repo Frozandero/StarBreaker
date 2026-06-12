@@ -100,7 +100,13 @@ edge-contamination flagging — prefer it over ad-hoc pixel maths.
 The reference is auto-scaled to the render width before cropping; READ the
 emitted `cmp_*.png` files with vision. Reference screenshots are imperfect
 (skew/bloom/capture artifacts; power-screen pip outlines are mouse-hover
-artifacts) — compare structurally.
+artifacts) — compare structurally. Skew is correctable: store the capture's
+four screen-corner pixel coordinates as `<reference>.corners.json`
+(`{"tl":[x,y],"tr":..,"br":..,"bl":..}` — in GIMP, hover each screen bezel
+corner and read the pointer coordinates off the status bar) and
+`ui_compare.py` homography-rectifies the capture onto the render rectangle
+automatically, printing "rectified via <file>" (or pass `--rectify
+<corners.json>` explicitly).
 
 **Screen dossier** — one row per known screen (extend as screens are
 worked). References live in

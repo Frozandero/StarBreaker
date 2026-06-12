@@ -183,7 +183,7 @@ python. (Ledger items 19, 21, 23.)
       the bar line at y1097-1103 must be flagged suspect, glyph 1126-1177)
       and our render's footer cap ≈53 on a fresh
       `/tmp/.../Screen_Left_Lower_RTT_TEX0.png`.
-- [ ] **P1.3 Rectification.** `scripts/ui_compare.py --rectify
+- [x] (2026-06-12, commit "plan P1.3") **P1.3 Rectification.** `scripts/ui_compare.py --rectify
       <corners.json>`: corners.json holds the capture's four screen-corner
       pixel coordinates (`{"tl":[x,y],"tr":..,"br":..,"bl":..}`), stored
       NEXT TO the reference image as `<reference>.corners.json`. Compute
