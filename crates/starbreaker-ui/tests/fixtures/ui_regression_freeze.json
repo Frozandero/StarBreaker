@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "frozen_at": "2026-06-12T08:37:04Z",
+  "frozen_at": "2026-06-12T08:44:07Z",
   "approver": "tom",
-  "reason": "Tier promotion (user-directed): eng_annunciator_master_left and clipper_target_master gold -> platinum; artifacts byte-identical to the prior freeze (no pixel change — promotion only tightens the budget to 0.5%)",
+  "reason": "Tooling verification run (ui_freeze_cycle.sh, process Part C): pixels and tiers identical to the tier-promotion freeze",
   "signature": null,
   "manifest_path": "crates/starbreaker-ui/tests/fixtures/ui_ir/ui_snapshot_manifest.json",
   "artifacts": [

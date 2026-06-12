@@ -25,7 +25,15 @@ Individual suites for targeted debugging:
 
 ## 2. Render & export
 
-**Replay (iteration, ~1 min, debug binary is fine):**
+**Replay (iteration, ~1 min, debug binary is fine).** Prefer the wrapper —
+it always rebuilds first and prints the binary mtime (a background shell's
+cwd reset twice caused renders from a STALE binary that looked like a fix
+had no effect):
+```bash
+bash scripts/ui_render.sh --helper Screen_Annunciator_L [--ir] \
+  [--scene <scene.json>] [--out <dir>]   # default scene: LOD1 Clipper
+```
+Raw form (when the wrapper's defaults don't fit):
 ```bash
 ./target/debug/starbreaker ui render \
   --scene "/home/tom/projects/scorg_tools/ships/Packages/DRAK Clipper_LOD0_TEX0/scene.json" \
@@ -48,7 +56,13 @@ benchmarking.
 Required before artifact freezes. The generated PNGs are written near the
 END of the run — never diff/freeze until the process exits.
 
-**Freeze tooling** (flows in `docs/ui-workflow.md` §7):
+**Freeze tooling** (flows in `docs/ui-workflow.md` §7). The whole artifact
+cycle (release build → export → stale-comparison cleanup → freeze → both
+validators → full battery) is one command:
+```bash
+bash scripts/ui_freeze_cycle.sh --approver <name> --reason "..." [--skip-export]
+```
+Individual steps:
 ```bash
 bash scripts/add_ui_regression_target.sh --id <id> --tier <gold|platinum> \
   --source-generated-png ships/Data/UI/Generated/ship/<mfr>/<Ship>/<file>.png
@@ -64,9 +78,17 @@ bash scripts/validate_ui_regression_repo_only.sh   # hosted CI (no game data)
 
 ```bash
 python3 scripts/ui_compare.py <render.png> <reference.png> \
-  --regions <preset> --out-dir /tmp/ui_compare
+  --regions <preset> --out-dir /tmp/ui_compare [--stats]
 python3 scripts/ui_compare.py --regions list   # available presets
 ```
+`--stats` prints per-region bright/dark pixel means + R-normalised ratios
+for both images — the photometric review method. Judge HUE from the ratios,
+never raw values: every reference capture has its own cast (G/B attenuate)
+and bloom lifts B near bright elements. Before judging an unknown colour,
+measure a known anchor on the SAME capture (footer text = Base, pip slabs =
+Bright); a colour matches a palette slot when the RATIOS line up under that
+cast. This method identified the linear-light compositing gap and the
+MissionObjectives icon slot.
 The reference is auto-scaled to the render width before cropping; READ the
 emitted `cmp_*.png` files with vision. Reference screenshots are imperfect
 (skew/bloom/capture artifacts; power-screen pip outlines are mouse-hover

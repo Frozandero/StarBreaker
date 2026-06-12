@@ -426,6 +426,110 @@ phase 4).
 
 ---
 
+## Part C — second retrospective (2026-06-12, annunciator/power arc)
+
+Re-review of the whole process after the annunciator close-out and power
+P1/P2/P5, with everything learned. Same format: incident → improvement →
+action. Items 13–15 are IMPLEMENTED in this commit; 16–19 are recorded
+decisions/directions.
+
+### 13. The wrong-cwd / stale-binary trap [done 2026-06-12]
+
+**Observed:** TWICE in one session a `cargo build` silently ran in the
+wrong directory (background shells reset their cwd between commands), and
+the following replay render used a STALE binary — the unchanged output
+nearly mis-adjudicated a correct fix as ineffective (the styled-ImagePath
+override and the EnableBackground flip both "did nothing" until rebuilt).
+
+**Action:** `scripts/ui_render.sh` — resolves the repo root from its own
+location, always builds first, prints the binary mtime, then replays.
+Documented as the preferred replay entry point in `docs/ui-reference.md`
+§2. General rule: wrapper scripts with self-resolved roots beat command
+sequences for anything run across shell resets.
+
+### 14. Freeze-cycle friction [done 2026-06-12]
+
+**Observed:** the artifact freeze flow (release build → export → freeze →
+two validators → full battery) is seven hand-typed steps and was run FIVE
+times in one session (~10 min each). One run also failed spuriously on
+stale `*-current.png` comparison leftovers ("undeclared artifact produced
+in freeze scope") from an earlier validation mismatch.
+
+**Action:** `scripts/ui_freeze_cycle.sh --approver --reason
+[--skip-export]` — the whole cycle in order, with the stale-comparison
+cleanup built in. The IR snapshot freeze stays separate on purpose: its
+delta must be READ and accounted for, not automated past.
+
+### 15. The photometric review method, promoted to tooling [done 2026-06-12]
+
+**Observed:** the decisive diagnostics of this arc were pixel-ratio
+measurements made with ad-hoc PIL snippets: the linear-light compositing
+gap (sRGB-space blending renders the chiclet glow (15,9,3) where linear
+gives (68,38,8) — matching the reference), the MissionObjectives icon slot
+(all five power icons share slot-16 hue under the capture cast, distinct
+from Base and Bright ON THE SAME capture), and the annunciator
+backplate-vs-bloom adjudication (no-bloom zones are NEUTRAL — hue survives
+any tone curve, so a warm plate cannot be hiding there).
+
+**Method (now codified in `docs/ui-reference.md` §3):** judge hue from
+R-normalised ratios, never raw values; estimate each capture's cast from a
+known anchor (footer text = Base, pip slabs = Bright) before judging an
+unknown colour; expect bloom to lift B near bright elements.
+
+**Action:** `ui_compare.py --stats` prints per-region bright/dark means +
+ratios for render and reference; presets added for `annunciator` and
+`door`.
+
+### 16. Reserved-ID-band fragility (recorded; fix rides P3)
+
+**Observed:** adding a NEW expanding host type (WidgetSeparator) shifted
+the shared `EXPANSION_ID_BASE` allocation order and STOLE a frozen
+platinum identity (the medical close-button X became a separator
+instance). The guards caught it before landing — the system worked — but
+the design couples baseline identity to expansion ORDER.
+
+**Direction:** band lanes per host type (or a second band for new types)
+in `merge_child_scene`; concrete plan parked with P3 in
+`docs/ui-clipper-parity-handoff.md` item 12.
+
+### 17. ONE brand-context resolver (architecture debt, recorded)
+
+**Observed:** at least four independent brand-container selection
+implementations exist (`resolve_brand_style`'s manufacturer-prefix scan,
+`collect_standard_text_styles`' selected_style_name family mapping, the
+body-background preferred chain, the separator hud↔env sibling swap) —
+and the P3 AEGS-divider leak came exactly from one of them improvising.
+Every new modularkit standard re-derives this logic.
+
+**Direction:** extract a single brand-context resolver (canvas style-link
+→ `s_<mfr>_{hud|env}` by canvas family → sibling swap; identity matching
+only, no prefix scans over shared standards) and migrate call sites one
+at a time under the guards.
+
+### 18. Linear-light compositing (gated workstream, evidence strong)
+
+The engine composites in linear light; our renderer blends in sRGB space.
+The white-mask glow path now converts (scoped, landed); the renderer-wide
+migration would change every alpha blend including text antialiasing —
+full re-freeze + re-adjudication of all targets, but the evidence says it
+moves EVERYTHING toward the references. Candidate for a dedicated arc;
+numbers in `docs/ui-clipper-parity-handoff.md` items 10/11.
+
+### 19. What demonstrably worked (keep doing)
+
+- The guard battery caught both P3 blockers and the flag-directive
+  medical regression BEFORE landing; every trip named its counterexample.
+- The audited freeze deltas + registry `.notes.md` provenance carried six
+  re-freezes and two registry flips with every line accounted for.
+- The review-phase catalog kept "deferred" explicit (P6 hover artifacts
+  EXCLUDED as a recorded decision, not a gap).
+- Entry/data archaeology before code (the MRAI explicit-FillColor pattern,
+  the misc/orig System-Icon-Color entries, the single-consumer
+  EnableBackground binding) repeatedly turned "mystery constant" into
+  "authored value".
+
+---
+
 ## Part B — phased plan (actionable, fresh-context-ready)
 
 Execute phases in order; each phase is independently committable and ends

@@ -40,6 +40,18 @@ REGION_PRESETS = {
         "chevrons": (150, 260, 1450, 700),
         "footer": (0, 950, 1600, 1200),
     },
+    "annunciator": {  # Screen_Annunciator_L (1920x432) vs Screen_Annunciator_L.png
+        "pwr": (15, 15, 370, 420),
+        "wpn": (399, 15, 754, 420),
+        "thr": (783, 15, 1138, 420),
+        "shld": (1167, 15, 1522, 420),
+        "cool": (1551, 15, 1906, 420),
+    },
+    "door": {  # i_door_small_drak (1920x1080) vs Door-closed.png
+        "header": (0, 0, 1920, 330),
+        "status": (0, 330, 1920, 860),
+        "bottom": (0, 860, 1920, 1080),
+    },
 }
 
 
@@ -61,12 +73,62 @@ def stack(a, b, gap=8, bg=(15, 15, 15)):
     return canvas
 
 
+def region_stats(name, render_crop, ref_crop):
+    """Photometric comparison of a region: bright/dark pixel means and
+    R-normalised ratios for both images.
+
+    This is the method that diagnosed the linear-light compositing gap and
+    identified the MissionObjectives icon slot: hue lives in the normalised
+    ratios (capture casts attenuate G/B roughly uniformly per capture;
+    bloom near bright elements lifts B). Judge HUE from ratios, never raw
+    values, and estimate the capture's cast from a known anchor (footer
+    text = Base, pip slabs = Bright) on the SAME reference before judging
+    an unknown colour.
+    """
+    import numpy as np
+
+    def stats(img):
+        a = np.asarray(img, dtype=float)
+        out = {}
+        for label, mask in (
+            ("bright", a.max(axis=2) > 110),
+            ("dark", a.max(axis=2) < 60),
+        ):
+            px = a[mask]
+            if len(px) == 0:
+                out[label] = None
+                continue
+            mean = px.mean(axis=0)
+            ratio = mean / mean[0] if mean[0] > 1e-6 else mean
+            out[label] = (mean.round(0), ratio.round(2), len(px))
+        return out
+
+    r, f = stats(render_crop), stats(ref_crop)
+    print(f"[{name}]")
+    for label in ("bright", "dark"):
+        for side, s in (("render", r[label]), ("ref   ", f[label])):
+            if s is None:
+                print(f"  {label:>6} {side}: (none)")
+            else:
+                mean, ratio, n = s
+                print(
+                    f"  {label:>6} {side}: mean=({mean[0]:.0f},{mean[1]:.0f},{mean[2]:.0f})"
+                    f" ratio=(1,{ratio[1]:.2f},{ratio[2]:.2f}) n={n}"
+                )
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("render")
     ap.add_argument("reference")
     ap.add_argument("--regions", default=None, help="preset name (or 'list')")
     ap.add_argument("--out-dir", default="/tmp/ui_compare")
+    ap.add_argument(
+        "--stats",
+        action="store_true",
+        help="print per-region bright/dark pixel means + R-normalised ratios "
+        "for render and reference (the photometric review method)",
+    )
     args = ap.parse_args()
 
     if args.regions == "list":
@@ -107,6 +169,10 @@ def main():
             path = os.path.join(args.out_dir, f"cmp_{name}.png")
             stack(a, bcrop).save(path)
             written.append(path)
+            if args.stats:
+                region_stats(name, a, bcrop)
+    elif args.stats:
+        region_stats("full", render, ref)
 
     for p in written:
         print(p)
