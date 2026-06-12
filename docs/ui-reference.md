@@ -48,7 +48,11 @@ P4K location is auto-detected; do NOT set `SC_DATA_P4K` unless pointing at
 non-default data, and never set `RAYON_NUM_THREADS=1` except when
 benchmarking.
 
-**Full export (canonical PNGs under `ships/Data/UI/Generated/...`, ~6 min):**
+**Full export (canonical PNGs under `ships/Data/UI/Generated/...`, ~50s
+as of 2026-06-12 — cheap enough to re-export before ANY artifact
+comparison; the `Generated` PNGs are only as fresh as the last export and
+a stale comparison mis-adjudicated a real regression as "zero drift" on
+2026-06-12):**
 ```bash
 ./target/release/starbreaker entity export drak_clipper \
   /home/tom/projects/scorg_tools/ships --kind decomposed
