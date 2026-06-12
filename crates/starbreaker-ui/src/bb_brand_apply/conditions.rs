@@ -218,6 +218,132 @@ pub(crate) fn condition_matches_node(
     false
 }
 
+/// Test whether an entry styles a textfield's IMPLICIT TEXT-FORMAT CHILD.
+///
+/// The engine renders a `WidgetTextField`'s text as a child element of the
+/// widget, so an entry whose conditions are `Parent(...)`-wrapped selects that
+/// child through the tagged field itself: `Parent(Tag(Size_3))` sizes the text
+/// of `Size_3`-tagged textfields (the MFD content host's per-brand
+/// `FontSizeSmall` table and the power card's `Battery Powered/Depleted Text`
+/// entries, verified against the in-game power reference). Evaluation frame:
+/// `Parent(c)` tests `c` on the field itself; tag conditions see the field's
+/// (inherited) tags; `Type(...)` never matches — the text format is not a
+/// widget (the MFD footer's `Type(Text)` entries do not restyle the
+/// screen-name WidgetTextField in the in-game reference). Callers apply only
+/// TEXT-FORMAT modifiers for a match made via this route.
+pub(crate) fn entry_matches_text_format(
+    entry: &serde_json::Value,
+    node_id: BbNodeId,
+    node: &BbNode,
+    scene: &BbScene,
+) -> bool {
+    if !matches!(node.ty, BbNodeType::WidgetTextField) {
+        return false;
+    }
+    let Some(conditions_list) = entry.get("conditionsList").and_then(|v| v.as_array()) else {
+        return false;
+    };
+    conditions_list.iter().any(|conditions_block| {
+        let Some(conditions) = conditions_block.get("conditions").and_then(|v| v.as_array()) else {
+            return false;
+        };
+        !conditions.is_empty()
+            && conditions
+                .iter()
+                .all(|condition| condition_matches_text_format(condition, node_id, node, scene))
+    })
+}
+
+fn condition_matches_text_format(
+    condition: &serde_json::Value,
+    node_id: BbNodeId,
+    node: &BbNode,
+    scene: &BbScene,
+) -> bool {
+    let cond_type = condition
+        .get("_Type_")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    if cond_type.ends_with("ConditionParent") {
+        // The text-format child's parent IS the textfield widget.
+        return condition
+            .get("conditions")
+            .and_then(|v| v.as_array())
+            .map(|conditions| {
+                conditions
+                    .iter()
+                    .all(|child| condition_matches_node(child, node_id, node, scene))
+            })
+            .unwrap_or(false);
+    }
+    if cond_type.ends_with("ConditionAllOfCondition") {
+        return condition
+            .get("conditions")
+            .and_then(|v| v.as_array())
+            .map(|conditions| {
+                conditions
+                    .iter()
+                    .all(|child| condition_matches_text_format(child, node_id, node, scene))
+            })
+            .unwrap_or(false);
+    }
+    if cond_type.ends_with("ConditionAnyOfCondition") {
+        return condition
+            .get("conditions")
+            .and_then(|v| v.as_array())
+            .map(|conditions| {
+                conditions
+                    .iter()
+                    .any(|child| condition_matches_text_format(child, node_id, node, scene))
+            })
+            .unwrap_or(false);
+    }
+    if cond_type.ends_with("ConditionNotCondition") {
+        return condition
+            .get("conditions")
+            .and_then(|v| v.as_array())
+            .map(|conditions| {
+                !conditions
+                    .iter()
+                    .any(|child| condition_matches_text_format(child, node_id, node, scene))
+            })
+            .unwrap_or(false);
+    }
+    if cond_type.ends_with("ConditionType") {
+        return false;
+    }
+    // Tag / NotTag / Ancestor / interaction conditions share the widget's
+    // context (the text child inherits its field's tags and ancestry).
+    condition_matches_node(condition, node_id, node, scene)
+}
+
+/// Modifier fields that style a textfield's text format (the subset an entry
+/// matched via [`entry_matches_text_format`] may apply).
+pub(crate) fn is_text_format_modifier(modifier: &serde_json::Value) -> bool {
+    let type_str = modifier
+        .get("_Type_")
+        .and_then(|v| v.as_str())
+        .or_else(|| {
+            modifier
+                .get("field")
+                .and_then(|f| f.get("_Type_"))
+                .and_then(|v| v.as_str())
+        })
+        .unwrap_or("");
+    if type_str.ends_with("FontStyleRecord") {
+        return true;
+    }
+    let field = modifier
+        .get("field")
+        .and_then(|f| f.as_str().or_else(|| f.get("field").and_then(|v| v.as_str())))
+        .unwrap_or("");
+    matches!(
+        field,
+        "FontSize" | "AutoFontSize" | "FillColor" | "StrokeColor" | "LetterSpacing" | "LineSpacing"
+    )
+}
+
 pub(crate) fn condition_tag_id(condition: &serde_json::Value) -> Option<&str> {
     let tag = condition.get("tag")?;
     tag_ref_id(tag)

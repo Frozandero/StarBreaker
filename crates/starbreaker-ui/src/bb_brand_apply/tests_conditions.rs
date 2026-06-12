@@ -460,3 +460,138 @@ use serde_json::json;
         assert_eq!(node.sizing.width, BbValue::Fixed(640.0));
         assert_eq!(node.sizing.height, BbValue::Fixed(480.0));
     }
+
+/// A `Parent(...)`-wrapped entry whose unwrapped conditions match a
+/// `WidgetTextField` itself targets that field's IMPLICIT TEXT-FORMAT CHILD:
+/// the engine renders a textfield's text as a child element of the widget, so
+/// `Parent(Tag(Size_3))` sizes the text of `Size_3`-tagged fields (the MFD
+/// content host's per-brand `FontSizeSmall` table; verified on the power
+/// screen's emissions header, battery card and OUTPUT "2"/"/16" against the
+/// in-game reference). Only TEXT-FORMAT modifiers (FontSize, AutoFontSize,
+/// FillColor, StrokeColor, LetterSpacing, LineSpacing, font record) apply via
+/// this route, and only to textfields.
+#[test]
+fn parent_wrapped_entry_styles_text_format_of_tagged_textfield() {
+    let mut scene = make_test_scene();
+    {
+        let node = scene.nodes.get_mut(&1).unwrap();
+        node.ty = BbNodeType::WidgetTextField;
+    }
+    let entry = json!({
+        "name": "FontSizeSmall",
+        "conditionsList": [
+            {
+                "_Type_": "BuildingBlocks_StyleConditionList",
+                "conditions": [
+                    {
+                        "_Type_": "BuildingBlocks_StyleSelectorConditionParent",
+                        "conditions": [
+                            {
+                                "_Type_": "BuildingBlocks_StyleSelectorConditionTag",
+                                "tag": {"_RecordId_": "tag-uuid-1"}
+                            }
+                        ]
+                    }
+                ]
+            }
+        ],
+        "modifiers": [
+            {"_Type_": "BuildingBlocks_FieldModifierBoolean", "field": "AutoFontSize", "value": false},
+            {"_Type_": "BuildingBlocks_FieldModifierNumber", "field": "FontSize", "value": 40.0},
+            {"_Type_": "BuildingBlocks_FieldModifierNumber", "field": "SizeX", "value": 123.0}
+        ]
+    });
+    let brand = BrandStyle {
+        identifier: "s_test_hud".to_string(),
+        entries: std::slice::from_ref(&entry),
+        raw: &json!({}),
+    };
+    apply_brand_modifiers(&mut scene, &brand, None);
+    let node = scene.nodes.get(&1).unwrap();
+    assert_eq!(
+        node.raw.get("FontSize").and_then(|v| v.as_f64()),
+        Some(40.0),
+        "text-format FontSize applies to the tagged textfield"
+    );
+    assert_eq!(
+        node.raw.get("AutoFontSize").and_then(|v| v.as_bool()),
+        Some(false),
+        "AutoFontSize applies to the tagged textfield"
+    );
+    assert!(
+        node.raw.get("SizeX").is_none(),
+        "widget-geometry modifiers must NOT apply via the text-format route"
+    );
+}
+
+/// The text-format route is textfield-only: a non-text widget carrying the
+/// same tag keeps literal Parent semantics (no match — its parent lacks the
+/// tag), so geometry/colour entries on containers are unaffected.
+#[test]
+fn parent_wrapped_entry_does_not_match_non_textfield_via_text_format() {
+    let mut scene = make_test_scene();
+    let entry = json!({
+        "conditionsList": [
+            {
+                "conditions": [
+                    {
+                        "_Type_": "BuildingBlocks_StyleSelectorConditionParent",
+                        "conditions": [
+                            {"_Type_": "BuildingBlocks_StyleSelectorConditionTag", "tag": {"_RecordId_": "tag-uuid-1"}}
+                        ]
+                    }
+                ]
+            }
+        ],
+        "modifiers": [
+            {"_Type_": "BuildingBlocks_FieldModifierNumber", "field": "FontSize", "value": 40.0}
+        ]
+    });
+    let brand = BrandStyle {
+        identifier: "s_test_hud".to_string(),
+        entries: std::slice::from_ref(&entry),
+        raw: &json!({}),
+    };
+    apply_brand_modifiers(&mut scene, &brand, None);
+    let node = scene.nodes.get(&1).unwrap();
+    assert!(node.raw.get("FontSize").is_none(), "WidgetImage must not take the text-format route");
+}
+
+/// A `Type(...)` selector inside the Parent wrapper blocks the text-format
+/// route: the implicit text child is not a widget (the MFD footer's
+/// `Type(Text)` entries do not restyle the screen-name WidgetTextField in the
+/// in-game reference).
+#[test]
+fn parent_wrapped_entry_with_type_condition_does_not_style_text_format() {
+    let mut scene = make_test_scene();
+    {
+        let node = scene.nodes.get_mut(&1).unwrap();
+        node.ty = BbNodeType::WidgetTextField;
+    }
+    let entry = json!({
+        "conditionsList": [
+            {
+                "conditions": [
+                    {
+                        "_Type_": "BuildingBlocks_StyleSelectorConditionParent",
+                        "conditions": [
+                            {"_Type_": "BuildingBlocks_StyleSelectorConditionTag", "tag": {"_RecordId_": "tag-uuid-1"}}
+                        ]
+                    },
+                    {"_Type_": "BuildingBlocks_StyleSelectorConditionType", "type": "Text"}
+                ]
+            }
+        ],
+        "modifiers": [
+            {"_Type_": "BuildingBlocks_FieldModifierNumber", "field": "FontSize", "value": 40.0}
+        ]
+    });
+    let brand = BrandStyle {
+        identifier: "s_test_hud".to_string(),
+        entries: std::slice::from_ref(&entry),
+        raw: &json!({}),
+    };
+    apply_brand_modifiers(&mut scene, &brand, None);
+    let node = scene.nodes.get(&1).unwrap();
+    assert!(node.raw.get("FontSize").is_none(), "Type selectors target widgets, not the text format");
+}

@@ -205,7 +205,11 @@ fn apply_style_entries_filtered(
         {
             continue;
         }
-        let (matching_entries, inline_entries): (Vec<&serde_json::Value>, Vec<serde_json::Value>) = {
+        let (matching_entries, text_format_entries, inline_entries): (
+            Vec<&serde_json::Value>,
+            Vec<&serde_json::Value>,
+            Vec<serde_json::Value>,
+        ) = {
             let Some(node) = scene.nodes.get(&node_id) else {
                 continue;
             };
@@ -218,18 +222,52 @@ fn apply_style_entries_filtered(
                 .iter()
                 .filter(|entry| entry_matches_scene(entry, node_id, node, scene))
                 .collect();
+            // Entries that select the textfield's implicit text-format child
+            // through a `Parent(...)` wrapper (see `entry_matches_text_format`)
+            // — they apply only their text-format modifiers. The route runs
+            // ONLY for manufacturer BRAND containers (`s_*` identifiers):
+            // - embedded containers are name-invoked state/override sheets
+            //   (the target screen's `Bright Elements` and the medical bed's
+            //   `Textfield_BrightColor_Override` are Bright overrides the
+            //   at-rest references do NOT show);
+            // - shared generic sheets don't restyle the text format either
+            //   (mfd_g_emissions' `Header Text` FillColor=Accent1 — the
+            //   in-game emitted values keep the brand H1 deep orange).
+            // Brand-tier evidence: the M_Eng_MFDContent drak `FontSizeSmall`
+            // table + `Bright Orange Objects`, the power card's
+            // `Battery Powered/Depleted Text` sizes and the medical mainmenu
+            // banner's `New Style` (Bright + FontSize 40), all verified
+            // against in-game captures.
+            let text_format_route = style_identifier
+                .is_some_and(|id| id.to_ascii_lowercase().starts_with("s_"));
+            let text_format_matches: Vec<&serde_json::Value> = if text_format_route {
+                entries
+                    .iter()
+                    .filter(|entry| {
+                        !entry_matches_scene(entry, node_id, node, scene)
+                            && entry_matches_text_format(entry, node_id, node, scene)
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
             if style_probe {
                 let matched_names: Vec<&str> = matches
                     .iter()
                     .filter_map(|e| e.get("name").and_then(|v| v.as_str()))
                     .collect();
+                let text_format_names: Vec<&str> = text_format_matches
+                    .iter()
+                    .filter_map(|e| e.get("name").and_then(|v| v.as_str()))
+                    .collect();
                 log::info!(
-                    "A3-style-probe[{}]: id=ptr:{} name={:?} tags={:?} matches={:?}",
+                    "A3-style-probe[{}]: id=ptr:{} name={:?} tags={:?} matches={:?} text_format={:?}",
                     style_identifier.unwrap_or("?"),
                     node_id,
                     node.name,
                     node.style_tag_uuids,
-                    matched_names
+                    matched_names,
+                    text_format_names
                 );
             }
             let inline: Vec<serde_json::Value> = node
@@ -244,7 +282,7 @@ fn apply_style_entries_filtered(
                         .collect()
                 })
                 .unwrap_or_default();
-            (matches, inline)
+            (matches, text_format_matches, inline)
         };
 
         let Some(node) = scene.nodes.get_mut(&node_id) else {
@@ -261,7 +299,46 @@ fn apply_style_entries_filtered(
         apply_inline_color_overlay(node, palettes.fills);
         resolve_node_background_color(node, palettes.fills);
         for entry in &matching_entries {
+            if std::env::var("BB_TEXT_FORMAT_PROBE").as_deref() == Ok("1")
+                && entry.get("modifiers").and_then(|v| v.as_array()).is_some_and(|mods| {
+                    mods.iter().any(|m| {
+                        serde_json::to_string(m).unwrap_or_default().contains("\"FontSize\"")
+                    })
+                })
+            {
+                eprintln!(
+                    "TFPROBE-NORMAL pass={} node={} name={:?} entry={:?} mods={} conds={}",
+                    style_identifier.unwrap_or("?"),
+                    node_id,
+                    node.name,
+                    entry.get("name").and_then(|v| v.as_str()).unwrap_or("?"),
+                    serde_json::to_string(entry.get("modifiers").unwrap_or(&serde_json::Value::Null))
+                        .unwrap_or_default()
+                        .chars()
+                        .take(220)
+                        .collect::<String>(),
+                    serde_json::to_string(entry.get("conditionsList").unwrap_or(&serde_json::Value::Null))
+                        .unwrap_or_default()
+                        .chars()
+                        .take(260)
+                        .collect::<String>()
+                );
+            }
             apply_entry_modifiers(entry, node, palettes, loc_fetcher);
+            record_applied_style_entry(node, entry);
+        }
+        for entry in &text_format_entries {
+            if std::env::var("BB_TEXT_FORMAT_PROBE").as_deref() == Ok("1") {
+                eprintln!(
+                    "TFPROBE pass={} node={} name={:?} tags={:?} entry={:?}",
+                    style_identifier.unwrap_or("?"),
+                    node_id,
+                    node.name,
+                    node.style_tag_uuids,
+                    entry.get("name").and_then(|v| v.as_str()).unwrap_or("?")
+                );
+            }
+            apply_entry_text_format_modifiers(entry, node, palettes, loc_fetcher);
             record_applied_style_entry(node, entry);
         }
         // The node's own authored `inlineStyles` are the FINAL cascade stage
@@ -335,6 +412,45 @@ fn resolve_node_background_color(node: &mut BbNode, palette_source: &serde_json:
     }
     if let Some(bg) = node.background.as_mut() {
         bg.fill_colour = Some(color);
+    }
+}
+
+/// Apply only the TEXT-FORMAT modifiers of an entry matched via
+/// [`entry_matches_text_format`] (the entry selects the textfield's implicit
+/// text-format child, so widget-geometry/background modifiers do not apply).
+fn apply_entry_text_format_modifiers(
+    entry: &serde_json::Value,
+    node: &mut BbNode,
+    palettes: &PaletteSources<'_>,
+    loc_fetcher: Option<&dyn LocFetcher>,
+) {
+    let Some(modifiers) = entry.get("modifiers").and_then(|v| v.as_array()) else {
+        return;
+    };
+    let mut sets_font_size = false;
+    for modifier in modifiers {
+        if is_text_format_modifier(modifier) {
+            apply_modifier(modifier, node, palettes, loc_fetcher);
+            if serde_json::to_string(modifier)
+                .unwrap_or_default()
+                .contains("\"FontSize\"")
+            {
+                sets_font_size = true;
+            }
+        }
+    }
+    // A TEXT-FORMAT-routed FontSize targets the field's text format directly
+    // and outranks the named-style table (the power emissions texts render
+    // the M_Eng drak `FontSizeSmall` 40 over the drak Heading1 standard's
+    // 60). A LITERAL widget match does NOT set this marker: the medical
+    // mainmenu `TierLevel` "T3" takes the same entry's `FillColor=Bright`
+    // through its flag-tagged parent, but renders the Title4 table size
+    // (~90), not the entry's 40 — widget-level FontSize raw stays below the
+    // table (STYLE before RAW).
+    if sets_font_size
+        && let Some(obj) = node.raw.as_object_mut()
+    {
+        obj.insert("__EntryFontSize".to_string(), serde_json::Value::Bool(true));
     }
 }
 

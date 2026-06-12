@@ -177,6 +177,7 @@ in the same commit that introduces them.
 | `SB_UI_GEOM_PROBE=1` | `bb_bindings::resolve_geometry_fields_into_scene` | bound SizeX/SizeY input chains + resolved values per node |
 | `SB_SHIP_VALUES_DUMP=1` | `starbreaker-3d` `ship_values` | every derived registry path = value at export/replay |
 | `SB_UI_FONT_DUMP=1` | `text/swf_draw` | one `FONTDUMP` line per rendered text element (see harness doc) |
+| `BB_TEXT_FORMAT_PROBE=1` | `bb_brand_apply` | per pass: `TFPROBE` = text-format-route entry applications (FontSize/FillColor on tagged textfields); `TFPROBE-NORMAL` = normal-route entries carrying FontSize (with modifiers + conditions) |
 | `ui render --dump-ir-dir <dir>` | CLI flag | composed `*.ir.json` per helper (nodes, rects, payloads, tints) |
 
 Example: `BB_SHRINK_PROBE=1 ./target/debug/starbreaker ui render --scene

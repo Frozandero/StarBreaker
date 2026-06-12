@@ -98,7 +98,7 @@ impl StyleFetcher for DummyStyleFetcher {
         _manufacturer_id: &str,
     ) -> Result<starbreaker_ui::ManufacturerStyle, UiError> {
         Ok(starbreaker_ui::StyleLoader::for_manufacturer(&self.manufacturer_id)
-            .drake_amber_fallback())
+            .neutral_fallback())
     }
 }
 

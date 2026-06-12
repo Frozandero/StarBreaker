@@ -1,72 +1,56 @@
 {
   "schema_version": 1,
-  "frozen_at": "2026-06-12T02:11:12Z",
+  "frozen_at": "2026-06-12T14:32:31Z",
   "approver": "tom",
-  "reason": "P1 power '2' cream: UI_Generic_Flag_03 directive deleted (the flag is not a colour signal — no DRAK entry maps it; power card's only flag entry is GRIN geometric) and the brand text-style FillColor fallback no longer blocked by colour-less style tags. The medical option headers' white now sources from the authored s_bioc H2 entry (TextFieldWidgetStandard, FillColor=Bright — same Bright white family as the platinum MEDGELS) instead of the invented directive: tokens Foreground->Bright on the three OptionNameText fields",
+  "reason": "Text-format style route adjudications, both reference-verified: (1) ui_target_a 2147483698 medical mainmenu banner text_tint_token Base->Bright — the authored bioc 'New Style' entry (Parent(UI_Generic_Flag_01) -> FillColor Bright + FontSize 40) applies via the textfield text-format route; photometric check vs screen_16x9_a-[medical1] shows the banner matches bioc Bright (197,200,216) under the capture cast, not Base light-blue (anchored on the lower-left Base text). Its size stays ~40 (entry verbatim == old calibrated fallback). (2) clipper_target_master 31 NO TARGET text_tint_token Base->Accent2 + text_rgba now token-only — the authored drak 'Base/Bright Elements' entries (FillColor=Accent2) own the colour; compose resolves Accent2 at BB enum slot 5 = (222,88,3), pixel-identical to the previous frozen rgba.",
   "signature": null,
   "manifest_path": "/home/tom/projects/scorg_tools/StarBreaker/crates/starbreaker-ui/tests/fixtures/ui_ir/ui_snapshot_manifest.json",
   "delta": [
     {
-      "target": "ui_target_a",
-      "identity": "2147483654:widget_text_field",
-      "field": "text_tint_token",
+      "target": "clipper_target_master",
+      "identity": "31:widget_text_field",
+      "field": "icon_tint_token",
       "old": null,
-      "new": "Base"
+      "new": "Accent2"
+    },
+    {
+      "target": "clipper_target_master",
+      "identity": "31:widget_text_field",
+      "field": "text_rgba",
+      "old": [
+        0.87058824,
+        0.34509805,
+        0.011764706,
+        1.0
+      ],
+      "new": null
+    },
+    {
+      "target": "clipper_target_master",
+      "identity": "31:widget_text_field",
+      "field": "text_tint_token",
+      "old": "Base",
+      "new": "Accent2"
+    },
+    {
+      "target": "ui_target_a",
+      "identity": "2147483698:widget_text_field",
+      "field": "icon_tint_token",
+      "old": null,
+      "new": "Bright"
+    },
+    {
+      "target": "ui_target_a",
+      "identity": "2147483698:widget_text_field",
+      "field": "text_font_size",
+      "old": 40.005,
+      "new": 40.0
     },
     {
       "target": "ui_target_a",
       "identity": "2147483698:widget_text_field",
       "field": "text_tint_token",
-      "old": null,
-      "new": "Base"
-    },
-    {
-      "target": "ui_target_a",
-      "identity": "2147483705:widget_text_field",
-      "field": "text_tint_token",
-      "old": "Foreground",
-      "new": "Bright"
-    },
-    {
-      "target": "ui_target_a",
-      "identity": "2147483706:widget_text_field",
-      "field": "text_tint_token",
-      "old": null,
-      "new": "Bright"
-    },
-    {
-      "target": "ui_target_a",
-      "identity": "2147483714:widget_text_field",
-      "field": "text_tint_token",
-      "old": "Foreground",
-      "new": "Bright"
-    },
-    {
-      "target": "ui_target_a",
-      "identity": "2147483715:widget_text_field",
-      "field": "text_tint_token",
-      "old": null,
-      "new": "Bright"
-    },
-    {
-      "target": "ui_target_a",
-      "identity": "2147483723:widget_text_field",
-      "field": "text_tint_token",
-      "old": "Foreground",
-      "new": "Bright"
-    },
-    {
-      "target": "ui_target_a",
-      "identity": "2147483724:widget_text_field",
-      "field": "text_tint_token",
-      "old": null,
-      "new": "Bright"
-    },
-    {
-      "target": "ui_target_b",
-      "identity": "2147483652:widget_text_field",
-      "field": "text_tint_token",
-      "old": null,
+      "old": "Base",
       "new": "Bright"
     }
   ],
@@ -982,13 +966,13 @@
             "stroke_rgba": null,
             "stroke_tint_token": null,
             "text_rgba": null,
-            "text_tint_token": "Base",
+            "text_tint_token": "Bright",
             "icon_tint_rgba": null,
-            "icon_tint_token": null,
+            "icon_tint_token": "Bright",
             "stroke_extent": 1.0,
             "text_payload": "PLEASE SELECT AN OPTION FROM THE AVAILABLE SERVICES",
             "text_font_identity": "file://./../../../../../../../../libs/foundry/records/ui/buildingblocks/fontstyles/blenderpro-thin.json",
-            "text_font_size": 40.005,
+            "text_font_size": 40.0,
             "line_spacing": 0.0,
             "primary_text_top": 179.0,
             "primary_text_left": 97.0,
@@ -1884,7 +1868,7 @@
     },
     {
       "id": "eng_annunciator_master_left",
-      "tier": "gold",
+      "tier": "platinum",
       "category": "image",
       "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_h_eng_annunciator_master_left.png",
       "canvas_record_path": "/home/tom/projects/scorg_tools/ships/dcb_canvas/libs/foundry/records/ui/buildingblocks/ships/displays/physicalscreens/annunciator/h_eng_annunciator_master_left.json",
@@ -2186,7 +2170,7 @@
     },
     {
       "id": "clipper_target_master",
-      "tier": "gold",
+      "tier": "platinum",
       "category": "image",
       "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_mc_s_target_master.png",
       "canvas_record_path": "/home/tom/projects/scorg_tools/ships/dcb_canvas/libs/foundry/records/ui/buildingblocks/ships/displays/mfdscreens/mc_mfdcomponents/screens/target/mc_s_target_master.json",
@@ -2219,15 +2203,10 @@
             "background_tint_token": null,
             "stroke_rgba": null,
             "stroke_tint_token": null,
-            "text_rgba": [
-              0.87058824,
-              0.34509805,
-              0.011764706,
-              1.0
-            ],
-            "text_tint_token": "Base",
+            "text_rgba": null,
+            "text_tint_token": "Accent2",
             "icon_tint_rgba": null,
-            "icon_tint_token": null,
+            "icon_tint_token": "Accent2",
             "stroke_extent": 1.0,
             "text_payload": "NO TARGET",
             "text_font_identity": "file://./../../../../../../../../libs/foundry/records/ui/buildingblocks/fontstyles/audimatmono-regular.json",

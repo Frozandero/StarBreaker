@@ -974,6 +974,23 @@ fn resolve_effective_font_size(
         return (scale_design_font_value(raw_font_size, design_text_scale), true);
     }
 
+    // A cascade-entry-written FontSize (marked `__EntryFontSize` by
+    // bb_brand_apply) overrides the named-style table: the engine applies
+    // instance style entries over the widget-standard's own styling (the
+    // power emissions texts render the M_Eng drak `FontSizeSmall` 40, not the
+    // drak Heading1 standard's 60, on the in-game reference). Entry sizes are
+    // style-system em design sizes, used VERBATIM: the medical mainmenu
+    // banner's brand entry (FontSize 40) renders cap ≈ 25px on the in-game
+    // medical reference — the verbatim 40, not a boosted 53. (The power
+    // texts' remaining ×4/3 gap vs their reference is the MFD CONTENT
+    // canvas's host-stage text scale — an open, separately-evidenced item:
+    // the non-entry ºC glyph needs the same ×4/3.)
+    if node.raw.get("__EntryFontSize").and_then(|v| v.as_bool()) == Some(true)
+        && let Some(raw_font_size) = font_size_from_raw(node)
+    {
+        return (scale_design_font_value(raw_font_size, design_text_scale), true);
+    }
+
     // Engine-faithful default: a styled textfield renders at its named style's
     // authored brand-table FontSize. The BuildingBlocks style FontSize modifier is
     // applied *after* the widget's default `fontSize`, so it overrides the node's raw
