@@ -356,7 +356,13 @@ the riskiest phase — land it as a REFACTOR with byte-identical output,
 verified by the full battery at every step. (The remediation audit's
 surviving name-keyed rules and ledger item 17 land here.)
 
-- [ ] **P4.1 Inventory the passes.** Write
+- [x] (2026-06-12, commit "plan P4.1") **P4.1 Inventory the passes.**
+      Doc landed with the per-level pass table (10 rows + the pipeline's
+      root-canvas defaultStyles projection, flagged for P4.4) and the
+      probe-order acceptance recorded for both renders. NOTE for P4.4:
+      `project_canvas_style_entries` applies root defaultStyles entries
+      post-resolve despite defaultStyles being editor-time in-cascade —
+      an accreted special case to re-audit on the new engine. Write
       `docs/ui-cascade-passes.md` documenting every current entry
       application: style-link, defaultStyles (editor-time — NOT applied),
       sharedStyles, brand container, embeddedStyles, node inlineStyles,
