@@ -70,6 +70,7 @@ pub(super) fn base_node(id: u32, layer: i32) -> UiIrNode {
         resolved_style_tags: vec![],
         is_flash_renderer: false,
         auto_font_size: false,
+            colour_overlay_enabled: false,
     }
 }
 

@@ -33,7 +33,7 @@
     "state.BaseScreens.ConfirmNoInjuries": false,
     "state.BaseScreens.CloneMe": false,
     "state.BaseScreens.Admin": false,
-    "EnableBackground": true,
+    "EnableBackground": false,
     "isAlignedRight": true,
     "piplist": 7,
     "piplist/[0000]/piplinkamount": 1,

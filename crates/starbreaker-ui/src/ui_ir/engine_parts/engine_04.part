@@ -911,6 +911,7 @@ mod tests_e {
                 resolved_style_tags: Vec::new(),
                 is_flash_renderer: false,
                 auto_font_size: false,
+            colour_overlay_enabled: false,
             }],
         };
 

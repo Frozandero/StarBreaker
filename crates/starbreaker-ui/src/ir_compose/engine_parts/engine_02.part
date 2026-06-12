@@ -384,6 +384,7 @@ mod tests {
             resolved_style_tags: Vec::new(),
             is_flash_renderer: false,
             auto_font_size: false,
+            colour_overlay_enabled: false,
         }
     }
 
@@ -630,11 +631,11 @@ mod tests {
         node.icon_tint_colour = Some([0.2, 0.6, 0.9, 1.0]);
 
         assert_eq!(
-            image_tint_for_blit(&node, "UI/Textures/Vector/General/FingerPrint.svg", Some([0.2, 0.6, 0.9, 1.0]), &ctx),
+            image_tint_for_blit(&node, "UI/Textures/Vector/General/FingerPrint.svg", Some([0.2, 0.6, 0.9, 1.0]), None, &ctx),
             [1.0, 1.0, 1.0, 1.0]
         );
         assert_eq!(
-            image_tint_for_blit(&node, "UI/Textures/Icons/FingerPrint.dds", Some([0.2, 0.6, 0.9, 1.0]), &ctx),
+            image_tint_for_blit(&node, "UI/Textures/Icons/FingerPrint.dds", Some([0.2, 0.6, 0.9, 1.0]), None, &ctx),
             [0.2, 0.6, 0.9, 1.0]
         );
     }
@@ -1053,6 +1054,7 @@ mod tests_c {
             resolved_style_tags: Vec::new(),
             is_flash_renderer: false,
             auto_font_size: false,
+            colour_overlay_enabled: false,
         }
     }
 
@@ -1098,8 +1100,81 @@ mod tests_c {
         node.icon_tint_colour_token = Some("Base".to_string());
 
         assert_eq!(
-            image_tint_for_blit(&node, "UI/Textures/Shared/panel-bar.tif", None, &ctx),
+            image_tint_for_blit(&node, "UI/Textures/Shared/panel-bar.tif", None, None, &ctx),
             style_primary_rgba(&ctx)
+        );
+    }
+
+
+    #[test]
+    fn white_mask_image_with_colour_overlay_defaults_to_base_tint() {
+        let style = stub_style();
+        let defaults = crate::defaults::DefaultValueRegistry::with_well_known_path_defaults();
+        let assets = minimal_swf_assets();
+        let ctx = ComposeContext {
+            style: &style,
+            defaults: &defaults,
+            assets: &assets,
+        };
+        let mut node = blank_node("widget_image");
+        node.colour_overlay_enabled = true;
+
+        // A pure-white texture whose shape lives in the alpha channel (the
+        // annunciator chiclet glow Annunciator_On.tif).
+        let mut img = RgbaImage::new(8, 8);
+        for y in 0..8 {
+            for x in 0..8 {
+                let alpha = if x < 4 { 0 } else { 128 };
+                img.put_pixel(x, y, image::Rgba([255, 255, 255, alpha]));
+            }
+        }
+
+        assert_eq!(
+            image_tint_for_blit(
+                &node,
+                "UI/Textures/H_HUDscreens/Ships/General/Annunciator_On.tif",
+                None,
+                Some(&img),
+                &ctx
+            ),
+            style_primary_rgba(&ctx),
+            "an overlay-enabled white alpha-mask texture takes the brand Base overlay \
+             (the MRAI brand authors the same as explicit FillColor entries)"
+        );
+    }
+
+
+    #[test]
+    fn coloured_texture_with_colour_overlay_keeps_own_colours() {
+        let style = stub_style();
+        let defaults = crate::defaults::DefaultValueRegistry::with_well_known_path_defaults();
+        let assets = minimal_swf_assets();
+        let ctx = ComposeContext {
+            style: &style,
+            defaults: &defaults,
+            assets: &assets,
+        };
+        let mut node = blank_node("widget_image");
+        node.colour_overlay_enabled = true;
+
+        // A coloured texture (card photo / MFD body backplate) carries its own
+        // colours: the editor-default overlay flag must not tint it.
+        let mut img = RgbaImage::new(8, 8);
+        for y in 0..8 {
+            for x in 0..8 {
+                img.put_pixel(x, y, image::Rgba([120, 60, 20, 255]));
+            }
+        }
+
+        assert_eq!(
+            image_tint_for_blit(
+                &node,
+                "UI/Textures/I_InteractiveScreens/MFD/DRAK/DRAK_GroundVehicle_Dashboard_background_2.tif",
+                None,
+                Some(&img),
+                &ctx
+            ),
+            [1.0, 1.0, 1.0, 1.0]
         );
     }
 
@@ -1494,6 +1569,7 @@ mod tests_c {
                 resolved_style_tags: Vec::new(),
                 is_flash_renderer: false,
                 auto_font_size: false,
+            colour_overlay_enabled: false,
             }],
         };
 
@@ -1584,6 +1660,7 @@ mod tests_c {
             resolved_style_tags: Vec::new(),
             is_flash_renderer: false,
             auto_font_size: false,
+            colour_overlay_enabled: false,
         }];
 
         let fetcher = StubFetcher { images: HashMap::new() };
@@ -1795,6 +1872,7 @@ mod tests_d {
             resolved_style_tags: Vec::new(),
             is_flash_renderer: false,
             auto_font_size: false,
+            colour_overlay_enabled: false,
         }
     }
 
@@ -1867,6 +1945,7 @@ mod tests_d {
                 resolved_style_tags: Vec::new(),
                 is_flash_renderer: false,
                 auto_font_size: false,
+            colour_overlay_enabled: false,
             }],
         };
 
@@ -2236,6 +2315,7 @@ mod tests_e {
             resolved_style_tags: Vec::new(),
             is_flash_renderer: false,
             auto_font_size: false,
+            colour_overlay_enabled: false,
         }
     }
 
@@ -2325,6 +2405,7 @@ mod tests_e {
             resolved_style_tags: vec![],
             is_flash_renderer: false,
             auto_font_size: false,
+            colour_overlay_enabled: false,
         };
         let meter = UiIrNode {
             id: 2,
@@ -2373,6 +2454,7 @@ mod tests_e {
             resolved_style_tags: vec![],
             is_flash_renderer: false,
             auto_font_size: false,
+            colour_overlay_enabled: false,
         };
         let document = UiIrDocument {
             schema_version: 1,

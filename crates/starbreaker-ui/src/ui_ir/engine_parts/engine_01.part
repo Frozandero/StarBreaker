@@ -126,6 +126,14 @@ pub struct UiIrNode {
     /// does not perturb snapshot/freeze hashes.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub auto_font_size: bool,
+    /// `true` when this image widget enables the colour overlay
+    /// (`svgFill.enableColorOverlay`, or a styled `EnableColorOverlay`
+    /// modifier). The draw stage uses it to give pure-white alpha-mask
+    /// textures the brand `Base` overlay (the annunciator chiclet glow);
+    /// coloured textures render untinted. Render-only hint — skipped in the
+    /// serialized IR so it does not perturb snapshot/freeze hashes.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub colour_overlay_enabled: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1307,6 +1315,18 @@ fn build_ui_ir_nodes(
                 .and_then(|v| v.as_str())
                 .is_some_and(|s| s.eq_ignore_ascii_case("Flash")),
             auto_font_size: auto_font_size_enabled(&node.raw),
+            colour_overlay_enabled: matches!(node.ty, BbNodeType::WidgetImage)
+                && node
+                    .raw
+                    .get("EnableColorOverlay")
+                    .and_then(|v| v.as_bool())
+                    .or_else(|| {
+                        node.raw
+                            .get("svgFill")
+                            .and_then(|svg| svg.get("enableColorOverlay"))
+                            .and_then(|v| v.as_bool())
+                    })
+                    .unwrap_or(false),
         });
     }
 

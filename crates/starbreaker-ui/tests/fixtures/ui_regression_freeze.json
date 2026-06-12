@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "frozen_at": "2026-06-12T00:42:24Z",
+  "frozen_at": "2026-06-12T01:11:40Z",
   "approver": "tom",
-  "reason": "MFD body backplate: BodyBackgroundWidgetStandard s_drak_hud entry (GroundVehicle_Dashboard_background_2 @ authored Alpha 0.2, Fill) now renders — backgroundenabled registry pin + owning-canvas brand container match",
+  "reason": "Annunciator round 4: near pure black strip background (EnableBackground=false registry pin) + brand-Base tinted white-mask chiclet glow",
   "signature": null,
   "manifest_path": "crates/starbreaker-ui/tests/fixtures/ui_ir/ui_snapshot_manifest.json",
   "artifacts": [
@@ -31,7 +31,7 @@
       "tier": "gold",
       "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_i_door_small_drak.png",
       "artifact_path": "test-artifacts/ui/clipper_small_door.png",
-      "sha256": "9146818f161fc4c8b3c26bcca169176332f9cc199f584a44209772ff59e4706d",
+      "sha256": "c6a149cba6406359173ebb771380ea944f7d4a1e834e0a2863696987e0804f27",
       "width": 1920,
       "height": 1080,
       "channels": "srgba"
@@ -41,7 +41,7 @@
       "tier": "gold",
       "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_h_eng_annunciator_master_left.png",
       "artifact_path": "test-artifacts/ui/eng_annunciator_master_left.png",
-      "sha256": "8efe56131e6e6dd0ff9fa4c2df93aaad333d46c7831a28dc2e68483a41731fff",
+      "sha256": "3f46081abe4097d233deb4eb9451604c6bd6a31149bcbbe983cfba55d5e31bdb",
       "width": 1920,
       "height": 432,
       "channels": "srgba"

@@ -260,6 +260,57 @@ mod tests {
     }
 
     #[test]
+    fn compile_ir_records_image_colour_overlay_flag() {
+        let canvas = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.TestOverlayFlag",
+            "_RecordValue_": {
+                "size": {"x": 100, "y": 100},
+                "scene": [
+                    {
+                        "_Pointer_": "ptr:1",
+                        "_Type_": "BuildingBlocks_WidgetImage",
+                        "name": "Image_Gradient",
+                        "isActive": true,
+                        "imagePath": "UI/Textures/H_HUDscreens/Ships/General/Annunciator_On.tif",
+                        "svgFill": {"enableColorOverlay": true, "color": null},
+                        "size": {
+                            "width": {"behavior": "Fixed", "value": 100.0},
+                            "height": {"behavior": "Fixed", "value": 100.0}
+                        }
+                    }
+                ],
+                "operations": []
+            }
+        });
+
+        let scene = crate::bb_scene::parse_bb_canvas(&canvas).expect("scene parse");
+        let ir = compile_ui_ir_from_scene(
+            &scene,
+            None,
+            "guid-overlay",
+            Some("BuildingBlocks_Canvas.TestOverlayFlag"),
+            (100, 100),
+            &defaults(),
+            None,
+            None,
+            &[],
+            Vec::new(),
+            Vec::new(),
+            100,
+        );
+
+        let node = ir
+            .nodes
+            .iter()
+            .find(|n| n.name == "Image_Gradient")
+            .expect("image node");
+        assert!(
+            node.colour_overlay_enabled,
+            "the IR carries the svgFill colour-overlay flag for image widgets"
+        );
+    }
+
+    #[test]
     fn collect_node_asset_refs_prefers_styled_image_path_over_authored() {
         let canvas = serde_json::json!({
             "_RecordName_": "BuildingBlocks_Canvas.TestStyledAsset",

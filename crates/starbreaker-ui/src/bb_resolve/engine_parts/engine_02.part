@@ -2431,6 +2431,58 @@ mod tests_e {
     }
 
     #[test]
+    fn registry_false_boolean_deactivates_is_active_gated_widget() {
+        // The annunciator strip's image_BG gates IsActive on the host boolean
+        // `EnableBackground`, which the registry pins FALSE (in-game the strip
+        // background is near pure black). A registry-known false must win over
+        // the conservative keep-active rescues for unresolved bindings.
+        let host = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.StripBackgroundHost",
+            "_RecordValue_": {
+                "size": {"x": 100.0, "y": 100.0},
+                "defaultStyles": {"entries": []},
+                "brandStyles": [],
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "root", "isActive": true},
+                    {"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_WidgetImage",
+                     "name": "image_BG", "parent": "_PointsTo_:ptr:1",
+                     "isActive": true}
+                ],
+                "operations": [
+                    {"_Pointer_": "ptr:10", "_Type_": "BuildingBlocks_BindingsBooleanVariable",
+                     "binding": "EnableBackground"},
+                    {"_Type_": "BuildingBlocks_BindingsBooleanField",
+                     "widget": "_PointsTo_:ptr:2", "field": "IsActive",
+                     "input": "_PointsTo_:ptr:10"}
+                ]
+            }
+        });
+
+        let mut defaults = crate::defaults::DefaultValueRegistry::new();
+        defaults.insert_path("EnableBackground", crate::canvas::Value::Bool(false));
+        let scene = resolve_canvas_graph_with_defaults(
+            &host,
+            None,
+            &|other| Err(format!("framework record unavailable in fixture: {other}")),
+            None,
+            None,
+            &defaults,
+        )
+        .expect("resolve failed");
+
+        let bg = scene
+            .nodes
+            .values()
+            .find(|node| node.name == "image_BG")
+            .expect("background node");
+        assert!(
+            !bg.is_active,
+            "a registry-pinned FALSE boolean binding deactivates the IsActive-gated widget"
+        );
+    }
+
+    #[test]
     fn body_background_standard_uses_owning_canvas_brand_container() {
         let texture_tag = "cc37cf84-f93a-4a60-82a6-efea090069b1";
         let texture_entry = |image_path: &str| {

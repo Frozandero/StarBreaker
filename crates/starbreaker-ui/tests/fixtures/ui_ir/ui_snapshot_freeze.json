@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "frozen_at": "2026-06-12T00:06:40Z",
+  "frozen_at": "2026-06-12T01:08:33Z",
   "approver": "tom",
-  "reason": "Annunciator round-2+3: defaultStyles editor-only revert, pending-state entry deferral, breaks-everywhere ancestor containment, heuristic cluster removal, square 3px chiclet borders, entry-driven WPN/COOL text colours, styled ImagePath override (DRAK near-black backplate replaces PU placeholder on image_BG)",
+  "reason": "Annunciator round 4: EnableBackground registry flip to FALSE (single consumer = annunciator image_BG.IsActive; in-game strips are near pure black per Screen_Annunciator_L + cockpit screenshot, MFD backplates are the separate BodyBackground mechanism) removes element 15 and renumbers draw order; white-mask overlay Base tint is draw-only (colour_overlay_enabled is serialization-skipped)",
   "signature": null,
   "manifest_path": "/home/tom/projects/scorg_tools/StarBreaker/crates/starbreaker-ui/tests/fixtures/ui_ir/ui_snapshot_manifest.json",
   "delta": [
@@ -10,66 +10,40 @@
       "target": "eng_annunciator_master_left",
       "identity": "10:widget_text",
       "field": "draw_order_index",
-      "old": 27,
-      "new": 24
+      "old": 24,
+      "new": 23
     },
     {
       "target": "eng_annunciator_master_left",
       "identity": "11:widget_text",
       "field": "draw_order_index",
-      "old": 28,
-      "new": 25
+      "old": 25,
+      "new": 24
     },
     {
       "target": "eng_annunciator_master_left",
       "identity": "12:widget_text",
       "field": "draw_order_index",
-      "old": 29,
-      "new": 26
+      "old": 26,
+      "new": 25
     },
     {
       "target": "eng_annunciator_master_left",
       "identity": "13:widget_text",
       "field": "draw_order_index",
-      "old": 30,
-      "new": 27
+      "old": 27,
+      "new": 26
     },
     {
       "target": "eng_annunciator_master_left",
       "identity": "14:widget_text",
       "field": "draw_order_index",
-      "old": 31,
-      "new": 28
+      "old": 28,
+      "new": 27
     },
     {
       "target": "eng_annunciator_master_left",
       "identity": "15:widget_image",
-      "field": "asset_identity",
-      "old": "UI/Textures/I_InteractiveScreens/MFD/PU Generic/PU_MFD_generic_4x3_background_1.tif",
-      "new": "UI/Textures/H_HUDscreens/Ships/DRAK/DRAK_Background_anunciators.tif"
-    },
-    {
-      "target": "eng_annunciator_master_left",
-      "identity": "15:widget_image",
-      "field": "background_rgba",
-      "old": [
-        0.14901961,
-        0.105882354,
-        0.039215688,
-        1.0
-      ],
-      "new": null
-    },
-    {
-      "target": "eng_annunciator_master_left",
-      "identity": "15:widget_image",
-      "field": "background_tint_token",
-      "old": "Background",
-      "new": null
-    },
-    {
-      "target": "eng_annunciator_master_left",
-      "identity": "18:widget_image",
       "field": "<removed>",
       "old": "element",
       "new": null
@@ -77,58 +51,23 @@
     {
       "target": "eng_annunciator_master_left",
       "identity": "27:widget_image",
-      "field": "alpha",
-      "old": 1.0,
-      "new": 0.1
+      "field": "draw_order_index",
+      "old": 3,
+      "new": 2
     },
     {
       "target": "eng_annunciator_master_left",
-      "identity": "27:widget_image",
+      "identity": "31:widget_image",
       "field": "draw_order_index",
       "old": 4,
       "new": 3
     },
     {
       "target": "eng_annunciator_master_left",
-      "identity": "29:widget_image",
-      "field": "<removed>",
-      "old": "element",
-      "new": null
-    },
-    {
-      "target": "eng_annunciator_master_left",
-      "identity": "31:widget_image",
-      "field": "alpha",
-      "old": 1.0,
-      "new": 0.1
-    },
-    {
-      "target": "eng_annunciator_master_left",
-      "identity": "31:widget_image",
+      "identity": "33:widget_image",
       "field": "draw_order_index",
-      "old": 6,
+      "old": 5,
       "new": 4
-    },
-    {
-      "target": "eng_annunciator_master_left",
-      "identity": "33:widget_image",
-      "field": "alpha",
-      "old": 1.0,
-      "new": 0.1
-    },
-    {
-      "target": "eng_annunciator_master_left",
-      "identity": "33:widget_image",
-      "field": "draw_order_index",
-      "old": 7,
-      "new": 5
-    },
-    {
-      "target": "eng_annunciator_master_left",
-      "identity": "35:widget_image",
-      "field": "<removed>",
-      "old": "element",
-      "new": null
     }
   ],
   "targets": [
@@ -1958,45 +1897,10 @@
         "target_height": 1080,
         "elements": [
           {
-            "identity": "15:widget_image",
-            "node_id": 15,
-            "category": "image",
-            "draw_order_index": 1,
-            "node_type": "widget_image",
-            "visible": true,
-            "x": 0.0,
-            "y": 0.0,
-            "w": 1920.0,
-            "h": 1080.0,
-            "alpha": 1.0,
-            "blend_mode": null,
-            "asset_identity": "UI/Textures/H_HUDscreens/Ships/DRAK/DRAK_Background_anunciators.tif",
-            "alignment": null,
-            "vertical_alignment": null,
-            "overflow_mode": "{\"_Type_\":\"BuildingBlocks_Overflow\",\"depthFadeThreshold\":0.0,\"fadeXAxis\":true,\"fadeYAxis\":true,\"fadeZAxis\":true,\"heightFadeThreshold\":0.0,\"overflow\":\"Visible\",\"widthFadeThreshold\":0.0}",
-            "background_rgba": null,
-            "background_tint_token": null,
-            "stroke_rgba": null,
-            "stroke_tint_token": null,
-            "text_rgba": null,
-            "text_tint_token": null,
-            "icon_tint_rgba": null,
-            "icon_tint_token": null,
-            "stroke_extent": 1.0,
-            "text_payload": null,
-            "text_font_identity": null,
-            "text_font_size": null,
-            "line_spacing": null,
-            "primary_text_top": null,
-            "primary_text_left": null,
-            "secondary_text_top": null,
-            "secondary_text_left": null
-          },
-          {
             "identity": "27:widget_image",
             "node_id": 27,
             "category": "image",
-            "draw_order_index": 3,
+            "draw_order_index": 2,
             "node_type": "widget_image",
             "visible": true,
             "x": 25.0,
@@ -2031,7 +1935,7 @@
             "identity": "31:widget_image",
             "node_id": 31,
             "category": "image",
-            "draw_order_index": 4,
+            "draw_order_index": 3,
             "node_type": "widget_image",
             "visible": true,
             "x": 793.0,
@@ -2066,7 +1970,7 @@
             "identity": "33:widget_image",
             "node_id": 33,
             "category": "image",
-            "draw_order_index": 5,
+            "draw_order_index": 4,
             "node_type": "widget_image",
             "visible": true,
             "x": 1177.0,
@@ -2101,7 +2005,7 @@
             "identity": "10:widget_text",
             "node_id": 10,
             "category": "text",
-            "draw_order_index": 24,
+            "draw_order_index": 23,
             "node_type": "widget_text",
             "visible": true,
             "x": 58.399994,
@@ -2136,7 +2040,7 @@
             "identity": "11:widget_text",
             "node_id": 11,
             "category": "text",
-            "draw_order_index": 25,
+            "draw_order_index": 24,
             "node_type": "widget_text",
             "visible": true,
             "x": 442.4,
@@ -2171,7 +2075,7 @@
             "identity": "12:widget_text",
             "node_id": 12,
             "category": "text",
-            "draw_order_index": 26,
+            "draw_order_index": 25,
             "node_type": "widget_text",
             "visible": true,
             "x": 826.4,
@@ -2206,7 +2110,7 @@
             "identity": "13:widget_text",
             "node_id": 13,
             "category": "text",
-            "draw_order_index": 27,
+            "draw_order_index": 26,
             "node_type": "widget_text",
             "visible": true,
             "x": 1210.4,
@@ -2241,7 +2145,7 @@
             "identity": "14:widget_text",
             "node_id": 14,
             "category": "text",
-            "draw_order_index": 28,
+            "draw_order_index": 27,
             "node_type": "widget_text",
             "visible": true,
             "x": 1594.4,

@@ -309,7 +309,7 @@ fn draw_non_text_node(
             img = apply_asset_layout_flip(node, img);
             let draw_x = rect.x as i32;
             let draw_y = rect.y as i32;
-            let tint = image_tint_for_blit(node, asset_ref, fill_override, ctx);
+            let tint = image_tint_for_blit(node, asset_ref, fill_override, Some(&img), ctx);
 
             let blend_mode = image_blend_mode_for_node(node, asset_ref);
 
@@ -649,21 +649,61 @@ fn image_tint_for_blit(
     node: &UiIrNode,
     asset_ref: &str,
     fill_override: Option<[f32; 4]>,
+    img: Option<&RgbaImage>,
     ctx: &ComposeContext<'_>,
 ) -> [f32; 4] {
     if fill_override.is_some()
         && UiAssetResolver::normalise_path(asset_ref).ends_with(".svg")
     {
-        [1.0, 1.0, 1.0, 1.0]
-    } else {
-        node.icon_tint_colour
-            .or_else(|| {
-                node.icon_tint_colour_token
-                    .as_deref()
-                    .and_then(|token| resolve_colour_token(ctx, token))
-            })
-            .unwrap_or([1.0, 1.0, 1.0, 1.0])
+        return [1.0, 1.0, 1.0, 1.0];
     }
+    if let Some(tint) = node.icon_tint_colour.or_else(|| {
+        node.icon_tint_colour_token
+            .as_deref()
+            .and_then(|token| resolve_colour_token(ctx, token))
+    }) {
+        return tint;
+    }
+    // An overlay-enabled image whose texture is a pure-white alpha mask (the
+    // annunciator chiclet glow Annunciator_On.tif — shape entirely in the
+    // alpha channel) takes the brand `Base` overlay; the MRAI brand authors
+    // the same mechanism as explicit FillColor entries on its white mask
+    // textures while DRAK relies on the overlay default. Coloured textures
+    // (card photos, the MFD body backplates) carry their own colours and the
+    // editor-default overlay flag must not tint them.
+    if node.colour_overlay_enabled
+        && !UiAssetResolver::normalise_path(asset_ref).ends_with(".svg")
+        && img.is_some_and(image_is_white_alpha_mask)
+        && let Some(base) = resolve_colour_token(ctx, "Base")
+    {
+        return base;
+    }
+    [1.0, 1.0, 1.0, 1.0]
+}
+
+/// `true` when every visible pixel of a sampled grid is (near-)pure white —
+/// the texture's shape lives entirely in its alpha channel (a mask), so its
+/// rendered colour must come from an overlay.
+fn image_is_white_alpha_mask(img: &RgbaImage) -> bool {
+    let (w, h) = img.dimensions();
+    if w == 0 || h == 0 {
+        return false;
+    }
+    let step_x = (w / 32).max(1) as usize;
+    let step_y = (h / 32).max(1) as usize;
+    let mut visible = 0u32;
+    for y in (0..h).step_by(step_y) {
+        for x in (0..w).step_by(step_x) {
+            let p = img.get_pixel(x, y).0;
+            if p[3] >= 16 {
+                visible += 1;
+                if p[0] < 245 || p[1] < 245 || p[2] < 245 {
+                    return false;
+                }
+            }
+        }
+    }
+    visible > 0
 }
 
 fn image_blend_mode_for_node(node: &UiIrNode, asset_ref: &str) -> BlendMode {
