@@ -180,3 +180,28 @@ Work phases top-down; one phase per arc/PR with the full battery at the
 boundary. Each completed checkbox cites its commit in this file. New
 hard-coding discovered mid-phase: fix in place if small, else append
 here in the same change (the self-correction rule).
+
+## Status 2026-06-12 — empirically complete; remaining = three derivation arcs
+
+Everything testable against the existing frozen pins/references is DONE
+(commits 5bf1d7f84, b09c2d98a, 46b81a25a, 07c821a83, 4803d3c48,
+9873f2523, 1e4c07763, 2f89dc085). DELETED outright with zero drift: the
+amber fallback, all dead colour aliases, the per-style font-size rect
+ladder (+28.7), the fixed-band fill (0.381), the 2/3 sampling phase, the
+state-tag/heading colour guesses, ScreenNameBackground + FunctionTitle
+specials. What remains requires NEW evidence, not code archaeology:
+
+1. **Text-calibration arc** — `TEXT_RENDER_SIZE_CALIBRATION 1.5` /
+   `LAYOUT_TEXT_MEASURE_CALIBRATION 1.5` / `SWF_TEXT_RENDER 0.84` + the
+   SWF glyph-ink ×4/3 evidence (power footer/content vs medical — see the
+   register's 0.84 entry), the caption-pair −8.0 overlap, the word-gap
+   0.33, the caption-path 21/18 terminal defaults. One arc: derive from
+   font metrics, re-freeze every text baseline, re-adjudicate all
+   targets vs their captures.
+2. **Annunciator/medical structural derivations** — the 25px frame
+   (`root_annunciator_items`), `base_animatedelements` at-rest hiding,
+   `RootGhost` chrome extraction → entries-evaluated-against-nodes.
+   Each is load-bearing (frozen pins) and needs its authored-data signal
+   found.
+3. **Discriminating captures** — `ManufacturerStyle.background` slot 8 vs
+   enum-9; a screen whose two slots differ visibly decides it.
