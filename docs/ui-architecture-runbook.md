@@ -49,6 +49,34 @@ resurfaced; recorded here so a third attempt starts from the evidence:
   `__Packages.*` bytecode for constants/formulas — the measured 44px
   content-view inset, the scrollbar slider math, text-scale rules), which is
   analysis, not playback.
+
+### AVM1 mining results (plan P2, 2026-06-12 — `examples/swf_avm1_dump.rs`)
+
+The mining ran: full pool/push dumps of every `DoInitAction` stream, plus
+an `--ops <class-substring>` opcode trace for reading formulas. Findings:
+
+- **Content-view inset (44/1192/676): NOT in any SWF.** All 127
+  `BuildingBlocks_root.swf` classes dumped — no such pushes (the only 44s
+  are a keycode-style table in `gfx.core.UIComponent`). The placement is
+  computed on the C++ host side; `mfd_view.rs`'s constant stays a measured
+  pin with this bound recorded.
+- **Scrollbar thumb formula CONFIRMED:** `gfx.controls.ScrollIndicator.
+  updateThumb` = `max(10, pageSize/max(1,(maxPos−minPos)+pageSize)×track)`
+  — reduces to our `viewport/content × track` for pixel inputs. The BB
+  scrollbar standard, however, binds its bar SizeX to the engine-pushed
+  `_SizeRatio` component parameter, so the power P7 residual (ratio 0.402
+  rendered vs 0.440 in-game) is a C++ input difference, not formula error.
+- **Text sizing: AS2 applies sizes VERBATIM** (`bhvr.utils.
+  TextFieldContainer` sets `TextFormat.size = _fontSize` with no scaling;
+  no fontLib/textScale handling anywhere) — the `imageSizePercent`
+  host-path division happens below the SWF layer, in engine rasterisation.
+- **`fonts_en.swf`: zero action tags** — a pure DefineFont3 container; no
+  layout constants.
+- **Per-screen content SWFs (`TargetStatus.swf` RSI/AEG 16-9 + DRAK
+  Dragonfly bespoke): no layout constants.** They embed the same `bhvr.*`
+  framework subset (66–83 classes); the only app-level numerics are
+  time/angle math (60/360/3600) and `0xFFFFFF`. Their value remains the
+  static `DefineEditText` typography (above), not bytecode.
 - Lead from the same logs: CIG licenses Terathon's **Slug** GPU text engine
   (RTTI/strings via the Ghidra investigation) — the engine's glyph
   rasterization model may be Slug's, not GFx's; relevant to the residual

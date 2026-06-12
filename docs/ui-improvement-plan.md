@@ -277,7 +277,11 @@ calibrated from captures. (Ledger item 27.)
       Each finding lands as its own commit; misses are recorded in this
       file against the checkbox (a miss is a result — it bounds where the
       constant lives, likely the C++ side).
-- [ ] **P2.3 Also dump `fonts_en.swf` and the per-screen content SWFs**
+- [x] (2026-06-12, commit "plan P2.3") **P2.3 Also dump `fonts_en.swf` and the per-screen content SWFs**
+      fonts_en.swf: zero action tags (pure font container). TargetStatus
+      RSI/AEG 16-9 + DRAK Dragonfly bespoke: same bhvr framework subset,
+      no layout constants (only 60/360/3600 time math + 0xFFFFFF).
+      Findings recorded in the runbook's new "AVM1 mining results".
       (`./target/release/starbreaker p4k extract --output /tmp/uiswf
       --filter "Data/UI/**/*.swf"` — large; filter narrower if slow) and
       check `TargetStatus.swf`-class files for layout constants used by
