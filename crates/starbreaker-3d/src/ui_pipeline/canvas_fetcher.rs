@@ -10,7 +10,6 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use log::warn;
 use starbreaker_datacore::Database;
 use starbreaker_datacore::starbreaker_common::CigGuid;
 use starbreaker_ui::{UiError, pipeline::CanvasFetcher, record_name::extract_record_name};
@@ -45,8 +44,13 @@ impl CanvasNameIndex {
                             e.insert(record.id);
                         }
                         std::collections::hash_map::Entry::Occupied(e) if *e.get() != record.id => {
+                            // Duplicate stems are inherent to the shipped
+                            // DataCore (e.g. 'ar_boxout_base' exists in
+                            // several UI record families); first-wins is the
+                            // established policy, so the per-name detail is
+                            // debug-level diagnostics, not a warning.
                             if warned.insert(key.clone()) {
-                                warn!(
+                                log::debug!(
                                     "ui_pipeline: duplicate UI record name '{}' in {}; first wins",
                                     key, type_name
                                 );
@@ -56,6 +60,12 @@ impl CanvasNameIndex {
                     }
                 }
             }
+        }
+        if !warned.is_empty() {
+            log::debug!(
+                "ui_pipeline: {} duplicate UI record name(s) resolved first-wins (enable debug logging for the list)",
+                warned.len()
+            );
         }
         Self { index }
     }

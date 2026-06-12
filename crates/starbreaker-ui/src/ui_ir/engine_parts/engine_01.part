@@ -1174,7 +1174,7 @@ fn build_ui_ir_nodes(
 
         let custom_shape = build_custom_shape(node);
 
-        let mut stroke_extent = separator_stroke_extent_from_raw(node);
+        let stroke_extent = separator_stroke_extent_from_raw(node);
         let separator_style = separator_standard_style_from_source(
             node,
             selected_style_source.as_deref(),
@@ -1185,7 +1185,7 @@ fn build_ui_ir_nodes(
             .and_then(|style| style.alpha_override)
             .unwrap_or_else(|| effective_alpha_for_node(id, node, scene, animation_sample_percent));
         let svg_fill_overlay_alpha = svg_fill_overlay_alpha_from_raw(&node.raw);
-        let mut alpha = alpha_base
+        let alpha = alpha_base
             * separator_style
                 .as_ref()
                 .and_then(|style| style.colour_alpha)
@@ -1193,7 +1193,7 @@ fn build_ui_ir_nodes(
             * svg_fill_overlay_alpha.unwrap_or(1.0);
         let stroke_colour = stroke_colour_from_raw(&node.raw)
             .or_else(|| separator_style.as_ref().and_then(|style| style.colour));
-        let mut stroke_colour_token = stroke_colour_token_from_raw(&node.raw).or_else(|| {
+        let stroke_colour_token = stroke_colour_token_from_raw(&node.raw).or_else(|| {
             separator_style
                 .as_ref()
                 .and_then(|style| style.colour_token.clone())
@@ -1222,7 +1222,7 @@ fn build_ui_ir_nodes(
         let border = border_from_node(node, design_text_scale);
         let overflow_mode = overflow_mode_from_raw(&node.raw);
 
-        let mut icon_tint_colour = node
+        let icon_tint_colour = node
             .icon
             .as_ref()
             .and_then(|i| i.tint_colour)
@@ -1673,23 +1673,6 @@ fn unresolved_text_key_from_raw(raw: &serde_json::Value) -> Option<String> {
         .map(ToString::to_string)
 }
 
-fn text_key_matches_expected(key: &str, expected: &str) -> bool {
-    let expected = expected.trim();
-    if expected.is_empty() {
-        return false;
-    }
-
-    if key.trim().eq_ignore_ascii_case(expected) {
-        return true;
-    }
-
-    key.trim()
-        .trim_start_matches('@')
-        .split(|ch: char| !ch.is_ascii_alphanumeric())
-        .filter(|part| !part.is_empty())
-        .any(|part| part.eq_ignore_ascii_case(expected))
-}
-
 fn is_placeholder_or_empty_secondary_text_payload(payload: &UiIrTextPayload) -> bool {
     match payload {
         UiIrTextPayload::Empty => true,
@@ -1927,17 +1910,6 @@ fn custom_shape_colour_blend_mode_from_style_tags(
             "modify" => Some(UiIrColourBlendMode::Additive),
             _ => None,
         }
-    })
-}
-
-fn tag_matches_any(resolved_style_tags: &[UiIrStyleTag], names: &[&str], uuids: &[&str]) -> bool {
-    resolved_style_tags.iter().any(|tag| {
-        tag.tag_name.as_deref().is_some_and(|name| {
-            let trimmed = name.trim();
-            names
-                .iter()
-                .any(|candidate| trimmed.eq_ignore_ascii_case(candidate))
-        }) || uuids.iter().any(|candidate| tag.uuid.eq_ignore_ascii_case(candidate))
     })
 }
 
