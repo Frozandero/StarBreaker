@@ -330,6 +330,14 @@ overall warmth now matches; crops read with vision at full scale):
 
 Order: P1 -> P2+P5 -> P3 -> P4; P6 excluded; P7/P8 deferred.
 
+P1 LANDED 2026-06-12: UI_Generic_Flag_03 directive deleted (flag is not
+a colour signal); brand text-style FillColor fallback un-gated (a style
+tag only overrides when an entry/directive maps it to a colour). "2" now
+cream like "/ 16". Medical re-frozen: headers Foreground->Bright (the
+authored s_bioc H2 entry), H1 Base + H6 Bright tokens added to the
+previously token-less fields; visually adjudicated vs medical1.
+NEXT: P2+P5 (card icons + chevron glyph dark vs bright orange).
+
 ## Key mechanisms quick reference
 
 - **Derivation**: `crates/starbreaker-3d/src/ui_pipeline/ship_values.rs`
