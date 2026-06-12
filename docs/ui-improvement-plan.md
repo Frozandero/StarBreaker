@@ -464,11 +464,14 @@ surviving name-keyed rules and ledger item 17 land here.)
       gains its current state (text parity reached 2026-06-12; open: P3
       dots, P4 pips, P13 bars, P7 slider, P8 pitch); add a
       `reference_measurements_v1.json` pointer to §5's data table.
-- [ ] **P6.4 Bootstrap dry-run** (the retro acceptance test): read ONLY
+- [x] (2026-06-12, commit "plan P6.4") **P6.4 Bootstrap dry-run** (the retro acceptance test): read ONLY
       `docs/ui-workflow.md` + `docs/ui-reference.md` + the dossier and
       walk the per-screen prompt for `Screen_Left_Lower_RTT` — every
       command/path must resolve. Any excursion is a doc bug: fix it in
       the same commit.
+      44/44 cited paths resolve (prompt reads, dossier row paths,
+      15 scripts, 12 fixtures/docs, 7 examples); the replay-render +
+      `ui_compare.py --regions power` walk ran clean. No doc bugs.
 
 ## Sequencing and ownership
 
