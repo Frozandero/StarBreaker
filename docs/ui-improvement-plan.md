@@ -97,7 +97,7 @@ Verified facts this plan relies on (re-verify only if something fails):
 
 Goal: the failure modes that produced wrong verdicts this arc become loud.
 
-- [ ] **P0.1 Export stamp.** In the UI export path (the code that writes
+- [x] (2026-06-12, commit "plan P0.1") **P0.1 Export stamp.** In the UI export path (the code that writes
       `ships/Data/UI/Generated/ship/<mfr>/<Ship>/*.png` — find it via
       `grep -rn "Generated" crates/starbreaker-3d/src/ui_pipeline/`), also
       write `ships/Data/UI/Generated/.export_stamp.json` containing
