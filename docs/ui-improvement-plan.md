@@ -287,7 +287,8 @@ calibrated from captures. (Ledger item 27.)
       check `TargetStatus.swf`-class files for layout constants used by
       the hybrid path. Record findings in
       `docs/ui-architecture-runbook.md`.
-- [ ] **P2.4 Battery green**; doc updates verify-on-write.
+- [x] (2026-06-12, commit "plan P2.4") **P2.4 Battery green**; doc updates verify-on-write.
+      `--full` ALL GREEN (P2 changed no rendering).
 
 ## Phase 3 — text-calibration arc (APPROVAL-GATED re-freeze at the end)
 
