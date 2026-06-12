@@ -423,11 +423,15 @@ surviving name-keyed rules and ledger item 17 land here.)
       slots 8/9 differ visibly (drak: (20,13,5) vs (38,27,10) — any MFD
       in a dark room may discriminate). Approval-gated; do not change
       without the capture.
-- [ ] **P5.4 `HOST_STAGE_SIZE` from the SWF header**: when next touching
+- [x] (2026-06-12, commit "plan P5.4") **P5.4 `HOST_STAGE_SIZE` from the SWF header**: when next touching
       `crates/starbreaker-ui/src/mfd_view.rs`, plumb the host stage size
       (already parsed by `SwfAssetLibrary::stage_size` in the pipeline)
       into `apply_bound_mfd_view` instead of the (1280,720) constant.
       Zero behaviour change expected; battery confirms.
+      Landed: pipeline reads the header once (host_stage_size), threads
+      it through a new resolve entry to
+      `apply_bound_mfd_view_with_host_stage`; constant is now the
+      no-host fallback only. Battery green; power render byte-identical.
 
 ## Phase 6 — documentation and bootstrap closure
 

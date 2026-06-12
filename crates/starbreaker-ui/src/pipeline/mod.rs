@@ -30,7 +30,7 @@ mod tests;
 
 use asset_manifest::build_asset_reference_manifest;
 use canvas_aspect::frame_canvas_aspect;
-use host_stage::host_stage_text_scale;
+use host_stage::{host_stage_size, host_stage_text_scale_from_size};
 use style_selection::{build_style_selection_manifest, load_style_for_ir};
 use swf_selection::{build_swf_selection_manifest, load_first_swf};
 use timing::timed;
@@ -242,8 +242,16 @@ pub fn compile_ir_for_binding(inputs: &PipelineInputs<'_>) -> Result<UiIrDocumen
         inputs.localization_map.clone(),
         inputs.derived_values.as_ref(),
     );
+    // The host movie's stage size (from its header) drives both the MFD
+    // content-view slot fractions (mfd_view, plan P5.4) and the host-path
+    // text scale below; read it once.
+    let frame_host_stage = if use_frame_canvas {
+        host_stage_size(b.host_swf_path, inputs.swf_fetcher)
+    } else {
+        None
+    };
     let mut scene = timed("graph2", || {
-        crate::bb_resolve::resolve_canvas_graph_with_defaults(
+        crate::bb_resolve::resolve_canvas_graph_with_defaults_and_host_stage(
             &raw_root_json,
             effective_manufacturer_id,
             &|p| {
@@ -255,6 +263,7 @@ pub fn compile_ir_for_binding(inputs: &PipelineInputs<'_>) -> Result<UiIrDocumen
             inputs.loc_fetcher,
             bound_view_record_name.as_deref(),
             &defaults,
+            frame_host_stage,
         )
         .map_err(UiError::RenderError)
     })?;
@@ -328,7 +337,7 @@ pub fn compile_ir_for_binding(inputs: &PipelineInputs<'_>) -> Result<UiIrDocumen
     // Textfield font sizes are host-stage units on the MFD frame path; see
     // `host_stage::host_stage_text_scale` for the engine model.
     let design_text_scale = if use_frame_canvas {
-        host_stage_text_scale(b.host_swf_path, inputs.swf_fetcher, effective_target_size)
+        host_stage_text_scale_from_size(frame_host_stage, effective_target_size)
     } else {
         1.0
     };

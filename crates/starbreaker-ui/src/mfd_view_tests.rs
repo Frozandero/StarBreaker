@@ -123,6 +123,35 @@ fn landscape_slot_is_sized_to_host_content_view_sub_rect() {
     assert_eq!((slot.pivot.x, slot.pivot.y), (0.5, 0.0));
 }
 
+/// The slot fractions follow the binding's HOST SWF stage size when the
+/// pipeline provides one (read from the movie header, plan P5.4); the
+/// (1280,720) constant is only the no-host fallback. The 44px inset stays a
+/// stage-pixel quantity, so a synthetic 1000×500 stage yields 912/1000 and
+/// 456/500.
+#[test]
+fn landscape_slot_fractions_follow_the_host_stage_size() {
+    let mut scene = crate::bb_scene::parse_bb_canvas(&mfd_content_frame()).expect("parse");
+    let landscape = node_id(&scene, "canvas_LandscapeMFDView");
+
+    apply_bound_mfd_view_with_host_stage(
+        &mut scene,
+        "BuildingBlocks_Canvas.MC_S_Scanning_Master",
+        &mut Vec::new(),
+        &mut HashSet::new(),
+        Some((1000.0, 500.0)),
+    );
+
+    let slot = scene.nodes.get(&landscape).unwrap();
+    let crate::bb_scene::BbValue::Percent(w) = slot.sizing.width else {
+        panic!("slot width must be Percent, got {:?}", slot.sizing.width);
+    };
+    let crate::bb_scene::BbValue::Percent(h) = slot.sizing.height else {
+        panic!("slot height must be Percent, got {:?}", slot.sizing.height);
+    };
+    assert!((w - (912.0 / 1000.0)).abs() < 1e-4, "width fraction, got {w}");
+    assert!((h - (456.0 / 500.0)).abs() < 1e-4, "height fraction, got {h}");
+}
+
 /// End-to-end through the resolver: the bound content (matching NEITHER
 /// authored placeholder) must merge under the full-width landscape slot, and
 /// neither placeholder's content nor the portrait slot may render. This is

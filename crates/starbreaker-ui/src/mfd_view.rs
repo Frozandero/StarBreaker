@@ -52,17 +52,20 @@ type CanvasUrl = (BbNodeId, String, Vec<Value>);
 /// 44s are a keycode-style table in `gfx.core.UIComponent`), so the
 /// placement is not authored ActionScript either — it is computed on the
 /// C++ host side and remains a measured constant.
+/// Fallback when the binding carries no readable host movie; the live value
+/// comes from the host SWF header (`SwfAssetLibrary::stage_size`) via
+/// [`apply_bound_mfd_view_with_host_stage`] (plan P5.4).
 const HOST_STAGE_SIZE: (f32, f32) = (1280.0, 720.0);
 const HOST_CONTENT_INSET: f32 = 44.0;
 
 /// Width fraction of the frame the hosted content view occupies.
-fn host_content_view_width_fraction() -> f32 {
-    (HOST_STAGE_SIZE.0 - 2.0 * HOST_CONTENT_INSET) / HOST_STAGE_SIZE.0
+fn host_content_view_width_fraction(stage: (f32, f32)) -> f32 {
+    (stage.0 - 2.0 * HOST_CONTENT_INSET) / stage.0
 }
 
 /// Height fraction of the frame the hosted content view occupies.
-fn host_content_view_height_fraction() -> f32 {
-    (HOST_STAGE_SIZE.1 - HOST_CONTENT_INSET) / HOST_STAGE_SIZE.1
+fn host_content_view_height_fraction(stage: (f32, f32)) -> f32 {
+    (stage.1 - HOST_CONTENT_INSET) / stage.1
 }
 
 /// The landscape (full-width) and portrait (narrow) content-view slots of an MFD
@@ -92,6 +95,25 @@ pub fn apply_bound_mfd_view(
     canvas_urls: &mut Vec<CanvasUrl>,
     instantiated_false: &mut HashSet<BbNodeId>,
 ) {
+    apply_bound_mfd_view_with_host_stage(
+        scene,
+        bound_content_ref,
+        canvas_urls,
+        instantiated_false,
+        None,
+    );
+}
+
+/// [`apply_bound_mfd_view`] with the binding's host SWF stage size (from the
+/// movie header) when the caller has one; `None` falls back to the
+/// [`HOST_STAGE_SIZE`] constant.
+pub fn apply_bound_mfd_view_with_host_stage(
+    scene: &mut BbScene,
+    bound_content_ref: &str,
+    canvas_urls: &mut Vec<CanvasUrl>,
+    instantiated_false: &mut HashSet<BbNodeId>,
+    host_stage_size: Option<(f32, f32)>,
+) {
     let Some(slots) = mfd_view_slots(scene) else {
         apply_bound_view_instantiation_by_canvas(scene, bound_content_ref, instantiated_false);
         return;
@@ -109,10 +131,14 @@ pub fn apply_bound_mfd_view(
     // Size the slot to the GFx host's content-view stage sub-rect (x-centred,
     // top-anchored). The frame chrome (header/footer) outside the slot stays
     // full-bleed; only the bound content view is inset.
+    let stage = host_stage_size
+        .filter(|(w, h)| w.is_finite() && h.is_finite() && *w > 0.0 && *h > 0.0)
+        .unwrap_or(HOST_STAGE_SIZE);
     if let Some(slot) = scene.nodes.get_mut(&slots.landscape) {
-        slot.sizing.width = crate::bb_scene::BbValue::Percent(host_content_view_width_fraction());
+        slot.sizing.width =
+            crate::bb_scene::BbValue::Percent(host_content_view_width_fraction(stage));
         slot.sizing.height =
-            crate::bb_scene::BbValue::Percent(host_content_view_height_fraction());
+            crate::bb_scene::BbValue::Percent(host_content_view_height_fraction(stage));
         slot.anchor = crate::bb_scene::Vec2 { x: 0.5, y: 0.0 };
         slot.pivot = crate::bb_scene::Vec2 { x: 0.5, y: 0.0 };
         slot.position = Default::default();

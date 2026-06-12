@@ -583,6 +583,29 @@ pub fn resolve_canvas_graph_with_defaults(
     bound_view_canvas: Option<&str>,
     defaults: &crate::defaults::DefaultValueRegistry,
 ) -> Result<BbScene, String> {
+    resolve_canvas_graph_with_defaults_and_host_stage(
+        root_json,
+        manufacturer_id,
+        fetch_by_path,
+        loc_fetcher,
+        bound_view_canvas,
+        defaults,
+        None,
+    )
+}
+
+/// Like [`resolve_canvas_graph_with_defaults`] but also receives the binding's
+/// host SWF stage size (from the movie header), which sizes the MFD frame's
+/// bound content-view slot (see [`crate::mfd_view`], plan P5.4).
+pub fn resolve_canvas_graph_with_defaults_and_host_stage(
+    root_json: &serde_json::Value,
+    manufacturer_id: Option<&str>,
+    fetch_by_path: &dyn Fn(&str) -> Result<serde_json::Value, String>,
+    loc_fetcher: Option<&dyn LocFetcher>,
+    bound_view_canvas: Option<&str>,
+    defaults: &crate::defaults::DefaultValueRegistry,
+    host_stage_size: Option<(f32, f32)>,
+) -> Result<BbScene, String> {
     let mut visited = HashSet::new();
     // Seed visited with the root's own record name so cycles back to the root
     // are caught without needing a separate check.
@@ -603,6 +626,7 @@ pub fn resolve_canvas_graph_with_defaults(
         bound_view_canvas,
         defaults,
         None,
+        host_stage_size,
     )?;
     // Bound geometry resolves against the full merged operation set (the pip
     // sizing's component-parameter chain crosses canvas levels), so apply it
@@ -964,6 +988,7 @@ fn resolve_canvas_graph_inner(
     bound_view_canvas: Option<&str>,
     defaults: &crate::defaults::DefaultValueRegistry,
     instance_namespace: Option<&str>,
+    host_stage_size: Option<(f32, f32)>,
 ) -> Result<BbScene, String> {
     let mut scene = parse_bb_canvas(root_json)?;
     inline_animation_timeline_references(&mut scene, fetch_by_path);
@@ -1062,6 +1087,7 @@ fn resolve_canvas_graph_inner(
         bound_view_canvas,
         defaults,
         instance_namespace,
+        host_stage_size,
         debug_trace,
     );
 
@@ -1158,7 +1184,13 @@ fn resolve_canvas_graph_inner(
         // so inject it onto the landscape slot at full width and skip the portrait
         // slot — not whichever slot's authored placeholder matches the content.
         if let Some(bound) = bound_view_canvas {
-            crate::mfd_view::apply_bound_mfd_view(&mut scene, bound, &mut canvas_urls, &mut instantiated_false);
+            crate::mfd_view::apply_bound_mfd_view_with_host_stage(
+                &mut scene,
+                bound,
+                &mut canvas_urls,
+                &mut instantiated_false,
+                host_stage_size,
+            );
         }
 
         let list_namespaces = apply_list_slot_bindings(
@@ -1271,6 +1303,7 @@ fn resolve_canvas_graph_inner(
                 bound_view_canvas,
                 defaults,
                 child_namespace,
+                host_stage_size,
             ) {
                 Ok(s) => s,
                 Err(e) => {
@@ -1511,6 +1544,7 @@ fn run_pass1_canvas_references(
     bound_view_canvas: Option<&str>,
     defaults: &crate::defaults::DefaultValueRegistry,
     instance_namespace: Option<&str>,
+    host_stage_size: Option<(f32, f32)>,
     debug_trace: bool,
 ) -> std::collections::HashSet<String> {
     let mut pass1_merged_norms: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -1648,6 +1682,7 @@ fn run_pass1_canvas_references(
                     bound_view_canvas,
                     defaults,
                     instance_namespace,
+                    host_stage_size,
                 );
                 let mut child_scene = match child_result {
                     Ok(scene) => scene,
