@@ -2256,4 +2256,78 @@ mod tests_c {
         let label = ir.nodes.iter().find(|node| node.name == "label").expect("label node");
         assert_eq!(label.alpha, 0.66);
     }
+
+    /// A Clip/ClipFade ancestor hard-clips only the axes whose `fade<Axis>`
+    /// flag is FALSE: a faded axis is owned by the engine's edge-fade
+    /// machinery, not the scissor (the power Scrollview authors Clip with
+    /// fadeXAxis=true / fadeYAxis=false and the in-game capture renders the
+    /// third column's temp gauge complete past the viewport's right edge,
+    /// unfaded — widthFadeThreshold 0 disables the fade itself — while the
+    /// list stays bounded vertically).
+    #[test]
+    fn compile_ir_clip_rect_skips_fade_axes() {
+        let canvas = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.TestPerAxisClip",
+            "_RecordValue_": {
+                "size": {"x": 200, "y": 100},
+                "scene": [
+                    {
+                        "_Pointer_": "ptr:1",
+                        "_Type_": "BuildingBlocks_DisplayWidget",
+                        "name": "scroller",
+                        "isActive": true,
+                        "overflow": {
+                            "_Type_": "BuildingBlocks_Overflow",
+                            "overflow": "Clip",
+                            "fadeXAxis": true,
+                            "fadeYAxis": false,
+                            "fadeZAxis": false,
+                            "widthFadeThreshold": 0.0,
+                            "heightFadeThreshold": 0.0,
+                            "depthFadeThreshold": 0.0
+                        },
+                        "sizing": {
+                            "width": {"behavior": "Fixed", "value": 100.0},
+                            "height": {"behavior": "Fixed", "value": 50.0}
+                        }
+                    },
+                    {
+                        "_Pointer_": "ptr:2",
+                        "_Type_": "BuildingBlocks_DisplayWidget",
+                        "name": "wide_child",
+                        "parent": "_PointsTo_:ptr:1",
+                        "isActive": true,
+                        "sizing": {
+                            "width": {"behavior": "Fixed", "value": 160.0},
+                            "height": {"behavior": "Fixed", "value": 80.0}
+                        }
+                    }
+                ],
+                "operations": []
+            }
+        });
+
+        let scene = crate::bb_scene::parse_bb_canvas(&canvas).expect("scene parse");
+        let ir = compile_ui_ir_from_scene(
+            &scene,
+            None,
+            "guid-per-axis-clip",
+            Some("BuildingBlocks_Canvas.TestPerAxisClip"),
+            (200, 100),
+            &defaults(),
+            None,
+            None,
+            &[],
+            Vec::new(),
+            Vec::new(),
+            100,
+        );
+
+        let child = ir.nodes.iter().find(|node| node.name == "wide_child").expect("wide child");
+        let clip = child.clip_rect.as_ref().expect("clip rect present (Y axis clips)");
+        assert!((clip.y - 0.0).abs() < 0.01, "y clipped to scroller top, got {}", clip.y);
+        assert!((clip.h - 50.0).abs() < 0.01, "h clipped to scroller height, got {}", clip.h);
+        assert!(clip.x <= 0.01, "faded X axis must not clip (x), got {}", clip.x);
+        assert!(clip.w >= 200.0 - 0.01, "faded X axis must not clip (w), got {}", clip.w);
+    }
 }

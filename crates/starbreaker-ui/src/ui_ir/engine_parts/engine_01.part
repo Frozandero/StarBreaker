@@ -1476,18 +1476,28 @@ fn build_custom_shape(node: &BbNode) -> Option<UiIrCustomShape> {
 
 /// Whether `node`'s authored overflow clips its descendants (`Clip` or
 /// `ClipFade` — the fade is an edge treatment on the same clipped region).
-fn node_clips_descendants(node: &BbNode) -> bool {
-    node.raw
+/// Per-axis hard-clip flags for a node's authored `BuildingBlocks_Overflow`.
+/// Returns `(x_clips, y_clips)`; `(false, false)` when the mode is not
+/// Clip/ClipFade. An axis whose `fade<Axis>` flag is TRUE is owned by the
+/// engine's edge-fade machinery, not the scissor: the power Scrollview
+/// authors Clip with fadeXAxis=true / fadeYAxis=false and the in-game capture
+/// renders the third column's temp gauge complete past the viewport's right
+/// edge, unfaded (widthFadeThreshold 0 disables the fade itself), while the
+/// list stays bounded vertically.
+fn node_clip_axes(node: &BbNode) -> (bool, bool) {
+    let Some(overflow) = node.raw.get("overflow") else { return (false, false) };
+    let mode_clips = overflow
         .get("overflow")
-        .and_then(|overflow| {
-            overflow
-                .get("overflow")
-                .and_then(|v| v.as_str())
-                .or_else(|| overflow.as_str())
-        })
+        .and_then(|v| v.as_str())
+        .or_else(|| overflow.as_str())
         .is_some_and(|mode| {
             mode.eq_ignore_ascii_case("Clip") || mode.eq_ignore_ascii_case("ClipFade")
-        })
+        });
+    if !mode_clips {
+        return (false, false);
+    }
+    let fade_axis = |key: &str| overflow.get(key).and_then(|v| v.as_bool()).unwrap_or(false);
+    (!fade_axis("fadeXAxis"), !fade_axis("fadeYAxis"))
 }
 
 /// Pixel-space intersection of all clipping ancestors' laid-out rects: the
@@ -1502,12 +1512,24 @@ fn clip_rect_for_node(
     let mut parent = node.parent;
     while let Some(parent_id) = parent {
         let Some(ancestor) = scene.nodes.get(&parent_id) else { break };
-        if node_clips_descendants(ancestor)
+        let (x_clips, y_clips) = node_clip_axes(ancestor);
+        if (x_clips || y_clips)
             && let Some(rect) = layout.rects.get(&parent_id)
         {
+            // A faded (non-clipping) axis contributes the full canvas extent
+            // so only the hard-clipped axis scissors descendants.
+            let mut rect = *rect;
+            if !x_clips {
+                rect.x = layout.canvas.x;
+                rect.w = layout.canvas.w;
+            }
+            if !y_clips {
+                rect.y = layout.canvas.y;
+                rect.h = layout.canvas.h;
+            }
             clip = Some(match clip {
-                None => *rect,
-                Some(existing) => existing.intersect(rect).unwrap_or(crate::bb_layout::Rect {
+                None => rect,
+                Some(existing) => existing.intersect(&rect).unwrap_or(crate::bb_layout::Rect {
                     x: existing.x,
                     y: existing.y,
                     w: 0.0,
