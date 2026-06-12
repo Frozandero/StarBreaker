@@ -767,14 +767,12 @@ fn annotate_effective_font_px(
             // The draw consumes the IR text_style font size: styled sizes
             // verbatim, plain sizes with the imageSizePercent boost — mirror
             // that here so measure == draw.
-            let draw_font_size = if is_styled {
-                UiIrValue::Fixed { value: font_px }
-            } else {
-                adjust_ui_ir_font_value_for_font_record_image_percent(
-                    UiIrValue::Fixed { value: font_px },
-                    resolved_font_record.as_ref(),
-                )
-            };
+            let draw_font_size = apply_font_image_size_percent(
+                UiIrValue::Fixed { value: font_px },
+                resolved_font_record.as_ref(),
+                is_styled,
+                design_text_scale,
+            );
             let UiIrValue::Fixed { value: draw_font_px } = draw_font_size else {
                 return None;
             };
@@ -917,16 +915,14 @@ fn build_ui_ir_nodes(
                 &standard_text_styles,
                 design_text_scale,
             );
-            // Plain/raw/auto text gets the per-font imageSizePercent boost; a styled
-            // brand-table size is the design em-pixel size, used verbatim.
-            let font_size = if is_styled {
-                font_size
-            } else {
-                adjust_ui_ir_font_value_for_font_record_image_percent(
-                    font_size,
-                    resolved_font_record.as_ref(),
-                )
-            };
+            // imageSizePercent compensation: plain always; styled too on the
+            // GFx-host path (see apply_font_image_size_percent).
+            let font_size = apply_font_image_size_percent(
+                font_size,
+                resolved_font_record.as_ref(),
+                is_styled,
+                design_text_scale,
+            );
             // Styled text renders at its full brand-table nominal size. (A prior
             // ~0.98 "all-caps display reduction" was removed: it was a registered
             // fudge whose stated 2% caps-width-overshoot rationale did not hold up
@@ -1017,7 +1013,12 @@ fn build_ui_ir_nodes(
             let font_size_value = if let Some(size) =
                 brand_style_font_size(label_style.as_deref(), &standard_text_styles)
             {
-                UiIrValue::Fixed { value: size * design_text_scale }
+                apply_font_image_size_percent(
+                    UiIrValue::Fixed { value: size * design_text_scale },
+                    resolved_font_record.as_ref(),
+                    true,
+                    design_text_scale,
+                )
             } else {
                 // The hand-tuned per-style rect ladder that used to sit here
                 // (textfield_fallback_font_size_from_signals) was deleted
@@ -1354,7 +1355,12 @@ fn caption_pair_secondary_text_style(
     let value_font_size = if let Some(size) =
         brand_style_font_size(caption_style.as_deref(), standard_text_styles)
     {
-        UiIrValue::Fixed { value: size * design_text_scale }
+        apply_font_image_size_percent(
+            UiIrValue::Fixed { value: size * design_text_scale },
+            resolved_font_record,
+            true,
+            design_text_scale,
+        )
     } else {
         let font_size = node
             .raw

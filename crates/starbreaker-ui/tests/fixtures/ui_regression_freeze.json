@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "frozen_at": "2026-06-12T08:44:07Z",
+  "frozen_at": "2026-06-12T15:54:53Z",
   "approver": "tom",
-  "reason": "Tooling verification run (ui_freeze_cycle.sh, process Part C): pixels and tiers identical to the tier-promotion freeze",
+  "reason": "Two reference-adjudicated render changes on the freshly exported PNGs: (1) clipper_target_master 0.95% — MFD host-path text now divides by the font's imageSizePercent for ALL size classes (styled/entry/inline), growing every MFD text x4/3: verified vs Screen_Right_Upper_RTT.png (NO TARGET cap ref~63 = Size_1 entry 45/0.75; footer cap ref~52 = entry-40/0.75) and the power capture (footer P-glyph ref 52 vs render 53; emissions/battery/output all match — measured per element). Non-host screens are unchanged (medical banner cap 25 == ref 27 verbatim). (2) clipper_small_door 2.16% — the authored Accent2 bottom bar now resolves BB enum slot 5 deep orange (222,88,3), matching the Door-closed.png bar (223,110,48 under capture cast); the old light orange came from the deleted hand-mapped Accent2->slot1/2.",
   "signature": null,
   "manifest_path": "crates/starbreaker-ui/tests/fixtures/ui_ir/ui_snapshot_manifest.json",
   "artifacts": [
@@ -11,7 +11,7 @@
       "tier": "platinum",
       "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_i_med_medicalbed_a.png",
       "artifact_path": "test-artifacts/ui/ui_target_a.png",
-      "sha256": "460cd594f9e6e0f700154fdd3e676fb514e557c87eef593f6ccf649c1ad7fcd2",
+      "sha256": "24ebf1298cd5ce100308437753f796516d243ba68651a088276ba8d25f0232ed",
       "width": 1920,
       "height": 1080,
       "channels": "srgba"
@@ -31,7 +31,7 @@
       "tier": "gold",
       "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_i_door_small_drak.png",
       "artifact_path": "test-artifacts/ui/clipper_small_door.png",
-      "sha256": "da6c20c3156456f558ee2bb5833ae8c20f2be15137c57c278ae5629265a0d88b",
+      "sha256": "6f144ab11e8b9a0a53d8b33948382c40bed6c3261064818f9ac8d6b6b28f8d45",
       "width": 1920,
       "height": 1080,
       "channels": "srgba"
@@ -51,7 +51,7 @@
       "tier": "platinum",
       "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_mc_s_target_master.png",
       "artifact_path": "test-artifacts/ui/clipper_target_master.png",
-      "sha256": "ae4d7e697f812d45fd060f851867290c87967874e38b3a52253be50a0a8148ec",
+      "sha256": "44246d36f2aa12bfd639a6bf54cad32c76ba68cccaf370275677c34e38bc48dc",
       "width": 1600,
       "height": 1200,
       "channels": "srgba"

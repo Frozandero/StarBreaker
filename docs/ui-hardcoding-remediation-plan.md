@@ -94,11 +94,14 @@ derivations stay open with their criteria recorded in the register:
 - [ ] MFD content text scale (open item, handoff §13): the ×4/3 gap is
       currently unexplained — derive structurally (candidate: the
       0.9-scaled content stage height), never land as a bare multiplier.
-      RECLASSIFIED 2026-06-12: the ×4/3 also shows on the FRAME footer
-      (glyph ink height only; advances/pitch match) — it is the SWF
-      glyph-ink scale question (the 0.84 register entry, evidence note
-      there), conditional on path/font (medical shows NO gap). Derive on
-      the dedicated text-calibration arc.
+      **RESOLVED 2026-06-12**: the ×4/3 is the per-font
+      `imageSizePercent` division applying to ALL size classes on the
+      GFx-HOST path (`apply_font_image_size_percent`): the host fontlib's
+      imported glyphs are authored at 0.75 of their em square. Landed and
+      artifact-frozen — power/target text now matches the references per
+      element; non-host (medical) verbatim behaviour unchanged. (The
+      earlier "frame footer ink ×1.4" reading was footer-bar-line
+      contamination; the true ref footer cap is 52 ≈ our 53.)
 
 ## Phase 3 — tag/style NAME-keyed semantic decisions
 
@@ -114,10 +117,15 @@ behaviour that the cascade should produce instead:
       deleted with zero drift (full battery + font harness green). The
       `Bright`-tag arm SURVIVES (ui_target_b tier-label pin needs it; the
       tag literally names the BB_ColorStyle role, so it is authored data).
-- [x] `src/pipeline/mod.rs` `ScreenNameBackground` suppression — DELETED:
-      redundant since the annunciator background became entry/registry
-      driven (zero drift). `FunctionTitle` duplicate-suppression also
-      deleted (zero drift).
+- [x] `src/pipeline/mod.rs` `ScreenNameBackground` suppression —
+      deletion ATTEMPTED and REVERTED (2026-06-12): the "zero drift"
+      verdict was an artifact of the whole-image guard comparing STALE
+      exported PNGs; a fresh export showed the annunciator/door strips
+      regress by a global warm haze without it. REINSTATED with the trap
+      documented at the rule. Still an open derivation item (the rule's
+      semantic, not its tag matching). `FunctionTitle`
+      duplicate-suppression deleted (re-verified against fresh renders —
+      genuinely covered).
 - [x] Inventory (2026-06-12): the unique `eq_ignore_ascii_case` target
       set was classified. Data-driven and FINE: DataCore type/enum/field
       strings (`BuildingBlocks_*`, flex/sizing/overflow enum values,

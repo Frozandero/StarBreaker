@@ -410,7 +410,35 @@ pub fn compile_ir_for_binding(inputs: &PipelineInputs<'_>) -> Result<UiIrDocumen
 pub fn render_for_binding_ir(inputs: &PipelineInputs<'_>) -> Result<Vec<u8>, UiError> {
     let ir = timed("compile", || compile_ir_for_binding(inputs))?;
 
-    let style = timed("style_load", || load_style_for_ir(&ir, inputs))?;
+    let mut style = timed("style_load", || load_style_for_ir(&ir, inputs))?;
+    // A SWF-hosted screen whose authored screen-name background image is
+    // INACTIVE at rest paints NO style background — the strip body is the
+    // absence of emission (near pure black; the in-game capture's warmth is
+    // CRT/capture-side, handled outside this renderer). Adjudicated on the
+    // annunciator reference; an attempted deletion of this rule on
+    // 2026-06-12 looked drift-free only because the whole-image guard was
+    // comparing STALE exported PNGs — a fresh render regressed the
+    // annunciator/door strips by a global warm haze. Tag names come from
+    // the authored tag database (data); the open remediation item is the
+    // DERIVED semantic, tracked in docs/ui-hardcoding-remediation-plan.md.
+    let suppresses_placeholder_screen_background = ir.selected_swf_source.is_some()
+        && ir.nodes.iter().any(|node| {
+            node.node_type.eq_ignore_ascii_case("widget_image")
+                && !node.is_active
+                && node.resolved_style_tags.iter().any(|tag| {
+                    tag.tag_name
+                        .as_deref()
+                        .is_some_and(|name| name.eq_ignore_ascii_case("ScreenNameBackground"))
+                })
+        });
+    if suppresses_placeholder_screen_background {
+        style.background = crate::canvas::RgbaColor {
+            r: 0,
+            g: 0,
+            b: 0,
+            a: 255,
+        };
+    }
     let defaults = DefaultValueRegistry::with_pipeline_defaults_and_derived_values(
         inputs.localization_map.clone(),
         inputs.derived_values.as_ref(),

@@ -825,6 +825,30 @@ fn fill_colour_from_raw_for_text(raw: &serde_json::Value) -> Option<[f32; 4]> {
     Some([r, g, b, a])
 }
 
+/// Apply the per-font `imageSizePercent` compensation exactly once.
+///
+/// PLAIN sizes (raw/bound/fallthrough) always divide — the engine renders
+/// plain text larger than its nominal (existing data-backed model). STYLED
+/// sizes (brand-table / entry / inline, used verbatim off-host) ALSO divide
+/// on the GFx-HOST path (`design_text_scale != 1.0`): the host movie's
+/// imported fontlib glyphs are authored at `imageSizePercent` of their em
+/// square and the engine compensates at draw. Measured 2026-06-12 on BOTH
+/// in-game MFD captures: every text class is ×1/0.75 vs a verbatim render —
+/// power frame footer (cap ~80 vs 53), target NO TARGET heading (×1.40) and
+/// footer (×1.31), the power entry-sized texts — while the NON-host medical
+/// captures match styled sizes verbatim (banner cap 25 ≈ ref 27).
+fn apply_font_image_size_percent(
+    value: UiIrValue,
+    resolved_font_record: Option<&serde_json::Value>,
+    is_styled: bool,
+    design_text_scale: f32,
+) -> UiIrValue {
+    if is_styled && (design_text_scale - 1.0).abs() <= f32::EPSILON {
+        return value;
+    }
+    adjust_ui_ir_font_value_for_font_record_image_percent(value, resolved_font_record)
+}
+
 fn adjust_ui_ir_font_value_for_font_record_image_percent(
     value: UiIrValue,
     resolved_font_record: Option<&serde_json::Value>,
