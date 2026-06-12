@@ -374,6 +374,146 @@ fn target_a_custom_shape_scale_and_position_guard() {
     }
 }
 
+/// Header of every staleness failure (ledger item 20: a stale `Generated/`
+/// tree silently mis-adjudicated a real regression as "zero drift").
+const STALE_EXPORT_MESSAGE: &str = "STALE EXPORT: Generated PNGs predate the current build — \
+     re-export (~50s) before artifact comparison";
+
+/// The exporter writes `.export_stamp.json` at the `Data/UI/Generated/` root,
+/// next to the PNG tree. Derive that location from a compared source PNG so
+/// the guard follows wherever the export root lives.
+fn export_stamp_path(source_path: &std::path::Path) -> Option<PathBuf> {
+    source_path
+        .ancestors()
+        .find(|dir| {
+            dir.file_name().is_some_and(|name| name == "Generated")
+                && dir
+                    .parent()
+                    .is_some_and(|ui| ui.file_name().is_some_and(|name| name == "UI"))
+        })
+        .map(|generated_root| generated_root.join(".export_stamp.json"))
+}
+
+fn mtime_epoch_s(path: &std::path::Path) -> Option<u64> {
+    std::fs::metadata(path)
+        .ok()?
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .map(|duration| duration.as_secs())
+}
+
+/// Staleness verdict, kept pure for unit testing. `stamp_bytes` is the stamp
+/// file content when it exists; `png_mtimes` carries (target id, source PNG
+/// mtime) for every pair the guard is about to compare;
+/// `test_binary_mtime_epoch_s` is this test binary's own mtime. Returns the
+/// failure message, or `None` when the export is fresh. Thresholds: a PNG may
+/// trail the stamp by 60s (the stamp is written into the export file map
+/// before the files flush to disk); the test binary may be up to 30 minutes
+/// newer than the stamp before a rebuild forces a re-export.
+fn stale_export_failure(
+    stamp_bytes: Option<&[u8]>,
+    png_mtimes: &[(String, u64)],
+    test_binary_mtime_epoch_s: u64,
+) -> Option<String> {
+    let Some(bytes) = stamp_bytes else {
+        return Some(format!("{STALE_EXPORT_MESSAGE} (stamp file missing)"));
+    };
+    let stamp: serde_json::Value = match serde_json::from_slice(bytes) {
+        Ok(value) => value,
+        Err(error) => {
+            return Some(format!("{STALE_EXPORT_MESSAGE} (stamp unreadable: {error})"));
+        }
+    };
+    let Some(written_at) = stamp.get("written_at_epoch_s").and_then(|v| v.as_u64()) else {
+        return Some(format!(
+            "{STALE_EXPORT_MESSAGE} (stamp has no written_at_epoch_s)"
+        ));
+    };
+    for (target_id, png_mtime) in png_mtimes {
+        if png_mtime + 60 < written_at {
+            return Some(format!(
+                "{STALE_EXPORT_MESSAGE} ({target_id}: source PNG mtime {png_mtime} predates \
+                 stamp written_at {written_at} by more than 60s)"
+            ));
+        }
+    }
+    if test_binary_mtime_epoch_s > written_at + 30 * 60 {
+        return Some(format!(
+            "{STALE_EXPORT_MESSAGE} (test binary mtime {test_binary_mtime_epoch_s} is more than \
+             30 minutes newer than stamp written_at {written_at})"
+        ));
+    }
+    None
+}
+
+#[test]
+fn stale_export_verdict_missing_stamp_fails() {
+    let failure = stale_export_failure(None, &[], 1_000_000);
+    assert!(
+        failure.is_some_and(|message| message.contains("STALE EXPORT")),
+        "missing stamp must produce a STALE EXPORT failure"
+    );
+}
+
+#[test]
+fn stale_export_verdict_unparseable_stamp_fails() {
+    let failure = stale_export_failure(Some(b"not json"), &[], 1_000_000);
+    assert!(
+        failure.is_some_and(|message| message.contains("STALE EXPORT")),
+        "unparseable stamp must produce a STALE EXPORT failure"
+    );
+}
+
+#[test]
+fn stale_export_verdict_png_older_than_stamp_fails() {
+    let stamp = br#"{ "written_at_epoch_s": 1000000, "git_describe": "test", "binary_built_at_epoch_s": 999000 }"#;
+    let pngs = [("ui_target_a".to_string(), 999_000u64)];
+    let failure = stale_export_failure(Some(stamp), &pngs, 1_000_000);
+    assert!(
+        failure
+            .as_deref()
+            .is_some_and(|message| message.contains("STALE EXPORT") && message.contains("ui_target_a")),
+        "PNG older than stamp - 60s must fail naming the target, got {failure:?}"
+    );
+}
+
+#[test]
+fn stale_export_verdict_png_within_slack_passes() {
+    let stamp = br#"{ "written_at_epoch_s": 1000000, "git_describe": "test", "binary_built_at_epoch_s": 999000 }"#;
+    let pngs = [("ui_target_a".to_string(), 999_950u64)];
+    assert_eq!(stale_export_failure(Some(stamp), &pngs, 1_000_000), None);
+}
+
+#[test]
+fn stale_export_verdict_newer_test_binary_fails() {
+    let stamp = br#"{ "written_at_epoch_s": 1000000, "git_describe": "test", "binary_built_at_epoch_s": 999000 }"#;
+    let pngs = [("ui_target_a".to_string(), 1_000_010u64)];
+    let failure = stale_export_failure(Some(stamp), &pngs, 1_000_000 + 31 * 60);
+    assert!(
+        failure.is_some_and(|message| message.contains("STALE EXPORT")),
+        "test binary >30min newer than the stamp must fail"
+    );
+    assert_eq!(
+        stale_export_failure(Some(stamp), &pngs, 1_000_000 + 29 * 60),
+        None,
+        "test binary within 30min of the stamp must pass"
+    );
+}
+
+#[test]
+fn export_stamp_path_resolves_next_to_generated_root() {
+    let source = PathBuf::from(
+        "/ws/ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_x.png",
+    );
+    assert_eq!(
+        export_stamp_path(&source),
+        Some(PathBuf::from("/ws/ships/Data/UI/Generated/.export_stamp.json"))
+    );
+    assert_eq!(export_stamp_path(&PathBuf::from("/ws/other/file.png")), None);
+}
+
 /// Fraction of pixels whose max per-channel difference exceeds `tolerance`.
 /// `None` signals a dimension mismatch (itself a regression).
 fn whole_image_diff_fraction(
@@ -416,12 +556,8 @@ fn manifest_targets_whole_image_colour_regression_guard() {
     // differing-pixel fraction is tight for platinum and looser for gold.
     const TOLERANCE: u8 = 16;
     let manifest = snapshot_manifest();
-    let mut failures = Vec::new();
+    let mut compared = Vec::new();
     for target in manifest.targets {
-        let max_diff_fraction = match target.tier {
-            starbreaker_ui::UiRegressionTier::Platinum => 0.005,
-            _ => 0.010,
-        };
         // artifact_paths returns (fresh render from `ships/`, frozen baseline).
         let (render_path, baseline_path) = artifact_paths(&target.id);
         if !render_path.is_file() || !baseline_path.is_file() {
@@ -433,6 +569,44 @@ fn manifest_targets_whole_image_colour_regression_guard() {
             );
             continue;
         }
+        compared.push((target, render_path, baseline_path));
+    }
+
+    // Staleness hard-fail (ledger item 20): the generated PNGs only refresh on
+    // a full export, so before trusting any comparison verify the export stamp
+    // exists and postdates neither the compared PNGs nor (by >30min) this test
+    // binary. Targets skipped above for missing game data stay skipped — a
+    // repo-only environment never reaches this check.
+    if let Some((_, first_render_path, _)) = compared.first() {
+        let stamp_bytes = export_stamp_path(first_render_path)
+            .and_then(|path| std::fs::read(path).ok());
+        let png_mtimes = compared
+            .iter()
+            .map(|(target, render_path, _)| {
+                (target.id.clone(), mtime_epoch_s(render_path).unwrap_or(0))
+            })
+            .collect::<Vec<_>>();
+        let test_binary_mtime = std::env::current_exe()
+            .ok()
+            .and_then(|exe| mtime_epoch_s(&exe))
+            .unwrap_or(0);
+        if let Some(failure) =
+            stale_export_failure(stamp_bytes.as_deref(), &png_mtimes, test_binary_mtime)
+        {
+            if std::env::var("UI_ALLOW_STALE_EXPORT").as_deref() == Ok("1") {
+                eprintln!("warning (UI_ALLOW_STALE_EXPORT=1): {failure}");
+            } else {
+                panic!("{failure}");
+            }
+        }
+    }
+
+    let mut failures = Vec::new();
+    for (target, render_path, baseline_path) in compared {
+        let max_diff_fraction = match target.tier {
+            starbreaker_ui::UiRegressionTier::Platinum => 0.005,
+            _ => 0.010,
+        };
         let baseline = image::open(&baseline_path)
             .expect("baseline image should decode")
             .into_rgba8();

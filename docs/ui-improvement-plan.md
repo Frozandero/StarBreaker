@@ -106,7 +106,7 @@ Goal: the failure modes that produced wrong verdicts this arc become loud.
       current_exe> }`. Use `std::process::Command` for git (fall back to
       "unknown" on error — the stamp must never fail an export).
       Acceptance: run a full export; the stamp exists and parses.
-- [ ] **P0.2 Staleness hard-fail in the visual guard.** In
+- [x] (2026-06-12, commit "plan P0.2") **P0.2 Staleness hard-fail in the visual guard.** In
       `crates/starbreaker-ui/tests/manifest_visual_regression.rs`
       (`manifest_targets_whole_image_colour_regression_guard`), before
       comparing: read the stamp; FAIL (not skip) with a distinct message
