@@ -260,7 +260,9 @@ fn apply_style_entries_filtered(
                     .iter()
                     .filter_map(|e| e.get("name").and_then(|v| v.as_str()))
                     .collect();
-                log::info!(
+                // eprintln (not log::info) so the probe prints without RUST_LOG,
+                // matching BB_TEXT_FORMAT_PROBE (plan P0.4, ledger item 25).
+                eprintln!(
                     "A3-style-probe[{}]: id=ptr:{} name={:?} tags={:?} matches={:?} text_format={:?}",
                     style_identifier.unwrap_or("?"),
                     node_id,

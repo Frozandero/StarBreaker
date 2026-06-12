@@ -130,7 +130,7 @@ Goal: the failure modes that produced wrong verdicts this arc become loud.
       before the test runs). Acceptance: introduce a deliberate
       compile error in `crates/starbreaker-ui/examples/dump_ui_ir_targets.rs`,
       see `ui_check.sh` fail, revert. Cite ledger item 26.
-- [ ] **P0.4 Probe channel consistency.** Change `BB_A3_STYLE_PROBE`'s
+- [x] (2026-06-12, commit "plan P0.4") **P0.4 Probe channel consistency.** Change `BB_A3_STYLE_PROBE`'s
       output in `crates/starbreaker-ui/src/bb_brand_apply/mod.rs` from
       `log::info!` to `eprintln!` (matching `BB_TEXT_FORMAT_PROBE`), and
       annotate the probe-registry table in `docs/ui-reference.md` §6 with

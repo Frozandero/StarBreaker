@@ -173,16 +173,16 @@ client.
 Env-gated diagnostics (zero cost unless set). Add new probes to this table
 in the same commit that introduces them.
 
-| Probe | Owner | Prints |
-|---|---|---|
-| `BB_A3_STYLE_PROBE=1` | `bb_brand_apply` | per node, per cascade pass: name, style tags, matched entry names |
-| `BB_A3_TEXT_PROBE=1` | `bb_bindings` (LocalizedFromBoolean) | text branch selection + resolved values |
-| `BB_SHRINK_PROBE=1` | `bb_layout` flex shrink | shrink scale + each child's name/type/main-axis sizing |
-| `SB_UI_GEOM_PROBE=1` | `bb_bindings::resolve_geometry_fields_into_scene` | bound SizeX/SizeY input chains + resolved values per node |
-| `SB_SHIP_VALUES_DUMP=1` | `starbreaker-3d` `ship_values` | every derived registry path = value at export/replay |
-| `SB_UI_FONT_DUMP=1` | `text/swf_draw` | one `FONTDUMP` line per rendered text element (see harness doc) |
-| `BB_TEXT_FORMAT_PROBE=1` | `bb_brand_apply` | per pass: `TFPROBE` = text-format-route entry applications (FontSize/FillColor on tagged textfields); `TFPROBE-NORMAL` = normal-route entries carrying FontSize (with modifiers + conditions) |
-| `ui render --dump-ir-dir <dir>` | CLI flag | composed `*.ir.json` per helper (nodes, rects, payloads, tints) |
+| Probe | Owner | Channel | Prints |
+|---|---|---|---|
+| `BB_A3_STYLE_PROBE=1` | `bb_brand_apply` | stderr (`eprintln`) | per node, per cascade pass: name, style tags, matched entry names |
+| `BB_A3_TEXT_PROBE=1` | `bb_bindings` (LocalizedFromBoolean) | log (`log::info` — needs `RUST_LOG=info`) | text branch selection + resolved values |
+| `BB_SHRINK_PROBE=1` | `bb_layout` flex shrink | stderr (`eprintln`) | shrink scale + each child's name/type/main-axis sizing |
+| `SB_UI_GEOM_PROBE=1` | `bb_bindings::resolve_geometry_fields_into_scene` | stderr (`eprintln`) | bound SizeX/SizeY input chains + resolved values per node |
+| `SB_SHIP_VALUES_DUMP=1` | `starbreaker-3d` `ship_values` | stderr (`eprintln`) | every derived registry path = value at export/replay |
+| `SB_UI_FONT_DUMP=1` | `text/swf_draw` | stderr (`eprintln`) | one `FONTDUMP` line per rendered text element (see harness doc) |
+| `BB_TEXT_FORMAT_PROBE=1` | `bb_brand_apply` | stderr (`eprintln`) | per pass: `TFPROBE` = text-format-route entry applications (FontSize/FillColor on tagged textfields); `TFPROBE-NORMAL` = normal-route entries carrying FontSize (with modifiers + conditions) |
+| `ui render --dump-ir-dir <dir>` | CLI flag | files (`*.ir.json`) | composed `*.ir.json` per helper (nodes, rects, payloads, tints) |
 
 Example: `BB_SHRINK_PROBE=1 ./target/debug/starbreaker ui render --scene
 "<scene>" --out-dir /tmp/x --helper Screen_Left_Lower_RTT 2>&1 | grep PROBE`.
