@@ -151,8 +151,9 @@ behaviour that the cascade should produce instead:
       (the measured 44 inset must stay either way); deferred to the next
       mfd_view-touching change (recorded in its register entry).
 - [x] `ADDITIVE_ALTERNATE_REVERSE_POSITION_PHASE_RATIO = 2/3` —
-      registered with retirement criteria (derive the at-rest phase from
-      the authored timeline instead of a fixed ratio).
+      **DELETED** (2026-06-12): empirical audit shows no frozen pin
+      referenced it; additive AlternateReverse loops now sample at the
+      requested midpoint like every other animation (full battery green).
 
 ## Phase 5 — registry/pins hygiene (pattern is OK, keep it audited)
 

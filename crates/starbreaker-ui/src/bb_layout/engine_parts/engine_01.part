@@ -40,7 +40,6 @@ use log::warn;
 
 use crate::bb_scene::{BbCoordinateMethod, BbNode, BbNodeId, BbNodeType, BbScene, BbValue};
 
-const ADDITIVE_ALTERNATE_REVERSE_POSITION_PHASE_RATIO: f32 = 2.0 / 3.0;
 const SYNTHETIC_NODE_ID_BASE: BbNodeId = 0x8000_0000;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -613,11 +612,12 @@ fn position_animation_sample_percent(raw: &serde_json::Value, sample_percent: f3
         .and_then(|value| value.as_bool())
         .unwrap_or(false);
 
-    if direction.eq_ignore_ascii_case("AlternateReverse") && loops && additive {
-        sample_percent * ADDITIVE_ALTERNATE_REVERSE_POSITION_PHASE_RATIO
-    } else {
-        sample_percent
-    }
+    // The hand-tuned 2/3 phase ratio for additive AlternateReverse loops was
+    // deleted 2026-06-12: no frozen pin referenced it (remediation plan
+    // Phase 4 audit) — the midpoint sample stands until an at-rest capture
+    // discriminates a phase.
+    let _ = (direction, loops, additive);
+    sample_percent
 }
 
 fn animation_number_keyframes(raw: &serde_json::Value, field_name: &str) -> Vec<(f64, f32)> {
@@ -2278,7 +2278,7 @@ mod tests {
     }
 
     #[test]
-    fn alternate_reverse_position_animation_uses_earlier_static_phase() {
+    fn alternate_reverse_position_animation_samples_at_midpoint() {
         use crate::bb_scene::{BbNode, BbNodeType, BbSizing, BbTrbl, BbValue, Vec2, Vec3};
 
         let node = BbNode {
@@ -2334,7 +2334,11 @@ mod tests {
 
         let result = layout_with_animation_sample(&scene, 200, 100, Some(50.0));
         let rect = result.rects[&1];
-        assert!((rect.x - 33.0).abs() < 0.5, "expected alternate-reverse sampled PosXOffset x 33, got {}", rect.x);
+        // The hand-tuned 2/3 phase ratio was deleted (remediation plan
+        // Phase 4 audit: no frozen pin referenced it) — additive
+        // AlternateReverse loops sample at the requested midpoint like
+        // every other animation.
+        assert!((rect.x - 25.0).abs() < 0.5, "expected midpoint-sampled PosXOffset x 25, got {}", rect.x);
     }
 
     #[test]
