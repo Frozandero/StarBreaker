@@ -44,6 +44,21 @@ step "manifest_live_ir_guard + line_count_guard"
 cargo test -p starbreaker-ui --test manifest_live_ir_guard --test line_count_guard
 
 if [[ "$FULL" == 1 ]]; then
+  # Early staleness visibility (ledger item 30): the visual guard hard-fails
+  # when the test binary is >30min newer than the export stamp — surface the
+  # stamp age BEFORE minutes of suites run, so a needed re-export (~50s)
+  # happens first. Warning only; the in-guard check stays authoritative.
+  STAMP="/home/tom/projects/scorg_tools/ships/Data/UI/Generated/.export_stamp.json"
+  if [[ -f "$STAMP" ]]; then
+    AGE_MIN=$(( ( $(date +%s) - $(python3 -c "import json;print(json.load(open('$STAMP'))['written_at_epoch_s'])") ) / 60 ))
+    echo "export stamp age: ${AGE_MIN}min"
+    if (( AGE_MIN > 30 )); then
+      echo "WARNING: export stamp is ${AGE_MIN}min old — if the ui test binaries rebuild now, the staleness guard WILL fail; re-export first (~50s)." >&2
+    fi
+  else
+    echo "WARNING: no export stamp at $STAMP — the visual guard will fail unless game data is absent (skip path)." >&2
+  fi
+
   step "manifest_snapshot_regression + manifest_visual_regression"
   cargo test -p starbreaker-ui --test manifest_snapshot_regression --test manifest_visual_regression
 

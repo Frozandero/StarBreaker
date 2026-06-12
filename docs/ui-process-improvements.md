@@ -804,3 +804,70 @@ no DoABC); the already-vendored `swf = "0.2"` crate exposes
 framework constants into data-derived ones.
 
 **Action:** plan Phase 2.
+
+---
+
+## Part E — fourth retrospective (2026-06-12, plan-execution session: P0–P2, P4.1, P5.1/2/4, P6)
+
+Evidence base: the second 2026-06-12 session (commits bc38ec8bd …
+9d140f254 — the improvement plan's phases 0/1/2/6 complete, P4.1, the
+P5 derivation items). Items 28–31 were implemented in the same session;
+nothing here extends the phased plan (the remaining plan work is
+`docs/ui-improvement-plan.md` P3/P4.2–4.4/P5.3).
+
+### 28. A commit cannot cite its own hash → checkbox convention
+
+**Observed:** the plan's discipline said mark checkboxes `[x] (<date>
+<commit>)` in the same commit as the work — impossible for the commit's
+own hash. The session settled on `[x] (<date>, commit "plan PX.Y")` with
+every commit message citing the step, making the mapping greppable
+(`git log --grep "plan P1.2"`).
+
+**Improvement:** future plan templates should specify the step-citation
+form, not a hash.
+
+**Action:** [done 2026-06-12 — this entry records the convention; the
+improvement plan's checkboxes all use it.]
+
+### 29. AVM1 mining outcomes: one confirm, two C++-side bounds
+
+**Observed:** the item-27 dumper worked first try (127 classes), but the
+mined targets mostly were NOT in the bytecode: the 44px content-view
+inset and the scrollbar `_SizeRatio` are engine-pushed (C++); the CLIK
+thumb formula CONFIRMED our viewport/content model; AS2 applies text
+sizes verbatim (negative-confirms the imageSizePercent host division).
+A miss with a recorded bound is a real result — both pins now carry
+"PROVEN absent from the bytecode" provenance.
+
+**Improvement:** when proposing future truth-mining, scope expectations:
+BB runtime values live mostly C++-side; the SWF carries framework
+FORMULAS (CLIK components), not layout constants.
+
+**Action:** [done 2026-06-12 — recorded in the runbook's "AVM1 mining
+results" + the fallback register entries.]
+
+### 30. The staleness guard fires mid-battery → preflight visibility
+
+**Observed:** the P0.2 guard (correctly) failed `--full` runs twice this
+session, but only AFTER minutes of suites had already run, because the
+test binary rebuild happened >30min after the last export.
+
+**Improvement:** `ui_check.sh --full` prints the export-stamp age up
+front and warns when >30min, so the ~50s re-export happens before the
+battery, not after a failed one. Warning only — the in-guard hard-fail
+stays authoritative.
+
+**Action:** [done 2026-06-12 — ui_check.sh preflight, this session.]
+
+### 31. Helper-less bindings render to GUID-named PNGs → unfindable
+
+**Observed:** mapping the medical-bed replay output to its binding
+required a pixel content-match hunt: bindings without `helper_name`
+(the bed) wrote `<canvas-guid>_TEX0.png`.
+
+**Improvement:** `png_name_for_binding` falls back helper_name →
+content_canvas_record_name → canvas_record_name → guid, so replay
+outputs are human-findable.
+
+**Action:** [done 2026-06-12 — cli/src/ui.rs + unit test; replay-only
+naming, exports unaffected.]

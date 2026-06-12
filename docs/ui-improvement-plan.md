@@ -33,11 +33,30 @@ Working discipline:
 - If a step's premise turns out wrong, record what was falsified against
   the checkbox (a miss is a result), fix the plan text, and continue.
 
-### Current state (end of the 2026-06-12 session, HEAD ≈ 5b0c25435)
+### Current state (end of the SECOND 2026-06-12 session, HEAD ≈ 9d140f254)
 
-Tree clean, `ui_check.sh --full` ALL GREEN (513 lib tests; 5 frozen
-targets; font harness 26/26). Landed that session (don't redo): the
-RgbaColor hard-coding guard + brand-palette fixture (`src/test_palettes.rs`);
+EXECUTED this session: **P0 (all), P1 (all), P2 (all), P4.1, P5.1, P5.2,
+P5.4, P6 (all)** — every checkbox marked in place below with its
+findings. Tree clean, `ui_check.sh --full` ALL GREEN (fresh export +
+stamp in place). REMAINING: **P3** (approval-gated — STOP for Tom before
+starting; retires the text calibrations, re-freezes every text baseline),
+**P4.2–P4.4** (the selector-engine refactor — plan a dedicated session;
+the input inventory is `docs/ui-cascade-passes.md`, incl. the flagged
+root-canvas defaultStyles projection), **P5.3** (approval-gated — needs
+one capture from Tom of a screen whose slots 8/9 differ).
+
+Notable session outcomes a successor should know: the staleness guard
+(P0.2) is live and WILL fire when the test binary is rebuilt >30 min
+after the last export — re-export (~50s) first, that's it working; the
+measurement bank re-measured the arc's numbers with `ui_measure.py`
+(3 dim battery-card values are SOFT, recorded with both numbers);
+`exportNode: false` is the editor-only-node flag (P5.1) — parse
+deactivates the node, resolve deactivates its subtree; AVM1 mining
+(P2) bounded the 44px inset + scrollbar `_SizeRatio` to the C++ side
+and confirmed the CLIK thumb formula equals ours.
+
+Prior session's landed work (don't redo): the RgbaColor hard-coding
+guard + brand-palette fixture (`src/test_palettes.rs`);
 colour tokens aligned to the BB_ColorStyle enum (`src/style/colour_roles.rs`);
 the tag-conditioned TEXT-FORMAT style route (Parent-wrapped entries style
 a textfield's text format; brand `s_*` containers only; `__EntryFontSize`

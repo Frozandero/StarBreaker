@@ -492,7 +492,7 @@ impl ResolvedNode {
 }
 
 /// All the data needed to add one child entity's geometry to a glTF scene.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct UiBinding {
     pub binding_kind: String,
     pub source_entity_name: String,

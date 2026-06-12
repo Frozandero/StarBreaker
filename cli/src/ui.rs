@@ -280,11 +280,16 @@ fn parse_ui_binding(v: &Value) -> Option<UiBinding> {
     })
 }
 
-/// Build a PNG filename for a binding.
+/// Build a PNG filename for a binding. Helper name first; bindings without
+/// one (e.g. the medical bed) fall back to the human-readable content/canvas
+/// record name before the GUID, so replay outputs are findable without a
+/// content-match hunt (ledger item 31).
 fn png_name_for_binding(binding: &UiBinding, mip: u32) -> String {
     let base = binding
         .helper_name
         .as_deref()
+        .or(binding.content_canvas_record_name.as_deref())
+        .or(binding.canvas_record_name.as_deref())
         .or(binding.canvas_guid.as_deref())
         .unwrap_or(&binding.binding_kind);
     // Sanitise to filename-safe characters.
@@ -293,4 +298,33 @@ fn png_name_for_binding(binding: &UiBinding, mip: u32) -> String {
         .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' || c == '.' { c } else { '_' })
         .collect();
     format!("{safe}_TEX{mip}.png")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn binding_with(helper: Option<&str>, content: Option<&str>, guid: Option<&str>) -> UiBinding {
+        let mut binding = UiBinding::default();
+        binding.binding_kind = "physical".to_string();
+        binding.helper_name = helper.map(str::to_owned);
+        binding.content_canvas_record_name = content.map(str::to_owned);
+        binding.canvas_guid = guid.map(str::to_owned);
+        binding
+    }
+
+    #[test]
+    fn png_name_prefers_helper_then_content_record_name_then_guid() {
+        let helper = binding_with(Some("Screen_Annunciator_L"), Some("BuildingBlocks_Canvas.X"), Some("guid-1"));
+        assert_eq!(png_name_for_binding(&helper, 0), "Screen_Annunciator_L_TEX0.png");
+
+        let content = binding_with(None, Some("BuildingBlocks_Canvas.I_Med_MedicalBed_A"), Some("guid-1"));
+        assert_eq!(
+            png_name_for_binding(&content, 0),
+            "BuildingBlocks_Canvas.I_Med_MedicalBed_A_TEX0.png"
+        );
+
+        let guid_only = binding_with(None, None, Some("534bab84-299b"));
+        assert_eq!(png_name_for_binding(&guid_only, 0), "534bab84-299b_TEX0.png");
+    }
 }
