@@ -49,13 +49,16 @@ impl AssetFetcher for EmptyFetcher {
 }
 
 fn stub_style() -> ManufacturerStyle {
+    // Neutral synthetic palette: this example compares the SWF-overlay path
+    // against the plain IR render on a synthetic document — the style values
+    // are incidental, so they stay neutral rather than copying a real brand.
     ManufacturerStyle {
-        name: "drak".to_string(),
-        primary_tint: RgbaColor { r: 240, g: 168, b: 104, a: 255 },
+        name: "synthetic".to_string(),
+        primary_tint: RgbaColor { r: 255, g: 255, b: 255, a: 255 },
         secondary_tint: None,
-        colour_slots: vec![RgbaColor { r: 240, g: 168, b: 104, a: 255 }],
-        background: RgbaColor { r: 48, g: 32, b: 16, a: 255 },
-        backlight: RgbaColor { r: 102, g: 214, b: 255, a: 255 },
+        colour_slots: vec![RgbaColor { r: 255, g: 255, b: 255, a: 255 }],
+        background: RgbaColor { r: 0, g: 0, b: 0, a: 255 },
+        backlight: RgbaColor { r: 255, g: 255, b: 255, a: 255 },
         font_family_hints: Vec::new(),
         crt: CrtParams::default(),
     }
@@ -101,6 +104,7 @@ fn synthetic_hybrid_document() -> UiIrDocument {
             corner_radius: None,
             background_fill_alpha: None,
             background_fill_colour_token: Some("Accent2".to_string()),
+            colour_overlay_enabled: false,
             segmented_fill: None,
         polygon: None,
             border: Some(UiIrBorder {

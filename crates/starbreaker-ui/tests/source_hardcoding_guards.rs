@@ -76,11 +76,15 @@ fn hardcoding_guard_tests_exist_in_core_renderer_files() {
 /// Anything else requires a `hardcoding-guard: synthetic` annotation within
 /// a few lines above the literal, reserved for genuinely arbitrary test
 /// colours that are NOT copies of real game values.
+///
+/// Scans `examples/` as well as `src/`: diagnostic examples carried copied
+/// drak palette values undetected until the examples joined the check
+/// battery (plan P0.3).
 #[test]
 fn rgba_colour_literals_are_not_hardcoded() {
-    let src_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut violations: Vec<String> = Vec::new();
-    let mut stack = vec![src_root];
+    let mut stack = vec![manifest_dir.join("src"), manifest_dir.join("examples")];
     while let Some(dir) = stack.pop() {
         for entry in fs::read_dir(&dir).expect("read src dir").flatten() {
             let path = entry.path();

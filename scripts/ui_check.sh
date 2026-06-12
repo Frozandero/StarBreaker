@@ -2,7 +2,8 @@
 # Standard starbreaker-ui check battery (docs/ui-process-improvements.md item 4).
 #
 # Default (TDD tier) — run after every red/green cycle:
-#   ui lib tests + manifest_live_ir_guard + line_count_guard
+#   example compile check + ui lib tests + manifest_live_ir_guard +
+#   line_count_guard
 #
 # --full (workstream-boundary tier) — adds:
 #   manifest_snapshot_regression + manifest_visual_regression suites,
@@ -30,6 +31,11 @@ for arg in "$@"; do
 done
 
 step() { echo; echo "==> $*"; }
+
+# Examples are diagnostics tooling; a broken example otherwise stays unnoticed
+# until someone reaches for it mid-investigation (ledger item 26).
+step "starbreaker-ui examples compile"
+cargo check -p starbreaker-ui --examples
 
 step "starbreaker-ui lib tests"
 cargo test -p starbreaker-ui --lib

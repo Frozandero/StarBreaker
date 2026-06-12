@@ -121,7 +121,11 @@ Goal: the failure modes that produced wrong verdicts this arc become loud.
       Acceptance: touch the test binary's mtime forward / delete the
       stamp → guard fails with the new message; after a fresh export it
       passes. Cite ledger item 20 in the commit.
-- [ ] **P0.3 Examples join the battery.** Add `cargo check -p
+- [x] (2026-06-12, commit "plan P0.3") **P0.3 Examples join the battery.**
+      Found+fixed in the same change: `render_phase2_comparison.rs` had
+      bit-rotted (missing `colour_overlay_enabled`) AND carried copied drak
+      palette literals — colours neutralised, and the RgbaColor hardcoding
+      guard now scans `examples/` too (the discovered missed category). Add `cargo check -p
       starbreaker-ui --examples` to `scripts/ui_check.sh` (TDD tier,
       before the test runs). Acceptance: introduce a deliberate
       compile error in `crates/starbreaker-ui/examples/dump_ui_ir_targets.rs`,
