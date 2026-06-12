@@ -225,7 +225,10 @@ python. (Ledger items 19, 21, 23.)
 Goal: read the `__Packages.*` AVM1 bytecode for the constants we
 calibrated from captures. (Ledger item 27.)
 
-- [ ] **P2.1 Dumper tool.** New example
+- [x] (2026-06-12, commit "plan P2.1") **P2.1 Dumper tool.**
+      127 classes listed. Grep for `44`: only `gfx.core.UIComponent`
+      `<top>` (3×, inside an 81/81/4/1/44/44/44/4/1/0/0 keycode-style
+      table — not layout); `1192`/`676` appear NOWHERE in the bytecode. New example
       `crates/starbreaker-ui/examples/swf_avm1_dump.rs` (or a
       `starbreaker ui swf-actions` subcommand if the CLI is preferred —
       example is less plumbing). Input: an SWF path. For every
