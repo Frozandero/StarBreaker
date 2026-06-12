@@ -22,6 +22,38 @@ The UI pipeline is split into four stages:
 - Structural snapshot extraction and comparison for representative families.
 - File: `ui_snapshot.rs` and example `phase5_certification_dashboard.rs`.
 
+## Why Ruffle/Flash playback is a dead end here (attempted twice, removed twice)
+
+Recovered from the Copilot-era session logs (2026-05) after the question
+resurfaced; recorded here so a third attempt starts from the evidence:
+
+- The runtime SWFs (`Data/UI/BuildingBlocks/assets/SWF/BuildingBlocks_root.swf`
+  ~113 KB, `Canvas.swf` ~13 KB) are a **draw surface, not authored screens**.
+  `BuildingBlocks_root.swf` carries 127 exports — ALL `__Packages.*`
+  ActionScript classes (`bhvr.*`, `gfx.*`, `caurina.*`); **shapes=0,
+  bitmaps=0, fonts=0** (verified in commit `aa5cb043d`). Opening them in
+  Ruffle shows an **empty stage**: the engine pushes draw commands in from
+  the C++ BuildingBlocks runtime via ExternalInterface at run time.
+- Playing them therefore requires faking the ENGINE side of that interface —
+  i.e. reimplementing BuildingBlocks anyway, with a Flash VM in the middle.
+  "The earlier Phase R / Ruffle plan was based on the wrong mental model";
+  the project rule that followed was "**No Java, no Ruffle** — the earlier
+  additions of these were removed."
+- What DOES work and is already in the tree: Ruffle's **`swf` parser crate**
+  (not the player) powers `starbreaker-swf`'s font extraction —
+  `DefineFont2/3` → TTF, verified **bit-exact** (12 glyphs / 8 fonts, zero
+  differing pixels) — and the hybrid path renders the static authored SWF
+  content that exists (e.g. `TargetStatus.swf` `DefineEditText` HTML, which
+  carries the authoritative typography: `$Furore`, size, letterSpacing).
+- The still-open opportunity is **static ABC/ActionScript MINING** (read the
+  `__Packages.*` bytecode for constants/formulas — the measured 44px
+  content-view inset, the scrollbar slider math, text-scale rules), which is
+  analysis, not playback.
+- Lead from the same logs: CIG licenses Terathon's **Slug** GPU text engine
+  (RTTI/strings via the Ghidra investigation) — the engine's glyph
+  rasterization model may be Slug's, not GFx's; relevant to the residual
+  `SWF_TEXT_RENDER_SIZE_CALIBRATION = 0.84` derivation.
+
 ## Reference: BB_ColorStyle colour roles
 
 BuildingBlocks colour tokens (`BuildingBlocks_ColorStyle.color`, e.g. `Base`,
