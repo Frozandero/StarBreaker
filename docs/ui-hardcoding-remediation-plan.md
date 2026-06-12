@@ -73,8 +73,14 @@ derivations stay open with their criteria recorded in the register:
       FontSizes do) and the authored mainmenu bioc `FontSize=40` entry
       now sizes the banner. Fallback deleted; full battery + font
       harness green, zero drift.
-- [x] `LONG_HEADING1_PROMPT_FONT_SIZE = 28.7` — registered (new entry);
-      same authored-entry derivation attempt queued on the route landing.
+- [x] `LONG_HEADING1_PROMPT_FONT_SIZE = 28.7` — **DELETED** (2026-06-12)
+      along with the ENTIRE hand-tuned per-style rect ladder
+      (`textfield_fallback_font_size_from_signals`: Title4→56, Title3→90,
+      Heading2/3/6 rows…): the empirical audit shows no frozen pin
+      references any rung — the brand table covers the styled cases. Full
+      battery + font harness green. Residual: the caption-pair path's
+      terminal 21.0/18.0 defaults remain (pre-existing, below the ladder)
+      — inventory item for the text-calibration arc.
 - [x] `TEXT_RENDER_SIZE_CALIBRATION = 1.5` /
       `LAYOUT_TEXT_MEASURE_CALIBRATION = 1.5` /
       `SWF_TEXT_RENDER_SIZE_CALIBRATION = 0.84` — registered with the
@@ -139,9 +145,11 @@ behaviour that the cascade should produce instead:
       constant with provenance + drift telemetry).
 - [x] Host-stage text scale already reads the SWF header
       (`pipeline/host_stage.rs` via `SwfAssetLibrary::stage_size`) — no
-      constant there. Remaining: `mfd_view.rs` `HOST_STAGE_SIZE`
-      could read the same header when next touched (noted in its register
-      entry).
+      constant there. `mfd_view.rs` `HOST_STAGE_SIZE`: evaluated
+      2026-06-12 — switching it to the header needs the SwfFetcher plumbed
+      through bb_resolve's deep call chain for zero behavioural change
+      (the measured 44 inset must stay either way); deferred to the next
+      mfd_view-touching change (recorded in its register entry).
 - [x] `ADDITIVE_ALTERNATE_REVERSE_POSITION_PHASE_RATIO = 2/3` —
       registered with retirement criteria (derive the at-rest phase from
       the authored timeline instead of a fixed ratio).

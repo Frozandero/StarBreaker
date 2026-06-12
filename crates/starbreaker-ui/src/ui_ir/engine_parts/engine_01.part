@@ -1019,18 +1019,16 @@ fn build_ui_ir_nodes(
             {
                 UiIrValue::Fixed { value: size * design_text_scale }
             } else {
-                let font_size = textfield_fallback_font_size_from_signals(
-                    node,
-                    layout_rect.h,
-                    text_payload.as_ref().and_then(resolved_text_from_payload),
-                )
-                    .or_else(|| {
-                        node.raw
-                            .get("fontSize")
-                            .or_else(|| node.raw.get("FontSize"))
-                            .and_then(|v| v.as_f64())
-                            .map(|value| value as f32)
-                    })
+                // The hand-tuned per-style rect ladder that used to sit here
+                // (textfield_fallback_font_size_from_signals) was deleted
+                // 2026-06-12: no frozen pin referenced it (remediation plan
+                // Phase 2/3 audit) — the brand table covers the styled cases.
+                let font_size = node
+                    .raw
+                    .get("fontSize")
+                    .or_else(|| node.raw.get("FontSize"))
+                    .and_then(|v| v.as_f64())
+                    .map(|value| value as f32)
                     .unwrap_or_else(|| {
                         if node_type_name(&node.ty)
                             .eq_ignore_ascii_case("BuildingBlocks_ComponentLabelCaptionPair")

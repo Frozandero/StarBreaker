@@ -995,10 +995,6 @@ struct StandardTextStyle {
     fill_colour_rgba: Option<[f32; 4]>,
 }
 
-/// Fallback font size for a long Heading1 prompt that overflows a short field — used
-/// by the secondary/payload `textfield_fallback_font_size_from_signals` ladder.
-const LONG_HEADING1_PROMPT_FONT_SIZE: f32 = 28.7;
-
 fn standard_text_field_widget_path() -> &'static str {
     "file://./../../../../../../../libs/foundry/records/ui/buildingblocks/modularkit/standard/widgets/textfieldwidgetstandard.json"
 }
@@ -1488,33 +1484,6 @@ fn brand_style_font_size(
         .map(|font_size| (font_size * 10.0).round() / 10.0)
 }
 
-fn textfield_fallback_font_size_from_signals(
-    node: &crate::bb_scene::BbNode,
-    node_rect_h: f32,
-    resolved_text: Option<&str>,
-) -> Option<f32> {
-    if !matches!(node.ty, BbNodeType::WidgetTextField) {
-        return None;
-    }
-
-    let style = label_style_name_from_raw(node)?;
-    let text_len = resolved_text
-        .map(|value| value.trim().chars().count())
-        .unwrap_or(0);
-
-    match style.as_str() {
-        "Title4" => Some(56.0),
-        "Title3" => Some(90.0),
-        "Heading3" => Some(21.0),
-        "Heading2" if node_rect_h >= 220.0 && text_len > 0 && text_len <= 4 => Some(90.0),
-        "Heading2" if node_rect_h <= 80.0 => Some(28.0),
-        "Heading2" => Some(18.0),
-        "Heading6" if node_rect_h >= 48.0 => Some(18.0),
-        "Heading1" if text_len >= 32 && node_rect_h <= 120.0 => Some(LONG_HEADING1_PROMPT_FONT_SIZE),
-        "Heading1" => Some(40.0),
-        _ => None,
-    }
-}
 
 fn label_style_name_from_node_or_ancestors(
     node_id: BbNodeId,

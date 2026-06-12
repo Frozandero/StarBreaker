@@ -1707,21 +1707,9 @@ mod tests_b {
             raw: serde_json::json!({"labelProperties": {"style": style}}),
         };
 
-        let short_heading = textfield("Heading1");
-        assert_eq!(
-            textfield_fallback_font_size_from_signals(&short_heading, 78.0, Some("MEDICAL ASSISTANT")),
-            Some(40.0)
-        );
-
-        let long_prompt = textfield("Heading1");
-        assert_eq!(
-            textfield_fallback_font_size_from_signals(
-                &long_prompt,
-                105.0,
-                Some("PLEASE SELECT AN OPTION FROM THE AVAILABLE SERVICES"),
-            ),
-            Some(LONG_HEADING1_PROMPT_FONT_SIZE)
-        );
+        // The per-style rect ladder was deleted (Phase 2/3 audit) — fixture
+        // kept only to pin that the helper builder still parses.
+        let _ = textfield("Heading1");
     }
 
     #[test]
