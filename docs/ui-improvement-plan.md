@@ -1,5 +1,63 @@
 # UI improvement plan — tooling, truth mining, text calibration, cascade unification
 
+## HANDOFF — start here (written 2026-06-12 for a fresh session)
+
+You are working in `/home/tom/projects/scorg_tools/StarBreaker` (branch
+`feature/ui`), crate `starbreaker-ui`. Your job is to execute THIS plan,
+phases top-down (P0 → P6; see §Sequencing for the recommended order and
+which phases may be reordered).
+
+Read, in order, BEFORE any work:
+1. `StarBreaker/AGENTS.md` (note the hard-coding ban + self-correction rule)
+2. `crates/starbreaker-ui/AGENTS.md` (core rules; the guards)
+3. `docs/ui-workflow.md` (THE process: TDD, guard adjudication §5, freezes §7)
+4. `docs/ui-reference.md` (commands, probes, data locations, screen dossier)
+5. This file, fully — including §"Verified facts" (do not re-derive them)
+   and §"Current state" below.
+
+Working discipline:
+- Work one checkbox at a time; mark it `[x] (<date> <commit>)` IN THIS
+  FILE in the same commit as the work. Cite the plan step (e.g. "plan
+  P1.2") in every commit message.
+- `bash scripts/ui_check.sh` green per commit; `--full` at each phase
+  boundary. Renders: `bash scripts/ui_render.sh --helper <name> --scene
+  "/home/tom/projects/scorg_tools/ships/Packages/DRAK Clipper_LOD0_TEX0/scene.json"`
+  (LOD0 = cockpit MFDs; default LOD1 = medical/door/annunciator).
+- A platinum/gold guard tripping is the system working — adjudicate per
+  `docs/ui-workflow.md` §5 against the reference captures in
+  `/home/tom/projects/scorg_tools/reference/in-game/Clipper/`. NEVER
+  compare against `ships/Data/UI/Generated/*.png` without a fresh export
+  first (~50s; the stale-export trap is ledger item 20 — P0 makes it loud).
+- Steps marked APPROVAL-GATED stop and present deltas to Tom; everything
+  else proceeds autonomously.
+- If a step's premise turns out wrong, record what was falsified against
+  the checkbox (a miss is a result), fix the plan text, and continue.
+
+### Current state (end of the 2026-06-12 session, HEAD ≈ 5b0c25435)
+
+Tree clean, `ui_check.sh --full` ALL GREEN (513 lib tests; 5 frozen
+targets; font harness 26/26). Landed that session (don't redo): the
+RgbaColor hard-coding guard + brand-palette fixture (`src/test_palettes.rs`);
+colour tokens aligned to the BB_ColorStyle enum (`src/style/colour_roles.rs`);
+the tag-conditioned TEXT-FORMAT style route (Parent-wrapped entries style
+a textfield's text format; brand `s_*` containers only; `__EntryFontSize`
+outranks the named-style table ONLY via the route — commit 07c821a83);
+the MFD host-path `imageSizePercent` division for ALL size classes
+(commit 15d1e3b99) — power/target text now matches the references; eight
+empirically-deleted hard-coded rules + three proven load-bearing (P4.4/P5
+carry the survivors); audited IR + artifact re-freezes (approver tom).
+Arc history/diagnoses: `docs/ui-clipper-parity-handoff.md` §13–§16;
+process ledger: `docs/ui-process-improvements.md` (Part D = this plan's
+findings).
+
+Open power-screen parity items NOT in this plan (separate parity arc;
+diagnoses in the handoff): P3 separator dots (parked, full diagnosis +
+two blockers in handoff §12), P4 pip slab brightness (rides the gated
+linear-light question, handoff §10), P13 header side bars, P8 footer
+letter pitch. P7 (scrollbar slider width) IS in this plan (P2.2 item b).
+
+---
+
 The implementation plan for `docs/ui-process-improvements.md` Part D (items
 19–27) merged with the architecture recommendations from the 2026-06-12
 review and the three derivation arcs left open by the completed
