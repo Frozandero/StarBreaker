@@ -312,6 +312,24 @@ engine-faithful).
   door artifact moved with it (same white-mask category). Medical
   platinum + target master byte-identical; no IR drift (draw-only).
 
+### 12. Power MFD review round 2 — catalog (2026-06-12, render /tmp/power_v3 vs Screen_Left_Lower_RTT.png)
+
+Review phase per docs/ui-workflow.md §4 (after the body backplate landed —
+overall warmth now matches; crops read with vision at full scale):
+
+| # | region | difference | sev | root-cause hypothesis | decision |
+|---|---|---|---|---|---|
+| P1 | output_card | "2" renders WHITE, reference shows cream/Base like "/ 16" | M | our invented `UI_Generic_Flag_03 -> Foreground` directive in `node_colour_directive_token`; the power card has NO DRAK entry on that flag (only a GRIN geometric entry); medical archaeology: menuoptioncard's flag entries are hover/disabled BG fills, TierLevel carries the flag with NO colour entry — hypothesis: the flag is NOT a colour signal at all; medical white comes from the bioc brand TEXT STYLE, power cream from the drak caption-pair style | FIX FIRST: delete the directive arm (TDD); platinum guards adjudicate the medical side |
+| P2 | output+battery cards | card icons (battery glyphs) dark vs bright orange | M | icon tint token on card icons — check IR tokens (cascade re-land was supposed to tint Accent2/Base) | FIX (investigate with P5) |
+| P3 | both cards | dotted separator (vertical dot column) between icon and title missing | M | separator element not rendered (documented "separator dots") | FIX after P2 |
+| P4 | columns | pip slabs saturated orange vs pale/washed in ref | L-M | pip fill colour role (Bright vs Base) + capture bloom | INVESTIGATE after P1-P3 |
+| P5 | columns bottom | `>>` chevron glyph dark vs bright | M | glyph tint — likely same family as P2 | FIX with P2 |
+| P6 | columns | red pip outlines + white mid-column slab in ref | — | documented mouse-hover capture artifacts (ui-workflow §4.3) | EXCLUDE (explicit) |
+| P7 | below columns | orange scrollbar underline position/length differs | L | scrollbar geometry | DEFER |
+| P8 | footer | letter pitch ~6% (long-standing) | L | global SWF LetterSpacing model | DEFER (documented) |
+
+Order: P1 -> P2+P5 -> P3 -> P4; P6 excluded; P7/P8 deferred.
+
 ## Key mechanisms quick reference
 
 - **Derivation**: `crates/starbreaker-3d/src/ui_pipeline/ship_values.rs`
