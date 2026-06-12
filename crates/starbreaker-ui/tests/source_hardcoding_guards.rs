@@ -153,6 +153,109 @@ fn scan_rgba_literals(path: &Path, source: &str, violations: &mut Vec<String>) {
     }
 }
 
+/// Companion to the `RgbaColor` guard for the `[f32; 4]` / `[u8; 4]`
+/// colour-array shape (`Some([0.0, 113.0 / 255.0, …])`-style pins were this
+/// category). PRODUCTION code only: `#[cfg(test)]` regions are skipped —
+/// arbitrary synthetic arrays are fine in fixtures. A 4-element numeric
+/// array literal on a line that names a colour-ish field (color/colour/
+/// tint/rgba/fill/stroke) must be NEUTRAL (every element 0, 1, 0.0, 1.0 or
+/// 255) or carry the `hardcoding-guard: synthetic` annotation nearby.
+#[test]
+fn colour_array_literals_are_not_hardcoded_in_production() {
+    let src_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut violations: Vec<String> = Vec::new();
+    let mut stack = vec![src_root];
+    while let Some(dir) = stack.pop() {
+        for entry in fs::read_dir(&dir).expect("read src dir").flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+            if !matches!(ext, "rs" | "part" | "inc") {
+                continue;
+            }
+            // Whole-file test modules (src/*/tests*.rs, test support/fixtures)
+            // are exempt — this guard is production-only.
+            let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+            if stem.starts_with("tests") || stem == "test_palettes" {
+                continue;
+            }
+            let source = fs::read_to_string(&path).expect("read source file");
+            scan_colour_array_literals(&path, &strip_cfg_test_regions(&source), &mut violations);
+        }
+    }
+    assert!(
+        violations.is_empty(),
+        "hard-coded colour-array literals found in production code (derive from \
+         the brand palette / parsed data instead):\n{}",
+        violations.join("\n")
+    );
+}
+
+/// Blank out `#[cfg(test)]`-gated regions (the following item's braces),
+/// preserving line numbers so violation reports stay accurate.
+fn strip_cfg_test_regions(source: &str) -> String {
+    let mut out: Vec<String> = Vec::new();
+    let mut depth: i32 = 0;
+    let mut in_test = false;
+    for line in source.lines() {
+        if !in_test && line.trim_start().starts_with("#[cfg(test)]") {
+            in_test = true;
+            depth = 0;
+            out.push(String::new());
+            continue;
+        }
+        if in_test {
+            depth += line.matches('{').count() as i32;
+            depth -= line.matches('}').count() as i32;
+            out.push(String::new());
+            if depth <= 0 && line.contains('}') {
+                in_test = false;
+            }
+            continue;
+        }
+        out.push(line.to_string());
+    }
+    out.join("\n")
+}
+
+fn scan_colour_array_literals(path: &Path, source: &str, violations: &mut Vec<String>) {
+    let colourish = ["color", "colour", "tint", "rgba", "fill", "stroke"];
+    let all_lines: Vec<&str> = source.lines().collect();
+    for (idx, line) in all_lines.iter().enumerate() {
+        let lower = line.to_ascii_lowercase();
+        if !colourish.iter().any(|kw| lower.contains(kw)) {
+            continue;
+        }
+        let Some(open) = line.find('[') else { continue };
+        let Some(close_rel) = line[open..].find(']') else { continue };
+        let inner = &line[open + 1..open + close_rel];
+        let elements: Vec<&str> = inner.split(',').map(str::trim).collect();
+        if elements.len() != 4
+            || !elements
+                .iter()
+                .all(|e| e.chars().next().is_some_and(|c| c.is_ascii_digit()))
+        {
+            continue;
+        }
+        let neutral = |e: &str| matches!(e, "0" | "1" | "0.0" | "1.0" | "255" | "0u8" | "255u8");
+        if elements.iter().all(|e| neutral(e)) {
+            continue;
+        }
+        let annotated = all_lines[..idx]
+            .iter()
+            .rev()
+            .take(3)
+            .any(|l| l.contains("hardcoding-guard: synthetic"));
+        if annotated {
+            continue;
+        }
+        violations.push(format!("{}:{}", path.display(), idx + 1));
+    }
+}
+
 /// The extracted brand-palette fixture must stay in sync with the live
 /// DataCore records: when the decompiled record mirror is present (same
 /// skip-if-missing pattern as `manifest_live_ir_guard`), every fixture slot

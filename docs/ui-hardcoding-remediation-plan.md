@@ -29,33 +29,35 @@ reference-capture verification for any visual change; guard trips follow
   `StyleLoader::neutral_fallback` (white-on-black, no invented palette).
 - `ir_compose` `Accent2` → BB_ColorStyle enum index 5 (was hand-mapped).
 
-## Phase 1 — colour-token slot maps → BB_ColorStyle enum
+## Phase 1 — colour-token slot maps → BB_ColorStyle enum — DONE
 
-The authoritative token→slot mapping is the `BB_ColorStyle` DataCore enum
-(`docs/ui-architecture-runbook.md` §Reference). Two resolvers still carry
-hand-maintained tables that diverge from it:
+Audit: grepping the record mirror for `"color": "<token>"` (2026-06-12)
+finds ONLY the enum members; every hand-mapped alias occurs in no game
+record. Battery: no new frozen-target drift; snapshot + visual suites
+green (the realigned tokens — `Accent2`→5 surface, `Moderate`/`Selected`/
+`Contact*`/`MissionObjectives` now enum-true — appear on no frozen target
+at rest).
 
-- [ ] `src/bb_brand_apply/colors.rs` `color_style_slot_index`: `Accent2 |
-      Positive | Success → Some(1)` (enum: Accent2=5, Positive=1),
-      `Accent3 | Warning → 2`, `Accent4 | Critical | Negative → 3`,
-      `Bright | Base → 0` (enum: Bright=6), plus invented aliases
-      (`Mid`, `Light`, `Highlight`, `Gold`…) that exist in no enum dump.
-      For each divergence: find the reference capture that motivated it
-      (the doc comment cites two verified ones) and either re-verify or
-      align to the enum; delete aliases with no DataCore occurrence
-      (grep the dcb mirror for each token string first).
-- [ ] `src/ir_compose/engine_parts/engine_01.part` `resolve_colour_token`:
-      same audit for the remaining aliases (`accent3/warning/moderate`,
-      `accent5`, `mid`, `light`, `highlight`, `surface`, `bg`,
-      `backlight`); `positive/success` still resolve via a
-      primary-similarity heuristic.
-- [ ] Replace both tables with ONE shared enum-indexed resolver +
-      role-divergence table, each divergence carrying a reference
-      citation (the per-role divergence is real — foreground vs surface —
-      but must be evidence-listed, not open-coded).
-- [ ] Extend the guard: ban literal `[f32; 4]`/`[u8; 4]` COLOUR arrays in
-      production paths (the RgbaColor guard does not see them; e.g. the
-      old `[0.0, 113.0/255.0, …]` test pins were this category).
+- [x] `src/style/colour_roles.rs` — shared `bb_colour_style_enum_index`
+      (the divergence-free enum truth + spot-pin tests).
+- [x] `src/bb_brand_apply/colors.rs` `color_style_slot_index` → enum +
+      TWO reference-cited divergences (`Bright`→0 surface; `Accent1`
+      foreground→0); all dead aliases deleted.
+- [x] `src/ir_compose/engine_parts/engine_01.part`
+      `resolve_colour_token` → enum + cited foreground divergences
+      (`Accent1|Base`→0 with primary fallback; `Background` stays the
+      parsed style field); `positive/success` primary-similarity
+      heuristic deleted; `resolve_surface_colour_token` = enum
+      (`Accent1`→4). Alias-using tests rewritten to real tokens.
+- [x] Guard extended: `colour_array_literals_are_not_hardcoded_in_production`
+      bans non-neutral 4-element colour-array literals on colour-ish
+      production lines (test files/regions exempt; `hardcoding-guard:
+      synthetic` annotation for the diagnostic wireframe grey).
+
+Residual (noted, not regressed): `ManufacturerStyle.background` is parsed
+from slot 8 (`StyleLoader::parse_buildingblocks_style_record`) while the
+enum names slot 9 `Background` — frozen-pinned behaviour; re-derive
+against a reference when a screen discriminates the two.
 
 ## Phase 2 — font sizing calibration constants
 

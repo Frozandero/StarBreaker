@@ -1895,6 +1895,7 @@ fn textfield_auto_intrinsic_override(
 pub fn render_wireframe(scene: &BbScene, target_w: u32, target_h: u32) -> RgbaImage {
     let result = layout(scene, target_w, target_h);
 
+    // hardcoding-guard: synthetic — diagnostic wireframe canvas grey, not game data
     let mut img = RgbaImage::from_pixel(target_w, target_h, Rgba([0x20, 0x20, 0x20, 0xFF]));
 
     for &node_id in &result.draw_order {

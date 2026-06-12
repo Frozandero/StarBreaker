@@ -521,6 +521,19 @@ fn brand_title(slug: &str) -> String {
     }
 }
 
+/// FOREGROUND (glyph/icon) token resolution. The enum truth is
+/// [`crate::style::colour_roles::bb_colour_style_enum_index`]; divergences
+/// here are reference-verified:
+/// - `Accent1`/`Base` → slot 0: foreground accents render the brand's light
+///   primary slot (medical icon overlays), with the primary tint as the
+///   no-palette fallback.
+/// - `Bright` → enum slot 6 (NO divergence — the muted light-grey backing
+///   dim secondary text such as a caption's `Heading6` "200/200" value;
+///   the surface/brand-apply resolver is the one that diverges to 0).
+/// - `Background` resolves the parsed style background field (kept as a
+///   field reference rather than a slot index).
+/// Non-enum aliases were deleted 2026-06-12 — they occur in no DataCore
+/// record (docs/ui-hardcoding-remediation-plan.md Phase 1 audit).
 fn resolve_colour_token(ctx: &ComposeContext<'_>, token: &str) -> Option<[f32; 4]> {
     let key = token.trim().to_ascii_lowercase();
     if key.is_empty() {
@@ -529,69 +542,29 @@ fn resolve_colour_token(ctx: &ComposeContext<'_>, token: &str) -> Option<[f32; 4
 
     match key.as_str() {
         "accent1" | "base" => {
-            style_colour_slot_rgba(ctx, 0).or_else(|| Some(style_primary_rgba_local(ctx)))
-        },
-        // `Bright` is the muted light-grey role (BB_ColorStyle index 6), distinct
-        // from `Base`/`Accent1`. It backs dim secondary text such as a caption's
-        // value (e.g. the `Heading6` "200/200" under a `Heading3` label).
-        "bright" => style_colour_slot_rgba(ctx, 6),
-        // `Accent2` is BB_ColorStyle enum index 5 (authoritative order above):
-        // the target screen's `NO TARGET` carries the drak brand entry
-        // `Base/Bright Elements` FillColor=Accent2 and renders s_drak_hud
-        // slot 5 (222,88,3) in the in-game capture — identical to the brand
-        // H1 deep orange, NOT the light slot-0/2 orange.
-        "accent2" => style_colour_slot_rgba(ctx, 5),
-        "positive" | "success" => {
-            let primary = style_primary_rgba_local(ctx);
-            if let Some(slot_2) = style_colour_slot_rgba(ctx, 2)
-                && rgba4_near(slot_2, primary)
-            {
-                return Some(slot_2);
-            }
-            style_colour_slot_rgba(ctx, 1).or_else(|| Some(primary))
-        },
-        // `Moderate` is BB_ColorStyle index 2 (the authoritative enum order);
-        // `Accent3`/`Warning` are the hand-mapped aliases of the same slot.
-        "accent3" | "warning" | "moderate" => style_colour_slot_rgba(ctx, 2),
-        "accent4" | "critical" | "negative" => style_colour_slot_rgba(ctx, 3),
-        "accent5" | "contactunknown" => style_colour_slot_rgba(ctx, 4),
-        "mid" | "contactneutral" => style_colour_slot_rgba(ctx, 5),
-        "light" => style_colour_slot_rgba(ctx, 6),
-        // `Disabled` is the near-black surface slot (BB_ColorStyle index 8),
-        // not the light slot 6 — same divergence the brand-apply resolver
-        // documents (the power screen's unpowered pip hitzones pin it).
-        "disabled" => style_colour_slot_rgba(ctx, 8),
-        "highlight" | "contactpositiverep" => style_colour_slot_rgba(ctx, 7),
-        "primarytext" | "text" | "foreground" | "fg" | "white" => Some([1.0, 1.0, 1.0, 1.0]),
-        // BB_ColorStyle enum index 16 — the design system's generic icon
-        // colour (the power system/card icons; HUD records author
-        // `FillColor=MissionObjectives` for their generic Icon Styles).
-        "missionobjectives" => style_colour_slot_rgba(ctx, 16),
-        "background" => Some([
-            ctx.style.background.r as f32 / 255.0,
-            ctx.style.background.g as f32 / 255.0,
-            ctx.style.background.b as f32 / 255.0,
-            ctx.style.background.a as f32 / 255.0,
-        ]),
-        "secondary" => ctx.style.secondary_tint.as_ref().map(|colour| {
-            [
-                colour.r as f32 / 255.0,
-                colour.g as f32 / 255.0,
-                colour.b as f32 / 255.0,
-                colour.a as f32 / 255.0,
-            ]
-        }),
-        "surface" => style_colour_slot_rgba(ctx, 8),
-        "bg" => style_colour_slot_rgba(ctx, 9),
-        "backlight" | "contactagressive" | "contactaggressive" => style_colour_slot_rgba(ctx, 11),
-        _ => None,
+            return style_colour_slot_rgba(ctx, 0).or_else(|| Some(style_primary_rgba_local(ctx)));
+        }
+        "background" => {
+            return Some([
+                ctx.style.background.r as f32 / 255.0,
+                ctx.style.background.g as f32 / 255.0,
+                ctx.style.background.b as f32 / 255.0,
+                ctx.style.background.a as f32 / 255.0,
+            ]);
+        }
+        _ => {}
     }
+    crate::style::colour_roles::bb_colour_style_enum_index(&key)
+        .and_then(|slot| style_colour_slot_rgba(ctx, slot))
 }
 
+/// SURFACE (shape-fill) token resolution: pure enum indexing — `Accent1`
+/// keeps its enum surface slot 4 (the medical fingerprint's darker blue),
+/// unlike the foreground path above.
 fn resolve_surface_colour_token(ctx: &ComposeContext<'_>, token: &str) -> Option<[f32; 4]> {
     let key = token.trim().to_ascii_lowercase();
     match key.as_str() {
-        "accent1" | "accent5" | "contactunknown" => style_colour_slot_rgba(ctx, 4),
+        "accent1" => style_colour_slot_rgba(ctx, 4),
         _ => resolve_colour_token(ctx, token),
     }
 }
@@ -617,12 +590,6 @@ fn style_primary_rgba_local(ctx: &ComposeContext<'_>) -> [f32; 4] {
     ]
 }
 
-fn rgba4_near(left: [f32; 4], right: [f32; 4]) -> bool {
-    (left[0] - right[0]).abs() < 0.0001
-        && (left[1] - right[1]).abs() < 0.0001
-        && (left[2] - right[2]).abs() < 0.0001
-        && (left[3] - right[3]).abs() < 0.0001
-}
 
 fn custom_shape_fill_override(node: &UiIrNode, ctx: &ComposeContext<'_>) -> Option<[f32; 4]> {
     let render_shape = node

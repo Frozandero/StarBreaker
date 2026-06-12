@@ -1,5 +1,6 @@
 //! Manufacturer style loader: tint, CRT parameters, and palette hints.
 
+pub(crate) mod colour_roles;
 mod loader;
 mod parse;
 #[cfg(test)]

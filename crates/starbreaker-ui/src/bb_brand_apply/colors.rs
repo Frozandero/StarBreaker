@@ -119,46 +119,30 @@ fn parse_named_color(
 /// iterating `Database::{enum_defs, enum_options, resolve_string2}` and printing
 /// the enum whose options contain `Base`/`Bright`/`Accent1`.
 ///
-/// ## Why this mapping is NOT pure enum-indexing
-/// The engine does not render every role at its raw enum index in every context:
-/// the same token resolves to different palette slots depending on whether it
-/// paints a *foreground* element (icon/text/glyph) or a *surface* (filled shape /
-/// chrome) — see [`ColorStyleRole`] and [`color_style_role_for_field`]. The
-/// clearest case is `Accent1`: foreground → the light slot 0, surface → the
-/// darker slot 4 (e.g. the medical fingerprint). This resolver is therefore a
-/// role-aware approximation reverse-engineered against in-game references, not a
-/// 1:1 copy of the enum. When extending it, verify against a reference capture
-/// per role rather than assuming `slot == enum index`. Two deliberate divergences:
-/// (1) `Bright`'s enum index is 6, but in this surface/brand-apply resolver it
-/// maps to the brand's primary bright slot 0 — verified in-game (medical `Bright`
-/// custom-shapes render s_bioc slot-0 light-blue; the MFD footer's `Bright`
-/// selected-name renders drak slot-0 orange, matching the reference). The
-/// compose-time *text* path (`ir_compose` `resolve_colour_token`) resolves
-/// `Bright`→6 for glyph fills. (2) `Disabled` is the near-black index 8 (the MFD
-/// footer bar's `BackgroundColor = Disabled`), not the light slot it was
-/// previously lumped onto.
+/// ## Role divergences (each reference-verified; everything else is the enum)
+/// The shared enum truth lives in [`crate::style::colour_roles`]; this
+/// surface/brand-apply resolver diverges ONLY where a reference capture
+/// proves the engine does:
+/// 1. `Bright` → slot 0 (enum 6): medical `Bright` custom-shapes render
+///    s_bioc slot-0 light-blue and the MFD footer's `Bright` selected-name
+///    renders drak slot-0 orange. The compose-time *text* path
+///    (`ir_compose::resolve_colour_token`) resolves `Bright`→6 for glyphs.
+/// 2. `Accent1` foreground → slot 0 (enum 4): icon/image colour overlays
+///    read as foreground (light blue), while custom-shape fills keep the
+///    enum surface slot 4 (the medical fingerprint's darker blue) — see
+///    [`ColorStyleRole`] / [`color_style_role_for_field`].
+///
+/// Non-enum aliases (`Accent3..5`, `Mid`, `Light`, `Gold`, `Surface`, …)
+/// were deleted 2026-06-12: they occur in no DataCore record
+/// (docs/ui-hardcoding-remediation-plan.md Phase 1 audit).
 fn color_style_slot_index(name: &str, role: ColorStyleRole) -> Option<usize> {
-    match name {
-        "Bright" | "Base" => Some(0),
-        "Accent1" if role == ColorStyleRole::Foreground => Some(0),
-        "Accent2" | "Positive" | "Success" => Some(1),
-        "Accent3" | "Warning" => Some(2),
-        "Accent4" | "Critical" | "Negative" => Some(3),
-        "Accent1" | "Accent5" | "ContactUnknown" => Some(4),
-        "Mid" | "ContactNeutral" => Some(5),
-        "Light" => Some(6),
-        "Highlight" | "ContactPositiveRep" => Some(7),
-        "Surface" | "Disabled" => Some(8),
-        "BG" | "Background" => Some(9),
-        "FG" | "Foreground" => Some(10),
-        "Backlight" | "ContactAgressive" | "ContactAggressive" => Some(11),
-        "PositiveState" => Some(12),
-        "WarningState" => Some(13),
-        "CriticalState" => Some(14),
-        "Text" => Some(15),
-        "Gold" | "Special" => Some(16),
-        _ => None,
+    if name.eq_ignore_ascii_case("Bright") {
+        return Some(0);
     }
+    if name.eq_ignore_ascii_case("Accent1") && role == ColorStyleRole::Foreground {
+        return Some(0);
+    }
+    crate::style::colour_roles::bb_colour_style_enum_index(name)
 }
 
 pub(super) fn color_style_token(value: &serde_json::Value) -> Option<&str> {
