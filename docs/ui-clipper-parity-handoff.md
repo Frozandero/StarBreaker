@@ -393,6 +393,116 @@ session's transcript; all pieces below were verified):
 NEXT after P3: P4 pip slab brightness (Bright vs washed reference —
 bloom caveat), P7 scrollbar geometry, P8 letterspacing.
 
+### 13. Power review round 3 — session 2026-06-12 (user symptom list)
+
+**Committed:** `a30761f20` — P9: per-axis Overflow clip. `clip_rect_for_node`
+hard-clips only axes whose `fade<Axis>` flag is FALSE (the power Scrollview
+authors Clip + fadeXAxis=true/fadeYAxis=false; the in-game capture shows the
+col-3 temp gauge complete, unfaded, past the viewport edge). Spec test
+`compile_ir_clip_rect_skips_fade_axes`. Diff confined to the gauge box.
+
+**UNCOMMITTED working tree** (lib tests 512 green; live IR guard trips — see
+below): the tag-conditioned text-format mechanism, discovered via the power
+font/colour symptoms and verified numerically against the reference captures:
+
+- **Mechanism (landed in tree):** a style entry whose conditions are
+  `Parent(...)`-wrapped selects a `WidgetTextField`'s IMPLICIT TEXT-FORMAT
+  CHILD — i.e. it styles the text of fields whose OWN tags satisfy the
+  unwrapped conditions. `entry_matches_text_format` +
+  `apply_entry_text_format_modifiers` (bb_brand_apply): only text-format
+  modifiers apply (FontSize, AutoFontSize, Fill/StrokeColor, Letter/Line
+  spacing, font record); `Type(...)` never matches (footer counterexample).
+  Route gated to MANUFACTURER BRAND containers (`s_*` identifiers):
+  embedded = state sheets ('Bright Elements', 'Textfield_BrightColor_Override'
+  — at-rest refs show neither), shared = generic sheets (mfd_g_emissions
+  'Header Text' Accent1 does NOT show on emitted values in-game).
+- **Size table sources (all verified vs ref caps):** M_Eng_MFDContent drak
+  brand container: Size_1→45 / Size_2→45 / Size_3→40 / Tertiary→40
+  (+AutoFontSize=false); gen_mc_s_poweroutputinfo drak: Parent(Bright)→70
+  ("2"), Parent(Text_Header)→40 ("/16"); M_Eng drak 'Bright Orange Objects'
+  Parent(Text_Body ∧ ¬EmissionAbbreviation) → FillColor Base — THE user's
+  "lighter orange" for 294.1/0.0 ambient AND battery OFFLINE/0/0 (IR/EM/CS
+  excluded by the NotTag ⇒ they keep the H1 deep orange = "the orange 3.5K
+  has"). `__EntryFontSize` marker (modifiers_number.rs) ranks entry sizes
+  ABOVE the named-style table (engine: instance entries override standard
+  styling; drak H1 standard = 60 buried the entry 40 otherwise).
+- **Entry/inline sizes are VERBATIM (styled), not boosted**: medical mainmenu
+  banner entry FontSize 40 renders cap 25px ≈ ref 27px; the power texts'
+  apparent ×4/3 is the MFD CONTENT canvas text scale (see open items).
+- **Accent2 = BB enum index 5** in compose `resolve_colour_token` (was
+  hand-mapped to 1/2): NO TARGET authors `Base/Bright Elements`
+  FillColor=Accent2 and renders s_drak_hud slot 5 (222,88,3) — pixel-identical
+  to the old frozen rgba, token-only drift. Old pin updated
+  (`color_style_tokens_resolve_to_palette_slots`).
+- **Deferred late-state passes** now carry their ORIGIN container identifier
+  (brand `s_*` vs "embeddedStyles") so state-deferred entries keep
+  container-class semantics (collect_late_state_style_entries signature).
+- Probe upgraded: `BB_A3_STYLE_PROBE=1` now prints `text_format=[...]`.
+
+**Guard adjudications (NOT yet re-frozen):**
+- `ui_target_a` 2147483698 banner tint Base→**Bright**: CORRECT — photometric
+  vs medical1 (banner R-norm (1,1.12,1.26) ≈ bioc Bright(197,200,216) under
+  the capture's cast; bioc Base(115,198,254) would read (1,~1.9,~2.7) like the
+  lower-left text anchor). Re-freeze when tree settles.
+- `clipper_target_master` 31 NO TARGET token Base→**Accent2** + rgba
+  Some→None: pixel-identical (222,88,3); authored-entry-driven token.
+  Re-freeze.
+- `ui_target_a` 2147483697 **T3 tier label font 90→40 = REGRESSION, OPEN**:
+  ref shows T3 large (≈ frozen). Suspect = mainmenu bioc 'New Style'
+  (Parent(Tag 0964d22f…) → FontSize 40 + FillColor Bright) reaching T3 via
+  the route — need to identify the tag (0964d22f-3a22-4052-92e4-eaf77f975423)
+  and the discriminator separating the banner (takes 40 ✓) from T3 (must
+  not). DO NOT freeze until resolved.
+
+**Power render state** (/tmp/power_v8 was the boosted variant; with verbatim
+sizes expect OUTPUT cap 40 ✓, but emissions/"2"//16 at ~40/93/53×(3/4) until
+the content-scale item lands):
+
+| sym | status |
+|---|---|
+| 1 gauge clip | FIXED (committed) |
+| 2 header sizes | mechanism landed; final size needs content text scale ×4/3 |
+| 3 ambient lighter | FIXED in tree ('Bright Orange Objects') |
+| 4 IR/EM/CS colour | OPEN — `Icon Color` (shared mfd_g_emissions, normal match) recolours the abbreviation to slot-0 Base; in-game keeps H1 deep orange. Evidence (incl. footer `SelectedName` comment in conditions.rs) suggests shared-record colour entries don't restyle textfield text — needs its own scoped rule + battery adjudication |
+| 5 side bars red | NOT STARTED (likely Accent1=(243,80,77) enum idx 4) |
+| 6 titles 130% | FIXED in tree (inline 30 verbatim ... ×content scale → 40) — verify after content-scale |
+| 7a/b "2"/"16" | entry sizes land; exact match rides content scale |
+| 7c separator dots | PARKED (P3 diagnosis §12) |
+| 8 battery texts | colours FIXED in tree; sizes ride content scale; OFFLINE cap ref 43 vs predicted 53 unexplained (band-fit?) |
+
+**OPEN: MFD content text scale ×4/3.** Independent evidence: the ºC glyph
+(non-entry, authored 26) renders h=27 vs ref 37 (×1.37). Frame texts (footer)
+are correct at ×1.667, so the CONTENT canvas needs ×2.222 ≈ 1.667×4/3.
+Candidate structural sources (UNVERIFIED): 1200/540 (target_h over
+0.9-scaled content stage height — canvas_LandscapeMFDView authors h=0.9), or
+the root-SWF imageSizePercent applying once at the host-stage conversion.
+`design_text_scale` is computed in `pipeline/mod.rs:330`.
+
+**P7 scrollbar slider** (~393 vs ref ~432) and **P9-residual** (in-game
+viewport may genuinely differ; the slider-width math suggested
+0.7×padding-box, but the card-width/scroll-position evidence is
+capture-skew-limited) — both documented in this session's analysis; defer.
+
+### 14. USER PRIORITY ITEMS 2026-06-12 (tasks #8–#11) — IN PROGRESS, DO FIRST
+
+Tom found hard-coded `RgbaColor { r:.., g:.., b:.. }` literals (e.g.
+`ir_compose/engine_parts/engine_02.part:725` — `r:115,g:198,b:254` bioc Base
+in a test fixture; this session added more such TEST fixtures incl.
+`r:222,g:88,b:3`). Ordered work, before continuing the power arc:
+1. Update the docs so the anti-hard-coding rule is SELF-CORRECTING (an agent
+   finding existing hard-coded values must replace/flag them, never extend
+   the pattern; if the ban's scope wasn't obvious, make it so).
+2. Crate-wide guard test detecting literal `RgbaColor{..}` construction in
+   starbreaker-ui production code (alongside existing anti-hardcoding tests
+   / `check_ui_hardcoding.sh`); tests exempt per Tom's item 4 — but his cited
+   example IS in a test fixture, so clarify scope with the doc update (test
+   fixtures that encode REAL palette values should derive them from game
+   data too, or be clearly synthetic).
+3. Replace all production hard-coded colours with game-data lookups
+   (DataCore `colorStyles` etc.).
+4. Scan the crate for remaining hard-coding (tests exempt) → phased plan doc
+   with actionable todos.
+
 ## Key mechanisms quick reference
 
 - **Derivation**: `crates/starbreaker-3d/src/ui_pipeline/ship_values.rs`
