@@ -215,8 +215,10 @@ python. (Ledger items 19, 21, 23.)
       FIRST (note this in `docs/ui-workflow.md` §4). No validator needed
       (references can't be machine-checked) — the notes file carries the
       audit trail.
-- [ ] **P1.5 Battery green** + docs_reference_guard passes (new scripts
-      are cited in docs, so the guard must see them exist).
+- [x] (2026-06-12, commit "plan P1.5") **P1.5 Battery green** + docs_reference_guard passes (new scripts
+      are cited in docs, so the guard must see them exist). Fresh release
+      build + export first (the P0.2 staleness window had lapsed — the
+      guard working as designed); `--full` ALL GREEN.
 
 ## Phase 2 — AVM1 truth mining (replace measured framework constants)
 
