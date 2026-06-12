@@ -490,6 +490,21 @@ pub fn compile_ui_ir_from_scene_with_animation_sample(
     text_measure: Option<&dyn DrawTextMeasure>,
 ) -> UiIrDocument {
     let mut layout_scene = scene.clone();
+    // Annunciator 25px edge frame — measured engine pin (fallback register).
+    //
+    // Derivation attempt exhausted (plan P5.2, 2026-06-12): the value is in
+    // NO authored source — the content canvas authors padding 15 TRBL
+    // (h_eng_annunciator.json) with no drak brand override (drak's brand
+    // entry is only a background-image swap; mrai/rsi DO author
+    // Root_Annunciator_Items Padding* overrides via brand entries — none of
+    // them 25 either), M_Physical_Screen frames two zero-padding
+    // full-percent nodes, staticVariables are null on all three records,
+    // and the full BuildingBlocks_root.swf AVM1 dump has no 25-valued
+    // pushes (examples/swf_avm1_dump.rs). Like the MFD 44px content-view
+    // inset this is a C++-host-side placement; the capture-measured insets
+    // (~33/28/17px under skew) bracket the tuned uniform 25. Replace only
+    // if an engine-side data source ever surfaces; the brand Padding*
+    // overrides above become relevant when mrai/rsi ships onboard.
     if let Some(root_annunciator_items) = layout_scene
         .nodes
         .values_mut()

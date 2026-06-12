@@ -403,11 +403,20 @@ surviving name-keyed rules and ledger item 17 land here.)
       animated-but-visible nodes (suspect: additive looped timelines that
       START from alpha 0 / off-screen). Replace the name match with the
       data property; battery adjudicates.
-- [ ] **P5.2 Annunciator 25px frame** (`root_annunciator_items`): check
+- [x] (2026-06-12, commit "plan P5.2") **P5.2 Annunciator 25px frame** (`root_annunciator_items`): check
       the Phase 2 AVM1 dump first (the frame inset may be host-side like
       the 44px); else search the annunciator canvas/standards for the
       authored padding the engine applies. Replace name+magic-number;
       battery adjudicates (gold pins).
+      PREMISE FALSIFIED — no authored source exists to replace it with:
+      AVM1 has no 25-pushes; the canvas authors padding 15 TRBL with NO
+      drak override (drak's brand entry = background swap only);
+      M_Physical_Screen = two zero-padding percent nodes; staticVariables
+      null. DISCOVERY: mrai/rsi DO author `Root_Annunciator_Items`
+      Padding* overrides via brand entries (12/12/2/8 and 15/5/0/5) —
+      cascade-relevant when those ships onboard. The 25 is C++-host-side
+      (44px-inset family): provenance comment added, pin REGISTERED in
+      the fallback register (it was unregistered). Rule unchanged.
 - [ ] **P5.3 Background slot 8 vs 9** (`StyleLoader::
       parse_buildingblocks_style_record` uses slot 8 for `background`;
       the enum names slot 9): ASK TOM for one capture of a screen whose
