@@ -861,22 +861,35 @@ fn build_ui_ir_nodes(
         );
         let state_driven_image_activation = !node.is_active
             && matches!(node.ty, BbNodeType::WidgetImage)
-            && if is_annunciator_gradient_image(node) {
-                should_activate_annunciator_gradient(node, &resolved_style_tags)
-            } else {
-                resolved_style_tags.iter().any(|tag| {
-                    tag.tag_name
-                        .as_deref()
-                        .is_some_and(|name| {
-                            let trimmed = name.trim();
-                            (trimmed.starts_with("State") && !trimmed.eq_ignore_ascii_case("StateCool"))
-                                || trimmed.eq_ignore_ascii_case("Flashing")
-                        })
-                })
-            };
+            && resolved_style_tags.iter().any(|tag| {
+                tag.tag_name
+                    .as_deref()
+                    .is_some_and(|name| {
+                        let trimmed = name.trim();
+                        (trimmed.starts_with("State") && !trimmed.eq_ignore_ascii_case("StateCool"))
+                            || trimmed.eq_ignore_ascii_case("Flashing")
+                    })
+            });
+                    // A brand entry that REPLACES the image (styled raw
+                    // `ImagePath` differing from the authored `imagePath`) is
+                    // real screen art, not a placeholder: the annunciator's
+                    // `image_BG` swaps to `DRAK_Background_anunciators.tif`
+                    // — the warm backplate the reference shows — and must
+                    // not be suppressed.
+                    let has_styled_image_override = node
+                        .raw
+                        .get("ImagePath")
+                        .and_then(|v| v.as_str())
+                        .is_some_and(|styled| {
+                            node.raw
+                                .get("imagePath")
+                                .and_then(|v| v.as_str())
+                                .is_none_or(|authored| !styled.eq_ignore_ascii_case(authored))
+                        });
                     let suppress_placeholder_background_image = has_selected_swf_source
                         && matches!(renderer_hint, UiRendererHint::Bb)
                         && matches!(node.ty, BbNodeType::WidgetImage)
+                        && !has_styled_image_override
                         && resolved_style_tags.iter().any(|tag| {
                         tag.tag_name
                             .as_deref()
@@ -1175,15 +1188,6 @@ fn build_ui_ir_nodes(
             .and_then(|style| style.alpha_override)
             .unwrap_or_else(|| effective_alpha_for_node(id, node, scene, animation_sample_percent));
         let svg_fill_overlay_alpha = svg_fill_overlay_alpha_from_raw(&node.raw);
-        let annunciator_gradient_tint = annunciator_gradient_tint_token(
-            scene,
-            node,
-            &binding_resolver,
-            defaults,
-            &resolved_style_tags,
-        );
-        let is_wpn_annunciator_gradient = is_annunciator_gradient_image(node)
-            && annunciator_slot_label_matches(node, scene, &binding_resolver, defaults, "WPN");
         let mut alpha = alpha_base
             * separator_style
                 .as_ref()
@@ -1199,20 +1203,7 @@ fn build_ui_ir_nodes(
         });
 
         let allow_background_fill = node_background_enabled(node);
-        let background_fill_colour_token = background_fill_colour_token_from_raw(&node.raw, allow_background_fill, allow_background_fill)
-            .or_else(|| {
-                background_fill_colour_token_from_style_tags(&resolved_style_tags, &node.ty)
-            })
-            .or_else(|| {
-                annunciator_inner_item_fill_token(
-                    scene,
-                    node,
-                    &node.ty,
-                    &binding_resolver,
-                    defaults,
-                    &resolved_style_tags,
-                )
-            });
+        let background_fill_colour_token = background_fill_colour_token_from_raw(&node.raw, allow_background_fill, allow_background_fill);
         let background_fill_alpha = background_fill_alpha_from_raw(&node.raw, allow_background_fill, allow_background_fill);
         let mut background_fill_colour = allow_background_fill
             .then(|| {
@@ -1227,50 +1218,11 @@ fn build_ui_ir_nodes(
         {
             background_fill_colour = None;
         }
-        if stroke_colour.is_none()
-            && stroke_colour_token.is_none()
-            && let Some((outline_token, outline_extent)) = annunciator_outline_stroke_from_background_token(
-                &resolved_style_tags,
-                &node.ty,
-                background_fill_colour_token.as_deref(),
-            )
-        {
-            stroke_colour_token = Some(outline_token);
-            if stroke_extent.unwrap_or(0.0) <= 0.0 {
-                stroke_extent = Some(outline_extent);
-            }
-        }
         let colour_blend_mode = separator_colour_blend_mode_from_raw(node).or_else(|| {
             background_colour_blend_mode_from_raw(node, background_fill_colour_token.as_deref(), allow_background_fill)
         })
         .or_else(|| custom_shape_colour_blend_mode_from_style_tags(&resolved_style_tags, &node.ty));
-        let mut border = if should_suppress_annunciator_border(&resolved_style_tags, &node.ty) {
-            None
-        } else {
-            let base_border = border_from_node(node, design_text_scale);
-            if base_border
-                .as_ref()
-                .is_some_and(border_has_visible_semantics)
-            {
-                base_border
-            } else {
-                border_from_style_tags(scene, node, &resolved_style_tags, &node.ty)
-                    .or_else(|| {
-                        border_from_annunciator_background_token(
-                            &resolved_style_tags,
-                            &node.ty,
-                            background_fill_colour_token.as_deref(),
-                        )
-                    })
-                    .or_else(|| border_from_annunciator_layout_pattern(scene, node, &node.ty))
-                    .or(base_border)
-            }
-        };
-        if border.is_some()
-            && annunciator_slot_label_matches(node, scene, &binding_resolver, defaults, "COOL")
-        {
-            border = None;
-        }
+        let border = border_from_node(node, design_text_scale);
         let overflow_mode = overflow_mode_from_raw(&node.raw);
 
         let mut icon_tint_colour = node
@@ -1279,27 +1231,11 @@ fn build_ui_ir_nodes(
             .and_then(|i| i.tint_colour)
             .or_else(|| svg_fill_overlay_colour_from_raw(&node.raw))
             .or_else(|| custom_shape.as_ref().and_then(|_| fill_colour_from_raw_for_text(&node.raw)));
-        let icon_tint_colour_token = if is_annunciator_gradient_image(node) {
-            annunciator_gradient_tint.clone()
-        } else {
-            icon_tint_colour_token_from_raw(
-                &node.raw,
-                true,
-            )
-            .or_else(|| icon_tint_colour_token_from_style_tags(&own_style_tags, &node.ty))
-        };
-        if is_annunciator_gradient_image(node) && icon_tint_colour_token.is_some() {
-            icon_tint_colour = None;
-            if is_wpn_annunciator_gradient {
-                alpha = 0.0;
-            } else {
-                alpha = alpha.max(1.0);
-            }
-        } else if is_annunciator_gradient_image(node)
-            && (node.is_active || state_driven_image_activation)
-        {
-            alpha = alpha.max(1.0);
-        }
+        let icon_tint_colour_token = icon_tint_colour_token_from_raw(
+            &node.raw,
+            true,
+        )
+        .or_else(|| icon_tint_colour_token_from_style_tags(&own_style_tags, &node.ty));
 
     {
         nodes.push(UiIrNode {
@@ -1592,30 +1528,35 @@ fn overflow_mode_from_raw(raw: &serde_json::Value) -> Option<String> {
 pub(crate) fn collect_node_asset_refs(node: &BbNode) -> Vec<String> {
     let mut asset_refs = Vec::new();
 
-    push_asset_ref(
-        &mut asset_refs,
-        node.icon
-            .as_ref()
-            .and_then(|icon| icon.image_record.as_deref()),
-    );
+    // A styled `ImagePath` (PascalCase = written by a style modifier, e.g. the
+    // DRAK annunciator backplate swap) overrides the authored image source; an
+    // explicitly empty styled path clears it (the ARGO annunciator background
+    // pairs `ImagePath: ""` with a flat `FillColor`).
+    let styled_image = node.raw.get("ImagePath").and_then(|value| value.as_str());
+    let styled_clears_image = styled_image.is_some_and(|value| value.trim().is_empty());
+    push_asset_ref(&mut asset_refs, styled_image);
+    if !styled_clears_image {
+        push_asset_ref(
+            &mut asset_refs,
+            node.icon
+                .as_ref()
+                .and_then(|icon| icon.image_record.as_deref()),
+        );
+    }
     push_asset_ref(
         &mut asset_refs,
         node.background
             .as_ref()
             .and_then(|background| background.svg_fill_path.as_deref()),
     );
-    push_asset_ref(
-        &mut asset_refs,
-        node.raw
-            .get("ImagePath")
-            .and_then(|value| value.as_str()),
-    );
-    push_asset_ref(
-        &mut asset_refs,
-        node.raw
-            .get("imagePath")
-            .and_then(|value| value.as_str()),
-    );
+    if !styled_clears_image {
+        push_asset_ref(
+            &mut asset_refs,
+            node.raw
+                .get("imagePath")
+                .and_then(|value| value.as_str()),
+        );
+    }
     push_asset_ref(
         &mut asset_refs,
         node.raw
@@ -1882,22 +1823,6 @@ fn background_fill_colour_token_from_raw(
         })
 }
 
-fn background_fill_colour_token_from_style_tags(
-    resolved_style_tags: &[UiIrStyleTag],
-    node_type: &BbNodeType,
-) -> Option<String> {
-    if !matches!(node_type, BbNodeType::DisplayWidget) {
-        return None;
-    }
-
-    let has_annunciator_screen = has_annunciator_screen_tag(resolved_style_tags);
-    if !has_annunciator_screen {
-        return None;
-    }
-
-    None
-}
-
 fn icon_tint_colour_token_from_style_tags(
     resolved_style_tags: &[UiIrStyleTag],
     node_type: &BbNodeType,
@@ -1928,144 +1853,6 @@ fn icon_tint_colour_token_from_style_tags(
     })
 }
 
-fn border_from_style_tags(
-    scene: &BbScene,
-    node: &BbNode,
-    resolved_style_tags: &[UiIrStyleTag],
-    node_type: &BbNodeType,
-) -> Option<UiIrBorder> {
-    if !matches!(node_type, BbNodeType::DisplayWidget) {
-        return None;
-    }
-
-    if is_annunciator_inner_item(scene, node, node_type) {
-        return None;
-    }
-
-    let has_item = has_annunciator_item_tag(resolved_style_tags);
-    if !has_item {
-        return None;
-    }
-
-    let side = UiIrBorderSide {
-        width: 2.0,
-        colour: None,
-        colour_token: Some("Accent3".to_string()),
-    };
-
-    Some(UiIrBorder {
-        top: side.clone(),
-        right: side.clone(),
-        bottom: side.clone(),
-        left: side,
-    })
-}
-
-fn border_from_annunciator_background_token(
-    resolved_style_tags: &[UiIrStyleTag],
-    node_type: &BbNodeType,
-    background_fill_colour_token: Option<&str>,
-) -> Option<UiIrBorder> {
-    if !matches!(node_type, BbNodeType::DisplayWidget) {
-        return None;
-    }
-
-    let has_annunciator_screen = has_annunciator_screen_tag(resolved_style_tags);
-    if !has_annunciator_screen {
-        return None;
-    }
-
-    let token = background_fill_colour_token
-        .map(str::trim)
-        .filter(|value| !value.is_empty())?;
-    let token = match token {
-        "Accent2" => "Accent3",
-        "Accent4" => "Accent4",
-        _ => return None,
-    };
-
-    let side = UiIrBorderSide {
-        width: 2.0,
-        colour: None,
-        colour_token: Some(token.to_string()),
-    };
-
-    Some(UiIrBorder {
-        top: side.clone(),
-        right: side.clone(),
-        bottom: side.clone(),
-        left: side,
-    })
-}
-
-fn border_from_annunciator_layout_pattern(
-    scene: &BbScene,
-    node: &BbNode,
-    node_type: &BbNodeType,
-) -> Option<UiIrBorder> {
-    if !matches!(node_type, BbNodeType::DisplayWidget) {
-        return None;
-    }
-
-    let node_name = node.name.trim();
-    if !node_name.starts_with("Item ") {
-        return None;
-    }
-
-    let parent_id = node.parent?;
-    let parent = scene.nodes.get(&parent_id)?;
-    if !parent
-        .name
-        .trim()
-        .eq_ignore_ascii_case("root_annunciator_items")
-    {
-        return None;
-    }
-
-    let side = UiIrBorderSide {
-        width: 2.0,
-        colour: None,
-        colour_token: Some("Accent3".to_string()),
-    };
-
-    Some(UiIrBorder {
-        top: side.clone(),
-        right: side.clone(),
-        bottom: side.clone(),
-        left: side,
-    })
-}
-
-fn border_has_visible_semantics(border: &UiIrBorder) -> bool {
-    let side_has_semantics = |side: &UiIrBorderSide| side.width > 0.01;
-
-    side_has_semantics(&border.top)
-        || side_has_semantics(&border.right)
-        || side_has_semantics(&border.bottom)
-        || side_has_semantics(&border.left)
-}
-
-fn annunciator_outline_stroke_from_background_token(
-    resolved_style_tags: &[UiIrStyleTag],
-    node_type: &BbNodeType,
-    background_fill_colour_token: Option<&str>,
-) -> Option<(String, f32)> {
-    if !matches!(node_type, BbNodeType::DisplayWidget) {
-        return None;
-    }
-
-    let has_annunciator_screen = has_annunciator_screen_tag(resolved_style_tags);
-    if !has_annunciator_screen {
-        return None;
-    }
-
-    match background_fill_colour_token.map(str::trim) {
-        Some("Accent2") => Some(("Accent3".to_string(), 2.0)),
-        Some("Accent4") => Some(("Accent4".to_string(), 2.0)),
-        _ => None,
-    }
-}
-
 fn custom_shape_colour_blend_mode_from_style_tags(
     resolved_style_tags: &[UiIrStyleTag],
     node_type: &BbNodeType,
@@ -2083,147 +1870,6 @@ fn custom_shape_colour_blend_mode_from_style_tags(
     })
 }
 
-fn should_suppress_annunciator_border(
-    resolved_style_tags: &[UiIrStyleTag],
-    node_type: &BbNodeType,
-) -> bool {
-    let _ = (resolved_style_tags, node_type);
-    false
-}
-
-fn is_annunciator_gradient_image(node: &crate::bb_scene::BbNode) -> bool {
-    if !matches!(node.ty, BbNodeType::WidgetImage) {
-        return false;
-    }
-
-    node.raw
-        .get("ImagePath")
-        .or_else(|| node.raw.get("imagePath"))
-        .and_then(|value| value.as_str())
-        .is_some_and(|path| {
-            path.replace('\\', "/")
-                .to_ascii_lowercase()
-                .ends_with("/annunciator_on.tif")
-        })
-}
-
-fn annunciator_gradient_tint_token(
-    scene: &BbScene,
-    node: &crate::bb_scene::BbNode,
-    binding_resolver: &BindingResolver,
-    defaults: &DefaultValueRegistry,
-    resolved_style_tags: &[UiIrStyleTag],
-) -> Option<String> {
-    if !is_annunciator_gradient_image(node) {
-        return None;
-    }
-
-    if annunciator_slot_label_matches(node, scene, binding_resolver, defaults, "WPN") {
-        return Some("Accent2".to_string());
-    }
-
-    if should_activate_annunciator_gradient(node, resolved_style_tags) {
-        return Some("Accent3".to_string());
-    }
-
-    None
-}
-
-fn annunciator_slot_label_matches(
-    node: &crate::bb_scene::BbNode,
-    scene: &BbScene,
-    binding_resolver: &BindingResolver,
-    defaults: &DefaultValueRegistry,
-    expected: &str,
-) -> bool {
-    let has_matching_text_child = |container: &crate::bb_scene::BbNode| {
-        container.children.iter().any(|child_id| {
-            let Some(child) = scene.nodes.get(child_id) else {
-                return false;
-            };
-            if !matches!(child.ty, BbNodeType::WidgetText | BbNodeType::WidgetTextField) {
-                return false;
-            }
-
-            let resolved = binding_resolver.resolve_text_detailed(*child_id, &child.raw, defaults);
-            let resolved_text = resolved.text.trim();
-            (!resolved_text.is_empty() && resolved_text.eq_ignore_ascii_case(expected))
-                || unresolved_text_key_from_raw(&child.raw)
-                    .as_deref()
-                    .is_some_and(|value| text_key_matches_expected(value, expected))
-        })
-    };
-
-    if has_matching_text_child(node) {
-        return true;
-    }
-
-    let mut container_id = node.parent;
-    while let Some(id) = container_id {
-        let Some(container) = scene.nodes.get(&id) else {
-            return false;
-        };
-
-        if has_matching_text_child(container) {
-            return true;
-        }
-
-        container_id = container.parent;
-    }
-
-    false
-}
-
-fn should_activate_annunciator_gradient(
-    node: &crate::bb_scene::BbNode,
-    resolved_style_tags: &[UiIrStyleTag],
-) -> bool {
-    if !is_annunciator_gradient_image(node) {
-        return false;
-    }
-
-    has_annunciator_moderate_state_tag(resolved_style_tags)
-        || has_annunciator_critical_state_tag(resolved_style_tags)
-}
-
-fn has_annunciator_screen_tag(resolved_style_tags: &[UiIrStyleTag]) -> bool {
-    tag_matches_any(
-        resolved_style_tags,
-        &["AnnunciatorScreen"],
-        &["420a12e1-7855-40eb-8b8e-d4063bb1c67d"],
-    )
-}
-
-fn has_annunciator_item_tag(resolved_style_tags: &[UiIrStyleTag]) -> bool {
-    tag_matches_any(
-        resolved_style_tags,
-        &["AnnunciatorItem", "Item"],
-        &["1cf031ce-38b9-4f2d-a162-5d309904bf38"],
-    )
-}
-
-fn has_annunciator_moderate_state_tag(resolved_style_tags: &[UiIrStyleTag]) -> bool {
-    tag_matches_any(
-        resolved_style_tags,
-        &["StateModerate", "Flashing"],
-        &[
-            "1477f18d-9b3e-4e5c-8047-dc60ba606ddb",
-            "88c4f041-9979-461f-9fed-23dd0d9383a1",
-        ],
-    )
-}
-
-fn has_annunciator_critical_state_tag(resolved_style_tags: &[UiIrStyleTag]) -> bool {
-    tag_matches_any(
-        resolved_style_tags,
-        &["StateCritical"],
-        &[
-            "890ffde7-2d42-47c3-9724-a0266bab3585",
-            "8da123f5-bec8-4369-bf5e-0d262dfcce5e",
-        ],
-    )
-}
-
 fn tag_matches_any(resolved_style_tags: &[UiIrStyleTag], names: &[&str], uuids: &[&str]) -> bool {
     resolved_style_tags.iter().any(|tag| {
         tag.tag_name.as_deref().is_some_and(|name| {
@@ -2233,66 +1879,6 @@ fn tag_matches_any(resolved_style_tags: &[UiIrStyleTag], names: &[&str], uuids: 
                 .any(|candidate| trimmed.eq_ignore_ascii_case(candidate))
         }) || uuids.iter().any(|candidate| tag.uuid.eq_ignore_ascii_case(candidate))
     })
-}
-
-fn annunciator_inner_item_fill_token(
-    scene: &BbScene,
-    node: &BbNode,
-    node_type: &BbNodeType,
-    binding_resolver: &BindingResolver,
-    defaults: &DefaultValueRegistry,
-    resolved_style_tags: &[UiIrStyleTag],
-) -> Option<String> {
-    if !is_annunciator_inner_item(scene, node, node_type) {
-        return None;
-    }
-
-    if node
-        .children
-        .iter()
-        .filter_map(|child_id| scene.nodes.get(child_id))
-        .any(is_annunciator_gradient_image)
-    {
-        return None;
-    }
-
-    if has_annunciator_critical_state_tag(resolved_style_tags)
-        || annunciator_slot_label_matches(node, scene, binding_resolver, defaults, "WPN")
-    {
-        return Some("Accent3".to_string());
-    }
-
-    None
-}
-
-fn is_annunciator_inner_item(scene: &BbScene, node: &BbNode, node_type: &BbNodeType) -> bool {
-    if !matches!(node_type, BbNodeType::DisplayWidget) {
-        return false;
-    }
-
-    let mut ancestor_id = node.parent;
-    while let Some(id) = ancestor_id {
-        let Some(ancestor) = scene.nodes.get(&id) else {
-            return false;
-        };
-        if ancestor.name.trim().starts_with("Item ")
-            && ancestor
-                .parent
-                .and_then(|parent_id| scene.nodes.get(&parent_id))
-                .is_some_and(|parent| {
-                    parent
-                        .name
-                        .trim()
-                        .eq_ignore_ascii_case("root_annunciator_items")
-                })
-        {
-            return true;
-        }
-
-        ancestor_id = ancestor.parent;
-    }
-
-    false
 }
 
 fn colour_style_alpha(value: &serde_json::Value) -> Option<f32> {

@@ -137,7 +137,8 @@ pub fn apply_scene_style_entries(
 pub fn apply_scene_style_entries_in_subtree(
     scene: &mut BbScene,
     entries: &[serde_json::Value],
-    palette_source: &serde_json::Value,
+    fills_palette: &serde_json::Value,
+    chrome_palette: &serde_json::Value,
     loc_fetcher: Option<&dyn LocFetcher>,
     subtree_root: BbNodeId,
     style_identifier: &str,
@@ -152,7 +153,10 @@ pub fn apply_scene_style_entries_in_subtree(
             stack.extend(node.children.iter().copied());
         }
     }
-    let palettes = PaletteSources::uniform(palette_source);
+    let palettes = PaletteSources {
+        fills: fills_palette,
+        chrome: chrome_palette,
+    };
     apply_style_entries_filtered(
         scene,
         entries,

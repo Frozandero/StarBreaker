@@ -487,3 +487,46 @@ use serde_json::json;
         assert_eq!(fill[3], 1.0);
     }
 
+
+/// `enableColorOverlay: true` is the universal editor default on images, so
+/// an overlay-enabled IMAGE with no authored colour must NOT be default
+/// tinted (a Base default blue-cast the medical card photos and brown-washed
+/// the power screen) — only WidgetIcon glyphs get the Base default.
+#[test]
+fn overlay_enabled_image_without_colour_keeps_own_colours() {
+    let mut scene = make_test_scene(); // node ty = WidgetImage
+    {
+        let node = scene.nodes.get_mut(&1).unwrap();
+        let obj = node.raw.as_object_mut().unwrap();
+        obj.insert(
+            "svgFill".to_string(),
+            json!({"enableColorOverlay": true, "color": null}),
+        );
+    }
+    let brand = BrandStyle {
+        identifier: "test_brand".to_string(),
+        entries: &[],
+        raw: &json!({}),
+    };
+    apply_brand_modifiers(&mut scene, &brand, None);
+    assert!(
+        scene.nodes.get(&1).unwrap().raw.get("FillColorToken").is_none(),
+        "an overlay-enabled colourless image must not be default-tinted"
+    );
+}
+
+/// A plain image (no colour overlay) keeps its own colours — no default tint.
+#[test]
+fn image_without_overlay_keeps_own_colours() {
+    let mut scene = make_test_scene();
+    let brand = BrandStyle {
+        identifier: "test_brand".to_string(),
+        entries: &[],
+        raw: &json!({}),
+    };
+    apply_brand_modifiers(&mut scene, &brand, None);
+    assert!(
+        scene.nodes.get(&1).unwrap().raw.get("FillColorToken").is_none(),
+        "a non-overlay image must not be default-tinted"
+    );
+}

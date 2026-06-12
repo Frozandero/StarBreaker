@@ -80,6 +80,64 @@ pub fn resolve_state_tags_into_scene(
     }
 }
 
+/// The PENDING state tags of a scene: every tag a state-tag binding COULD
+/// produce whose producing chain is UNRESOLVABLE right now (an unwired
+/// parent-injected parameter — the annunciator chiclet severities at the
+/// chiclet canvas's own resolve time). Style entries referencing a pending
+/// tag (positively or via `NotTag`) must not be evaluated yet: the tag's
+/// truth is unknown, and treating it as absent lit the offline chiclet's
+/// "Show Glow in online state" gradient. The candidate tags come from the
+/// binding's direct input op (`TagFromIntegerSwitch` values,
+/// `TagFromBoolean` isTrue/isFalse).
+pub fn pending_state_tags(
+    scene: &crate::bb_scene::BbScene,
+    defaults: &crate::defaults::DefaultValueRegistry,
+) -> std::collections::HashSet<String> {
+    const STATE_TAG_FIELDS: &[&str] = &[
+        "PrimaryStateTag",
+        "SecondaryStateTag",
+        "TertiaryStateTag",
+        "QuarternaryStateTag",
+        "QuinaryStateTag",
+    ];
+    let resolver = BindingResolver::from_operations(&scene.operations);
+    let mut pending = std::collections::HashSet::new();
+    for &node_id in scene.nodes.keys() {
+        for field in STATE_TAG_FIELDS {
+            let Some(input_ptrs) = resolver
+                .widget_field_to_input_ptrs
+                .get(&(node_id, field.to_string()))
+            else {
+                continue;
+            };
+            if resolver.resolve_field_text(node_id, field, defaults).is_some() {
+                continue;
+            }
+            for input_ptr in input_ptrs {
+                let Some(op) = resolver.ptr_to_op.get(input_ptr) else {
+                    continue;
+                };
+                let mut collect = |tag: Option<&serde_json::Value>| {
+                    if let Some(uuid) = tag
+                        .and_then(|t| t.get("_RecordId_"))
+                        .and_then(|v| v.as_str())
+                    {
+                        pending.insert(uuid.to_ascii_lowercase());
+                    }
+                };
+                if let Some(values) = op.get("values").and_then(|v| v.as_array()) {
+                    for pair in values {
+                        collect(pair.get("second"));
+                    }
+                }
+                collect(op.get("isTrue"));
+                collect(op.get("isFalse"));
+            }
+        }
+    }
+    pending
+}
+
 /// Extract a lower-cased UUID from a tag reference (`"Tag.<uuid>"`, a bare
 /// `_RecordId_` UUID, or a record path ending in the UUID). Returns `None` for
 /// anything that is not a canonical 8-4-4-4-12 UUID.

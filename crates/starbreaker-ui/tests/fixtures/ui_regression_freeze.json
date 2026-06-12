@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "frozen_at": "2026-06-11T22:17:34Z",
+  "frozen_at": "2026-06-12T00:10:36Z",
   "approver": "tom",
-  "reason": "annunciator regression fix: chiclet state styling now flows from the authored entries (deferred late-state child entries + Moderate token + severity re-pins) — WPN renders the reference's amber block with dark text, COOL the authored 143-grey bold label; the full chiclet band redraws (~339k px) and was adjudicated side-by-side vs Screen_Annunciator_L.png. All other targets byte-identical (the end-of-bed fingerprint's dropped ASOP stroke is render-inert).",
+  "reason": "Annunciator: DRAK near-black backplate via styled ImagePath override + round-2 entry-driven state styling (square borders, WPN/COOL text, authored gradient alpha)",
   "signature": null,
   "manifest_path": "crates/starbreaker-ui/tests/fixtures/ui_ir/ui_snapshot_manifest.json",
   "artifacts": [
@@ -41,7 +41,7 @@
       "tier": "gold",
       "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_h_eng_annunciator_master_left.png",
       "artifact_path": "test-artifacts/ui/eng_annunciator_master_left.png",
-      "sha256": "04d6508d0752e04b1f47aea8130f604eaf0c96bf62520453d1b99f6119527242",
+      "sha256": "8efe56131e6e6dd0ff9fa4c2df93aaad333d46c7831a28dc2e68483a41731fff",
       "width": 1920,
       "height": 432,
       "channels": "srgba"

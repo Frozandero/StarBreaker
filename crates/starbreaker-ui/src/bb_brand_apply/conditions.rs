@@ -2,7 +2,7 @@
 //! style entry applies to. Owns `entry_matches_scene` (entry-level
 //! gate used by bb_resolve host selection), `condition_matches_node`
 //! (tag / type / ancestor / interaction-state selectors, including the
-//! materialised-entry-scoped `breakConditions` semantics), and the tag
+//! break-bounded ancestor-walk `breakConditions` semantics), and the tag
 //! and node-type reference helpers.
 
 use super::*;
@@ -15,36 +15,6 @@ use super::*;
 ///   `conditions[j]` items pass. Conditions may be nested (`AllOf`, `AnyOf`,
 ///   `Parent`), and parent conditions are evaluated against the node's direct
 ///   parent in the parsed BB scene hierarchy.
-/// Whether `node` lies inside a materialised list-entry subtree (self or any
-/// ancestor carries the `_MaterialisedEntry_` marker set by the list/array
-/// materialisation machinery).
-pub(crate) fn within_materialised_entry(node: &BbNode, scene: &BbScene) -> bool {
-    if node
-        .raw
-        .get("_MaterialisedEntry_")
-        .and_then(|v| v.as_bool())
-        == Some(true)
-    {
-        return true;
-    }
-    let mut current = node.parent;
-    while let Some(ancestor_id) = current {
-        let Some(ancestor) = scene.nodes.get(&ancestor_id) else {
-            return false;
-        };
-        if ancestor
-            .raw
-            .get("_MaterialisedEntry_")
-            .and_then(|v| v.as_bool())
-            == Some(true)
-        {
-            return true;
-        }
-        current = ancestor.parent;
-    }
-    false
-}
-
 pub(crate) fn entry_matches_scene(
     entry: &serde_json::Value,
     node_id: BbNodeId,
@@ -139,16 +109,17 @@ pub(crate) fn condition_matches_node(
         let Some(conditions) = condition.get("conditions").and_then(|v| v.as_array()) else {
             return false;
         };
-        // `breakConditions` bound the walk for POSITIVE conditions only
-        // within MATERIALISED list entries (`_MaterialisedEntry_`, the power
-        // pip stacks): per-entry state tags must not leak across entry
-        // boundaries (an Unpowered pip's fill must not match the column
-        // root's Powered tag), and the boundary node itself is tested
-        // match-before-break (it carries both the `general-list-item` break
-        // tag and its own state tag). An EMPTY conditions list with breaks
-        // is a CONTAINMENT test EVERYWHERE: true only when an ancestor
-        // matches the breaks (the pip selector arrow's entry requires living
-        // inside the Secondary-tagged `PipBox_Selecter` slot; the touch-here
+        // `breakConditions` bound the walk EVERYWHERE: the boundary node is
+        // tested match-before-break (a materialised pip carries both the
+        // `general-list-item` break tag and its own state tag; the
+        // annunciator chiclet's Item boundary carries the queried online
+        // state for "Show Glow"), and positive conditions beyond the
+        // boundary never match (an Unpowered pip's fill must not match the
+        // column root's Powered tag; the glow must not match a same-tagged
+        // ancestor outside its chiclet). An EMPTY conditions list with
+        // breaks is a CONTAINMENT test: true only when an ancestor matches
+        // the breaks (the pip selector arrow's entry requires living inside
+        // the Secondary-tagged `PipBox_Selecter` slot; the touch-here
         // fingerprint's "ChangeSizeForASOP" requires an ASOP-host-tagged
         // ancestor and must NOT resize the medical at-rest fingerprint).
         let break_conditions = condition
@@ -156,9 +127,7 @@ pub(crate) fn condition_matches_node(
             .and_then(|v| v.as_array())
             .map(|a| a.as_slice())
             .unwrap_or(&[]);
-        let containment_test = conditions.is_empty() && !break_conditions.is_empty();
-        let scoped_breaks = containment_test
-            || (!break_conditions.is_empty() && within_materialised_entry(node, scene));
+        let scoped_breaks = !break_conditions.is_empty();
         if conditions.is_empty() && !scoped_breaks {
             // Legacy semantics: an empty conditions list (and no breaks)
             // matches at the first resolvable ancestor (a parentless node

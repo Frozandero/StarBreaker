@@ -2158,14 +2158,13 @@ mod tests_e {
     }
 
 
-    /// The canvas's own `defaultStyles.entries` are part of the style cascade
-    /// (BASE, below sharedStyles/brand/embedded): the power list item's
-    /// 'System Icon Color' entry (FillColor Accent2 conditioned on the `icon`
-    /// framework tag) lives ONLY there for canvases whose selected brand
-    /// container omits it. The container is entries-only (no `colorStyles`),
-    /// so the token flows via the modifier token fallback.
+    /// `defaultStyles.entries` are EDITOR-TIME defaults and must NOT apply at
+    /// runtime: the annunciator's defaultStyles `CornerRadius` (radius 30)
+    /// would round the chiclet frames the in-game reference shows square, and
+    /// the power `System Icon Color` (absent from drak's brand container)
+    /// would tint the system icons the reference shows white.
     #[test]
-    fn default_styles_entries_apply_as_cascade_base() {
+    fn default_styles_entries_do_not_apply_at_runtime() {
         let root = serde_json::json!({
             "_RecordName_": "BuildingBlocks_Canvas.DefaultStylesBase",
             "_RecordValue_": {
@@ -2226,19 +2225,10 @@ mod tests_e {
             .values()
             .find(|n| n.name == "shape_Icon")
             .expect("icon node");
-        assert_eq!(
-            icon.raw.get("FillColorToken").and_then(|v| v.as_str()),
-            Some("Accent2"),
-            "the tag-conditioned defaultStyles entry applies to the tagged node"
-        );
-        let plain = scene
-            .nodes
-            .values()
-            .find(|n| n.name == "shape_Plain")
-            .expect("plain node");
         assert!(
-            plain.raw.get("FillColorToken").is_none(),
-            "an untagged node is not styled by the tag-conditioned entry"
+            icon.raw.get("FillColorToken").is_none(),
+            "defaultStyles entries are editor defaults — never applied at runtime, got {:?}",
+            icon.raw.get("FillColorToken")
         );
     }
 
@@ -2504,6 +2494,114 @@ mod tests_e {
             label.raw.get("FillColorToken").and_then(|v| v.as_str()),
             Some("Background"),
             "the state-conditioned child entry applies after param injection"
+        );
+    }
+
+    /// An entry referencing a PENDING state tag (the producing chain is
+    /// unresolvable at the child's own cascade time — the severity param is
+    /// parent-injected) must NOT apply prematurely with the tag assumed
+    /// absent: the annunciator's "Show Glow in online state" NotTag-gates on
+    /// the state tags and lit the OFFLINE chiclet's gradient. It is deferred
+    /// and evaluated at the parent level where the state is known — here
+    /// severity 4 produces the tag, so the NotTag entry must never apply.
+    #[test]
+    fn pending_state_entries_wait_for_their_state() {
+        let state_tag = "22222222-2222-2222-2222-222222222222";
+        let child = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.PendingStateChild",
+            "_RecordValue_": {
+                "size": {"x": 100.0, "y": 100.0},
+                "defaultStyles": {"entries": []},
+                "brandStyles": [],
+                "embeddedStyles": [
+                    {
+                        "_Type_": "BuildingBlocks_StyleEntry",
+                        "name": "Glow when no state",
+                        "conditionsList": [
+                            {
+                                "_Type_": "BuildingBlocks_StyleConditionList",
+                                "conditions": [
+                                    {"_Type_": "BuildingBlocks_StyleSelectorConditionNotTag",
+                                     "tag": {"_RecordId_": state_tag}}
+                                ]
+                            }
+                        ],
+                        "modifiers": [
+                            {"_Type_": "BuildingBlocks_FieldModifierNumber",
+                             "field": "Alpha", "value": 0.5}
+                        ],
+                        "transitions": []
+                    }
+                ],
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "item", "isActive": true}
+                ],
+                "operations": [
+                    {"_Pointer_": "ptr:9", "_Type_": "BuildingBlocks_BindingsIntegerComponentParameter",
+                     "name": "Value item", "parameter": "ParamInput0", "defaultValue": 0},
+                    {"_Pointer_": "ptr:12", "_Type_": "BuildingBlocks_BindingsTagFromIntegerSwitch",
+                     "input": "_PointsTo_:ptr:9", "defaultValue": null,
+                     "values": [
+                        {"_Type_": "BuildingBlocks_IntegerTagPair", "first": 4,
+                         "second": {"_RecordId_": state_tag, "_RecordName_": format!("Tag.{state_tag}")}}
+                     ]},
+                    {"_Type_": "BuildingBlocks_BindingsStringField",
+                     "widget": "_PointsTo_:ptr:1", "field": "PrimaryStateTag",
+                     "input": "_PointsTo_:ptr:12"}
+                ]
+            }
+        });
+        let host = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.PendingStateHost",
+            "_RecordValue_": {
+                "size": {"x": 100.0, "y": 100.0},
+                "defaultStyles": {"entries": []},
+                "brandStyles": [],
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "host_root", "isActive": true},
+                    {"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_WidgetCanvas",
+                     "name": "slot", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "canvas": "file://./pending_child.json"}
+                ],
+                "operations": [
+                    {"_Pointer_": "ptr:10", "_Type_": "BuildingBlocks_BindingsIntegerVariable",
+                     "binding": "/Test/PendingSeverity"},
+                    {"_Type_": "BuildingBlocks_BindingsIntegerField",
+                     "widget": "_PointsTo_:ptr:2", "field": "ParamInput0",
+                     "input": "_PointsTo_:ptr:10"}
+                ]
+            }
+        });
+
+        let mut defaults = crate::defaults::DefaultValueRegistry::new();
+        defaults.insert_path("/Test/PendingSeverity", crate::canvas::Value::Int(4));
+        let scene = resolve_canvas_graph_with_defaults(
+            &host,
+            None,
+            &|url| match url {
+                "file://./pending_child.json" => Ok(child.clone()),
+                other => Err(format!("framework record unavailable in fixture: {other}")),
+            },
+            None,
+            None,
+            &defaults,
+        )
+        .expect("resolve failed");
+
+        let item = scene
+            .nodes
+            .values()
+            .find(|node| node.name == "item")
+            .expect("merged child item");
+        assert!(
+            item.style_tag_uuids.iter().any(|t| t == state_tag),
+            "severity 4 resolves the state tag at the parent level"
+        );
+        assert_eq!(
+            item.alpha, 1.0,
+            "the NotTag(pending-state) entry must not have applied prematurely"
         );
     }
 

@@ -233,3 +233,79 @@ fn empty_conditions_ancestor_with_breaks_is_containment_everywhere() {
         "ASOP-host ancestor present: the containment test must pass"
     );
 }
+
+/// `breakConditions` bound the Ancestor walk EVERYWHERE, not only inside
+/// materialised list entries: the annunciator's "Show Glow in online state"
+/// queries the chiclet's Item boundary (match-before-break) and must not
+/// leak to same-tagged ancestors beyond it. Here the queried tag exists only
+/// ABOVE the break boundary — the walk must stop and the entry not match.
+#[test]
+fn positive_ancestor_walk_stops_at_break_boundary_everywhere() {
+    let mut scene = make_test_scene();
+    {
+        let root = scene.nodes.get_mut(&1).unwrap();
+        root.style_tag_uuids = vec!["tag-online".to_string()];
+        root.children = vec![2];
+    }
+    let mut item = scene.nodes.get(&1).unwrap().clone();
+    item.id = 2;
+    item.parent = Some(1);
+    item.children = vec![3];
+    item.name = "item_boundary".to_string();
+    item.style_tag_uuids = vec!["tag-item".to_string()];
+    item.raw = serde_json::json!({});
+    scene.nodes.insert(2, item);
+    let mut glow = scene.nodes.get(&1).unwrap().clone();
+    glow.id = 3;
+    glow.parent = Some(2);
+    glow.children = vec![];
+    glow.name = "glow".to_string();
+    glow.style_tag_uuids = vec![];
+    glow.raw = serde_json::json!({});
+    glow.alpha = 1.0;
+    scene.nodes.insert(3, glow);
+
+    let entries = [json!({
+        "name": "Show Glow",
+        "conditionsList": [
+            {"conditions": [
+                {"_Type_": "BuildingBlocks_StyleSelectorConditionAncestor",
+                 "breakConditions": [
+                    {"_Type_": "BuildingBlocks_StyleSelectorConditionTag",
+                     "tag": {"_RecordId_": "tag-item"}}],
+                 "conditions": [
+                    {"_Type_": "BuildingBlocks_StyleSelectorConditionTag",
+                     "tag": {"_RecordId_": "tag-online"}}]}
+            ]}
+        ],
+        "modifiers": [
+            {"_Type_": "BuildingBlocks_FieldModifierNumber",
+             "field": "Alpha", "value": 0.5}
+        ]
+    })];
+    let brand = BrandStyle {
+        identifier: "test_brand".to_string(),
+        entries: &entries,
+        raw: &json!({}),
+    };
+    apply_brand_modifiers(&mut scene, &brand, None);
+    assert_eq!(
+        scene.nodes.get(&3).unwrap().alpha,
+        1.0,
+        "tag-online lives beyond the tag-item boundary: the walk must stop"
+    );
+
+    // Match-before-break: the boundary itself carrying the queried tag matches.
+    scene
+        .nodes
+        .get_mut(&2)
+        .unwrap()
+        .style_tag_uuids
+        .push("tag-online".to_string());
+    apply_brand_modifiers(&mut scene, &brand, None);
+    assert_eq!(
+        scene.nodes.get(&3).unwrap().alpha,
+        0.5,
+        "the boundary node carrying the queried tag matches before breaking"
+    );
+}

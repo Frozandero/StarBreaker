@@ -43,11 +43,14 @@ pub(super) fn apply_inline_color_overlay(node: &mut BbNode, palette_source: &ser
         apply_color_field("FillColor", color, token.as_deref(), node);
         return;
     }
-    // An overlay-enabled icon with no authored colour (`color: null`) tints to the
-    // brand's primary foreground role `Base` — e.g. the MFD footer's nav carats
-    // render brand-orange, not the SVG's own (dark) fill. Scoped to `WidgetIcon`
-    // (monochrome glyphs): a `WidgetImage` displays a photo/texture that must keep
-    // its own colour, and custom-shape fills without a colour keep their own paint.
+    // An overlay-enabled icon with no authored colour (`color: null`) tints to
+    // the brand's primary foreground role `Base` — e.g. the MFD footer's nav
+    // carats render brand-orange, not the SVG's own (dark) fill. Scoped to
+    // `WidgetIcon` (monochrome glyphs): `enableColorOverlay: true` is the
+    // universal editor default, so a `WidgetImage` keeps its own colour (a
+    // Base default blue-cast the medical card photos and brown-washed the
+    // power screen), and custom-shape fills without a colour keep their own
+    // paint (an unconditional shape default regressed the target chevrons).
     if node.ty == BbNodeType::WidgetIcon {
         let base = serde_json::json!({"color": "Base", "alpha": 1.0});
         match parse_color_value(&base, palette_source, role) {

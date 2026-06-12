@@ -673,103 +673,79 @@ fn apply_shared_styles(
     }
 }
 
-/// Collect the child canvas's style entries (defaultStyles + embeddedStyles)
-/// whose POSITIVE conditions reference at least one tag that NO child node
-/// carried when the child's own cascade ran — the late-state class: the tag
-/// can only appear after the parent injects the dynamic params it derives
-/// from (the annunciator chiclets' severity → "Critical - Text"/"Off -
-/// Text"). Entries whose gating tags were all present (the power pips' state
-/// entries, unconditional Common entries) already applied correctly at child
-/// time and must NOT re-run — a blanket re-application regressed the power
-/// footer and icons. `NotTag` references are not triggers (a tag appearing
-/// later cannot un-apply an entry). `embeddedStyles` is authored as either a
-/// bare entry array or an `{ entries: [...] }` container.
+/// Collect the child canvas's embedded style entries that reference any of
+/// the child's PENDING state tags (see [`crate::bb_bindings::pending_state_tags`]) —
+/// the entries the child's own cascade SKIPPED because their gating state
+/// was unresolvable there (the annunciator chiclets' severity →
+/// "Moderate - Text"/"Off - Text"/"Show Glow in online state"). They apply
+/// once, at the parent level, where the parent-injected params resolve the
+/// state. Entries whose tags resolved at child time (the power pips' state
+/// entries) applied there and must NOT re-run — a blanket re-application
+/// regressed the power footer and icons. `embeddedStyles` is authored as
+/// either a bare entry array or an `{ entries: [...] }` container.
 fn collect_late_state_style_entries(
     canvas_json: &serde_json::Value,
-    child_scene: &BbScene,
-) -> Vec<serde_json::Value> {
-    let child_tag_universe: std::collections::HashSet<&str> = child_scene
-        .nodes
-        .values()
-        .flat_map(|node| node.style_tag_uuids.iter().map(String::as_str))
-        .collect();
-    // The late-state class is gated to tags the child's own
-    // `TagFromIntegerSwitch` ops can produce — the multi-state machines fed
-    // by parent-supplied parameters (the annunciator chiclet severities),
-    // reference-adjudicated. Boolean-derived tags (`TagFromBoolean`, e.g.
-    // the MFD footer's warning band) are deliberately NOT deferred yet:
-    // their at-rest truth values are unadjudicated and a blanket deferral
-    // lit the footer warning band the power reference does not show.
-    let mut switch_tag_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
-    for op in &child_scene.operations {
-        if op
-            .get("_Type_")
-            .and_then(|v| v.as_str())
-            .is_some_and(|t| t.ends_with("BindingsTagFromIntegerSwitch"))
-            && let Some(values) = op.get("values").and_then(|v| v.as_array())
-        {
-            for pair in values {
-                if let Some(uuid) = pair
-                    .get("second")
-                    .and_then(|tag| tag.get("_RecordId_"))
-                    .and_then(|v| v.as_str())
-                {
-                    switch_tag_ids.insert(uuid.to_ascii_lowercase());
-                }
-            }
-        }
-    }
-    if switch_tag_ids.is_empty() {
+    child_pending: &std::collections::HashSet<String>,
+    manufacturer_id: Option<&str>,
+    fetch_by_path: &dyn Fn(&str) -> Result<serde_json::Value, String>,
+) -> Vec<(Vec<serde_json::Value>, serde_json::Value, serde_json::Value)> {
+    if child_pending.is_empty() {
         return Vec::new();
     }
     let record_value = canvas_json.get("_RecordValue_").unwrap_or(canvas_json);
-    let mut entries: Vec<serde_json::Value> = Vec::new();
-    let mut push_late_state = |container: &[serde_json::Value]| {
-        for entry in container {
-            let mut tag_refs: Vec<String> = Vec::new();
-            collect_positive_condition_tag_ids(entry.get("conditionsList"), &mut tag_refs);
-            if tag_refs.iter().any(|uuid| {
-                !child_tag_universe.contains(uuid.as_str()) && switch_tag_ids.contains(uuid)
-            }) {
-                entries.push(entry.clone());
-            }
-        }
+    let filter = |container: &[serde_json::Value]| -> Vec<serde_json::Value> {
+        container
+            .iter()
+            .filter(|entry| entry_references_any_tag(entry, child_pending))
+            .cloned()
+            .collect()
     };
-    if let Some(default_entries) = record_value
-        .get("defaultStyles")
-        .and_then(|ds| ds.get("entries"))
-        .and_then(|v| v.as_array())
-    {
-        push_late_state(default_entries);
+    // The SAME runtime containers (and palettes) the child's cascade
+    // pending-filtered: the SELECTED brand container (the power list item's
+    // drak `PipBox_Fill_*` state entries — chrome fields resolve against the
+    // fetched brand Style record, exactly like apply_brand_modifiers_with_-
+    // palette) and the canvas's embeddedStyles (the annunciator chiclet
+    // state entries; uniform record-value palette). defaultStyles are
+    // editor-time defaults — see apply_canvas_style_cascade.
+    let mut passes: Vec<(Vec<serde_json::Value>, serde_json::Value, serde_json::Value)> =
+        Vec::new();
+    if let Some(brand) = bb_brand_style::resolve_brand_style(canvas_json, manufacturer_id, None) {
+        let brand_entries = filter(brand.entries);
+        if !brand_entries.is_empty() {
+            let chrome = brand_palette_record(Some(&brand), fetch_by_path)
+                .unwrap_or_else(|| brand.raw.clone());
+            passes.push((brand_entries, brand.raw.clone(), chrome));
+        }
     }
     if let Some(embedded) = record_value.get("embeddedStyles") {
         let embedded_entries = embedded
             .as_array()
             .or_else(|| embedded.get("entries").and_then(|v| v.as_array()));
         if let Some(embedded_entries) = embedded_entries {
-            push_late_state(embedded_entries);
+            let filtered = filter(embedded_entries);
+            if !filtered.is_empty() {
+                passes.push((filtered, record_value.clone(), record_value.clone()));
+            }
         }
     }
-    entries
+    passes
 }
 
-/// Recursively collect tag `_RecordId_`s referenced by POSITIVE conditions
-/// (Tag / AnyOfTag / AllOfTag and anything nested under Parent / Ancestor /
-/// AllOf / AnyOf, including Ancestor `breakConditions` — a containment test's
-/// boundary tag is a positive requirement). `NotTag` is skipped.
-fn collect_positive_condition_tag_ids(value: Option<&serde_json::Value>, out: &mut Vec<String>) {
+/// Recursively collect tag `_RecordId_`s referenced by an entry's conditions
+/// (Tag / NotTag / AnyOfTag / AllOfTag and anything nested under Parent /
+/// Ancestor / AllOf / AnyOf / Not, including Ancestor `breakConditions`).
+/// A `NotTag` is as much a reference as a positive tag: an entry gated on
+/// `NotTag(pending-state)` cannot be evaluated before the state resolves.
+fn collect_condition_tag_ids(value: Option<&serde_json::Value>, out: &mut Vec<String>) {
     let Some(value) = value else { return };
     match value {
         serde_json::Value::Array(items) => {
             for item in items {
-                collect_positive_condition_tag_ids(Some(item), out);
+                collect_condition_tag_ids(Some(item), out);
             }
         }
         serde_json::Value::Object(map) => {
             let cond_type = map.get("_Type_").and_then(|v| v.as_str()).unwrap_or("");
-            if cond_type.ends_with("ConditionNotTag") || cond_type.ends_with("ConditionNotCondition") {
-                return;
-            }
             if let Some(uuid) = map
                 .get("tag")
                 .and_then(|tag| tag.get("_RecordId_"))
@@ -785,11 +761,25 @@ fn collect_positive_condition_tag_ids(value: Option<&serde_json::Value>, out: &m
                 out.push(uuid.to_ascii_lowercase());
             }
             for key in ["conditions", "conditionsList", "tags", "breakConditions"] {
-                collect_positive_condition_tag_ids(map.get(key), out);
+                collect_condition_tag_ids(map.get(key), out);
             }
         }
         _ => {}
     }
+}
+
+/// Whether a style entry's conditions reference ANY tag in `tags`
+/// (positively or via `NotTag`).
+fn entry_references_any_tag(
+    entry: &serde_json::Value,
+    tags: &std::collections::HashSet<String>,
+) -> bool {
+    if tags.is_empty() {
+        return false;
+    }
+    let mut refs: Vec<String> = Vec::new();
+    collect_condition_tag_ids(entry.get("conditionsList"), &mut refs);
+    refs.iter().any(|uuid| tags.contains(uuid))
 }
 
 /// The `BuildingBlocks_Style` record carrying the brand's colour palette.
@@ -838,7 +828,20 @@ fn apply_canvas_style_cascade(
     palette_source: Option<&serde_json::Value>,
     fetch_by_path: &dyn Fn(&str) -> Result<serde_json::Value, String>,
     loc_fetcher: Option<&dyn LocFetcher>,
+    pending_state_tags: &std::collections::HashSet<String>,
 ) {
+    // Entries gated on a PENDING state tag (unresolvable producing chain —
+    // a parent-injected param) are skipped here: their truth is unknown and
+    // evaluating them with the tag assumed absent mis-styles state-driven
+    // elements (the offline chiclet's glow). They re-apply via the parent's
+    // deferred late-state pass once the state resolves.
+    let filter_pending = |entries: &[serde_json::Value]| -> Vec<serde_json::Value> {
+        entries
+            .iter()
+            .filter(|entry| !entry_references_any_tag(entry, pending_state_tags))
+            .cloned()
+            .collect()
+    };
     let brand_style = bb_brand_style::resolve_brand_style(root_json, manufacturer_id, preferred_brand);
     let brand_palette_record = brand_palette_record(brand_style.as_ref(), fetch_by_path);
     if brand_style.is_none()
@@ -850,9 +853,10 @@ fn apply_canvas_style_cascade(
             .and_then(|v| v.as_str())
             .map(crate::record_name::extract_record_name)
             .unwrap_or_else(|| "linked_style".to_string());
+        let filtered = filter_pending(entries);
         let brand = bb_brand_style::BrandStyle {
             identifier,
-            entries: entries.as_slice(),
+            entries: filtered.as_slice(),
             raw: style_value,
         };
         crate::bb_brand_apply::apply_brand_modifiers(scene, &brand, loc_fetcher);
@@ -863,41 +867,32 @@ fn apply_canvas_style_cascade(
         .map(|b| b.raw)
         .unwrap_or(palette_source.unwrap_or(record_value));
     let shared_chrome = brand_palette_record.as_ref().unwrap_or(shared_fills);
-    // The canvas's own `defaultStyles.entries` are the cascade BASE (below
-    // sharedStyles/brand/embedded): the power list item's 'System Icon Color'
-    // (FillColor Accent2 on the `icon` tag) and the pip fill/state entries
-    // live there. Entries are condition-gated like every other pass, so
-    // hover/interaction variants don't match at-rest nodes. The container is
-    // entries-only (no `colorStyles`); unresolvable colours keep their TOKEN
-    // via the modifier token fallback for the render-time resolver.
-    if let Some(entries) = record_value
-        .get("defaultStyles")
-        .and_then(|ds| ds.get("entries"))
-        .and_then(|v| v.as_array())
-        .filter(|entries| !entries.is_empty())
-    {
-        let brand = bb_brand_style::BrandStyle {
-            identifier: "defaultStyles".to_string(),
-            entries: entries.as_slice(),
-            raw: shared_fills,
-        };
-        crate::bb_brand_apply::apply_brand_modifiers_with_palette(
-            scene,
-            &brand,
-            shared_chrome,
-            loc_fetcher,
-        );
-    }
+    // `defaultStyles.entries` are EDITOR-TIME defaults, never applied at
+    // runtime. The evidence: the annunciator's `CornerRadius` (radius 30)
+    // lives ONLY there and the in-game chiclet frames are square; the power
+    // `System Icon Color` exists in defaultStyles + misc/orig brand
+    // containers but NOT drak's, and the in-game drak system icons render
+    // the SVGs' own white. Runtime styling = sharedStyles < brand <
+    // embedded < inline (a previous cascade-BASE application of
+    // defaultStyles rounded the chiclets and tinted the white icons —
+    // both away from the reference).
     apply_shared_styles(scene, record_value, shared_fills, shared_chrome, fetch_by_path, loc_fetcher);
     if let Some(brand_style) = brand_style.as_ref() {
         let palette = brand_palette_record.as_ref().unwrap_or(brand_style.raw);
-        crate::bb_brand_apply::apply_brand_modifiers_with_palette(scene, brand_style, palette, loc_fetcher);
+        let filtered = filter_pending(brand_style.entries);
+        let brand = bb_brand_style::BrandStyle {
+            identifier: brand_style.identifier.clone(),
+            entries: filtered.as_slice(),
+            raw: brand_style.raw,
+        };
+        crate::bb_brand_apply::apply_brand_modifiers_with_palette(scene, &brand, palette, loc_fetcher);
     }
     if let Some(entries) = record_value.get("embeddedStyles").and_then(|v| v.as_array()) {
         let palette_source = palette_source.unwrap_or(record_value);
+        let filtered = filter_pending(entries);
         let brand = bb_brand_style::BrandStyle {
             identifier: "embeddedStyles".to_string(),
-            entries: entries.as_slice(),
+            entries: filtered.as_slice(),
             raw: palette_source,
         };
         crate::bb_brand_apply::apply_brand_modifiers(scene, &brand, loc_fetcher);
@@ -1095,8 +1090,14 @@ fn resolve_canvas_graph_inner(
     // dynamic params were injected, so entries conditioned on param-derived
     // state tags (the annunciator chiclets' "Critical - Text"/"Off - Text")
     // can only match here.
-    let mut deferred_child_style_passes: Vec<(BbNodeId, Vec<serde_json::Value>, String)> =
-        Vec::new();
+    #[allow(clippy::type_complexity)]
+    let mut deferred_child_style_passes: Vec<(
+        BbNodeId,
+        Vec<serde_json::Value>,
+        serde_json::Value,
+        serde_json::Value,
+        String,
+    )> = Vec::new();
 
     {
         let mut canvas_urls = root_canvas_urls;
@@ -1243,6 +1244,10 @@ fn resolve_canvas_graph_inner(
                     continue;
                 }
             };
+            // The child's pending state tags reflect ITS cascade-time
+            // knowledge — compute BEFORE the parent injections wire the
+            // params (afterwards the chains resolve and nothing is pending).
+            let child_pending = crate::bb_bindings::pending_state_tags(&child_scene, defaults);
             inject_param_overrides(&param_inputs, &mut child_scene);
             inject_dynamic_param_field_bindings(
                 node_id,
@@ -1250,11 +1255,14 @@ fn resolve_canvas_graph_inner(
                 &mut child_scene,
                 child_namespace.is_some(),
             );
-            let child_entries = collect_late_state_style_entries(&child_json, &child_scene);
-            if !child_entries.is_empty() {
+            for (entries, fills, chrome) in
+                collect_late_state_style_entries(&child_json, &child_pending, manufacturer_id, fetch_by_path)
+            {
                 deferred_child_style_passes.push((
                     node_id,
-                    child_entries,
+                    entries,
+                    fills,
+                    chrome,
                     extract_record_name(&url),
                 ));
             }
@@ -1298,27 +1306,33 @@ fn resolve_canvas_graph_inner(
             .map(|brand| brand.identifier)
     });
     let standard_embedded_entries = expand_widget_standards(&mut scene, fetch_by_path);
-    if std::env::var("SB_TAGS_NO_DEFAULTS").as_deref() == Ok("1") {
-        crate::bb_bindings::resolve_state_tags_into_scene(&mut scene, &Default::default());
-    } else {
-        crate::bb_bindings::resolve_state_tags_into_scene(&mut scene, defaults);
-    }
+    let tag_defaults_override;
+    let tag_defaults: &crate::defaults::DefaultValueRegistry =
+        if std::env::var("SB_TAGS_NO_DEFAULTS").as_deref() == Ok("1") {
+            tag_defaults_override = Default::default();
+            &tag_defaults_override
+        } else {
+            defaults
+        };
+    crate::bb_bindings::resolve_state_tags_into_scene(&mut scene, tag_defaults);
+    // State tags whose producing chains are still unresolvable at THIS level
+    // (parent-injected params) gate the cascade below: entries referencing
+    // them are skipped and re-applied by the parent's deferred pass.
+    let pending_state_tags = crate::bb_bindings::pending_state_tags(&scene, tag_defaults);
     // Deferred child-canvas entries re-run against the freshly resolved state
     // tags, scoped to each child's subtree (see the collection site above).
     // The empty palette keeps colours token-only; an unchanged token is a
     // no-op against the child cascade's earlier resolution.
-    if !deferred_child_style_passes.is_empty() {
-        let empty_palette = serde_json::json!({});
-        for (host_id, entries, identifier) in &deferred_child_style_passes {
-            crate::bb_brand_apply::apply_scene_style_entries_in_subtree(
-                &mut scene,
-                entries,
-                &empty_palette,
-                loc_fetcher,
-                *host_id,
-                identifier,
-            );
-        }
+    for (host_id, entries, fills, chrome, identifier) in &deferred_child_style_passes {
+        crate::bb_brand_apply::apply_scene_style_entries_in_subtree(
+            &mut scene,
+            entries,
+            fills,
+            chrome,
+            loc_fetcher,
+            *host_id,
+            identifier,
+        );
     }
     // The expanded standards' own embeddedStyles run against the freshly
     // resolved state tags (the scrollbar's `_Show` → `scrollbar-show` tag
@@ -1342,6 +1356,7 @@ fn resolve_canvas_graph_inner(
         palette_source,
         fetch_by_path,
         loc_fetcher,
+        &pending_state_tags,
     );
     if let Some(style_id) = modular_style_id.as_deref() {
         // Named colour roles in modular-kit entries resolve against the brand

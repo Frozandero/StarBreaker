@@ -260,6 +260,83 @@ mod tests {
     }
 
     #[test]
+    fn collect_node_asset_refs_prefers_styled_image_path_over_authored() {
+        let canvas = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.TestStyledAsset",
+            "_RecordValue_": {
+                "size": {"x": 100, "y": 100},
+                "scene": [
+                    {
+                        "_Pointer_": "ptr:1",
+                        "_Type_": "BuildingBlocks_WidgetImage",
+                        "name": "image_BG",
+                        "isActive": true,
+                        "imagePath": "UI/Textures/I_InteractiveScreens/MFD/PU Generic/PU_MFD_generic_4x3_background_1.tif",
+                        "size": {
+                            "width": {"behavior": "Fixed", "value": 100.0},
+                            "height": {"behavior": "Fixed", "value": 100.0}
+                        }
+                    }
+                ],
+                "operations": []
+            }
+        });
+
+        let mut scene = crate::bb_scene::parse_bb_canvas(&canvas).expect("scene parse");
+        let node = scene.nodes.values_mut().next().expect("node");
+        node.raw.as_object_mut().expect("raw object").insert(
+            "ImagePath".to_string(),
+            serde_json::Value::String(
+                "UI/Textures/H_HUDscreens/Ships/DRAK/DRAK_Background_anunciators.tif".to_string(),
+            ),
+        );
+
+        let asset_refs = collect_node_asset_refs(node);
+        assert_eq!(
+            asset_refs.first().map(String::as_str),
+            Some("UI/Textures/H_HUDscreens/Ships/DRAK/DRAK_Background_anunciators.tif"),
+            "a brand-applied ImagePath must override the authored texture"
+        );
+    }
+
+    #[test]
+    fn collect_node_asset_refs_styled_empty_image_path_clears_authored_image() {
+        let canvas = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.TestClearedAsset",
+            "_RecordValue_": {
+                "size": {"x": 100, "y": 100},
+                "scene": [
+                    {
+                        "_Pointer_": "ptr:1",
+                        "_Type_": "BuildingBlocks_WidgetImage",
+                        "name": "image_BG",
+                        "isActive": true,
+                        "imagePath": "UI/Textures/I_InteractiveScreens/MFD/PU Generic/PU_MFD_generic_4x3_background_1.tif",
+                        "size": {
+                            "width": {"behavior": "Fixed", "value": 100.0},
+                            "height": {"behavior": "Fixed", "value": 100.0}
+                        }
+                    }
+                ],
+                "operations": []
+            }
+        });
+
+        let mut scene = crate::bb_scene::parse_bb_canvas(&canvas).expect("scene parse");
+        let node = scene.nodes.values_mut().next().expect("node");
+        node.raw.as_object_mut().expect("raw object").insert(
+            "ImagePath".to_string(),
+            serde_json::Value::String(String::new()),
+        );
+
+        let asset_refs = collect_node_asset_refs(node);
+        assert!(
+            asset_refs.is_empty(),
+            "a styled empty ImagePath clears the authored texture (flat-fill brand variants), got {asset_refs:?}"
+        );
+    }
+
+    #[test]
     fn compile_ir_emits_semantic_colour_tokens() {
         let canvas = serde_json::json!({
             "_RecordName_": "BuildingBlocks_Canvas.TestColours",
@@ -760,172 +837,6 @@ mod tests {
             .find(|node| node.name == "Image_bottom_bar")
             .expect("bottom bar node");
         assert_eq!(footer.icon_tint_colour_token.as_deref(), Some("Accent1"));
-    }
-
-    #[test]
-    fn compile_ir_maps_annunciator_item_state_tag_to_background_token() {
-        let tag_db_path = "file://tagdatabase.tagdatabase.json";
-        let screen_tag_id = "ann-screen";
-        let item_tag_id = "ann-item";
-        let moderate_tag_id = "ann-moderate";
-        let canvas = serde_json::json!({
-            "_RecordName_": "BuildingBlocks_Canvas.TestAnnunciatorItemState",
-            "_RecordValue_": {
-                "size": {"x": 100, "y": 100},
-                "scene": [
-                    {
-                        "_Pointer_": "ptr:1",
-                        "_Type_": "BuildingBlocks_DisplayWidget",
-                        "name": "ann_item",
-                        "styleTags": [
-                            {"_RecordPath_": tag_db_path, "_RecordName_": "Tag.ann-screen", "_RecordId_": screen_tag_id},
-                            {"_RecordPath_": tag_db_path, "_RecordName_": "Tag.ann-item", "_RecordId_": item_tag_id},
-                            {"_RecordPath_": tag_db_path, "_RecordName_": "Tag.ann-moderate", "_RecordId_": moderate_tag_id}
-                        ],
-                        "size": {
-                            "width": {"behavior": "Fixed", "value": 50.0},
-                            "height": {"behavior": "Fixed", "value": 50.0}
-                        }
-                    }
-                ],
-                "operations": []
-            }
-        });
-        let tag_db = serde_json::json!({
-            "_RecordName_": "TagDatabase",
-            "_RecordValue_": {
-                "tags": [
-                    {"_RecordId_": screen_tag_id, "_RecordName_": "Tag.ann-screen", "_Type_": "Tag", "tagName": "AnnunciatorScreen", "children": []},
-                    {"_RecordId_": item_tag_id, "_RecordName_": "Tag.ann-item", "_Type_": "Tag", "tagName": "AnnunciatorItem", "children": []},
-                    {"_RecordId_": moderate_tag_id, "_RecordName_": "Tag.ann-moderate", "_Type_": "Tag", "tagName": "StateModerate", "children": []}
-                ]
-            }
-        });
-        let fetcher = TestCanvasFetcher {
-            by_guid: std::collections::HashMap::new(),
-            by_path: [(tag_db_path.to_string(), tag_db)].into_iter().collect(),
-        };
-
-        let scene = crate::bb_scene::parse_bb_canvas(&canvas).expect("scene parse");
-        let ir = compile_ui_ir_from_scene(
-            &scene,
-            Some(&fetcher),
-            "guid-ann-item-state",
-            Some("BuildingBlocks_Canvas.TestAnnunciatorItemState"),
-            (100, 100),
-            &defaults(),
-            None,
-            None,
-            &[],
-            Vec::new(),
-            Vec::new(),
-            100,
-        );
-
-        let node = ir.nodes.iter().find(|node| node.name == "ann_item").expect("annunciator item node");
-        assert_eq!(node.background_fill_colour_token.as_deref(), None);
-        assert_eq!(node.stroke_colour_token.as_deref(), None);
-        assert_eq!(node.stroke_extent, None);
-        let border = node.border.as_ref().expect("annunciator moderate border");
-        assert_eq!(border.top.width, 2.0);
-        assert_eq!(border.right.width, 2.0);
-        assert_eq!(border.bottom.width, 2.0);
-        assert_eq!(border.left.width, 2.0);
-        assert_eq!(border.top.colour_token.as_deref(), Some("Accent3"));
-        assert_eq!(border.right.colour_token.as_deref(), Some("Accent3"));
-        assert_eq!(border.bottom.colour_token.as_deref(), Some("Accent3"));
-        assert_eq!(border.left.colour_token.as_deref(), Some("Accent3"));
-    }
-
-
-// Continuation of semantic_colour_mapping_tests.part (split to stay under the line cap).
-    #[test]
-    fn compile_ir_fills_critical_annunciator_inner_item_without_inner_border() {
-        let tag_db_path = "file://tagdatabase.tagdatabase.json";
-        let screen_tag_id = "ann-screen";
-        let item_tag_id = "ann-item";
-        let critical_tag_id = "ann-critical";
-        let canvas = serde_json::json!({
-            "_RecordName_": "BuildingBlocks_Canvas.TestAnnunciatorInnerItem",
-            "_RecordValue_": {
-                "size": {"x": 100, "y": 100},
-                "scene": [
-                    {
-                        "_Pointer_": "ptr:1",
-                        "_Type_": "BuildingBlocks_DisplayWidget",
-                        "name": "root_annunciator_items",
-                        "size": {
-                            "width": {"behavior": "Fixed", "value": 100.0},
-                            "height": {"behavior": "Fixed", "value": 100.0}
-                        }
-                    },
-                    {
-                        "_Pointer_": "ptr:2",
-                        "_Type_": "BuildingBlocks_DisplayWidget",
-                        "name": "Item 0",
-                        "parent": "_PointsTo_:ptr:1",
-                        "styleTags": [
-                            {"_RecordPath_": tag_db_path, "_RecordName_": "Tag.ann-screen", "_RecordId_": screen_tag_id},
-                            {"_RecordPath_": tag_db_path, "_RecordName_": "Tag.ann-item", "_RecordId_": item_tag_id},
-                            {"_RecordPath_": tag_db_path, "_RecordName_": "Tag.ann-critical", "_RecordId_": critical_tag_id}
-                        ],
-                        "size": {
-                            "width": {"behavior": "Fixed", "value": 80.0},
-                            "height": {"behavior": "Fixed", "value": 80.0}
-                        }
-                    },
-                    {
-                        "_Pointer_": "ptr:3",
-                        "_Type_": "BuildingBlocks_DisplayWidget",
-                        "name": "base_SubItem",
-                        "parent": "_PointsTo_:ptr:2",
-                        "size": {
-                            "width": {"behavior": "Fixed", "value": 60.0},
-                            "height": {"behavior": "Fixed", "value": 60.0}
-                        }
-                    }
-                ],
-                "operations": []
-            }
-        });
-        let tag_db = serde_json::json!({
-            "_RecordName_": "TagDatabase",
-            "_RecordValue_": {
-                "tags": [
-                    {"_RecordId_": screen_tag_id, "_RecordName_": "Tag.ann-screen", "_Type_": "Tag", "tagName": "AnnunciatorScreen", "children": []},
-                    {"_RecordId_": item_tag_id, "_RecordName_": "Tag.ann-item", "_Type_": "Tag", "tagName": "AnnunciatorItem", "children": []},
-                    {"_RecordId_": critical_tag_id, "_RecordName_": "Tag.ann-critical", "_Type_": "Tag", "tagName": "StateCritical", "children": []}
-                ]
-            }
-        });
-        let fetcher = TestCanvasFetcher {
-            by_guid: std::collections::HashMap::new(),
-            by_path: [(tag_db_path.to_string(), tag_db)].into_iter().collect(),
-        };
-
-        let scene = crate::bb_scene::parse_bb_canvas(&canvas).expect("scene parse");
-        let ir = compile_ui_ir_from_scene(
-            &scene,
-            Some(&fetcher),
-            "guid-ann-inner-item",
-            Some("BuildingBlocks_Canvas.TestAnnunciatorInnerItem"),
-            (100, 100),
-            &defaults(),
-            None,
-            None,
-            &[],
-            Vec::new(),
-            Vec::new(),
-            100,
-        );
-
-        let inner = ir
-            .nodes
-            .iter()
-            .find(|node| node.name == "base_SubItem")
-            .expect("inner annunciator item node");
-        assert_eq!(inner.background_fill_colour_token.as_deref(), Some("Accent3"));
-        assert!(inner.border.is_none(), "inner item must not draw inherited item border");
     }
 
     #[test]
