@@ -296,6 +296,22 @@ text AA included) => full gold/platinum re-freeze + re-adjudication of
 all targets. Do not partially apply (image-only carve-outs are not
 engine-faithful).
 
+### 11. Annunciator round 5 — WPN glow off + linear mask glow — LANDED 2026-06-12 (f5040aeab)
+
+- `state_driven_image_activation` DELETED from ui_ir (tag-NAME-keyed
+  force-activation of inactive State*/Flashing images): WPN's glow is
+  correctly entry-gated off (NotTag StateModerate); IsActive is
+  entry-driven only.
+- The white-mask overlay glow composites in LINEAR LIGHT
+  (`blit_white_mask_overlay_linear` in ir_compose): chiclet edge
+  (64,35,6) vs reference (71,48,15), top (46,24,3) vs (45,25,7). This
+  CLOSES the glow-brightness half of the linear question for the mask
+  category; the renderer-wide linear migration (text AA, fills) is
+  still the gated item 10.
+- Gold re-frozen (user-directed) for eng_annunciator_master_left; the
+  door artifact moved with it (same white-mask category). Medical
+  platinum + target master byte-identical; no IR drift (draw-only).
+
 ## Key mechanisms quick reference
 
 - **Derivation**: `crates/starbreaker-3d/src/ui_pipeline/ship_values.rs`
