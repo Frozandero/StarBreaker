@@ -234,6 +234,40 @@ then re-run the artifact freeze if any frozen target's PNG changed (the
   formula = engine SignatureSystem; the canvas's `staticVariables`
   `Signatures_NA` array confirms the Signatures array shape.
 
+### 9. Annunciator rounds 2-3 + MFD body backplate — LANDED 2026-06-12 (81c93109e, f436b446f)
+
+Annunciator (eng_annunciator_master_left, gold):
+- defaultStyles.entries = EDITOR-TIME defaults, never applied at runtime
+  (square chiclet frames, white power system icons prove it).
+- Pending-state entry deferral + Ancestor breaks-everywhere containment;
+  the 16-function annunciator heuristic cluster in ui_ir is GONE — chiclet
+  borders/fills/text colours are entry-driven (square 3px Base border,
+  WPN Moderate amber + dark text, COOL grey 143 Off-Text).
+- Styled PascalCase `ImagePath` overrides the authored image source in
+  `collect_node_asset_refs` (empty styled path clears it — ARGO flat-fill
+  variant): image_BG draws the near-black DRAK_Background_anunciators.tif
+  brand swap (authored alpha 1.0; the texture itself is near-black warm).
+  Reference background away from bloom is neutral ~(5-9) — the remaining
+  brightness delta vs our (33,20,8) plate body is the in-game CRT/capture
+  side (Tom handles the CRT effect in the Blender shader).
+
+MFD body backplate (power/target/radar/all MFD content screens):
+- M_Eng_MFDContent authors background_Main (WidgetBodyBackground,
+  backgroundType Texture) skinned by the modularkit
+  BodyBackgroundWidgetStandard: the s_drak_hud container authors
+  ImagePath DRAK_GroundVehicle_Dashboard_background_2.tif, scaling Fill,
+  **Alpha 0.2** over the Background-token fill — all verbatim DataCore.
+- background_Main.Instantiated binds host boolean `backgroundenabled`:
+  bb_state_filter now consults the default-value registry for boolean
+  variables with no authored/inherited static value; registry pins
+  backgroundenabled=true (provenance: all 4 Clipper screen references).
+- The standard's brand container is matched by the OWNING canvas's
+  selected brand identifier (s_drak_hud), applied only at the canvas that
+  authors the body widget — the manufacturer-prefix scan hit the shared
+  standard's s_drak_env (door-panel) container first.
+- Artifact freeze: clipper_target_master hash changed (gains the plate,
+  matches Screen_Right_Upper_RTT.png); other targets byte-identical.
+
 ## Key mechanisms quick reference
 
 - **Derivation**: `crates/starbreaker-3d/src/ui_pipeline/ship_values.rs`
