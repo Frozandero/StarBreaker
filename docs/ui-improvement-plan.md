@@ -242,7 +242,22 @@ calibrated from captures. (Ledger item 27.)
       Acceptance: running it on `/tmp/bbswf/.../BuildingBlocks_root.swf`
       lists 127 classes; grepping the output for `44` finds candidate
       pushes (the content-view inset) — record which class they're in.
-- [ ] **P2.2 Mine the known constants.** Search the dump for:
+- [x] (2026-06-12, commit "plan P2.2") **P2.2 Mine the known constants.**
+      (a) MISS — no 44/1192/676 pushes anywhere in the 127-class dump
+      (only keycode-table 44s in `gfx.core.UIComponent`); the inset is
+      C++-side; mfd_view.rs comment now cites the bytecode-mining bound.
+      (b) FOUND the CLIK formula (`ScrollIndicator.updateThumb`:
+      `thumb = max(10, pageSize/max(1,(maxPos−minPos)+pageSize)×track)`)
+      — for pixel inputs it reduces EXACTLY to our viewport/content×track,
+      so no layout change; the BB standard binds the bar to the
+      engine-pushed `_SizeRatio` param, bounding the P7 residual
+      (precisely re-measured: ours 393 vs ref 431 on a 978.8 track) to
+      the C++ input, not the formula. Cited in the layout comment.
+      (c) NEGATIVE-CONFIRMS the host division — `TextFieldContainer`
+      sets `TextFormat.size = _fontSize` verbatim and the dump has no
+      fontLib/textScale handling, so the imageSizePercent compensation
+      must live below the SWF layer; cited in
+      `apply_font_image_size_percent`'s comment. Search the dump for:
       (a) the content-view placement (44 / 1192 / 676 family — expected in
       a view/layout class, e.g. a `bhvr.*` view manager) →
       if found, update `crates/starbreaker-ui/src/mfd_view.rs` doc

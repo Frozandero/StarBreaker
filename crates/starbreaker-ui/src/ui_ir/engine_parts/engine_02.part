@@ -837,6 +837,15 @@ fn fill_colour_from_raw_for_text(raw: &serde_json::Value) -> Option<[f32; 4]> {
 /// power frame footer (cap ~80 vs 53), target NO TARGET heading (×1.40) and
 /// footer (×1.31), the power entry-sized texts — while the NON-host medical
 /// captures match styled sizes verbatim (banner cap 25 ≈ ref 27).
+///
+/// AVM1 corroboration (plan P2.2c, 2026-06-12): the framework AS2 applies
+/// sizes verbatim — `bhvr.utils.TextFieldContainer` does
+/// `tf = val.getTextFormat(); tf.size = _fontSize; val.setTextFormat(tf)`
+/// with no scaling, and the full `BuildingBlocks_root.swf` dump contains no
+/// fontLib/textScale/imageSizePercent handling anywhere
+/// (`examples/swf_avm1_dump.rs`). The compensation therefore lives BELOW the
+/// SWF layer, in the engine's fontlib rasterisation — consistent with this
+/// host-path division and with it never applying to non-host canvases.
 fn apply_font_image_size_percent(
     value: UiIrValue,
     resolved_font_record: Option<&serde_json::Value>,

@@ -40,11 +40,18 @@ type CanvasUrl = (BbNodeId, String, Vec<Value>);
 /// The GFx host's content-view inset, in stage pixels of the 1280×720
 /// `BuildingBlocks_root.swf` stage: the runtime `BuildingBlocksView` hosts the
 /// bound content view 44px in from the left, right, and bottom stage edges and
-/// flush with the top. The placement is runtime ActionScript (not authored in
-/// any record or static SWF placement), so the inset is a measured framework
-/// constant of the shared host SWF: on the Clipper power-screen capture the
-/// content maps at x-scale 0.93125 (= 1192/1280) centred and y-scale 676/720
-/// top-anchored, with x- and y-derived scales agreeing within 0.4%.
+/// flush with the top. The inset is a measured framework constant: on the
+/// Clipper power-screen capture the content maps at x-scale 0.93125
+/// (= 1192/1280) centred and y-scale 676/720 top-anchored, with x- and
+/// y-derived scales agreeing within 0.4%.
+///
+/// Provenance bound (plan P2.2a, 2026-06-12): a full AVM1 dump of
+/// `BuildingBlocks_root.swf` (`examples/swf_avm1_dump.rs`, all 127
+/// `__Packages.*` classes incl. `bhvr.views.{MainView,ScreenView,
+/// BuildingBlocksView}`) contains NO 44/1192/676 pushes anywhere (the only
+/// 44s are a keycode-style table in `gfx.core.UIComponent`), so the
+/// placement is not authored ActionScript either — it is computed on the
+/// C++ host side and remains a measured constant.
 const HOST_STAGE_SIZE: (f32, f32) = (1280.0, 720.0);
 const HOST_CONTENT_INSET: f32 = 44.0;
 

@@ -15,7 +15,10 @@
 //! push Int 44 in SomeView/<anon>/setSize
 //! ```
 //!
-//! Usage: `cargo run -p starbreaker-ui --example swf_avm1_dump -- <file.swf>`
+//! Usage: `cargo run -p starbreaker-ui --example swf_avm1_dump -- <file.swf>
+//! [--ops <class-substring>]` — `--ops` switches matching DoInitAction
+//! blocks to a full action trace (every opcode, Debug-formatted, with pool
+//! refs resolved) so arithmetic formulas can be read, not just constants.
 
 use std::collections::HashMap;
 
@@ -25,9 +28,15 @@ use swf::avm1::types::{Action, Value};
 fn main() {
     let mut args = std::env::args().skip(1);
     let Some(path) = args.next() else {
-        eprintln!("usage: swf_avm1_dump <file.swf>");
+        eprintln!("usage: swf_avm1_dump <file.swf> [--ops <class-substring>]");
         std::process::exit(64);
     };
+    let mut ops_filter: Option<String> = None;
+    while let Some(arg) = args.next() {
+        if arg == "--ops" {
+            ops_filter = args.next();
+        }
+    }
     let bytes = std::fs::read(&path).unwrap_or_else(|e| {
         eprintln!("error: read {path}: {e}");
         std::process::exit(1);
@@ -59,7 +68,14 @@ fn main() {
                     .map(String::as_str)
                     .unwrap_or("?");
                 println!("=== DoInitAction id={id} export={export}");
-                dump_block(action_data, version, encoding, "");
+                let trace_ops = ops_filter
+                    .as_deref()
+                    .is_some_and(|filter| export.contains(filter));
+                if trace_ops {
+                    trace_block(action_data, version, encoding, "", &mut Vec::new());
+                } else {
+                    dump_block(action_data, version, encoding, "");
+                }
             }
             swf::Tag::DoAction(action_data) => {
                 println!("=== DoAction (timeline)");
@@ -69,6 +85,82 @@ fn main() {
         }
     }
     eprintln!("{init_count} DoInitAction tags");
+}
+
+/// Full action trace for one block: every opcode Debug-printed, with Push
+/// constant-pool references resolved against the most recent pool. The pool
+/// is shared down into nested function bodies (AVM1 pool state is dynamic;
+/// class initialisers set it once at the top of the block).
+fn trace_block(
+    data: &[u8],
+    version: u8,
+    encoding: &'static swf::Encoding,
+    fn_path: &str,
+    pool: &mut Vec<String>,
+) {
+    let mut reader = Reader::new(data, version);
+    loop {
+        if reader.get_ref().is_empty() {
+            break;
+        }
+        let action = match reader.read_action() {
+            Ok(action) => action,
+            Err(e) => {
+                println!("!! parse error in {fn_path:?}: {e}");
+                break;
+            }
+        };
+        match action {
+            Action::End => break,
+            Action::ConstantPool(new_pool) => {
+                *pool = new_pool
+                    .strings
+                    .iter()
+                    .map(|s| s.to_str_lossy(encoding).into_owned())
+                    .collect();
+                println!("op {} ConstantPool ({} strings)", display_path(fn_path), pool.len());
+            }
+            Action::Push(push) => {
+                let rendered: Vec<String> = push
+                    .values
+                    .iter()
+                    .map(|value| match value {
+                        Value::ConstantPool(index) => pool
+                            .get(*index as usize)
+                            .map(|s| format!("pool:{s:?}"))
+                            .unwrap_or_else(|| format!("pool[{index}]?")),
+                        Value::Str(s) => format!("{:?}", s.to_str_lossy(encoding)),
+                        other => format!("{other:?}"),
+                    })
+                    .collect();
+                println!("op {} Push [{}]", display_path(fn_path), rendered.join(", "));
+            }
+            Action::DefineFunction(function) => {
+                let name = function.name.to_str_lossy(encoding);
+                let label = if name.is_empty() { "<anon>" } else { &name };
+                println!("op {} DefineFunction {label}", display_path(fn_path));
+                trace_block(function.actions, version, encoding, &join_path(fn_path, label), pool);
+            }
+            Action::DefineFunction2(function) => {
+                let name = function.name.to_str_lossy(encoding);
+                let label = if name.is_empty() { "<anon>" } else { &name };
+                let params: Vec<String> = function
+                    .params
+                    .iter()
+                    .map(|p| format!("r{}={}", p.register_index.map(|r| r.get()).unwrap_or(0),
+                                     p.name.to_str_lossy(encoding)))
+                    .collect();
+                println!("op {} DefineFunction2 {label}({})", display_path(fn_path), params.join(", "));
+                trace_block(function.actions, version, encoding, &join_path(fn_path, label), pool);
+            }
+            Action::With(with) => {
+                trace_block(with.actions, version, encoding, &join_path(fn_path, "<with>"), pool);
+            }
+            other => {
+                println!("op {} {other:?}", display_path(fn_path));
+            }
+        }
+    }
 }
 
 /// Walk one action block, printing pools and pushes; recurse into bodies.

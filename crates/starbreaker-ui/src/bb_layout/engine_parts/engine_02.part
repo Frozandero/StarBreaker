@@ -1654,6 +1654,20 @@ mod tests_padding_fit {
 // nothing overflows (ratio >= 1) the engine hides the whole bar (`_Show`
 // false); statically that is reproduced by zeroing the rects of the expanded
 // `ComponentRoot` subtree (the thumb's parent), which the renderer skips.
+//
+// Formula provenance (plan P2.2b, 2026-06-12): the proportional model is
+// corroborated by the engine's own root SWF — `gfx.controls.ScrollIndicator
+// .updateThumb` in `BuildingBlocks_root.swf` AVM1 computes
+// `thumb = max(10, pageSize / max(1, (maxPos - minPos) + pageSize) * track)`,
+// which for pixel-valued positions (maxPos - minPos = content - viewport,
+// pageSize = viewport) reduces to exactly viewport/content x track
+// (`examples/swf_avm1_dump.rs --ops controls.ScrollIndicator`). The BB
+// scrollbar standard itself binds the bar's SizeX to the engine-pushed
+// `_SizeRatio` component parameter (scrollbarhorizontalcomponentstandard
+// operations), so the live value is computed C++-side: the power-screen
+// residual (ours 393px vs reference 431px on a 978.8px track, i.e. ratio
+// 0.402 vs 0.440) is an engine-input difference, not a formula error —
+// parked with P7 in docs/ui-clipper-parity-handoff.md.
 
 fn apply_scroll_thumb_rects(scene: &BbScene, rects: &mut BTreeMap<BbNodeId, Rect>) {
     let thumbs: Vec<(BbNodeId, String, bool)> = scene
