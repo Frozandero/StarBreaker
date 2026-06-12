@@ -1126,13 +1126,6 @@ fn build_ui_ir_nodes(
                 .and_then(|value| value.as_str())
                 .is_some_and(|caption| caption.trim().eq_ignore_ascii_case("@LOC_PLACEHOLDER"));
 
-        let suppress_duplicate_function_title = node
-            .name
-            .eq_ignore_ascii_case("FunctionTitle")
-            && text_payload
-                .as_ref()
-                .is_some_and(|payload| matches!(payload, UiIrTextPayload::Resolved { text } if !text.trim().is_empty()));
-
         let rect = if suppress_placeholder_only_label_caption_pair {
             layout_rect
         } else {
@@ -1252,8 +1245,7 @@ fn build_ui_ir_nodes(
             name: node.name.clone(),
             is_active: node.is_active
                 && !suppress_placeholder_background_image
-                && !suppress_placeholder_only_label_caption_pair
-                && !suppress_duplicate_function_title,
+                && !suppress_placeholder_only_label_caption_pair,
             layer: node.layer,
             alpha,
             anchor: [node.anchor.x, node.anchor.y],

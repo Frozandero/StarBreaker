@@ -723,7 +723,7 @@ mod tests {
     }
 
     #[test]
-    fn compile_ir_maps_primary_text_colour_tag_to_base_token() {
+    fn compile_ir_primary_state_tag_is_not_a_colour_directive() {
         let tag_db_path = "file://tagdatabase.tagdatabase.json";
         let primary_tag_id = "primary-tag-id";
         let canvas = serde_json::json!({
@@ -812,14 +812,17 @@ mod tests {
             100,
         );
 
-        // A Title-style node carrying the colourless `Primary` state tag takes the
-        // brand title FillColor (BiotiCorp s_bioc = Base light-blue), matching the
-        // in-game Clipper Medical2 "DIGITAL MEDICAL ASSISTANT" title. The `Primary`
-        // tag is a state marker, not a `Bright` (grey) colour override.
+        // The colourless `Primary` state tag is NOT a colour directive: the
+        // former Primary→Base arm was deleted 2026-06-12 (with the
+        // text-format style route landed, the in-game Medical2 title's Base
+        // light-blue is entry/brand-driven; disabling the arm drifts no
+        // frozen pin). A bare Title-style node with only the Primary tag has
+        // NO derived colour token — it falls to the brand text style at
+        // render.
         let node = ir.nodes.iter().find(|node| node.name == "primary_title").expect("primary title node");
         assert_eq!(
             node.text_style.as_ref().and_then(|style| style.colour_token.as_deref()),
-            Some("Base")
+            None
         );
         assert_eq!(node.resolved_style_tags.first().and_then(|tag| tag.tag_name.as_deref()), Some("Primary"));
 
@@ -832,7 +835,7 @@ mod tests {
     }
 
     #[test]
-    fn compile_ir_maps_untagged_heading1_text_to_base_token() {
+    fn compile_ir_untagged_heading1_text_has_no_derived_colour_token() {
         let canvas = serde_json::json!({
             "_RecordName_": "BuildingBlocks_Canvas.TestHeadingBase",
             "_RecordValue_": {
@@ -874,9 +877,12 @@ mod tests {
         );
 
         let heading = ir.nodes.iter().find(|node| node.name == "untagged_heading").expect("heading node");
+        // The untagged-Heading1→Base semantic guess was DELETED 2026-06-12
+        // (Phase 3 audit: entry-driven colours cover every frozen pin; an
+        // untagged heading falls to the brand text style at render).
         assert_eq!(
             heading.text_style.as_ref().and_then(|style| style.colour_token.as_deref()),
-            Some("Base")
+            None
         );
     }
 

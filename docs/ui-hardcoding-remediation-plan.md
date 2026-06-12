@@ -88,8 +88,11 @@ derivations stay open with their criteria recorded in the register:
 - [ ] MFD content text scale (open item, handoff §13): the ×4/3 gap is
       currently unexplained — derive structurally (candidate: the
       0.9-scaled content stage height), never land as a bare multiplier.
-      The route arc landed (07c821a83); derive next power-arc session
-      (the ºC glyph is the clean discriminator).
+      RECLASSIFIED 2026-06-12: the ×4/3 also shows on the FRAME footer
+      (glyph ink height only; advances/pitch match) — it is the SWF
+      glyph-ink scale question (the 0.84 register entry, evidence note
+      there), conditional on path/font (medical shows NO gap). Derive on
+      the dedicated text-calibration arc.
 
 ## Phase 3 — tag/style NAME-keyed semantic decisions
 
@@ -97,27 +100,32 @@ Matching DataCore TYPE strings (`BuildingBlocks_*`) is data-driven and
 fine. Deciding COLOURS/sizes from tag or style NAMES is derived
 behaviour that the cascade should produce instead:
 
-- [ ] `src/ui_ir/engine_parts/engine_02.part`
-      `node_colour_directive_token` (`StateModerate→Base`,
-      `StateCritical→Background`, `Bright→Bright`, `Primary→Base`) and
-      `semantic_text_colour_token_from_style_tags`
-      (`Text_Header`/heading→`Base`) — the 2026-06-12 text-format-route
-      work shows authored entries carry much of this; re-audit each arm
-      now that the route LANDED (commit 07c821a83) and delete arms the
-      data covers — each deletion adjudicated per reference.
-- [ ] `src/pipeline/mod.rs` `ScreenNameBackground` tag-name check
-      (placeholder-background suppression) — find the structural signal
-      (authored background enable/state) instead of the tag name.
+- [x] AUDITED EMPIRICALLY 2026-06-12 (disable each rule → frozen-pin
+      adjudication): `node_colour_directive_token` arms
+      `StateModerate→Base`, `StateCritical→Background`, `Primary→Base`
+      and ALL `semantic_text_colour_token_from_style_tags` heading→Base
+      guesses are COVERED by authored entries since the route landed —
+      deleted with zero drift (full battery + font harness green). The
+      `Bright`-tag arm SURVIVES (ui_target_b tier-label pin needs it; the
+      tag literally names the BB_ColorStyle role, so it is authored data).
+- [x] `src/pipeline/mod.rs` `ScreenNameBackground` suppression — DELETED:
+      redundant since the annunciator background became entry/registry
+      driven (zero drift). `FunctionTitle` duplicate-suppression also
+      deleted (zero drift).
 - [x] Inventory (2026-06-12): the unique `eq_ignore_ascii_case` target
       set was classified. Data-driven and FINE: DataCore type/enum/field
       strings (`BuildingBlocks_*`, flex/sizing/overflow enum values,
       modifier field names, `@LOC_*`), our own internal node-type/marker
       strings. NAME-keyed survivors needing structural replacements:
-      - [ ] `bb_resolve/engine_parts/engine_01.part:250` `"RootGhost"`
-            and `:1479` `"base_animatedelements"` (node-NAME matches);
-      - [ ] `ui_ir/engine_parts/engine_01.part:496`
-            `"root_annunciator_items"` (node-NAME match) and `:1131`
-            `"FunctionTitle"`;
+      - [ ] `"RootGhost"` (entry-name chrome extraction) — needs the
+            entries-evaluated-against-the-node refactor;
+      - [ ] `"base_animatedelements"` deactivation — STILL LOAD-BEARING
+            (disabling drifts ui_target_a draw order); derive the
+            structural at-rest-hidden signal from the animation data;
+      - [ ] `"root_annunciator_items"` + its 25px frame — STILL
+            LOAD-BEARING (disabling drifts the annunciator gold pins);
+            derive the frame inset from authored data;
+      - [x] `"FunctionTitle"` — deleted (covered, zero drift);
       - [ ] tag-name keyed colour/behaviour arms (`Bright`, `Flashing`,
             `Modify`, `Ghost`, `icon`, `Heading1` style names) — the
             Phase 3 audit set above.
