@@ -442,7 +442,7 @@ surviving name-keyed rules and ledger item 17 land here.)
       gate), and applies modifiers in tier order with the existing marker
       semantics. Pure refactor: behaviour pinned by the existing 513 lib
       tests + live IR guard.
-- [ ] **P4.3 Migrate call sites pass-by-pass** (one commit each, battery
+- [x] (2026-06-13, commit "plan P4.3") **P4.3 Migrate call sites pass-by-pass** (one commit each, battery
       green each): brand pass first, then shared, then embedded, then
       deferred late-state (its origin-identifier logic becomes
       `Tier::DeferredState` + the original tier), then inline. Delete

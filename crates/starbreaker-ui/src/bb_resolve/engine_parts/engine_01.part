@@ -226,19 +226,32 @@ fn apply_body_background_standard_styles(
         bb_brand_style::resolve_brand_style(standard_record, None, preferred_brand)
             .or_else(|| bb_brand_style::resolve_brand_style(standard_record, manufacturer_id, None))
     {
-        crate::bb_brand_apply::apply_brand_modifiers(scene, &brand_style, loc_fetcher);
+        crate::bb_style_engine::apply(
+            scene,
+            &[crate::bb_style_engine::StyleSheet::uniform(
+                crate::bb_style_engine::Tier::Brand,
+                brand_style.identifier.clone(),
+                brand_style.raw,
+                brand_style.entries,
+            )],
+            loc_fetcher,
+        );
     } else if let Some(entries) = record_value
         .get("defaultStyles")
         .and_then(|styles| styles.get("entries"))
         .and_then(|entries| entries.as_array())
         .filter(|entries| !entries.is_empty())
     {
-        let brand = bb_brand_style::BrandStyle {
-            identifier: "BodyBackgroundWidgetStandard.defaultStyles".to_string(),
-            entries: entries.as_slice(),
-            raw: record_value,
-        };
-        crate::bb_brand_apply::apply_brand_modifiers(scene, &brand, loc_fetcher);
+        crate::bb_style_engine::apply(
+            scene,
+            &[crate::bb_style_engine::StyleSheet::uniform(
+                crate::bb_style_engine::Tier::StandardModule,
+                "BodyBackgroundWidgetStandard.defaultStyles",
+                record_value,
+                entries.as_slice(),
+            )],
+            loc_fetcher,
+        );
     }
 }
 
@@ -736,7 +749,13 @@ fn collect_late_state_style_entries(
     child_pending: &std::collections::HashSet<String>,
     manufacturer_id: Option<&str>,
     fetch_by_path: &dyn Fn(&str) -> Result<serde_json::Value, String>,
-) -> Vec<(Vec<serde_json::Value>, serde_json::Value, serde_json::Value, String)> {
+) -> Vec<(
+    Vec<serde_json::Value>,
+    serde_json::Value,
+    serde_json::Value,
+    String,
+    crate::bb_style_engine::Tier,
+)> {
     if child_pending.is_empty() {
         return Vec::new();
     }
@@ -765,13 +784,20 @@ fn collect_late_state_style_entries(
         serde_json::Value,
         serde_json::Value,
         String,
+        crate::bb_style_engine::Tier,
     )> = Vec::new();
     if let Some(brand) = bb_brand_style::resolve_brand_style(canvas_json, manufacturer_id, None) {
         let brand_entries = filter(brand.entries);
         if !brand_entries.is_empty() {
             let chrome = brand_palette_record(Some(&brand), fetch_by_path)
                 .unwrap_or_else(|| brand.raw.clone());
-            passes.push((brand_entries, brand.raw.clone(), chrome, brand.identifier.clone()));
+            passes.push((
+                brand_entries,
+                brand.raw.clone(),
+                chrome,
+                brand.identifier.clone(),
+                crate::bb_style_engine::Tier::Brand,
+            ));
         }
     }
     if let Some(embedded) = record_value.get("embeddedStyles") {
@@ -786,6 +812,7 @@ fn collect_late_state_style_entries(
                     record_value.clone(),
                     record_value.clone(),
                     "embeddedStyles".to_string(),
+                    crate::bb_style_engine::Tier::Embedded,
                 ));
             }
         }
@@ -1184,6 +1211,7 @@ fn resolve_canvas_graph_inner(
         serde_json::Value,
         serde_json::Value,
         String,
+        crate::bb_style_engine::Tier,
     )> = Vec::new();
 
     {
@@ -1350,7 +1378,7 @@ fn resolve_canvas_graph_inner(
                 &mut child_scene,
                 child_namespace.is_some(),
             );
-            for (entries, fills, chrome, origin_identifier) in
+            for (entries, fills, chrome, origin_identifier, origin_tier) in
                 collect_late_state_style_entries(&child_json, &child_pending, manufacturer_id, fetch_by_path)
             {
                 deferred_child_style_passes.push((
@@ -1359,6 +1387,7 @@ fn resolve_canvas_graph_inner(
                     fills,
                     chrome,
                     origin_identifier,
+                    origin_tier,
                 ));
             }
             merge_child_scene(&mut scene, child_scene, "", Some(node_id), false);
@@ -1430,15 +1459,18 @@ fn resolve_canvas_graph_inner(
     // tags, scoped to each child's subtree (see the collection site above).
     // The empty palette keeps colours token-only; an unchanged token is a
     // no-op against the child cascade's earlier resolution.
-    for (host_id, entries, fills, chrome, identifier) in &deferred_child_style_passes {
-        crate::bb_brand_apply::apply_scene_style_entries_in_subtree(
+    for (host_id, entries, fills, chrome, identifier, origin_tier) in &deferred_child_style_passes {
+        crate::bb_style_engine::apply(
             &mut scene,
-            entries,
-            fills,
-            chrome,
+            &[crate::bb_style_engine::StyleSheet {
+                tier: *origin_tier,
+                identifier: identifier.clone(),
+                fills,
+                chrome,
+                entries,
+                scope: crate::bb_style_engine::SheetScope::Subtree(*host_id),
+            }],
             loc_fetcher,
-            *host_id,
-            identifier,
         );
     }
     // The expanded standards' own embeddedStyles run against the freshly
@@ -1446,12 +1478,16 @@ fn resolve_canvas_graph_inner(
     // activates `ComponentRoot` through its `RootShow` entry).
     if !standard_embedded_entries.is_empty() {
         let empty_raw = serde_json::json!({});
-        let brand = bb_brand_style::BrandStyle {
-            identifier: "widget-standard-embedded".to_string(),
-            entries: standard_embedded_entries.as_slice(),
-            raw: &empty_raw,
-        };
-        crate::bb_brand_apply::apply_brand_modifiers(&mut scene, &brand, loc_fetcher);
+        crate::bb_style_engine::apply(
+            &mut scene,
+            &[crate::bb_style_engine::StyleSheet::uniform(
+                crate::bb_style_engine::Tier::StandardModule,
+                "widget-standard-embedded",
+                &empty_raw,
+                standard_embedded_entries.as_slice(),
+            )],
+            loc_fetcher,
+        );
     }
     apply_canvas_style_cascade(
         &mut scene,
@@ -1492,18 +1528,19 @@ fn resolve_canvas_graph_inner(
                             apply_buttonsecondary_modular_styles(&mut scene, entries);
                         }
 
-                        let brand = bb_brand_style::BrandStyle {
-                            identifier: extract_record_name(&module_path),
-                            entries: entries.as_slice(),
-                            raw: module_style_value,
-                        };
                         let palette = module_chrome_palette
                             .as_ref()
                             .unwrap_or(module_style_value);
-                        crate::bb_brand_apply::apply_brand_modifiers_with_palette(
+                        crate::bb_style_engine::apply(
                             &mut scene,
-                            &brand,
-                            palette,
+                            &[crate::bb_style_engine::StyleSheet {
+                                tier: crate::bb_style_engine::Tier::StandardModule,
+                                identifier: extract_record_name(&module_path),
+                                fills: module_style_value,
+                                chrome: palette,
+                                entries: entries.as_slice(),
+                                scope: crate::bb_style_engine::SheetScope::Scene,
+                            }],
                             loc_fetcher,
                         );
                     }

@@ -66,55 +66,22 @@ pub fn apply_brand_modifiers(
     loc_fetcher: Option<&dyn LocFetcher>,
 ) {
     let palettes = PaletteSources::uniform(brand.raw);
-    apply_style_entries(scene, brand.entries, &palettes, Some(&brand.identifier), loc_fetcher, None);
-}
-
-/// Like [`apply_brand_modifiers`], but resolving named colour roles against an
-/// explicit palette record. A canvas's `brandStyles[]` container carries only
-/// `entries`; the colour palette lives on the `BuildingBlocks_Style` record its
-/// `brandIdentifier` names (e.g. `s_drak_hud`). Callers that can fetch that
-/// record pass it here so colour modifiers (`BackgroundColor = Disabled@0.1`,
-/// `BorderColorTop = Base@1.0`, …) resolve instead of being dropped.
-pub fn apply_brand_modifiers_with_palette(
-    scene: &mut BbScene,
-    brand: &BrandStyle<'_>,
-    palette_source: &serde_json::Value,
-    loc_fetcher: Option<&dyn LocFetcher>,
-) {
-    // Chrome fields resolve against the fetched brand palette; fill fields keep
-    // the container-only behaviour (see `PaletteSources`).
-    let palettes = PaletteSources {
-        fills: brand.raw,
-        chrome: palette_source,
-    };
-    apply_style_entries(scene, brand.entries, &palettes, Some(&brand.identifier), loc_fetcher, None);
-}
-
-/// Like [`apply_brand_modifiers_with_palette`], but only nodes whose `raw`
-/// carries `scope_marker` participate. Standard-template module sheets are
-/// per-instantiated-canvas in the engine: the scrollbar sheet's `Root` entry
-/// targets the generic `canvas-proxy-root` tag every expanded standard root
-/// carries, so a scene-wide application would restyle icon/button roots too.
-pub fn apply_brand_modifiers_with_palette_scoped(
-    scene: &mut BbScene,
-    brand: &BrandStyle<'_>,
-    palette_source: &serde_json::Value,
-    loc_fetcher: Option<&dyn LocFetcher>,
-    scope_marker: &str,
-) {
-    let palettes = PaletteSources {
-        fills: brand.raw,
-        chrome: palette_source,
-    };
-    apply_style_entries(
+    // Brand-tier gates, explicit (production styling routes through
+    // `bb_style_engine`; this wrapper serves the condition/modifier tests).
+    apply_style_entries_gated(
         scene,
         brand.entries,
         &palettes,
         Some(&brand.identifier),
         loc_fetcher,
-        Some(scope_marker),
+        None,
+        None,
+        true,
+        true,
     );
 }
+
+
 
 /// Apply arbitrary canvas style entries (for example `defaultStyles.entries`) to a scene.
 pub fn apply_scene_style_entries(
@@ -124,49 +91,9 @@ pub fn apply_scene_style_entries(
     loc_fetcher: Option<&dyn LocFetcher>,
 ) {
     let palettes = PaletteSources::uniform(palette_source);
-    apply_style_entries(scene, entries, &palettes, None, loc_fetcher, None);
+    apply_style_entries_gated(scene, entries, &palettes, None, loc_fetcher, None, None, false, false);
 }
 
-/// Re-apply a merged child canvas's style entries to that child's SUBTREE
-/// only, once runtime state tags are resolvable (the child's own cascade ran
-/// before its parent injected the dynamic params its state tags derive from
-/// — the annunciator chiclets' "Critical - Text"/"Off - Text" entries match
-/// only here). Entries are condition-gated as usual; re-application of an
-/// already-applied entry is idempotent (same modifiers overwrite, and an
-/// unchanged colour token does not clear an already-resolved RGBA).
-pub fn apply_scene_style_entries_in_subtree(
-    scene: &mut BbScene,
-    entries: &[serde_json::Value],
-    fills_palette: &serde_json::Value,
-    chrome_palette: &serde_json::Value,
-    loc_fetcher: Option<&dyn LocFetcher>,
-    subtree_root: BbNodeId,
-    style_identifier: &str,
-) {
-    let mut allowed: std::collections::HashSet<BbNodeId> = std::collections::HashSet::new();
-    let mut stack = vec![subtree_root];
-    while let Some(id) = stack.pop() {
-        if !allowed.insert(id) {
-            continue;
-        }
-        if let Some(node) = scene.nodes.get(&id) {
-            stack.extend(node.children.iter().copied());
-        }
-    }
-    let palettes = PaletteSources {
-        fills: fills_palette,
-        chrome: chrome_palette,
-    };
-    apply_style_entries_filtered(
-        scene,
-        entries,
-        &palettes,
-        Some(style_identifier),
-        loc_fetcher,
-        None,
-        Some(&allowed),
-    );
-}
 
 /// The selector-engine entry point (`bb_style_engine`, plan P4.2): same
 /// kernel as every legacy wrapper, but the text-format route and the
@@ -201,54 +128,7 @@ pub(crate) fn apply_style_entries_for_engine(
     )
 }
 
-fn apply_style_entries(
-    scene: &mut BbScene,
-    entries: &[serde_json::Value],
-    palettes: &PaletteSources<'_>,
-    style_identifier: Option<&str>,
-    loc_fetcher: Option<&dyn LocFetcher>,
-    scope_marker: Option<&str>,
-) {
-    apply_style_entries_filtered(
-        scene,
-        entries,
-        palettes,
-        style_identifier,
-        loc_fetcher,
-        scope_marker,
-        None,
-    );
-}
 
-#[allow(clippy::too_many_arguments)]
-fn apply_style_entries_filtered(
-    scene: &mut BbScene,
-    entries: &[serde_json::Value],
-    palettes: &PaletteSources<'_>,
-    style_identifier: Option<&str>,
-    loc_fetcher: Option<&dyn LocFetcher>,
-    scope_marker: Option<&str>,
-    allowed_nodes: Option<&std::collections::HashSet<BbNodeId>>,
-) {
-    // Legacy gate inference: brand semantics sniffed from the identifier
-    // prefix. The selector engine passes the gates explicitly from the
-    // sheet tier; these wrappers keep byte-identical behaviour until every
-    // call site is migrated (plan P4.3).
-    let text_format_route = style_identifier
-        .is_some_and(|id| id.to_ascii_lowercase().starts_with("s_"));
-    let stamp_brand = style_identifier.is_some_and(looks_like_style_brand_identifier);
-    apply_style_entries_gated(
-        scene,
-        entries,
-        palettes,
-        style_identifier,
-        loc_fetcher,
-        scope_marker,
-        allowed_nodes,
-        text_format_route,
-        stamp_brand,
-    )
-}
 
 #[allow(clippy::too_many_arguments)]
 fn apply_style_entries_gated(
@@ -443,10 +323,6 @@ fn record_applied_style_entry(node: &mut BbNode, entry: &serde_json::Value) {
     }
 }
 
-fn looks_like_style_brand_identifier(identifier: &str) -> bool {
-    let lower = identifier.to_ascii_lowercase();
-    lower.starts_with("s_") || lower.starts_with("gen_")
-}
 
 fn resolve_node_background_color(node: &mut BbNode, palette_source: &serde_json::Value) {
     if node

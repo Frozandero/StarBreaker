@@ -1,9 +1,14 @@
 //! Canvas style-entry projection for the pipeline: applies the root canvas's
 //! own style entries onto the resolved scene after graph resolution (split
 //! from `pipeline/mod.rs` for the line cap).
+//!
+//! NOTE (plan P4.1 inventory): this is the one place `defaultStyles.entries`
+//! run at all (they are editor-time in the cascade) — scoped to the ROOT
+//! (binding frame) canvas, followed by a re-application of the root brand
+//! container. Flagged for the P4.4 re-audit.
 
-use crate::bb_brand_apply::{apply_brand_modifiers, apply_scene_style_entries};
 use crate::bb_brand_style::resolve_brand_style;
+use crate::bb_style_engine::{apply, StyleSheet, Tier};
 
 pub(super) fn project_canvas_style_entries(
     scene: &mut crate::bb_scene::BbScene,
@@ -13,18 +18,35 @@ pub(super) fn project_canvas_style_entries(
 ) {
     let record_value = raw_root_json.get("_RecordValue_").unwrap_or(raw_root_json);
     let selected_brand = resolve_brand_style(raw_root_json, manufacturer_id, None);
-    let palette_source = selected_brand.map(|brand| brand.raw).unwrap_or(record_value);
+    let palette_source = selected_brand.as_ref().map(|brand| brand.raw).unwrap_or(record_value);
 
     if let Some(default_entries) = record_value
         .get("defaultStyles")
         .and_then(|styles| styles.get("entries"))
         .and_then(|entries| entries.as_array())
     {
-        apply_scene_style_entries(scene, default_entries, palette_source, loc_fetcher);
+        apply(
+            scene,
+            &[StyleSheet::uniform(
+                Tier::StyleLink,
+                "root-defaultStyles",
+                palette_source,
+                default_entries.as_slice(),
+            )],
+            loc_fetcher,
+        );
     }
 
-    if let Some(brand) = resolve_brand_style(raw_root_json, manufacturer_id, None) {
-        apply_brand_modifiers(scene, &brand, loc_fetcher);
+    if let Some(brand) = selected_brand {
+        apply(
+            scene,
+            &[StyleSheet::uniform(
+                Tier::Brand,
+                brand.identifier.clone(),
+                brand.raw,
+                brand.entries,
+            )],
+            loc_fetcher,
+        );
     }
 }
-

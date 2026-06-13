@@ -1756,19 +1756,21 @@ fn apply_scrollbar_modular_styles(
     let Some(entries) = sheet_value.get("entries").and_then(|v| v.as_array()) else {
         return;
     };
-    let brand = bb_brand_style::BrandStyle {
-        identifier: extract_record_name(&sheet_path),
-        entries: entries.as_slice(),
-        raw: &sheet_value,
-    };
     // Named colour roles (`Base`) resolve against the brand Style record's
     // palette — the module sheet itself carries no `colorStyles`.
-    crate::bb_brand_apply::apply_brand_modifiers_with_palette_scoped(
+    crate::bb_style_engine::apply(
         scene,
-        &brand,
-        chrome_palette.unwrap_or(&sheet_value),
+        &[crate::bb_style_engine::StyleSheet {
+            tier: crate::bb_style_engine::Tier::StandardModule,
+            identifier: extract_record_name(&sheet_path),
+            fills: &sheet_value,
+            chrome: chrome_palette.unwrap_or(&sheet_value),
+            entries: entries.as_slice(),
+            scope: crate::bb_style_engine::SheetScope::Marker(
+                SCROLLBAR_STANDARD_NODE_MARKER.to_string(),
+            ),
+        }],
         None,
-        SCROLLBAR_STANDARD_NODE_MARKER,
     );
 }
 
