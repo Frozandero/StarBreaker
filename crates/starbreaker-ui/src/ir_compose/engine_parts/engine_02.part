@@ -2152,7 +2152,6 @@ mod tests_d {
             &document,
             &TextRenderer::new(),
             &ctx,
-            41.0,
         )
         .expect("inline rect");
 

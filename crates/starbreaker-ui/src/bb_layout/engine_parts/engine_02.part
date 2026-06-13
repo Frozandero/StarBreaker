@@ -2049,9 +2049,6 @@ mod auto_text_flex_tests {
     use super::*;
     use crate::bb_scene::parse_bb_canvas;
 
-    /// Two Auto-width text containers in a Center-justified row flow at
-    /// their measured widths side by side (the OUTPUT card's "2" "/ 16").
-    #[test]
     /// The TTF text-measure fallback follows the SAME data-backed em model
     /// as the SWF path (plan P3.2): the IR font size IS the design-em pixel
     /// size (ascent+|descent| = size px; rusttype's Scale already normalises
@@ -2096,6 +2093,9 @@ mod auto_text_flex_tests {
         );
     }
 
+    /// Two Auto-width text containers in a Center-justified row flow at
+    /// their measured widths side by side (the OUTPUT card's "2" "/ 16").
+    #[test]
     fn auto_text_children_flow_at_measured_widths() {
         let canvas = serde_json::json!({
             "_RecordValue_": {
