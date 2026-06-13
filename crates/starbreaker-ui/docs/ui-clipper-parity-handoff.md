@@ -116,6 +116,22 @@ nine-slice). A working implementation was built and REVERTED for two blockers
    MissionObjectives-tinted.
 5. Test fixtures need the tag database served (expansion bails without it).
 
+**2026-06-13 verification (owner asked to confirm medical stays dot-free).** The
+power separators (`gen_mc_s_poweroutputinfo`, `separator_OUTPUT/BatteryTitle`) are
+bare hosts: `styleTags=[]`, `isActive=true`, `direction=Vertical style=Tertiary`.
+The medical components (`i_medicalcommon_components/*`: TopSeparator, BottomSeparator,
+injury/clone/text dividers) are **byte-identical in form** — `styleTags=[]`,
+`isActive=true` (mostly `Horizontal` Secondary/Tertiary). Every brand in each
+standard carries an `SvgPath` modifier (`s_drak_env`→DRAK dots, `s_bioc`→BIOC,
+`s_aegs_env`→AEGS …). So there is **no authored discriminator** between
+"should render" (power) and "must not render" (medical): a type-based expansion
+draws BOTH, changing the frozen medical platinum. The in-game medical bed DOES show
+its own (horizontal) dividers, so the real rule is the **brand-context resolver**
+(which separator renders in which canvas family) — Blocker B is load-bearing, not
+optional. Until it's solved, the feature stays parked; a naive expansion is a
+medical-platinum regression. CONFIRMED: cannot render the power dots in isolation
+without the resolver.
+
 ### P14 — non-zero-Auto column model (4a OFFLINE) — RESOLVED (`be1859d59`)
 
 A column child authored non-zero `Auto` (value v∈(0,1)) now **content-fits its
