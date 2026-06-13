@@ -530,3 +530,26 @@ fn image_without_overlay_keeps_own_colours() {
         "a non-overlay image must not be default-tinted"
     );
 }
+
+#[test]
+fn style_provenance_helpers_track_the_winning_field_source() {
+    // `stamp_style_provenance` is last-writer-wins (mirrors the value
+    // resolution — recorded only for APPLIED modifiers, so a suppressed shared
+    // override is never credited); `provenance_field` flags only colour /
+    // visibility / geometry modifiers (ledger item A / SB_UI_STYLE_PROVENANCE).
+    let mut scene = make_test_scene();
+    let node = scene.nodes.get_mut(&1).unwrap();
+    stamp_style_provenance(node, "BackgroundColor", "mfd_g_emissions/New Style");
+    stamp_style_provenance(node, "BackgroundColor", "s_drak_hud/Brand Accent");
+    let provenance = node
+        .raw
+        .get("__StyleProvenance")
+        .and_then(|map| map.get("BackgroundColor"))
+        .and_then(|value| value.as_str());
+    assert_eq!(provenance, Some("s_drak_hud/Brand Accent"), "last writer wins");
+
+    let colour = json!({"_Type_": "BuildingBlocks_FieldModifierColor", "field": "BackgroundColor"});
+    let padding = json!({"_Type_": "BuildingBlocks_FieldModifierNumber", "field": "PaddingTop", "value": 0.0});
+    assert_eq!(provenance_field(&colour), Some("BackgroundColor"));
+    assert_eq!(provenance_field(&padding), None, "non-colour/visibility fields are not tracked");
+}

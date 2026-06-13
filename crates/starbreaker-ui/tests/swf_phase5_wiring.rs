@@ -75,6 +75,7 @@ fn minimal_node(
         corner_radius: None,
         background_fill_alpha: None,
         background_fill_colour_token: None,
+        style_provenance: None,
         colour_overlay_enabled: false,
         segmented_fill: None,
         polygon: None,

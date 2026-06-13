@@ -82,6 +82,13 @@ pub struct UiIrNode {
     pub background_fill_alpha: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub background_fill_colour_token: Option<String>,
+    /// Debug-only (`SB_UI_STYLE_PROVENANCE=1`): per colour / visibility field,
+    /// the cascade `pass/entry` that WON it
+    /// (`{"BackgroundColor": "mfd_g_emissions/New Style"}`). Always None in
+    /// normal compiles, so freezes / guards / representative-hashes are
+    /// unaffected (ledger item A).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub style_provenance: Option<std::collections::BTreeMap<String, String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub segmented_fill: Option<UiIrSegmentedFill>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1293,6 +1300,7 @@ fn build_ui_ir_nodes(
             corner_radius: node_corner_radius(node),
             background_fill_alpha,
             background_fill_colour_token,
+            style_provenance: style_provenance_from_raw(node),
             segmented_fill: segmented_fill_from_raw(node),
             polygon: polygon_from_raw(node),
             border,
@@ -1856,6 +1864,19 @@ fn is_footer_brand_label_context(scene: &BbScene, mut parent_id: BbNodeId) -> bo
             return false;
         }
     }
+}
+
+/// Reads the cascade's `__StyleProvenance` annotation (stamped only under
+/// `SB_UI_STYLE_PROVENANCE=1` by `bb_brand_apply::apply_entry_modifiers` via
+/// `stamp_style_provenance`) into the IR node — None in normal compiles.
+/// Ledger item A.
+fn style_provenance_from_raw(node: &BbNode) -> Option<std::collections::BTreeMap<String, String>> {
+    let map = node.raw.get("__StyleProvenance")?.as_object()?;
+    let provenance: std::collections::BTreeMap<String, String> = map
+        .iter()
+        .filter_map(|(field, source)| source.as_str().map(|s| (field.clone(), s.to_string())))
+        .collect();
+    (!provenance.is_empty()).then_some(provenance)
 }
 
 fn background_fill_colour_token_from_raw(

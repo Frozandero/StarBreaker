@@ -147,6 +147,7 @@ fn apply_style_entries_gated(
     shared_tier: bool,
 ) {
     let style_probe = std::env::var("BB_A3_STYLE_PROBE").as_deref() == Ok("1");
+    let record_provenance = std::env::var("SB_UI_STYLE_PROVENANCE").as_deref() == Ok("1");
     let node_ids: Vec<_> = scene.nodes.keys().copied().collect();
     for node_id in node_ids {
         if let Some(allowed) = allowed_nodes
@@ -284,7 +285,14 @@ fn apply_style_entries_gated(
                         .collect::<String>()
                 );
             }
-            apply_entry_modifiers(entry, node, palettes, loc_fetcher, shared_tier);
+            apply_entry_modifiers(
+                entry,
+                node,
+                palettes,
+                loc_fetcher,
+                shared_tier,
+                record_provenance.then_some(style_identifier.unwrap_or("?")),
+            );
             record_applied_style_entry(node, entry);
         }
         for entry in &text_format_entries {
@@ -318,7 +326,14 @@ fn apply_style_entries_gated(
                 });
             // Inline styles are the node's own highest-priority authoring; the
             // shared-tier background suppression never applies to them.
-            apply_entry_modifiers(entry, node, palettes, loc_fetcher, false);
+            apply_entry_modifiers(
+                entry,
+                node,
+                palettes,
+                loc_fetcher,
+                false,
+                record_provenance.then_some(style_identifier.unwrap_or("?")),
+            );
             if sets_font_size
                 && let Some(obj) = node.raw.as_object_mut()
             {
@@ -370,7 +385,6 @@ fn probe_modifier_summary(entry: &serde_json::Value) -> String {
     }
     parts.join(",")
 }
-
 
 fn resolve_node_background_color(node: &mut BbNode, palette_source: &serde_json::Value) {
     if node
@@ -449,23 +463,60 @@ fn apply_entry_text_format_modifiers(
 /// styling authority for a custom shape's intrinsic fill, so their
 /// `BackgroundColor` modifier is skipped when the shape already carries an
 /// authored background colour (see `shared_background_override_suppressed`).
+///
+/// `provenance_pass` (Some only under `SB_UI_STYLE_PROVENANCE=1`) records, for
+/// each modifier ACTUALLY applied, `node.raw["__StyleProvenance"][field] =
+/// "pass/entry"` — surfaced as `UiIrNode.style_provenance` (ledger item A).
+/// Recording after `apply_modifier` and inside the non-suppressed branch means
+/// a shared override that LOST is never falsely credited.
 fn apply_entry_modifiers(
     entry: &serde_json::Value,
     node: &mut BbNode,
     palettes: &PaletteSources<'_>,
     loc_fetcher: Option<&dyn LocFetcher>,
     shared_tier: bool,
+    provenance_pass: Option<&str>,
 ) {
     let modifiers = match entry.get("modifiers").and_then(|v| v.as_array()) {
         Some(m) => m,
         None => return,
     };
+    let entry_name = entry.get("name").and_then(|v| v.as_str()).unwrap_or("?");
 
     for modifier in modifiers {
         if shared_tier && shared_background_override_suppressed(modifier, node) {
             continue;
         }
         apply_modifier(modifier, node, palettes, loc_fetcher);
+        if let Some(pass) = provenance_pass
+            && let Some(field) = provenance_field(modifier)
+        {
+            stamp_style_provenance(node, field, &format!("{pass}/{entry_name}"));
+        }
+    }
+}
+
+/// The field name a modifier sets, if it is a colour / visibility / geometry
+/// modifier worth tracking for `style_provenance`; None otherwise.
+fn provenance_field(modifier: &serde_json::Value) -> Option<&str> {
+    let field = modifier.get("field").and_then(|value| value.as_str())?;
+    let is_colour = modifier.get("_Type_").and_then(|value| value.as_str())
+        == Some("BuildingBlocks_FieldModifierColor");
+    (is_colour || matches!(field, "IsActive" | "SizeX" | "SizeY" | "AnchorX" | "AnchorY"))
+        .then_some(field)
+}
+
+/// Stamp `node.raw["__StyleProvenance"][field] = source` (last writer wins,
+/// mirroring the value resolution).
+fn stamp_style_provenance(node: &mut BbNode, field: &str, source: &str) {
+    let Some(obj) = node.raw.as_object_mut() else {
+        return;
+    };
+    let provenance = obj
+        .entry("__StyleProvenance".to_string())
+        .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+    if let serde_json::Value::Object(map) = provenance {
+        map.insert(field.to_string(), serde_json::Value::String(source.to_string()));
     }
 }
 
