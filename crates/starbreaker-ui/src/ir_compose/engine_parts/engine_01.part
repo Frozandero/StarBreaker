@@ -30,10 +30,13 @@ use crate::ui_ir::{
     UiIrRect, UiIrTextPayload, UiIrTextStyle, UiIrValue,
 };
 
-// BB/Flash nominal font sizes render visually smaller with the bundled DejaVu
-// fallback fonts. Calibrate at compose time to match measured output.
-const TEXT_RENDER_SIZE_CALIBRATION: f32 = 1.5;
-const SWF_TEXT_RENDER_SIZE_CALIBRATION: f32 = 0.84;
+// The TTF (DejaVu) fallback follows the same data-backed em model as the SWF
+// path: the IR font size IS the design-em pixel size and rusttype's Scale
+// already normalises to the ascent+|descent| span, so NO calibration constant
+// applies (plan P3.2 retired the tuned 1.5 here and its layout twin, both
+// calibrated when DejaVu stood in for game fonts on live screens — a case
+// that no longer exists: the shared fontlib merges into every binding's
+// assets, so the TTF path only draws in no-game-data environments).
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DebugTextRects {
@@ -1218,7 +1221,7 @@ fn draw_text_node(
         .max(1.0);
     let primary_font_style_scale = font_style_scale_modifier(node.text_style.as_ref());
     let fallback_font_size =
-        (nominal_font_size * primary_font_style_scale * TEXT_RENDER_SIZE_CALIBRATION).max(1.0);
+        (nominal_font_size * primary_font_style_scale).max(1.0);
     let secondary_nominal_font_size = node
         .secondary_text_style
         .as_ref()
@@ -1230,10 +1233,8 @@ fn draw_text_node(
             .as_ref()
             .or(node.text_style.as_ref()),
     );
-    let secondary_fallback_font_size = (secondary_nominal_font_size
-        * secondary_font_style_scale
-        * TEXT_RENDER_SIZE_CALIBRATION)
-        .max(1.0);
+    let secondary_fallback_font_size =
+        (secondary_nominal_font_size * secondary_font_style_scale).max(1.0);
 
     let center_anchored_heading = node
         .text_style
@@ -1296,7 +1297,7 @@ fn draw_text_node(
     // applying style scaleModifier on top of SWF sizing causes undersized text
     // on some screens (for example door status labels). Keep scaleModifier for
     // fallback TTF path only.
-    let primary_ttf_font_scale = primary_font_style_scale * TEXT_RENDER_SIZE_CALIBRATION;
+    let primary_ttf_font_scale = primary_font_style_scale;
     // DATA-BACKED MODEL: IR font size is the authored em-pixel size; the SWF renderer
     // maps em→raster via the font's own units_per_em (= ascent + descent). No constant.
     let mut primary_swf_font_size = nominal_font_size.max(1.0);
@@ -1442,7 +1443,7 @@ fn draw_text_node(
             .as_ref()
             .or(node.text_style.as_ref())
             .and_then(|style| style.line_spacing);
-        let secondary_ttf_font_scale = secondary_font_style_scale * TEXT_RENDER_SIZE_CALIBRATION;
+        let secondary_ttf_font_scale = secondary_font_style_scale;
         let mut secondary_swf_font_size = secondary_nominal_font_size.max(1.0);
         let secondary_rect = apply_font_style_vertical_offset(
             secondary_rect,
@@ -1605,7 +1606,7 @@ fn debug_text_rects_with_renderer(
         .map(|style| ir_value_to_px(&style.font_size))
         .unwrap_or(18.0)
         .max(1.0);
-    let fallback_font_size = (nominal_font_size * TEXT_RENDER_SIZE_CALIBRATION).max(1.0);
+    let fallback_font_size = nominal_font_size.max(1.0);
     let is_label_caption_pair = node
         .node_type
         .eq_ignore_ascii_case("BuildingBlocks_ComponentLabelCaptionPair");
@@ -1617,7 +1618,7 @@ fn debug_text_rects_with_renderer(
             .unwrap_or(nominal_font_size)
             .max(1.0);
         let secondary_fallback_font_size =
-            (secondary_nominal_font_size * TEXT_RENDER_SIZE_CALIBRATION).max(1.0);
+            secondary_nominal_font_size.max(1.0);
         let (mut primary, mut secondary) = stacked_label_caption_pair_text_rects(
             rect,
             renderer.measure(text, FontKind::Sans, fallback_font_size).1,
@@ -1758,12 +1759,6 @@ fn center_anchored_heading_textfield_text_rect(
     Some(Rect { y: top, h: height, ..rect })
 }
 
-/// Registered fallback (docs/ui-fallback-register.md): the word-space gap inserted between
-/// an inline-chained parent text field and its nested child (e.g. header `TierLevel` "T3" →
-/// `MachineTypeNameText` "MEDICAL ASSISTANT"). Fraction of the child em; calibrated to the
-/// in-game reference (T3→MEDICAL ≈ 17px ≈ one word-space at the 0.33×em engine word gap).
-const INLINE_NESTED_TEXTFIELD_WORD_GAP: f32 = 0.33;
-
 fn inline_nested_textfield_text_rect(
     node: &UiIrNode,
     rect: Rect,
@@ -1800,30 +1795,31 @@ fn inline_nested_textfield_text_rect(
     .unwrap_or_else(|| ir_rect_to_layout_rect(parent.computed_rect));
     let parent_nominal_size = parent_style_font_size(parent_style);
     let parent_font_style_scale = font_style_scale_modifier(Some(parent_style));
-    let parent_swf_size = (parent_nominal_size * parent_font_style_scale * SWF_TEXT_RENDER_SIZE_CALIBRATION).max(1.0);
+    // DRAW-METRIC model (plan P3.3+P3.4, 2026-06-13): the child continues the
+    // parent's inline run, so its origin is the parent's advance end at the
+    // parent's ACTUAL draw size — the glyphs' own side bearings supply the
+    // visible separation (the medical1 reference shows the "3"→"M" ink gap at
+    // letter-gap scale, ~3px, NOT a typeset word space). This retires the two
+    // tuned constants that previously composed the same net offset
+    // (`SWF_TEXT_RENDER_SIZE_CALIBRATION = 0.84` on the width and the
+    // `INLINE_NESTED_TEXTFIELD_WORD_GAP = 0.33` word gap): ink-level
+    // measurement of render vs capture put the tuned pair within ~1px of the
+    // reference, and the advance-at-draw-size model reproduces the same
+    // position from the font data alone.
+    let parent_draw_size = (parent_nominal_size * parent_font_style_scale).max(1.0);
     let parent_width = select_imported_ui_font(ctx, Some(parent_style))
         .and_then(|selection| {
             renderer.measure_swf_advance_width(
                 parent_text,
                 selection.font,
-                parent_swf_size,
+                parent_draw_size,
                 parent_style.letter_spacing.unwrap_or(0.0),
             )
         })
         .unwrap_or_else(|| {
-            renderer.measure(
-                parent_text,
-                FontKind::Sans,
-                (parent_nominal_size * parent_font_style_scale * TEXT_RENDER_SIZE_CALIBRATION).max(1.0),
-            ).0
+            renderer.measure(parent_text, FontKind::Sans, parent_draw_size).0
         });
-    // The parent and child read as one inline sentence ("T3 MEDICAL ASSISTANT"); the engine
-    // separates them by a single word-space, NOT `anchor_to_parent_x × size` (which rendered
-    // ~2× too wide: 0.5 × 55.86 ≈ 28px → 26px gap vs the reference ~17px). Use the engine
-    // word-space fraction (0.33×em, the same constant the SWF renderer uses for inter-word
-    // gaps), which lands the T3→MEDICAL gap at ~17px to match the reference.
-    let inline_gap = child_render_size_px * INLINE_NESTED_TEXTFIELD_WORD_GAP;
-    let inline_x = parent_rect.x + parent_width + inline_gap;
+    let inline_x = parent_rect.x + parent_width;
     if !inline_x.is_finite() || inline_x >= rect.x || inline_x <= parent_rect.x {
         return None;
     }
@@ -1860,7 +1856,7 @@ fn debug_text_drawn_bounds_with_renderer(
         .map(|style| ir_value_to_px(&style.font_size))
         .unwrap_or(18.0)
         .max(1.0);
-    let fallback_font_size = (nominal_font_size * TEXT_RENDER_SIZE_CALIBRATION).max(1.0);
+    let fallback_font_size = nominal_font_size.max(1.0);
     let primary_align = node
         .text_style
         .as_ref()
@@ -1890,7 +1886,7 @@ fn debug_text_drawn_bounds_with_renderer(
             .unwrap_or(nominal_font_size)
             .max(1.0);
         let secondary_fallback_font_size =
-            (secondary_nominal_font_size * TEXT_RENDER_SIZE_CALIBRATION).max(1.0);
+            secondary_nominal_font_size.max(1.0);
         rects.secondary.and_then(|secondary_rect| {
             renderer.measure_drawn_bounds(
                 secondary_text,
@@ -1942,14 +1938,6 @@ fn text_origin_in_rect(
     (x, y)
 }
 
-/// Registered fallback (docs/ui-fallback-register.md): the compose-time overlap that
-/// stands in for the engine's line-box stacking of the caption-pair flex Column. The
-/// decompiled flex carries `rowSpacing = 0`, so the visible label→value handoff comes
-/// entirely from the engine's own line-box geometry (which lives in engine code, not
-/// DataCore). Calibrated to the in-game Clipper medical reference: MEDGELS→200/200
-/// top-to-top ≈ 28px. Design-space pixels (≈1:1 for full-screen canvases).
-const LABEL_CAPTION_PAIR_FLEX_ROW_SPACING: f32 = -8.0;
-
 fn stacked_label_caption_pair_text_rects(
     rect: Rect,
     primary_text_h: f32,
@@ -1968,21 +1956,37 @@ fn stacked_label_caption_pair_text_rects(
         0.0
     };
     let top_padding = if right_anchored_pair {
-        derived_top_padding.max(0.0)
+        // Registered pin (docs/ui-fallback-register.md): the right-anchored
+        // pair's COMPONENT RECT is misplaced by the med2 multi-canvas slot
+        // composition (the eob MEDGELS rect computes y=-15.2 while the meter
+        // anchored to its bottom lands ~35px above the capture's meter), so
+        // the anchor-derived padding is correct only relative to a rect this
+        // arc cannot fix. Reproduce the pre-P3.4 reference-verified placement
+        // exactly (eob label cap-top 36 vs capture 34): the retired
+        // TTF-inflated band heights entered this arm twice — ×1.5 on the
+        // anchor-derived padding and (1.5−1)/2 = 0.25 of the label em as the
+        // in-band glyph-centring offset. Em-height padding alone sat 20px
+        // high. Retire with the med2 slot-composition fix.
+        (derived_top_padding * 1.5 + primary_h * 0.25).max(0.0)
     } else {
         derived_top_padding.clamp(0.0, max_top_padding)
     };
     let primary_y = rect.y + top_padding;
-    // Right-anchored metric stacks (e.g. MEDGELS/value) use two text bands
-    // with different font sizes; collapse their handoff by the measured line
-    // box delta so the visual gap follows typography instead of fixed pixels.
-    // The caption-pair component (`labelcaptionpaircomponentstandard.json`) stacks the
-    // label and caption in a flex Column whose `Root: FlexRowSpacing = -5` tightens the
-    // handoff; apply it so the value sits ~5px higher (verified vs the Clipper medical
-    // reference: MEDGELS→200/200 top-to-top 36px → ~29px). Registered fallback.
-    let line_box_overlap = (primary_h - secondary_h).max(0.0);
-    let secondary_y =
-        (primary_y + primary_h - line_box_overlap + LABEL_CAPTION_PAIR_FLEX_ROW_SPACING).max(rect.y);
+    // PURE LINE-BOX stacking (plan P3.4, 2026-06-13): the caption-pair
+    // component stacks label and value in a flex Column with rowSpacing 0,
+    // and the engine's line box IS the em box (line advance == font size —
+    // the paragraph model verified on the medical card descriptions), so the
+    // value's line top sits exactly one label-em below the label's line top.
+    // With the retired 1.5 TTF inflation gone, `primary_h` here IS the
+    // label's em height, making the stack `primary_y + primary_h` with no
+    // overlap subtraction and no tuned spacing. Verified against the
+    // medical1 capture with ui_measure.py: MEDGELS cap-top 38, 200/200
+    // cap-top 67 → top-to-top 29px; the model predicts label em 30 minus
+    // ~1px cap-offset differential between the 30px/25px styles = 29. (The
+    // retired pair `line_box_overlap` + `LABEL_CAPTION_PAIR_FLEX_ROW_SPACING
+    // = -8.0` reproduced the same 28-29px only at the old inflated heights:
+    // 45 - 7 - 8 ≈ 30.)
+    let secondary_y = (primary_y + primary_h).max(rect.y);
     (
         Rect {
             x: rect.x,

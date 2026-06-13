@@ -1864,11 +1864,6 @@ mod scroll_thumb_tests {
 // fields) with the shared TTF metrics, so such children flow at their
 // natural width/height like the engine lays them out.
 
-/// The compose-time BB text calibration (`ir_compose`'s
-/// `TEXT_RENDER_SIZE_CALIBRATION`): rendered glyphs are 1.5× the nominal
-/// authored size, so intrinsic measurement must match what gets drawn.
-const LAYOUT_TEXT_MEASURE_CALIBRATION: f32 = 1.5;
-
 /// Best-effort intrinsic main-axis size of an Auto-sized flex child whose
 /// subtree carries resolved text. `None` when no measurable text exists
 /// (the caller keeps the zero-size rule).
@@ -1930,11 +1925,14 @@ fn node_resolved_text_size(
         .and_then(|v| v.as_f64())
         .filter(|v| *v > 0.0)
     {
-        effective as f32 * LAYOUT_TEXT_MEASURE_CALIBRATION
+        // Measure == draw: the TTF estimate follows the same data-backed em
+        // model as the renderer (IR font size = design-em px; plan P3.2
+        // retired the tuned 1.5 calibration pair on both sides together).
+        effective as f32
     } else {
         match node.text.as_ref().map(|t| &t.font_size) {
             Some(BbValue::Fixed(size)) if *size > 0.0 => {
-                *size * canvas_scale * LAYOUT_TEXT_MEASURE_CALIBRATION
+                *size * canvas_scale
             }
             _ => return None,
         }
@@ -2054,6 +2052,50 @@ mod auto_text_flex_tests {
     /// Two Auto-width text containers in a Center-justified row flow at
     /// their measured widths side by side (the OUTPUT card's "2" "/ 16").
     #[test]
+    /// The TTF text-measure fallback follows the SAME data-backed em model
+    /// as the SWF path (plan P3.2): the IR font size IS the design-em pixel
+    /// size (ascent+|descent| = size px; rusttype's Scale already normalises
+    /// to that span), so a 30px Auto text child measures ~30px tall — with NO
+    /// tuned multiplier. The deleted `LAYOUT_TEXT_MEASURE_CALIBRATION = 1.5`
+    /// inflated this to 45px; it was calibrated when DejaVu stood in for game
+    /// fonts on live screens, a case that no longer exists (the shared
+    /// fontlib merges into every binding's assets, and live layout always
+    /// uses SWF draw-metric annotations).
+    #[test]
+    fn auto_text_intrinsic_height_is_the_nominal_em_size() {
+        let canvas = serde_json::json!({
+            "_RecordValue_": {
+                "_Type_": "BuildingBlocks_Canvas",
+                "size": {"x": 400.0, "y": 300.0},
+                "coordinateMethod": "useRaw",
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "column", "isActive": true,
+                     "layoutPolicy": {"_Type_": "BuildingBlocks_FlexContainer",
+                                      "direction": "Column", "axisJustification": "Start"},
+                     "sizing": {"width": {"value": 1.0, "behavior": "Percent"},
+                                "height": {"value": 1.0, "behavior": "Percent"}}},
+                    {"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_WidgetTextField",
+                     "name": "label", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "_ResolvedText_": "OUTPUT",
+                     "text": "OUTPUT",
+                     "fontSize": {"value": 30.0, "behavior": "Fixed"},
+                     "sizing": {"width": {"value": 1.0, "behavior": "Percent"},
+                                "height": {"value": 0.0, "behavior": "Auto"}}}
+                ],
+                "operations": []
+            }
+        });
+        let scene = parse_bb_canvas(&canvas).expect("fixture parses");
+        let result = layout(&scene, 400, 300);
+        let label = result.rects[&2];
+        assert!(
+            (label.h - 30.0).abs() <= 1.0,
+            "30px text measures ~30px tall under the em model (no 1.5 inflation), got {}",
+            label.h
+        );
+    }
+
     fn auto_text_children_flow_at_measured_widths() {
         let canvas = serde_json::json!({
             "_RecordValue_": {

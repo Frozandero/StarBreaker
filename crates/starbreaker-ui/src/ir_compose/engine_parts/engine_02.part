@@ -2053,8 +2053,11 @@ mod tests_d {
 
         assert_eq!(primary_rect.y, 47.0);
         assert_eq!(primary_rect.h, 32.0);
-        // 47 + 32 (primary_h) - 5 (line_box_overlap 32-27) - 8 (LABEL_CAPTION_PAIR_FLEX_ROW_SPACING) = 66.
-        assert_eq!(secondary_rect.y, 66.0);
+        // Pure line-box stack (plan P3.4): the value's line top is one label
+        // em below the label's line top — 47 + 32 = 79. (The retired
+        // overlap/-8 pair produced 66 only against the retired 1.5-inflated
+        // heights; see stacked_label_caption_pair_text_rects.)
+        assert_eq!(secondary_rect.y, 79.0);
         assert_eq!(secondary_rect.h, 27.0);
     }
 
@@ -2149,7 +2152,7 @@ mod tests_d {
             &document,
             &TextRenderer::new(),
             &ctx,
-            41.0 * SWF_TEXT_RENDER_SIZE_CALIBRATION,
+            41.0,
         )
         .expect("inline rect");
 
