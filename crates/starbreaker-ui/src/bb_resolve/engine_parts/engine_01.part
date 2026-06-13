@@ -941,12 +941,18 @@ fn apply_canvas_style_cascade(
     if let Some(brand_style) = brand_style.as_ref() {
         let palette = brand_palette_record.as_ref().unwrap_or(brand_style.raw);
         let filtered = filter_pending(brand_style.entries);
-        let brand = bb_brand_style::BrandStyle {
-            identifier: brand_style.identifier.clone(),
-            entries: filtered.as_slice(),
-            raw: brand_style.raw,
-        };
-        crate::bb_brand_apply::apply_brand_modifiers_with_palette(scene, &brand, palette, loc_fetcher);
+        crate::bb_style_engine::apply(
+            scene,
+            &[crate::bb_style_engine::StyleSheet {
+                tier: crate::bb_style_engine::Tier::Brand,
+                identifier: brand_style.identifier.clone(),
+                fills: brand_style.raw,
+                chrome: palette,
+                entries: filtered.as_slice(),
+                scope: crate::bb_style_engine::SheetScope::Scene,
+            }],
+            loc_fetcher,
+        );
     }
     if let Some(entries) = record_value.get("embeddedStyles").and_then(|v| v.as_array()) {
         let palette_source = palette_source.unwrap_or(record_value);
