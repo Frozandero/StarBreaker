@@ -55,19 +55,32 @@ Four reported symptoms, mapped to root cause (one landed, three already-open):
    `BuildingBlocks_WidgetSeparator` hosts (power titles id=604/607, emissions
    Sep*) with `asset_layout` but no `custom_shape`/`asset_ref`/children — need the
    widget-standard expansion = **P3** (parked; ID-band + brand blockers).
-4. **Battery card:** (a) OFFLINE too low — `base_ValuesContainer` carries a
-   non-zero `0.9 Auto` height hint → 141.9px box over 71px of "0/0" content,
-   leaving the ~71px gap above OFFLINE; non-zero column Auto hints are **pinned by
-   medical baselines** (workflow §10 don't-retry). (b) BATTERY overflows the card
-   ~11px — title `text_BatteryTitle` is `Auto`-width (intrinsic), no shrink, in an
-   authored `Start` row (`base_OutputHeader`) — all faithful. Measurement: OUTPUT
-   cap-height matches the reference exactly (84=84 → font SIZE correct) and a
-   fixed-geometry pip slab matches (199 vs 202 → rectification accurate), but text
-   WIDTH measurements contradict (OUTPUT render-wider, footer ref-wider) = within
-   bloom noise, no reliable systematic width error. So no clean battery-local fix;
-   the ~11px is most likely minor letter-spacing (**P8** family, gated on a clean
-   reference measurement the bloomed dim labels can't give) or a §6 known-outlier.
-   (c) = item 3.
+4. **Battery card** — re-measured 2026-06-13 (rectified `Screen_Left_Lower_RTT_dark`,
+   battery-column text-band centroids). 0/0 Δ−8px and BATTERY Δ−3.5px are within
+   capture noise (so rectification is accurate AND those two are faithful); the
+   OPPOSITE-sign OFFLINE Δ is therefore a real LOCAL deviation, not skew:
+   - (a) **OFFLINE ~35px too low** (render centre y≈841 vs ref y≈806). The earlier
+     "71px" was the internal 0/0→OFFLINE gap, NOT the parity error. Cause:
+     `base_ValuesContainer` (`0.9 Auto`) + `base_MinBatteryAssignment` (`0.5 Auto`)
+     split `base_BatteryContainer` (220.8px) as FILL weights 0.9:0.5 → 141.9:78.85
+     (`bb_layout/engine_parts/engine_01.part` ~L1052: `h = container.h * ratio`
+     then flex-shrink), pushing the OFFLINE box down. The reference OFFLINE (~806)
+     sits BETWEEN the fill result (841) and a content-fit collapse (~765), so there
+     is **no clean alternative resolution** — the true fix is the cross-validated
+     non-zero-Auto column model, **pinned by medical baselines** (workflow §10
+     don't-retry) and baseline-affecting (**approval-gated**). Not changed.
+   - (b) **BATTERY overflows the card ~21px** — title `text_BatteryTitle` is
+     `Auto`-width (256.7px, no shrink) in an authored `Start` row, starting at
+     x=274.4 IDENTICAL to OUTPUT's *fitting* title (icon box + separator slot are
+     byte-identical between the two headers — same 79.6 square, same 0.1×0.6
+     separator). The icon is **NOT stretched** (re-checked per owner report
+     2026-06-13): painted aspect 1.38 ≈ ref 1.37 ≈ the SVG's natural ink ratio
+     (`MFD-Icon-Battery.svg` glyph bbox 142.2/103.8 = 1.37); `Contain` fits it to
+     the 79.6 box width (77.8×56.8) correctly — the icon does NOT shift the title.
+     The overflow is purely "BATTERY" being the LONGEST title at the **P8** letter
+     pitch (~6–8%; the longest word overflows first). Font size, icon, title start
+     all faithful. P8 stays gated on a clean (un-bloomed) reference.
+   - (c) = item 3.
 
 ## Open items
 
@@ -104,6 +117,34 @@ nine-slice). A working implementation was built and REVERTED for two blockers
    (PascalCase raw override) so the separator SVGs are not
    MissionObjectives-tinted.
 5. Test fixtures need the tag database served (expansion bails without it).
+
+### P14 — non-zero-Auto column model (4a OFFLINE) — needs the decoded engine flex spec
+
+Investigated 2026-06-13 (owner asked to attempt a unified fix behind the guard).
+Current rule (`bb_layout/engine_parts/engine_01.part` ~L1052): a column child
+authored non-zero `Auto` (value v∈(0,1)) takes `size = v × container`, then
+flex-shrinks. No candidate rule reconciles the two pinned cases:
+
+| model | POWER OFFLINE centre (ref ~806) | MEDICAL HeaderTitleBase h (frozen 78, content ~18) |
+|---|---|---|
+| fill `v×container` (current) | 842 (−35) | 78 ✓ |
+| content-fit | 758 (+49) | 18 ✗ regression |
+| content-basis + grow-slack | 821–838 (−15..−32) | <78 ✗ regression |
+
+Two hard findings: (1) the **fill is load-bearing** — medical `HeaderTitleBase`
+(MCP `ui_ir_query` on canvas `534bab84…`) renders h=78 on ~18px of text and even
+overflows its 108px parent (y 34.68→112.68), i.e. a band sized to fill BY DESIGN;
+content-basis shrinks it (the documented 78→18, y+27). (2) **No model hits the
+power reference (806)** — fill 842, content-fit 758, content+grow 821–838 all miss,
+so OFFLINE's position is NOT a pure non-zero-Auto resolution; it is governed by
+something the bloomed capture cannot disambiguate (an authored alignment/
+justification on `base_BatteryContainer`/`base_MinBatteryAssignment`, or the 0/0
+line-box metric). A safe unified fix therefore needs the decoded Star Engine
+flex-resolution spec, not more pixel reverse-engineering — any model change here
+both MISSES the power target AND regresses the 5 frozen platinum/gold PNGs. Current
+`fill` is kept as the best single rule; OFFLINE's ~35px stands as a documented
+limitation (revisit when the engine flex spec is decoded, or with a clean un-bloomed
+power capture to test the alignment/line-box hypotheses).
 
 ### P4 — pip slab brightness
 
