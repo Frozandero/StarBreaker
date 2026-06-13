@@ -316,8 +316,24 @@ fn mask_touches_all_edges(mask: &[bool], width: usize, height: usize, band: usiz
     touches_top && touches_bottom && touches_left && touches_right
 }
 
+/// TDD-tier skip: the per-commit battery runs the whole crate suite but the
+/// artifact/export-coupled guards need a FRESH export (they compare against
+/// `ships/Data/UI/Generated`), which only happens at the `--full` boundary.
+/// `ui_check.sh` sets `UI_SKIP_VISUAL_GUARD=1` for the TDD tier so these two
+/// run authoritatively only in `--full`; every other test runs in both tiers.
+fn skip_export_coupled_guard() -> bool {
+    if std::env::var("UI_SKIP_VISUAL_GUARD").as_deref() == Ok("1") {
+        eprintln!("skipping export-coupled guard (UI_SKIP_VISUAL_GUARD=1; exercised by ui_check.sh --full)");
+        return true;
+    }
+    false
+}
+
 #[test]
 fn target_a_custom_shape_scale_and_position_guard() {
+    if skip_export_coupled_guard() {
+        return;
+    }
     let (reference_path, current_path) = artifact_paths("ui_target_a");
     if !reference_path.is_file() || !current_path.is_file() {
         eprintln!(
@@ -552,6 +568,9 @@ fn whole_image_diff_fraction(
 /// manifest extends coverage with no new test code and no per-screen knowledge.
 #[test]
 fn manifest_targets_whole_image_colour_regression_guard() {
+    if skip_export_coupled_guard() {
+        return;
+    }
     // Per-channel tolerance absorbs trivial anti-aliasing jitter; the allowed
     // differing-pixel fraction is tight for platinum and looser for gold.
     const TOLERANCE: u8 = 16;

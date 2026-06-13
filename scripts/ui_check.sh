@@ -2,11 +2,16 @@
 # Standard starbreaker-ui check battery (docs/ui-process-improvements.md item 4).
 #
 # Default (TDD tier) — run after every red/green cycle:
-#   example compile check + ui lib tests + manifest_live_ir_guard +
-#   line_count_guard + test_attribute_guard (orphaned-#[test] detector)
+#   example compile check + the WHOLE starbreaker-ui test suite (lib + every
+#   integration test target: guards, swf_*, pipeline_ir, brand palettes, …).
+#   The two export-coupled visual guards (whole-image colour + custom-shape)
+#   are skipped here via UI_SKIP_VISUAL_GUARD=1 — they need a fresh export and
+#   run only in --full. Running the whole suite is what catches compile errors
+#   and logic regressions in targets the old hand-picked list silently skipped
+#   (e.g. swf_phase5_wiring + the pipeline_ir slot-9 regression, 2026-06-13).
 #
 # --full (workstream-boundary tier) — adds:
-#   manifest_snapshot_regression + manifest_visual_regression suites,
+#   the export-coupled visual guards run AUTHORITATIVELY (no skip env),
 #   freeze + artifact validators, starbreaker-3d lib tests, and the
 #   font-size harness (docs/ui-font-size-harness.md) against UI_CHECK_SCENE.
 #
@@ -23,7 +28,7 @@ for arg in "$@"; do
   case "$arg" in
     --full) FULL=1 ;;
     -h|--help)
-      sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *) echo "unknown argument: $arg (try --help)" >&2; exit 64 ;;
@@ -36,12 +41,6 @@ step() { echo; echo "==> $*"; }
 # until someone reaches for it mid-investigation (ledger item 26).
 step "starbreaker-ui examples compile"
 cargo check -p starbreaker-ui --examples
-
-step "starbreaker-ui lib tests"
-cargo test -p starbreaker-ui --lib
-
-step "manifest_live_ir_guard + line_count_guard + test_attribute_guard"
-cargo test -p starbreaker-ui --test manifest_live_ir_guard --test line_count_guard --test test_attribute_guard
 
 if [[ "$FULL" == 1 ]]; then
   # Early staleness visibility (ledger item 30): the visual guard hard-fails
@@ -59,8 +58,8 @@ if [[ "$FULL" == 1 ]]; then
     echo "WARNING: no export stamp at $STAMP — the visual guard will fail unless game data is absent (skip path)." >&2
   fi
 
-  step "manifest_snapshot_regression + manifest_visual_regression"
-  cargo test -p starbreaker-ui --test manifest_snapshot_regression --test manifest_visual_regression
+  step "starbreaker-ui FULL test suite (export-coupled visual guards authoritative)"
+  cargo test -p starbreaker-ui
 
   step "validate_ui_snapshot_freeze"
   bash scripts/validate_ui_snapshot_freeze.sh
@@ -82,6 +81,13 @@ if [[ "$FULL" == 1 ]]; then
   else
     echo "SKIP font harness: scene not found: $SCENE (set UI_CHECK_SCENE)" >&2
   fi
+else
+  # TDD tier: the WHOLE crate suite (lib + every integration target), with the
+  # two export-coupled visual guards skipped — they need a fresh export and are
+  # exercised authoritatively in --full. Running the whole suite (vs the old
+  # hand-picked --test list) is what surfaces breakage in every target.
+  step "starbreaker-ui test suite (export-coupled visual guards skipped — see --full)"
+  UI_SKIP_VISUAL_GUARD=1 cargo test -p starbreaker-ui
 fi
 
 echo

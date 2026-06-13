@@ -920,3 +920,27 @@ out-of-frozen-set cases, the verdict is keep-with-criterion, not delete.
 
 **Action:** [done 2026-06-13 — RootGhost kept + documented; criterion at
 the function and in the plan's P4.4 checkbox.]
+
+### 34. The battery ran a hand-picked test subset → run the whole crate suite
+
+**Observed (2026-06-13):** `ui_check.sh` ran a hand-picked `--test` list
+(`manifest_live_ir_guard`, `line_count_guard`, `test_attribute_guard`,
+`--lib`, and in `--full` the snapshot/visual suites). ~14 integration
+targets — `pipeline_ir`, `swf_*`, `brand_palette_resolution`,
+`pipeline_mfd_frame`, `regression_hashes`, `source_hardcoding_guards`,
+`docs_reference_guard`, `ui_ir_representative`, `visual_diff` — were NEVER
+run by the battery. That gap hid two real defects until a manual
+`--tests` build: `swf_phase5_wiring` had not COMPILED since the
+`colour_overlay_enabled` field landed, and `pipeline_ir`'s style-override
+test silently REGRESSED at the P5.3 slot-8→9 change. Both are exactly the
+class the battery exists to catch.
+
+**Improvement:** `ui_check.sh` runs the WHOLE crate suite
+(`cargo test -p starbreaker-ui`) in both tiers — auto-covering every
+current and future target, no fragile enumeration. The only export-coupled
+guards (whole-image colour + custom-shape) are gated by
+`UI_SKIP_VISUAL_GUARD=1` in the TDD tier (they need a fresh export) and run
+authoritatively in `--full`.
+
+**Action:** [done 2026-06-13 — ui_check.sh restructure + the skip hook in
+manifest_visual_regression.rs.]
