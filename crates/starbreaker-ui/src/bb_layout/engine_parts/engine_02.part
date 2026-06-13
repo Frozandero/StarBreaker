@@ -689,6 +689,97 @@ mod tests_c {
     }
 
     #[test]
+    fn flex_row_space_between_spreads_children_to_container_edges() {
+        // Authored `axisJustification: "SpaceBetween"` must distribute the free
+        // space EQUALLY between items: first item flush to the start edge, last
+        // item flush to the end edge, equal gaps in between (the power-screen
+        // emissions header `base_EmissionsContainer` relies on this so its outer
+        // separators reach the header edges). Counter-example: `Start` packs them
+        // against the start edge, which is what an unhandled value falls back to.
+        use crate::bb_scene::{BbNode, BbNodeType, BbSizing, BbTrbl, BbValue, Vec2, Vec3};
+
+        fn item(id: BbNodeId, w: f32) -> BbNode {
+            BbNode {
+                id,
+                parent: Some(1),
+                children: vec![],
+                ty: BbNodeType::DisplayWidget,
+                name: format!("item{id}"),
+                style_tag_uuids: vec![],
+                is_active: true,
+                layer: 0,
+                alpha: 1.0,
+                position: Vec3::default(),
+                position_offset: Vec3::default(),
+                sizing: BbSizing { width: BbValue::Fixed(w), height: BbValue::Fixed(80.0) },
+                padding: BbTrbl::default(),
+                margin: BbTrbl::default(),
+                pivot: Vec2::default(),
+                anchor: Vec2::default(),
+                background: None,
+                border: None,
+                radial: None,
+                text: None,
+                icon: None,
+                raw: serde_json::Value::Null,
+            }
+        }
+
+        let root = BbNode {
+            id: 1,
+            parent: None,
+            children: vec![2, 3, 4],
+            ty: BbNodeType::DisplayWidget,
+            name: "space-between-row".into(),
+            style_tag_uuids: vec![],
+            is_active: true,
+            layer: 0,
+            alpha: 1.0,
+            position: Vec3::default(),
+            position_offset: Vec3::default(),
+            sizing: BbSizing { width: BbValue::Fixed(300.0), height: BbValue::Fixed(80.0) },
+            padding: BbTrbl::default(),
+            margin: BbTrbl::default(),
+            pivot: Vec2::default(),
+            anchor: Vec2::default(),
+            background: None,
+            border: None,
+            radial: None,
+            text: None,
+            icon: None,
+            raw: serde_json::json!({
+                "layoutPolicy": {
+                    "_Type_": "BuildingBlocks_FlexContainer",
+                    "direction": "Row",
+                    "wrap": "NoWrap",
+                    "axisJustification": "SpaceBetween",
+                    "crossAxisJustification": "Start",
+                    "itemAlignment": "Start",
+                    "columnSpacing": 0.0,
+                    "rowSpacing": 0.0
+                }
+            }),
+        };
+
+        let mut nodes = BTreeMap::new();
+        nodes.insert(1, root);
+        nodes.insert(2, item(2, 20.0));
+        nodes.insert(3, item(3, 20.0));
+        nodes.insert(4, item(4, 20.0));
+        let scene = BbScene { coordinate_method: crate::bb_scene::BbCoordinateMethod::UseRaw, canvas_size: (300.0, 80.0), roots: vec![1], nodes, operations: vec![] };
+
+        let result = layout(&scene, 300, 80);
+        let a = result.rects[&2];
+        let b = result.rects[&3];
+        let c = result.rects[&4];
+
+        // free space = 300 - 60 = 240, split across 2 gaps = 120 each.
+        assert!((a.x - 0.0).abs() < 0.5, "first item should be flush to start edge, got x={}", a.x);
+        assert!((c.x + c.w - 300.0).abs() < 0.5, "last item should be flush to end edge, got x={} w={}", c.x, c.w);
+        assert!((b.x - 140.0).abs() < 0.5, "middle item should sit at the equal-gap midpoint, got x={}", b.x);
+    }
+
+    #[test]
     fn flex_column_auto_textfields_keep_intrinsic_height_slots() {
         use crate::bb_scene::{BbNode, BbNodeType, BbSizing, BbTrbl, BbValue, Vec2, Vec3};
 

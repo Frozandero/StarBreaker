@@ -1253,6 +1253,30 @@ fn layout_flex_no_grow_children(
     if tighten_centered_intrinsic_text_column {
         main_offset = (main_offset - centered_intrinsic_main_offset_shift).max(0.0);
     }
+    // Space-distributing justification (authored SpaceBetween/SpaceAround/
+    // SpaceEvenly) shares the free main-axis space out as equal gaps instead of
+    // packing every item against one edge (the match above leaves these at
+    // main_offset 0, i.e. Start). `total_main` already includes the base
+    // inter-item spacing, so `slack` is the surplus to distribute. The wrap path
+    // keeps its own per-line handling and is unaffected.
+    let item_count = sizes.len();
+    let slack = (avail_main - total_main).max(0.0);
+    let mut extra_between = 0.0f32;
+    match axis_just_lc.as_str() {
+        "spacebetween" if item_count >= 2 => {
+            main_offset = 0.0;
+            extra_between = slack / (item_count as f32 - 1.0);
+        }
+        "spacearound" if item_count >= 1 => {
+            extra_between = slack / item_count as f32;
+            main_offset = extra_between * 0.5;
+        }
+        "spaceevenly" if item_count >= 1 => {
+            extra_between = slack / (item_count as f32 + 1.0);
+            main_offset = extra_between;
+        }
+        _ => {}
+    }
     let mut cursor = if is_row { container.x + main_offset } else { container.y + main_offset };
     if wrap_enabled {
         layout_flex_wrap_children(
@@ -1274,6 +1298,9 @@ fn layout_flex_no_grow_children(
         );
         return;
     }
+    // Equal-gap spread for space-distributing justification; zero (no-op) for
+    // every other mode.
+    item_spacing += extra_between;
     for (id, w, h, auto_main) in sizes {
         let column_right_edge_auto = !is_row
             && scene.nodes.get(&id).is_some_and(|node| {
