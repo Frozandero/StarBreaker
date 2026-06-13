@@ -350,3 +350,42 @@ added the engine note at the end):
 - Did certification snapshots drift for previously certified screens?
 - Is there an undocumented fallback involved?
 - Did the fix add a focused regression test?
+
+## Open architecture debt (deferred; evidence recorded)
+
+Cross-arc structural work proven necessary but deliberately not landed —
+each is recorded with its evidence so the next attempt starts warm. (These
+were items 16/17/18 of the retrospective ledger
+`crates/starbreaker-ui/docs/ui-process-improvements.md`; they live here now
+because they are architecture, not history. Screen-level parity residuals
+that depend on these are in `crates/starbreaker-ui/docs/ui-clipper-parity-handoff.md`.)
+
+- **Per-host-type expansion ID-band lanes.** Adding a new expanding host
+  type shifts the shared `EXPANSION_ID_BASE` allocation order in
+  `merge_child_scene` and can STEAL a frozen platinum identity (adding
+  `WidgetSeparator` turned the medical close-button X into a separator
+  instance — the guards caught it pre-land). The design couples baseline
+  identity to expansion ORDER. Fix: a band lane per host type (or a second
+  band, e.g. `0xF800_0000`, for new types) in `merge_child_scene`. Blocks the
+  parked separator-dots work (handoff "Open items").
+- **One brand-context resolver.** At least four independent
+  brand-container selection paths exist — `resolve_brand_style`'s
+  manufacturer-prefix scan, `collect_standard_text_styles`'
+  `selected_style_name` family mapping, the body-background preferred chain,
+  and the separator `hud`↔`env` sibling swap — and the separator AEGS-divider
+  leak came from one of them improvising over a shared standard. Every new
+  modularkit standard re-derives this. Fix: extract ONE resolver (canvas
+  style-link → `s_<mfr>_{hud|env}` by canvas family → sibling swap; identity
+  matching only, no prefix scans over shared standards) and migrate call
+  sites one at a time under the guards.
+- **Renderer-wide linear-light compositing (GATED — owner approval).** The
+  engine composites in LINEAR light; our renderer blends in sRGB. The
+  white-mask glow path was converted (scoped, landed —
+  `blit_white_mask_overlay_linear`), but the renderer-wide migration changes
+  EVERY alpha blend including text antialiasing → full gold/platinum
+  re-freeze + re-adjudication of all targets. Evidence says it moves
+  everything TOWARD the references (predicted linear (39,20,3)/(68,38,8) vs
+  reference (45,25,7)/(71,48,15) at chiclet top/side edges; the sRGB blend
+  reproduces the rendered (6,4,1)/(13,8,3) exactly). Candidate for a
+  dedicated arc; do NOT partially apply — image-only carve-outs are not
+  engine-faithful.

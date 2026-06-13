@@ -20,7 +20,7 @@ per-screen prompt template is
    `RgbaColor` literals, font sizes, brand font lists — fallbacks included)
    are hard-coding: derive from DataCore/P4K, or use a provenance-noted
    extracted fixture for offline tests (registry pattern; guard:
-   `tests/hardcoding_guard.rs` + `scripts/check_ui_hardcoding.sh`). The rule
+   `tests/source_hardcoding_guards.rs` + `scripts/check_ui_hardcoding.sh`). The rule
    is SELF-CORRECTING: encountering pre-existing hard-coding obliges you to
    replace it or flag it in the same change — never extend it because it is
    already there. If one asset misbehaves, find the structural property of

@@ -30,7 +30,8 @@ visual fixes stop converging. To launch a per-screen parity pass, use
   colour is hard-coding even when labelled non-authoritative. Resolve from
   DataCore/P4K, or use a provenance-noted extracted fixture (registry
   pattern) where tests need real values offline. The
-  `rgba_colour_hardcoding_guard` test (tests/hardcoding_guard.rs) enforces
+  `rgba_colour_literals_are_not_hardcoded` test
+  (tests/source_hardcoding_guards.rs) enforces
   this crate-wide — including test fixtures: a real palette value copied
   into a test is still a copy; load it from the extracted fixture instead.
   Genuinely arbitrary test colours must be neutral (pure black/white) or
@@ -40,7 +41,7 @@ visual fixes stop converging. To launch a per-screen parity pass, use
   explicitly (task/handoff entry) in the same change. Never copy or extend
   an existing hard-coded pattern because precedent exists — precedent of a
   banned pattern is a defect, not a licence. Extend the guards
-  (`scripts/check_ui_hardcoding.sh`, tests/hardcoding_guard.rs) when you
+  (`scripts/check_ui_hardcoding.sh`, tests/source_hardcoding_guards.rs) when you
   discover a category they miss.
 - Fix the structural cause. Do not patch symptoms in one renderer path if the real issue is authored metadata, IR compilation, layout, or text measurement.
 - IR is the source of truth for render values. The renderer must not override IR-provided font size, position, alignment, scale, margin, padding, text colour, stroke colour, icon tint, or visibility based on widget names, parent context, or screen-specific checks.

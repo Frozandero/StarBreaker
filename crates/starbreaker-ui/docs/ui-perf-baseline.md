@@ -13,6 +13,14 @@ SB_UI_TIMING=1 SC_DATA_P4K="..." RAYON_NUM_THREADS=1 RUST_LOG=info \
   --kind decomposed --lod 0 --mip 0 --materials all
 ```
 
+> NOTE 2026-06-13: this is the dated **B0 baseline** — a serial
+> (`RAYON_NUM_THREADS=1`) per-stage isolation run from 2026-06-08, captured
+> *before* the optimisation plan below was actioned. It is kept as the
+> before-snapshot, not a statement of current performance: full-export wall
+> time is now ~48–50s (`crates/starbreaker-ui/docs/ui-reference.md` §2), so the serial 326 s /
+> "5–7 min per image" figures no longer hold. Re-profile (plan step 5) before
+> citing these stage percentages as current.
+
 ---
 
 ## X — Aggregate stage breakdown (all 43 bindings, serial)

@@ -1,9 +1,15 @@
 # UI parity process — improvements and consolidation plan
 
-> **Append-only retrospective ledger.** Earlier Parts are a dated record;
-> file paths in them reflect the layout *at that time* and some now point at
-> docs/examples since deleted or moved (expected, not rot). The CURRENT doc
-> layout is **Part G** (all UI docs live under `crates/starbreaker-ui/docs/`).
+> **Append-only retrospective ledger** — the dated record of process changes
+> and the **append target for future end-of-arc retrospectives**
+> (`crates/starbreaker-ui/docs/ui-process-retro-prompt.md`). Many `ledger
+> item N` citations in the code/scripts/tests point here for provenance, so
+> the file stays even though its plans are all done. File paths in earlier
+> Parts reflect the layout *at that time* and some now point at docs/examples
+> since deleted or moved (expected, not rot); the CURRENT doc layout is
+> **Part G**. The still-open *architecture* directions (former items 16/17/18)
+> have moved to `crates/starbreaker-ui/docs/ui-architecture-runbook.md`
+> §"Open architecture debt" — that is the live backlog; this is the history.
 
 A retrospective of the Clipper power-screen parity arc (2026-06-10 → 06-11)
 turned into concrete process changes, followed by the **phased, actionable
@@ -485,40 +491,26 @@ unknown colour; expect bloom to lift B near bright elements.
 ratios for render and reference; presets added for `annunciator` and
 `door`.
 
-### 16. Reserved-ID-band fragility (recorded; fix rides P3)
+### 16. Reserved-ID-band fragility (per-host-type ID-band lanes)
 
-**Observed:** adding a NEW expanding host type (WidgetSeparator) shifted
-the shared `EXPANSION_ID_BASE` allocation order and STOLE a frozen
-platinum identity (the medical close-button X became a separator
-instance). The guards caught it before landing — the system worked — but
-the design couples baseline identity to expansion ORDER.
+→ Moved to `crates/starbreaker-ui/docs/ui-architecture-runbook.md`
+§"Open architecture debt" (live backlog, not history). Original observation
+in git: a new expanding host type shifted the shared `EXPANSION_ID_BASE`
+order and stole a frozen platinum identity.
 
-**Direction:** band lanes per host type (or a second band for new types)
-in `merge_child_scene`; concrete plan parked with P3 in
-`crates/starbreaker-ui/docs/ui-clipper-parity-handoff.md` item 12.
+### 17. ONE brand-context resolver (architecture debt)
 
-### 17. ONE brand-context resolver (architecture debt, recorded)
-
-**Observed:** at least four independent brand-container selection
-implementations exist (`resolve_brand_style`'s manufacturer-prefix scan,
-`collect_standard_text_styles`' selected_style_name family mapping, the
-body-background preferred chain, the separator hud↔env sibling swap) —
-and the P3 AEGS-divider leak came exactly from one of them improvising.
-Every new modularkit standard re-derives this logic.
-
-**Direction:** extract a single brand-context resolver (canvas style-link
-→ `s_<mfr>_{hud|env}` by canvas family → sibling swap; identity matching
-only, no prefix scans over shared standards) and migrate call sites one
-at a time under the guards.
+→ Moved to `crates/starbreaker-ui/docs/ui-architecture-runbook.md`
+§"Open architecture debt". Original observation in git: ≥4 rival
+brand-container selection paths exist; one improvising over a shared standard
+caused the separator AEGS-divider leak.
 
 ### 18. Linear-light compositing (gated workstream, evidence strong)
 
-The engine composites in linear light; our renderer blends in sRGB space.
-The white-mask glow path now converts (scoped, landed); the renderer-wide
-migration would change every alpha blend including text antialiasing —
-full re-freeze + re-adjudication of all targets, but the evidence says it
-moves EVERYTHING toward the references. Candidate for a dedicated arc;
-numbers in `crates/starbreaker-ui/docs/ui-clipper-parity-handoff.md` items 10/11.
+→ Moved to `crates/starbreaker-ui/docs/ui-architecture-runbook.md`
+§"Open architecture debt". Original observation in git: engine composites in
+linear light, we blend in sRGB; white-mask glow converted (scoped), the
+renderer-wide migration is gated on owner approval.
 
 ### 19. What demonstrably worked (keep doing)
 

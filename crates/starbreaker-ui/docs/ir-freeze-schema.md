@@ -37,7 +37,10 @@ Path:
 
 Schema version:
 
-- `schema_version: 1`
+- Freeze file (top level): `schema_version: 1`.
+- Each target's `baseline_snapshot.schema_version`: **2** (the per-element
+  `UI_SNAPSHOT_SCHEMA_VERSION`, raised from 1 to add the visible text-band
+  tops `primary_text_top` / `secondary_text_top`).
 
 Top-level structure:
 
@@ -64,7 +67,7 @@ Top-level structure:
       "tier": "platinum",
       "category": "image",
       "baseline_snapshot": {
-        "schema_version": 1,
+        "schema_version": 2,
         "canvas_guid": "...",
         "canvas_name": "...",
         "target_width": 1920,
@@ -98,7 +101,8 @@ Snapshot element fields should include at minimum:
 - x/y/w/h, alpha
 - text payload/case
 - text font identity
-- text font size (new explicit field to add in code)
+- text font size (`text_font_size`)
+- visible text-band tops (`primary_text_top` / `secondary_text_top`, schema v2)
 - line spacing
 - text/background/stroke/icon tint RGBA
 - text/background/stroke/icon tint token semantics
@@ -208,6 +212,9 @@ If any optional hash/image diagnostics run, they must execute after semantic che
 ## Current Migration Status
 
 - `ui_snapshot_freeze.json` now exists as a git-storable IR-only baseline file.
+- Phase M1 landed: `text_font_size` is captured per element, and the per-snapshot
+  schema is now **v2** (adds `primary_text_top` / `secondary_text_top` for the
+  reference-anchored text-top known-outliers).
 - `scripts/freeze_ui_snapshot_ir.sh` generates the file from manifest targets and local records.
 - `scripts/validate_ui_snapshot_freeze.sh` enforces manifest/freeze parity and bans artifact-path/hash fields from the IR freeze payload.
 - Image-hash backstop validation still exists separately and has not yet been removed from required gating.

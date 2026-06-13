@@ -7,24 +7,30 @@ on the UI screens, and regression-checking it against a frozen baseline that is
 within ~1–2% of the in-game reference screenshots.
 
 Use it whenever you touch anything that can affect text size — the font-size
-resolver (`ui_ir`), the SWF/TTF draw calibration (`ir_compose`, `text/`), font
+resolver (`ui_ir`), the SWF/TTF draw path (`ir_compose`, `text/`), font
 records, brand styles, or layout scaling — to prove you did **not** regress the
 platinum/gold screens.
 
 ## Why it exists
 
-UI text size is produced by a chain of per-style/per-context factors
-(`STANDARD_TEXTFIELD_NOMINAL_FONT_SCALE = 0.72`, `SWF_TEXT_RENDER_SIZE_CALIBRATION
-= 0.84`, the rect-based fallback ladder, `units_per_em = ascent − descent`, …).
-These constants are **empirically tuned** to match the engine's own Scaleform
-text layout (which lives in engine code, not in the DataCore/P4K data) and land
-the platinum/gold screens within 1–2% of the references. Attempts to replace
-them with a single data-backed rule have been proven — with this harness — to
-regress the auto-fit / raw-size / width-fit paths (see
-[`ui-architecture-runbook.md`](ui-architecture-runbook.md) and the project
-memory `font-sizing-constants-load-bearing`). So the harness is the guard: it
-makes the *visible* effect of any font change measurable per element, instead of
-relying on eyeballing screenshots.
+UI text size now comes from the **data-backed design-em model** (plan P3,
+2026-06-13): the IR font size IS the design-em pixel size
+(em = ascent + |descent|), and the SWF renderer maps em→raster via the font's
+own `units_per_em`, so a 30px field measures ~30px tall at factor 1.0. The
+earlier per-context tuned scalars (`STANDARD_TEXTFIELD_NOMINAL_FONT_SCALE = 0.72`,
+`SWF_TEXT_RENDER_SIZE_CALIBRATION = 0.84`, the `1.5` TTF draw/measure pair, the
+`0.33` inline word-gap, the `-8.0` caption overlap) were **retired** —
+reintroducing any tuned size scalar is now a regression (workflow rule 10).
+Engine-model detail: [`ui-architecture-runbook.md`](ui-architecture-runbook.md)
+§"engine models settled"; project memory `ui-font-size-engine-model`.
+
+But the per-element size still depends on the resolver, the font/glyph metrics,
+brand-style FontSize resolution, the `autoFontSize` line-box fit-to-rect path,
+and layout scaling — any of which can move rendered text off the platinum/gold
+references. This harness makes the *visible* effect of any such change
+measurable per element (the held invariant is the rendered glyph cap height)
+instead of relying on eyeballing screenshots, so it is the guard that proves you
+did **not** regress the platinum/gold screens.
 
 ## Components
 

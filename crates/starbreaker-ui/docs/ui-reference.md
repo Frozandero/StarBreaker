@@ -11,9 +11,12 @@ universal.
 cargo build                      # debug — fast, fine for ALL iteration incl. renders
 cargo build --release -p starbreaker   # only for deploy / canonical exports
 
-bash scripts/ui_check.sh         # TDD tier: ui lib + live IR guard + line cap
-bash scripts/ui_check.sh --full  # boundary tier: + snapshot/visual suites,
-                                 #   freeze+artifact validators, 3d lib, font harness
+bash scripts/ui_check.sh         # TDD tier: examples compile + the WHOLE ui suite
+                                 #   (lib + every integration target; the two
+                                 #   export-coupled visual guards skipped)
+bash scripts/ui_check.sh --full  # boundary tier: + those export-coupled visual
+                                 #   guards run authoritatively, freeze+artifact
+                                 #   validators, 3d lib, font harness
 cargo test --workspace           # everything (slow)
 ```
 
@@ -121,8 +124,8 @@ PNGs in `ships/Data/UI/Generated/ship/drak/Clipper/` named
 | Target MFD | `Screen_Right_Upper_RTT` / LOD0 scene | `MC_S_Target_Master` | `Screen_Right_Upper_RTT.png` | `target` | GOLD `clipper_target_master` | A7 backdrop stack remainder (handoff) |
 | Medical bed | usable screen / LOD1 scene | `I_Med_MedicalBed_A` | `screen_16x9_a-[medical1].png` | — (add) | PLATINUM `ui_target_a` | handoff steps 10–13 |
 | Medical end-of-bed | usable screen / LOD1 scene | `I_Med_MedicalEndOfBed_A` | `mesh_end_screen_plane-[medical2].png` | — (add) | PLATINUM `ui_target_b` | logo −12px check (handoff) |
-| Small door | usable screen / LOD1 scene | `I_Door_Small_DRAK` | `Door-closed.png` | — (add) | GOLD `clipper_small_door` | — |
-| Annunciator L | `Screen_Annunciator_L` / LOD1 scene | `H_Eng_Annunciator_Master_Left` | `Screen_Annunciator_L.png` | — (add) | GOLD `eng_annunciator_master_left` | — |
+| Small door | usable screen / LOD1 scene | `I_Door_Small_DRAK` | `Door-closed.png` | `door` | GOLD `clipper_small_door` | — |
+| Annunciator L | `Screen_Annunciator_L` / LOD1 scene | `H_Eng_Annunciator_Master_Left` | `Screen_Annunciator_L.png` | `annunciator` | GOLD `eng_annunciator_master_left` | — |
 | (unmapped) | `Screen_Left_Upper_RTT`, `Screen_Radar_RTT`, compass, flight HUDs, radars… | — | partial references exist | — | — | map when first worked |
 
 Scene split: **LOD0** (`DRAK Clipper_LOD0_TEX0/scene.json`) carries the
