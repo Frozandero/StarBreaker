@@ -1339,12 +1339,7 @@ impl StarBreakerMcp {
         );
         if let Some(brand_styles) = record_value.get("brandStyles").and_then(|v| v.as_array()) {
             for (idx, brand) in brand_styles.iter().enumerate() {
-                let source = brand
-                    .get("brand")
-                    .and_then(|v| v.as_str())
-                    .or_else(|| brand.get("identifier").and_then(|v| v.as_str()))
-                    .map(|name| format!("brandStyles[{idx}] {name}"))
-                    .unwrap_or_else(|| format!("brandStyles[{idx}]"));
+                let source = brand_style_label(brand, idx);
                 push_entries(source, brand.get("entries").and_then(|v| v.as_array()));
             }
         }
@@ -2875,10 +2870,41 @@ impl ServerHandler for StarBreakerMcp {
     }
 }
 
+/// Label for a `brandStyles[idx]` container in the style inventory. Appends the
+/// brand identifier's basename (`brandStyles[1] s_drak_hud`) so the inventory
+/// shows WHICH brand each index is — `brandIdentifier` is a record path
+/// (`file://.../styles/s_drak_hud.json`); a null/missing one falls back to the
+/// bare index.
+fn brand_style_label(brand: &serde_json::Value, idx: usize) -> String {
+    match brand
+        .get("brandIdentifier")
+        .and_then(|value| value.as_str())
+        .map(|path| {
+            path.rsplit('/')
+                .next()
+                .unwrap_or(path)
+                .trim_end_matches(".json")
+        }) {
+        Some(name) if !name.is_empty() => format!("brandStyles[{idx}] {name}"),
+        _ => format!("brandStyles[{idx}]"),
+    }
+}
+
 #[cfg(test)]
 mod ui_regression_registry_tests {
     use super::*;
     use std::io::Write;
+
+    #[test]
+    fn brand_style_label_uses_brand_identifier_basename() {
+        let brand = serde_json::json!({
+            "brandIdentifier":
+                "file://./../../libs/foundry/records/ui/buildingblocks/styles/s_drak_hud.json"
+        });
+        assert_eq!(brand_style_label(&brand, 1), "brandStyles[1] s_drak_hud");
+        // null / missing brandIdentifier falls back to the bare index.
+        assert_eq!(brand_style_label(&serde_json::json!({}), 3), "brandStyles[3]");
+    }
 
     #[test]
     fn ui_regression_registry_defaults_report_expected_targets() {
