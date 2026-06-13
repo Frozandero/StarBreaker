@@ -168,6 +168,39 @@ pub fn apply_scene_style_entries_in_subtree(
     );
 }
 
+/// The selector-engine entry point (`bb_style_engine`, plan P4.2): same
+/// kernel as every legacy wrapper, but the text-format route and the
+/// `__BrandIdentifier` stamp are gated EXPLICITLY by the sheet's tier
+/// (`brand_tier`) instead of being inferred from the identifier prefix.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn apply_style_entries_for_engine(
+    scene: &mut BbScene,
+    entries: &[serde_json::Value],
+    fills_palette: &serde_json::Value,
+    chrome_palette: &serde_json::Value,
+    style_identifier: Option<&str>,
+    loc_fetcher: Option<&dyn LocFetcher>,
+    scope_marker: Option<&str>,
+    allowed_nodes: Option<&std::collections::HashSet<BbNodeId>>,
+    brand_tier: bool,
+) {
+    let palettes = PaletteSources {
+        fills: fills_palette,
+        chrome: chrome_palette,
+    };
+    apply_style_entries_gated(
+        scene,
+        entries,
+        &palettes,
+        style_identifier,
+        loc_fetcher,
+        scope_marker,
+        allowed_nodes,
+        brand_tier,
+        brand_tier,
+    )
+}
+
 fn apply_style_entries(
     scene: &mut BbScene,
     entries: &[serde_json::Value],
@@ -196,6 +229,38 @@ fn apply_style_entries_filtered(
     loc_fetcher: Option<&dyn LocFetcher>,
     scope_marker: Option<&str>,
     allowed_nodes: Option<&std::collections::HashSet<BbNodeId>>,
+) {
+    // Legacy gate inference: brand semantics sniffed from the identifier
+    // prefix. The selector engine passes the gates explicitly from the
+    // sheet tier; these wrappers keep byte-identical behaviour until every
+    // call site is migrated (plan P4.3).
+    let text_format_route = style_identifier
+        .is_some_and(|id| id.to_ascii_lowercase().starts_with("s_"));
+    let stamp_brand = style_identifier.is_some_and(looks_like_style_brand_identifier);
+    apply_style_entries_gated(
+        scene,
+        entries,
+        palettes,
+        style_identifier,
+        loc_fetcher,
+        scope_marker,
+        allowed_nodes,
+        text_format_route,
+        stamp_brand,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn apply_style_entries_gated(
+    scene: &mut BbScene,
+    entries: &[serde_json::Value],
+    palettes: &PaletteSources<'_>,
+    style_identifier: Option<&str>,
+    loc_fetcher: Option<&dyn LocFetcher>,
+    scope_marker: Option<&str>,
+    allowed_nodes: Option<&std::collections::HashSet<BbNodeId>>,
+    text_format_route: bool,
+    stamp_brand: bool,
 ) {
     let style_probe = std::env::var("BB_A3_STYLE_PROBE").as_deref() == Ok("1");
     let node_ids: Vec<_> = scene.nodes.keys().copied().collect();
@@ -238,8 +303,6 @@ fn apply_style_entries_filtered(
             // `Battery Powered/Depleted Text` sizes and the medical mainmenu
             // banner's `New Style` (Bright + FontSize 40), all verified
             // against in-game captures.
-            let text_format_route = style_identifier
-                .is_some_and(|id| id.to_ascii_lowercase().starts_with("s_"));
             let text_format_matches: Vec<&serde_json::Value> = if text_format_route {
                 entries
                     .iter()
@@ -290,11 +353,11 @@ fn apply_style_entries_filtered(
         let Some(node) = scene.nodes.get_mut(&node_id) else {
             continue;
         };
-        if style_identifier.is_some_and(looks_like_style_brand_identifier) {
+        if stamp_brand && let Some(identifier) = style_identifier {
             node.raw.as_object_mut().and_then(|obj| {
                 obj.insert(
                     "__BrandIdentifier".to_string(),
-                    serde_json::Value::String(style_identifier.unwrap().to_string()),
+                    serde_json::Value::String(identifier.to_string()),
                 )
             });
         }

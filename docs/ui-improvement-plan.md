@@ -421,7 +421,17 @@ surviving name-keyed rules and ledger item 17 land here.)
       in comments already). Acceptance: the doc's pass list reproduces
       the probe output order of `BB_A3_STYLE_PROBE=1` on one medical and
       one power render.
-- [ ] **P4.2 Selector-engine types.** New module
+- [x] (2026-06-13, commit "plan P4.2") **P4.2 Selector-engine types.**
+      Landed as `bb_style_engine.rs`: `StyleSheet { tier, identifier,
+      fills/chrome palettes, entries, scope }`, `Tier` (StyleLink/Shared/
+      Brand/Embedded/StandardModule/Inline), `SheetScope` (Scene/Subtree/
+      Marker — deferred late-state is a SCOPE keeping its origin tier, per
+      the design note), one `apply(scene, &[StyleSheet])`. Delegates to the
+      shared kernel (`apply_style_entries_gated`) so conditions/modifiers/
+      probes/markers are reused verbatim; the text-format route +
+      `__BrandIdentifier` stamp are now EXPLICIT tier gates (engine path)
+      while legacy wrappers keep the identifier sniff byte-identically
+      until P4.3. 4 unit tests; battery green. New module
       `crates/starbreaker-ui/src/bb_style_engine.rs` (or directory):
       `StyleSheet { tier: Tier, identifier, palettes, entries }`,
       `Tier { StyleLink, Shared, Brand, Embedded, Inline, StandardModule,

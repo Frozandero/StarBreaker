@@ -23,6 +23,7 @@ pub mod bb_assets;
 pub mod bb_atlas;
 pub mod bb_bindings;
 pub mod bb_brand_apply;
+pub mod bb_style_engine;
 pub mod bb_brand_style;
 pub mod bb_layout;
 pub mod bb_loc;
