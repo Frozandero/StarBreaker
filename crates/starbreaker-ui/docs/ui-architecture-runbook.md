@@ -328,9 +328,11 @@ added the engine note at the end):
 - Use representative fixture canvases under `crates/starbreaker-ui/tests/fixtures/canvas/`.
 
 3. Compare structural snapshots
-- Run certification dashboard and inspect failures in:
-  - `docs/StarBreaker/ui-rework-artifacts/phase-5/certification-dashboard.md`
-  - `docs/StarBreaker/ui-rework-artifacts/phase-5/certification-results.json`
+- Run the certification dashboard and read its stdout table:
+  - `cargo run -p starbreaker-ui --example phase5_certification_dashboard`
+- For per-target structural drift, run the live IR guard / snapshot suite
+  (`cargo test -p starbreaker-ui --test manifest_live_ir_guard` /
+  `--test manifest_snapshot_regression`).
 
 4. Classify fault domain
 - Source resolution mismatch: investigate `bb_resolve`/bindings/style application.

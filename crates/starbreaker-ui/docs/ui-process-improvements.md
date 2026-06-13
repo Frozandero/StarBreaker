@@ -1,5 +1,10 @@
 # UI parity process — improvements and consolidation plan
 
+> **Append-only retrospective ledger.** Earlier Parts are a dated record;
+> file paths in them reflect the layout *at that time* and some now point at
+> docs/examples since deleted or moved (expected, not rot). The CURRENT doc
+> layout is **Part G** (all UI docs live under `crates/starbreaker-ui/docs/`).
+
 A retrospective of the Clipper power-screen parity arc (2026-06-10 → 06-11)
 turned into concrete process changes, followed by the **phased, actionable
 plan** that implements them (§"Phased plan"). The plan is written to be
@@ -944,3 +949,37 @@ authoritatively in `--full`.
 
 **Action:** [done 2026-06-13 — ui_check.sh restructure + the skip hook in
 manifest_visual_regression.rs.]
+
+---
+
+## Part G — UI documentation consolidation (2026-06-13)
+
+All UI documentation now lives under **`crates/starbreaker-ui/docs/`** (one
+location). This supersedes Part C's doc-disposition table where it said to
+"keep" `gold-platinum-regression-deep-dive.md` and the
+`ir-style-authority-migration-plan.md` / artifact plans — those are now
+removed (their work is complete and captured here / in git).
+
+**Deleted (implemented or superseded; git preserves them):**
+`ui-improvement-plan.md` (all phases done), `ir-style-authority-migration-plan.md`
+(Phase C complete — IR is the styling authority), the two
+`docs/StarBreaker/ui-rework-artifacts/` plans (target screen frozen, hybrid
+rendering shipped), `gold-platinum-regression-deep-dive.md` (historical;
+policy lives in `ui-regression-policy.md`), and
+`medical-snapshot-baseline-workflow.md` (folded into `ui-regression-policy.md`
+§"Gold-standard targets and tier selection").
+
+**Relocated `docs/` → `crates/starbreaker-ui/docs/`:** ui-workflow, ui-reference,
+ui-architecture-runbook, ui-fallback-register, ui-regression-policy,
+ui-font-size-harness, ui-cascade-passes, ui-process-improvements (this file),
+ui-clipper-parity-handoff, and the perf baseline (→ `ui-perf-baseline.md`).
+The agent prompts (`ui-matching-agent-prompt.md`, `ui-process-retro-prompt.md`)
+and `ir-freeze-schema.md` were already there.
+
+**Convention going forward:** new UI docs go in `crates/starbreaker-ui/docs/`
+and are referenced by full repo-relative path (`crates/starbreaker-ui/docs/
+ui-X.md`) so `docs_reference_guard` validates them. Repo-level `docs/` holds
+only cross-cutting / non-UI docs (the decomposed-export contract, blender
+material/shader docs, animation + lighting research). The `*.notes.md`
+provenance sidecars stay co-located with their fixtures/data (registry
+pattern), not in docs/.
