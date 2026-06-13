@@ -2356,8 +2356,8 @@ mod flex_shrink_tests {
 
     /// Auto ZERO-hint (value 0.0) text-backed children in a COLUMN stack at
     /// their measured text heights — the emissions Numbers Container stacks
-    /// emitted above ambient. Columns with non-zero Auto hints keep the
-    /// downstream fill placement the medical baselines pin.
+    /// emitted above ambient. (Non-zero Auto text children content-fit the same
+    /// way — see `column_nonzero_auto_text_children_content_fit_not_fill`.)
     #[test]
     fn column_zero_auto_text_children_stack_at_measured_heights() {
         let canvas = serde_json::json!({
@@ -2404,6 +2404,101 @@ mod flex_shrink_tests {
             "ambient stacks below emitted: ambient.y {} vs emitted end {}",
             ambient.y,
             emitted.y + emitted.h
+        );
+    }
+
+    /// A COLUMN child authored NON-zero `Auto` height ALSO sizes to its text
+    /// content (the value is only the no-content fallback fraction). The power
+    /// battery card's `base_ValuesContainer` (0.9 Auto over the "0 / 0" line)
+    /// used to FILL 0.9/(0.9+0.5) of the 220px column = 141px, leaving ~71px
+    /// empty below the numbers that pushed the OFFLINE row ~35px below the
+    /// reference (handoff P14). Medical's header is a ROW child (its fill is
+    /// cross-axis), so the frozen baselines are untouched.
+    #[test]
+    fn column_nonzero_auto_text_children_content_fit_not_fill() {
+        let canvas = serde_json::json!({
+            "_RecordValue_": {
+                "_Type_": "BuildingBlocks_Canvas",
+                "size": {"x": 340.0, "y": 220.0},
+                "coordinateMethod": "useRaw",
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "battery", "isActive": true,
+                     "layoutPolicy": {"_Type_": "BuildingBlocks_FlexContainer",
+                                      "direction": "Column", "axisJustification": "Start"},
+                     "sizing": {"width": {"value": 1.0, "behavior": "Percent"},
+                                "height": {"value": 1.0, "behavior": "Percent"}}},
+                    {"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_WidgetTextField",
+                     "name": "values", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "_ResolvedText_": "0 / 0",
+                     "text": "0 / 0",
+                     "fontSize": {"value": 30.0, "behavior": "Fixed"},
+                     "sizing": {"width": {"value": 1.0, "behavior": "Percent"},
+                                "height": {"value": 0.9, "behavior": "Auto"}}},
+                    {"_Pointer_": "ptr:3", "_Type_": "BuildingBlocks_WidgetTextField",
+                     "name": "offline", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "_ResolvedText_": "OFFLINE",
+                     "text": "OFFLINE",
+                     "fontSize": {"value": 30.0, "behavior": "Fixed"},
+                     "sizing": {"width": {"value": 1.0, "behavior": "Percent"},
+                                "height": {"value": 0.5, "behavior": "Auto"}}}
+                ],
+                "operations": []
+            }
+        });
+        let scene = parse_bb_canvas(&canvas).expect("fixture parses");
+        let result = layout(&scene, 340, 220);
+        let values = result.rects[&2];
+        let offline = result.rects[&3];
+        // Content-fit, NOT the 0.9-fill share (~141px of the 220px column).
+        assert!(
+            values.h < 120.0,
+            "non-zero Auto values box content-fits, not 0.9-fill: got {}",
+            values.h
+        );
+        // OFFLINE stacks directly under the content-sized values box — no fill
+        // gap pushes it down the column (the bug was offline.y ~141).
+        assert!(
+            offline.y < 120.0 && offline.y <= values.y + values.h + 0.6,
+            "OFFLINE stacks under values: offline.y {} vs values end {}",
+            offline.y,
+            values.y + values.h
+        );
+    }
+
+    /// The non-zero `Auto` value stays the fallback when the child has NO
+    /// measurable text: it fills `value × container` as before (only
+    /// text-backed children switch to content-fit).
+    #[test]
+    fn column_nonzero_auto_without_text_keeps_fill_fallback() {
+        let canvas = serde_json::json!({
+            "_RecordValue_": {
+                "_Type_": "BuildingBlocks_Canvas",
+                "size": {"x": 340.0, "y": 200.0},
+                "coordinateMethod": "useRaw",
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "col", "isActive": true,
+                     "layoutPolicy": {"_Type_": "BuildingBlocks_FlexContainer",
+                                      "direction": "Column", "axisJustification": "Start"},
+                     "sizing": {"width": {"value": 1.0, "behavior": "Percent"},
+                                "height": {"value": 1.0, "behavior": "Percent"}}},
+                    {"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "band", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "sizing": {"width": {"value": 1.0, "behavior": "Percent"},
+                                "height": {"value": 0.5, "behavior": "Auto"}}}
+                ],
+                "operations": []
+            }
+        });
+        let scene = parse_bb_canvas(&canvas).expect("fixture parses");
+        let result = layout(&scene, 340, 200);
+        let band = result.rects[&2];
+        // No text → fall back to fill: 0.5 × 200 = 100.
+        assert!(
+            (band.h - 100.0).abs() < 1.0,
+            "text-less non-zero Auto band fills value×container (~100), got {}",
+            band.h
         );
     }
 

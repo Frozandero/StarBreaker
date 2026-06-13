@@ -1052,6 +1052,19 @@ fn layout_flex_no_grow_children(
             if let Some(auto_ratio) = normalized_auto {
                 if is_row {
                     w = container.w * auto_ratio;
+                } else if let Some(intrinsic) = auto_text_intrinsic_main(child_id, scene, csy, false) {
+                    // A COLUMN child authored non-zero `Auto` sizes to its TEXT
+                    // content, exactly like the 0.0 (pure-hint) case below: "Auto"
+                    // means fit-to-content, and the value is only the NO-CONTENT
+                    // fallback fraction (the `else` fill). This lands the power
+                    // battery card's OFFLINE row at the reference — the old fill
+                    // `v×container` made `base_ValuesContainer` over-tall (0.9 →
+                    // 141.9px on 93px of "0/0") and pushed OFFLINE ~35px low
+                    // (handoff P14). Safe for the frozen targets: medical's header
+                    // is a ROW child (cross-axis), so the fill those baselines pin
+                    // is untouched, and the OUTPUT/emissions containers author
+                    // value≥1.0 hints (handled above) — verified by ui_check --full.
+                    h = intrinsic;
                 } else {
                     h = container.h * auto_ratio;
                 }
