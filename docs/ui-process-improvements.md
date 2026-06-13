@@ -871,3 +871,52 @@ outputs are human-findable.
 
 **Action:** [done 2026-06-12 — cli/src/ui.rs + unit test; replay-only
 naming, exports unaffected.]
+
+---
+
+## Part F — fifth retrospective (2026-06-13, P3 text-calibration + P4 cascade-unification session)
+
+Evidence base: the back-to-back P3/P4 session (commits 109a15afb …
+through the P4.4 close). The arcs themselves landed cleanly (five text
+constants retired for derived models; the cascade unified on one
+`bb_style_engine` with byte-identical output); the process finding below
+is the one that cost real time.
+
+### 32. A test silently stopped running for two commits → orphaned-#[test] guard
+
+**Observed:** inserting a new test ABOVE an existing one (P3.2) placed the
+new test's doc-comment between the existing `#[test]` and its function,
+orphaning that attribute. The OUTPUT-card spec test
+(`auto_text_children_flow_at_measured_widths`) thereby stopped running and
+shipped dead in the P3 commit. `cargo` emitted only a non-fatal
+"duplicated attribute" + "never used function" warning, and the battery
+does not fail on warnings, so it was invisible until a `--tests` build was
+eyeballed during P4.3 cleanup. (Re-enabling it confirmed it still passed —
+no regression hid behind it — but that was luck, not process.)
+
+**Improvement:** `tests/test_attribute_guard.rs` — a deterministic,
+cache-independent guard: a `#[test]` line whose next non-blank line is a
+`///` doc comment is orphaned. Wired into `ui_check.sh`'s TDD tier so it
+runs every cycle (warnings-based detection is unreliable because cargo
+only re-emits them on recompile).
+
+**Action:** [done 2026-06-13 — guard + battery wiring this session; the
+detector's own unit test pins the exact pattern that bit us.]
+
+### 33. P4.4 audit honoured the scope caveat over the literal instruction
+
+**Observed:** P4.4 said "delete what the engine now covers." The
+disable→adjudicate showed NO frozen pin depends on the RootGhost
+name-pluck — literally "nothing trips, so delete." But it serves
+non-frozen brands (aegs/bioc/crus/orig/crlf with RootGhost radii) and no
+frozen target has a ghost button to verify the engine's condition-matched
+application reproduces it. The §5 caveat (a clean audit proves "no frozen
+pin", not "correct everywhere", item 22/P6.2) correctly overrode the
+literal "delete" — KEPT with a documented deletion criterion.
+
+**Improvement:** none needed — the caveat worked as written. Recorded as a
+worked example: when disable→adjudicate is clean BUT the rule serves
+out-of-frozen-set cases, the verdict is keep-with-criterion, not delete.
+
+**Action:** [done 2026-06-13 — RootGhost kept + documented; criterion at
+the function and in the plan's P4.4 checkbox.]

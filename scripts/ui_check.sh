@@ -3,7 +3,7 @@
 #
 # Default (TDD tier) — run after every red/green cycle:
 #   example compile check + ui lib tests + manifest_live_ir_guard +
-#   line_count_guard
+#   line_count_guard + test_attribute_guard (orphaned-#[test] detector)
 #
 # --full (workstream-boundary tier) — adds:
 #   manifest_snapshot_regression + manifest_visual_regression suites,
@@ -40,8 +40,8 @@ cargo check -p starbreaker-ui --examples
 step "starbreaker-ui lib tests"
 cargo test -p starbreaker-ui --lib
 
-step "manifest_live_ir_guard + line_count_guard"
-cargo test -p starbreaker-ui --test manifest_live_ir_guard --test line_count_guard
+step "manifest_live_ir_guard + line_count_guard + test_attribute_guard"
+cargo test -p starbreaker-ui --test manifest_live_ir_guard --test line_count_guard --test test_attribute_guard
 
 if [[ "$FULL" == 1 ]]; then
   # Early staleness visibility (ledger item 30): the visual guard hard-fails
