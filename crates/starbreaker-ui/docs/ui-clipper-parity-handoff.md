@@ -82,7 +82,34 @@ Four reported symptoms, mapped to root cause (one landed, three already-open):
 
 ## Open items
 
-### P3 — separator dots (power cards) — PARKED, full diagnosis (~30min to land)
+### P3 — separator dots (power cards) — LANDED (`af9ce13d3`)
+
+The OUTPUT/BATTERY card dotted dividers now render, matching the reference, with
+the medical platinum byte-identical. Resolution (differs from the parked plan
+below — no widget-standard EXPANSION/ID-band was needed):
+- **No render-path expansion.** A `WidgetSeparator` already has IR/compose
+  handling; the gap was the brand SVG + a render dispatch. `separator_standard_style_from_source`
+  resolves the brand by manufacturer family (`manufacturer:drak` → `s_drak_env`)
+  for the SVG, and `draw_node` routes an `asset_ref`-svg separator to the
+  rasteriser.
+- **Blocker B solved by the MFD-frame gate, NOT a typography resolver.** Colour
+  matches the canvas's DIRECT slug (unchanged); the dotted SVG resolves ONLY when
+  `design_text_scale > 1` (MFD frame). Physical interior screens (medical, door)
+  match nothing → no separator → frozen platinum untouched. No AEGS leak because
+  the medical footer isn't reached for the SVG.
+- **The DRAK asset is ABSENT in this build.** `s_drak_env` overrides SvgPath to
+  `DRAK_S42_…` which doesn't exist (only AEGS/BIOC/CRUS/… ship vectors). The
+  engine falls back to the standard's DEFAULT non-brand SvgPath —
+  `PU_MFD_Generic_…_V_Divider.svg` (a column of 8 dots). `separator_default_svg_path()`
+  pulls that default and the resolver prefers it for MFD separators.
+- **Round dots, not dashes:** Contain-fit + centred (`asset_layout` Contain, no
+  `custom_shape` so `rasterize_svg_for_node` takes the aspect-preserved path).
+Verified: `ui_check --full` ALL GREEN; 527 lib tests; 5 frozen targets
+byte-identical; guard `compile_ir_mfd_separator_paints_default_divider_but_skips_physical_screens`.
+The parked plan below is kept for history (the ID-band/typography blockers it
+worried about never materialised under the MFD-gate approach).
+
+### P3 (original parked plan — superseded, kept for history)
 
 The dotted icon/title separators are `BuildingBlocks_WidgetSeparator` widgets
 (direction Vertical, style Tertiary on the power cards) — a modularkit
