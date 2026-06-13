@@ -59,16 +59,14 @@ Four reported symptoms, mapped to root cause (one landed, three already-open):
    battery-column text-band centroids). 0/0 Δ−8px and BATTERY Δ−3.5px are within
    capture noise (so rectification is accurate AND those two are faithful); the
    OPPOSITE-sign OFFLINE Δ is therefore a real LOCAL deviation, not skew:
-   - (a) **OFFLINE ~35px too low** (render centre y≈841 vs ref y≈806). The earlier
-     "71px" was the internal 0/0→OFFLINE gap, NOT the parity error. Cause:
-     `base_ValuesContainer` (`0.9 Auto`) + `base_MinBatteryAssignment` (`0.5 Auto`)
-     split `base_BatteryContainer` (220.8px) as FILL weights 0.9:0.5 → 141.9:78.85
-     (`bb_layout/engine_parts/engine_01.part` ~L1052: `h = container.h * ratio`
-     then flex-shrink), pushing the OFFLINE box down. The reference OFFLINE (~806)
-     sits BETWEEN the fill result (841) and a content-fit collapse (~765), so there
-     is **no clean alternative resolution** — the true fix is the cross-validated
-     non-zero-Auto column model, **pinned by medical baselines** (workflow §10
-     don't-retry) and baseline-affecting (**approval-gated**). Not changed.
+   - (a) **OFFLINE ~35px too low → FIXED** (`be1859d59`). Was render centre y≈841
+     vs ref y≈806; cause: `base_ValuesContainer` (`0.9 Auto`) FILLED 0.9/(0.9+0.5)
+     of the 220.8px column = 141.9px on one "0/0" line, leaving ~71px empty that
+     pushed the OFFLINE box down. Fix: a column child authored non-zero `Auto`
+     content-fits its TEXT (`engine_01.part` ~L1052), exactly like the 0.0 case —
+     "Auto" = fit-to-content, the value is only the no-content fallback. ValuesContainer
+     →93px; OFFLINE re-measured Δ−5.9 (uniform with 0/0 Δ−3.8, BATTERY Δ−4.3 = faithful).
+     Full detail + why the paper analysis wrongly read it as blocked: **P14**.
    - (b) **BATTERY overflows the card ~21px** — title `text_BatteryTitle` is
      `Auto`-width (256.7px, no shrink) in an authored `Start` row, starting at
      x=274.4 IDENTICAL to OUTPUT's *fitting* title (icon box + separator slot are
@@ -118,33 +116,33 @@ nine-slice). A working implementation was built and REVERTED for two blockers
    MissionObjectives-tinted.
 5. Test fixtures need the tag database served (expansion bails without it).
 
-### P14 — non-zero-Auto column model (4a OFFLINE) — needs the decoded engine flex spec
+### P14 — non-zero-Auto column model (4a OFFLINE) — RESOLVED (`be1859d59`)
 
-Investigated 2026-06-13 (owner asked to attempt a unified fix behind the guard).
-Current rule (`bb_layout/engine_parts/engine_01.part` ~L1052): a column child
-authored non-zero `Auto` (value v∈(0,1)) takes `size = v × container`, then
-flex-shrinks. No candidate rule reconciles the two pinned cases:
+A column child authored non-zero `Auto` (value v∈(0,1)) now **content-fits its
+text** (`engine_01.part` ~L1052), exactly like the 0.0 pure-hint case: "Auto" =
+fit-to-content, the value is only the no-content fallback fraction (`else` fill).
+`base_ValuesContainer` 141.9→93px; OFFLINE Δ+34.7→−5.9 (uniform with 0/0 −3.8,
+BATTERY −4.3 = all faithful). `ui_check --full` green, all 5 frozen baselines
+unchanged, +2 TDD guards.
 
-| model | POWER OFFLINE centre (ref ~806) | MEDICAL HeaderTitleBase h (frozen 78, content ~18) |
+**Lesson — the empirical probe beat the paper analysis (owner was right to push).**
+My first pass concluded "blocked, needs the engine spec" from this table:
+
+| model | POWER OFFLINE (ref ~806) | MEDICAL HeaderTitleBase (frozen 78, content ~18) |
 |---|---|---|
-| fill `v×container` (current) | 842 (−35) | 78 ✓ |
-| content-fit | 758 (+49) | 18 ✗ regression |
-| content-basis + grow-slack | 821–838 (−15..−32) | <78 ✗ regression |
+| fill `v×container` (old) | 842 (−35) | 78 |
+| content-fit | **758 (paper) → actually 801** | **18 (paper) → actually UNCHANGED** |
 
-Two hard findings: (1) the **fill is load-bearing** — medical `HeaderTitleBase`
-(MCP `ui_ir_query` on canvas `534bab84…`) renders h=78 on ~18px of text and even
-overflows its 108px parent (y 34.68→112.68), i.e. a band sized to fill BY DESIGN;
-content-basis shrinks it (the documented 78→18, y+27). (2) **No model hits the
-power reference (806)** — fill 842, content-fit 758, content+grow 821–838 all miss,
-so OFFLINE's position is NOT a pure non-zero-Auto resolution; it is governed by
-something the bloomed capture cannot disambiguate (an authored alignment/
-justification on `base_BatteryContainer`/`base_MinBatteryAssignment`, or the 0/0
-line-box metric). A safe unified fix therefore needs the decoded Star Engine
-flex-resolution spec, not more pixel reverse-engineering — any model change here
-both MISSES the power target AND regresses the 5 frozen platinum/gold PNGs. Current
-`fill` is kept as the best single rule; OFFLINE's ~35px stands as a documented
-limitation (revisit when the engine flex spec is decoded, or with a clean un-bloomed
-power capture to test the alignment/line-box hypotheses).
+Both paper cells were wrong: (1) I estimated the "0/0" content basis at ~71px (the
+text-field height); the real measured text intrinsic is **93px**, which lands
+OFFLINE at 801 ≈ ref 806, not the predicted 758. (2) I assumed medical's
+`HeaderTitleBase` would shrink — but it is a **ROW child** (it has a vertical
+separator sibling), so its h is CROSS-axis and the COLUMN `!is_row` branch never
+touches it. The "78→18" §10 regression came from a BROADER earlier change; this
+narrow one (only text-measurable non-zero Auto in `!is_row`) leaves every frozen
+target byte-identical. Takeaway: when a model is "between" two analytic results,
+run it behind the full guard rather than reasoning about content sizes — measure,
+don't estimate.
 
 ### P4 — pip slab brightness
 
