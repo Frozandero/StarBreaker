@@ -33,17 +33,26 @@ Working discipline:
 - If a step's premise turns out wrong, record what was falsified against
   the checkbox (a miss is a result), fix the plan text, and continue.
 
-### Current state (end of the SECOND 2026-06-12 session, HEAD ≈ 9d140f254)
+### Current state (2026-06-13 — THE PLAN IS COMPLETE)
 
-EXECUTED this session: **P0 (all), P1 (all), P2 (all), P4.1, P5.1, P5.2,
-P5.4, P6 (all)** — every checkbox marked in place below with its
-findings. Tree clean, `ui_check.sh --full` ALL GREEN (fresh export +
-stamp in place). REMAINING: **P3** (approval-gated — STOP for owner approval before
-starting; retires the text calibrations, re-freezes every text baseline),
-**P4.2–P4.4** (the selector-engine refactor — plan a dedicated session;
-the input inventory is `docs/ui-cascade-passes.md`, incl. the flagged
-root-canvas defaultStyles projection), **P5.3** (approval-gated — needs
-one owner-supplied capture of a screen whose slots 8/9 differ).
+ALL phases done. P0/P1/P2/P4.1/P5.1/P5.2/P5.4/P6 landed 2026-06-12;
+P5.3 (background = slot 9), P3 (all — five text calibrations retired),
+and P4.2–P4.4 (selector-engine unification) landed 2026-06-13. Every
+checkbox below is `[x]` with its findings. Tree clean, `ui_check.sh
+--full` ALL GREEN; all text + background baselines re-frozen
+(approver: owner); the cascade now applies through the single
+`bb_style_engine`.
+
+What this plan did NOT close (deliberately — separate parity arc, not
+plan scope; diagnoses in `docs/ui-clipper-parity-handoff.md`): power
+P3 separator dots, P4 pip-slab brightness (rides the gated linear-light
+question), P13 header side bars, P7 scrollbar slider width (P2.2 bounded
+it to the engine `_SizeRatio` C++ input), P8 footer letter pitch. Two
+registered pins carry documented retirement criteria: the annunciator
+25px frame (C++-host-side; retire if a data source surfaces) and the
+right-anchored caption-pair top padding (retire with the parked med2
+slot-composition rect fix). One audited-but-kept name-pluck: RootGhost
+button-secondary radius (retire with a ghost-button reference).
 
 Notable session outcomes a successor should know: the staleness guard
 (P0.2) is live and WILL fire when the test binary is rebuilt >30 min

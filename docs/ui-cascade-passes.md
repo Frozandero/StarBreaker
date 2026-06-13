@@ -34,7 +34,7 @@ running this same sequence) before the parent's passes. At one level:
 | 5 | Shared styles | the shared record's name (`mfd_g_content`, `mfd_g_header`, `h_hud_g_controlhints_b`, …) | `defaultStyles.sharedStyles` URL | fills: brand container (or palette source / canvas); chrome: fetched brand `Style` record (`PaletteSources`) | whole scene |
 | 6 | Brand container | `s_drak_hud`, `s_bioc`, `s_drak_env`, `orig`, … | selected `brandStyles[]` (manufacturer match) | fills: brand container; chrome: brand `Style` record | whole scene; **the TEXT-FORMAT route lives ONLY here** (see below) |
 | 7 | Embedded styles | `embeddedStyles` | the canvas's `embeddedStyles` | the canvas / inherited palette source | whole scene |
-| 8 | Inline-only finishing pass | `?` (no identifier) | empty entry list | shared fills | guarantees node `inlineStyles` apply on canvases with no other containers |
+| 8 | Inline-only finishing pass | `inline` (was `?` pre-P4.3) | empty entry list | shared fills | guarantees node `inlineStyles` apply on canvases with no other containers |
 | 9 | Scrollbar module sheet | `sk_<brand>_scrollbarstyles` | `apply_scrollbar_modular_styles` | module chrome palette | expanded scrollbar standards only |
 | 10 | `exportNode=false` subtree deactivation | — (not styling) | authored node flag | — | editor-only subtrees (plan P5.1) |
 
@@ -69,9 +69,10 @@ chiclets and tinted the white icons — both away from the reference.
 (`defaultStyles.sharedStyles` — the URL next to the entries — IS consumed,
 as pass 5.)
 
-### The text-format route (brand passes only)
+### The text-format route (Brand tier only)
 
-A Parent-wrapped entry on a brand `s_*` container whose conditions select a
+Gated on `Tier::Brand` since P4.3 (was an `s_*` identifier-prefix sniff). A
+Parent-wrapped entry on a brand container whose conditions select a
 TEXTFIELD styles the field's TEXT FORMAT (FontSize/FillColor), not the
 widget. The applied FontSize sets the `__EntryFontSize` marker, which is
 the ONLY thing that outranks the named-style table in font resolution — a
