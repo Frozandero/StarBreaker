@@ -11,12 +11,12 @@ Before planning or editing in this crate, read these in order:
 1. `StarBreaker/AGENTS.md`
 2. `StarBreaker/.github/copilot-instructions.md`
 3. `StarBreaker/crates/starbreaker-ui/AGENTS.md` (this file)
-4. `StarBreaker/docs/ui-workflow.md` (the process) and
-   `StarBreaker/docs/ui-reference.md` (commands/tools/data + per-screen
+4. `StarBreaker/crates/starbreaker-ui/docs/ui-workflow.md` (the process) and
+   `StarBreaker/crates/starbreaker-ui/docs/ui-reference.md` (commands/tools/data + per-screen
    dossier) for any UI parity/matching task
 
 Do not rely on stale chat context for UI matching behavior. Re-read
-`docs/ui-workflow.md` when switching screens, after long detours, or when
+`crates/starbreaker-ui/docs/ui-workflow.md` when switching screens, after long detours, or when
 visual fixes stop converging. To launch a per-screen parity pass, use
 `crates/starbreaker-ui/docs/ui-matching-agent-prompt.md`.
 
@@ -80,7 +80,7 @@ from a full `ui render`, so absolute text-top values differ between them; the
 container position and any layout-fix delta are font-independent, so a px delta
 measured on the full render still applies in snapshot space (set
 `reference_target = frozen_snapshot_value − measured_render_delta`). Full policy:
-`docs/ui-regression-policy.md` § *Known-Outlier Overrides*.
+`crates/starbreaker-ui/docs/ui-regression-policy.md` § *Known-Outlier Overrides*.
 
 ## Required validation loop for visual work
 

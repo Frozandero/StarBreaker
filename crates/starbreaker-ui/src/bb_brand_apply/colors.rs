@@ -134,7 +134,7 @@ fn parse_named_color(
 ///
 /// Non-enum aliases (`Accent3..5`, `Mid`, `Light`, `Gold`, `Surface`, …)
 /// were deleted 2026-06-12: they occur in no DataCore record
-/// (2026-06-12 token audit — no game record contains them; see docs/ui-process-improvements.md Part D).
+/// (2026-06-12 token audit — no game record contains them; see crates/starbreaker-ui/docs/ui-process-improvements.md Part D).
 fn color_style_slot_index(name: &str, role: ColorStyleRole) -> Option<usize> {
     if name.eq_ignore_ascii_case("Bright") {
         return Some(0);

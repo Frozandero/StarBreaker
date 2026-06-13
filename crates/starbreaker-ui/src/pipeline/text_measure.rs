@@ -4,7 +4,7 @@
 //! and selection logic the compose-time draw uses
 //! (`ir_compose::select_imported_ui_font_from_assets`), so `bb_layout`'s
 //! intrinsic text boxes hug the glyphs the renderer will actually paint
-//! (measure == draw by construction; docs/ui-clipper-parity-handoff.md
+//! (measure == draw by construction; crates/starbreaker-ui/docs/ui-clipper-parity-handoff.md
 //! catalog #3). Returns `None` when no imported font would be selected — the
 //! renderer then falls back to the TTF path, whose ×1.5-calibrated estimate
 //! `bb_layout` already models.

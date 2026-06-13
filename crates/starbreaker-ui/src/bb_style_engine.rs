@@ -1,5 +1,5 @@
 //! The single selector engine for the BuildingBlocks style cascade
-//! (plan P4.2; pass inventory: `docs/ui-cascade-passes.md`).
+//! (plan P4.2; pass inventory: `crates/starbreaker-ui/docs/ui-cascade-passes.md`).
 //!
 //! A [`StyleSheet`] describes ONE entry container (its cascade [`Tier`],
 //! identifier, palette sources, entries, and scope); [`apply`] runs a slice

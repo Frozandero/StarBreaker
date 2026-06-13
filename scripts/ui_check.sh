@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Standard starbreaker-ui check battery (docs/ui-process-improvements.md item 4).
+# Standard starbreaker-ui check battery (crates/starbreaker-ui/docs/ui-process-improvements.md item 4).
 #
 # Default (TDD tier) — run after every red/green cycle:
 #   example compile check + the WHOLE starbreaker-ui test suite (lib + every
@@ -13,7 +13,7 @@
 # --full (workstream-boundary tier) — adds:
 #   the export-coupled visual guards run AUTHORITATIVELY (no skip env),
 #   freeze + artifact validators, starbreaker-3d lib tests, and the
-#   font-size harness (docs/ui-font-size-harness.md) against UI_CHECK_SCENE.
+#   font-size harness (crates/starbreaker-ui/docs/ui-font-size-harness.md) against UI_CHECK_SCENE.
 #
 # Environment:
 #   UI_CHECK_SCENE   scene.json used for the --full font harness replay.

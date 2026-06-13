@@ -10,7 +10,7 @@ Extracted 2026-06-12 from the decompiled DataCore record mirror
 
 `colorStyles` is the verbatim 17-slot palette array in `BB_ColorStyle` enum
 order (0 Base … 6 Bright … 16 MissionObjectives; see
-`docs/ui-architecture-runbook.md`). `null` entries mirror authored null
+`crates/starbreaker-ui/docs/ui-architecture-runbook.md`). `null` entries mirror authored null
 slots.
 
 Purpose: unit-test fixtures need REAL brand palette values but must run

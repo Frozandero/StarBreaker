@@ -1667,7 +1667,7 @@ mod tests_padding_fit {
 // operations), so the live value is computed C++-side: the power-screen
 // residual (ours 393px vs reference 431px on a 978.8px track, i.e. ratio
 // 0.402 vs 0.440) is an engine-input difference, not a formula error —
-// parked with P7 in docs/ui-clipper-parity-handoff.md.
+// parked with P7 in crates/starbreaker-ui/docs/ui-clipper-parity-handoff.md.
 
 fn apply_scroll_thumb_rects(scene: &BbScene, rects: &mut BTreeMap<BbNodeId, Rect>) {
     let thumbs: Vec<(BbNodeId, String, bool)> = scene
@@ -2317,7 +2317,7 @@ mod flex_shrink_tests {
     }
 
     /// The intrinsic text measure must match what the draw will actually
-    /// paint (catalog #3/#4, docs/ui-clipper-parity-handoff.md): ui_ir's
+    /// paint (catalog #3/#4, crates/starbreaker-ui/docs/ui-clipper-parity-handoff.md): ui_ir's
     /// pre-layout annotation pass — which knows the resolved font record
     /// and the draw-side SWF glyph metrics — writes
     /// `_DrawTextWidthPx_`/`_DrawTextHeightPx_`; `node_resolved_text_size`

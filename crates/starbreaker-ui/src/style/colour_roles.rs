@@ -5,14 +5,14 @@
 //! The token set IS the `BB_ColorStyle` DataCore enum; its integer value is
 //! the direct index into a brand style's `colorStyles` palette array
 //! (authoritative dump + re-dump instructions:
-//! `docs/ui-architecture-runbook.md` §"BB_ColorStyle colour roles").
+//! `crates/starbreaker-ui/docs/ui-architecture-runbook.md` §"BB_ColorStyle colour roles").
 //!
 //! Audit 2026-06-12: grepping the decompiled record mirror for
 //! `"color": "<token>"` finds ONLY enum members — the previously
 //! hand-mapped aliases (`Accent3..5`, `Mid`, `Light`, `Highlight`, `Gold`,
 //! `Special`, `Surface`, `BG`, `FG`, `Warning`, `Success`, `Negative`,
 //! `Text`, `White`, …) occur in no game record and were deleted
-//! (2026-06-12 token audit; see docs/ui-process-improvements.md Part D).
+//! (2026-06-12 token audit; see crates/starbreaker-ui/docs/ui-process-improvements.md Part D).
 //!
 //! Role divergences (foreground vs surface) are real engine behaviour but
 //! live at the two call sites with their reference citations; this module
@@ -51,7 +51,7 @@ mod tests {
 
     #[test]
     fn enum_indices_match_the_authoritative_dump() {
-        // Spot-pin the order documented in docs/ui-architecture-runbook.md.
+        // Spot-pin the order documented in crates/starbreaker-ui/docs/ui-architecture-runbook.md.
         assert_eq!(bb_colour_style_enum_index("Base"), Some(0));
         assert_eq!(bb_colour_style_enum_index("Moderate"), Some(2));
         assert_eq!(bb_colour_style_enum_index("Accent1"), Some(4));

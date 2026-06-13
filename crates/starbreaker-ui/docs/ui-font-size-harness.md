@@ -1,6 +1,6 @@
 # UI font-size harness
 
-> Satellite doc — the authoritative process is `docs/ui-workflow.md`; commands/tools/data live in `docs/ui-reference.md`.
+> Satellite doc — the authoritative process is `crates/starbreaker-ui/docs/ui-workflow.md`; commands/tools/data live in `crates/starbreaker-ui/docs/ui-reference.md`.
 
 A diagnostic tool for auditing the **final rendered size of every text element**
 on the UI screens, and regression-checking it against a frozen baseline that is
@@ -107,7 +107,7 @@ SB_UI_FONT_DUMP=1 cargo run -q -p starbreaker -- ui render \
 ```
 
 This is the *visible-size* companion to the artifact/byte-hash freeze
-(`docs/ui-workflow.md` §7): the hash freeze proves pixels are identical; this
+(`crates/starbreaker-ui/docs/ui-workflow.md` §7): the hash freeze proves pixels are identical; this
 proves text *sizes* are within tolerance even when other pixels legitimately
 change.
 

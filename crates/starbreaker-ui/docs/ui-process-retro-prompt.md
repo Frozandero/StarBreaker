@@ -5,7 +5,7 @@ arc fresh; this one is pasted **at the end of a working session, to the
 agent that did the work** — the retrospective runs on lived context (the
 friction, dead ends, and retyped commands only that session knows). The
 ledger of findings and their implementation state is
-`docs/ui-process-improvements.md` — retros APPEND to it, they don't start
+`crates/starbreaker-ui/docs/ui-process-improvements.md` — retros APPEND to it, they don't start
 new documents.
 
 ## Instructions
@@ -15,9 +15,9 @@ didn't, and how the process can be improved — updating tools, creating new
 ones, and updating documentation with enough information to bootstrap the
 process so the next session needs less research at the start.
 
-First read docs/ui-process-improvements.md (the ledger — you will APPEND
+First read crates/starbreaker-ui/docs/ui-process-improvements.md (the ledger — you will APPEND
 to it, matching its Observed/Improvement/Action format and its phased-plan
-style) and skim docs/ui-workflow.md + docs/ui-reference.md so proposals
+style) and skim crates/starbreaker-ui/docs/ui-workflow.md + crates/starbreaker-ui/docs/ui-reference.md so proposals
 amend the current process rather than reinvent it. Use this session's own
 experience as the primary evidence; use the arc's git log, handoff, and
 memory file to recall anything context compaction has blurred.
@@ -38,25 +38,25 @@ Sweep these categories against what actually happened:
 4. Bootstrap cost. List everything you had to RE-DERIVE this session that
    the docs should have carried (data locations, screen mappings,
    engine-model rules, don't-retry traps, probe names). Land each in
-   docs/ui-reference.md (dossier rows, probe registry, glossary) or
-   docs/ui-workflow.md §10 (pain points / don't-retry) so the next session
+   crates/starbreaker-ui/docs/ui-reference.md (dossier rows, probe registry, glossary) or
+   crates/starbreaker-ui/docs/ui-workflow.md §10 (pain points / don't-retry) so the next session
    starts warm.
 5. Guard/freeze friction. Adjudications that took detours, deltas you
    audited by hand, outliers that should have been registered earlier —
    improve the flow or the docs that teach it.
 6. Memory/handoff quality. Would the handoff you wrote (or inherited) have
    been enough to resume cold? What was missing after compaction? Fix the
-   handoff expectations in docs/ui-workflow.md §9, not just this arc's file.
+   handoff expectations in crates/starbreaker-ui/docs/ui-workflow.md §9, not just this arc's file.
 
 Then:
 - APPEND the findings as new numbered items to
-  docs/ui-process-improvements.md and EXTEND its phased plan (same style:
+  crates/starbreaker-ui/docs/ui-process-improvements.md and EXTEND its phased plan (same style:
   per-step files, commands, acceptance; approval-gated items marked).
 - IMPLEMENT the plan: quick tooling wins first, then docs, then automation;
   one commit per coherent item citing its ledger number; verify-on-write
   for every doc change; bash scripts/ui_check.sh green per commit. Process
   changes must not alter render behaviour — anything that would goes
-  through the normal TDD/guard flow of docs/ui-workflow.md instead.
+  through the normal TDD/guard flow of crates/starbreaker-ui/docs/ui-workflow.md instead.
 - Baseline-affecting actions (TSV/freeze re-captures) are APPROVAL-GATED:
   present the deltas and stop unless approval was given up front.
 - Mark executed steps [done <date> <commit>] in the ledger; update the
@@ -65,6 +65,6 @@ Then:
 Acceptance (the bootstrap test): after implementing, dry-run the
 per-screen prompt (ui-matching-agent-prompt.md) from the docs alone —
 every command, path, and mapping a fresh agent needs must resolve without
-leaving docs/ui-workflow.md + docs/ui-reference.md + the dossier. Any
+leaving crates/starbreaker-ui/docs/ui-workflow.md + crates/starbreaker-ui/docs/ui-reference.md + the dossier. Any
 excursion YOU needed during this retro is a doc bug: fix it before
 closing.

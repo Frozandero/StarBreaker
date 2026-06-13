@@ -1,6 +1,6 @@
 # UI Fallback Register
 
-> Satellite doc — the authoritative process is `docs/ui-workflow.md`; commands/tools/data live in `docs/ui-reference.md`.
+> Satellite doc — the authoritative process is `crates/starbreaker-ui/docs/ui-workflow.md`; commands/tools/data live in `crates/starbreaker-ui/docs/ui-reference.md`.
 
 This register tracks active UI fallbacks in `starbreaker-ui` and explicitly records owner, scope, trigger signal, and retirement target.
 
@@ -28,7 +28,7 @@ This register tracks active UI fallbacks in `starbreaker-ui` and explicitly reco
 | `crates/starbreaker-ui/src/ui_ir/engine_parts/engine_02.part` | `textfield_fallback_font_size_from_signals` hand-tuned per-style rect ladder (Title4→56, Title3→90, Heading2/3/6 rows, `LONG_HEADING1_PROMPT_FONT_SIZE = 28.7`) | Retired (2026-06-12) | Empirical audit: no frozen pin references any rung (full battery + font harness green with the ladder disabled); the brand typography table covers the styled cases. Deleted outright. |
 | `crates/starbreaker-ui/src/ui_ir/engine_parts/engine_02.part` | `fixed_band_heading_prompt_size` / `FIXED_BAND_HEADING_FILL = 0.381` calibrated banner-prompt reduction | Retired (2026-06-12, with the text-format route) | The 0.381×105 ≈ 40.0px output was reverse-engineering the AUTHORED mainmenu bioc entry `FontSize=40` (Parent(UI_Generic_Flag_01)), now applied via the textfield text-format route. Deleted; `ui_check.sh --full` ALL GREEN incl. font harness 26/26 — zero drift. |
 | `crates/starbreaker-ui/src/style/loader.rs` | "Drake amber" fallback palette (invented colours present in no DataCore record), also leaked into per-slot defaults when parsing real records | Retired (commit 5bf1d7f84, 2026-06-12) | Replaced by `neutral_fallback` (white-on-black, no palette); the `rgba_colour_literals_are_not_hardcoded` guard bans reintroduction. |
-| `crates/starbreaker-ui/src/ui_ir/...` | `CAPS_FORCED_UPPER_FONT_SCALE = 0.98` all-caps reduction | Retired (2026-06; see project memory "caps reduction removed" and `docs/ui-workflow.md` §10) | The width rationale was false (the reference RTT is ~2% small); styled text renders the full brand nominal; all four standards re-frozen. |
+| `crates/starbreaker-ui/src/ui_ir/...` | `CAPS_FORCED_UPPER_FONT_SCALE = 0.98` all-caps reduction | Retired (2026-06; see project memory "caps reduction removed" and `crates/starbreaker-ui/docs/ui-workflow.md` §10) | The width rationale was false (the reference RTT is ~2% small); styled text renders the full brand nominal; all four standards re-frozen. |
 | `crates/starbreaker-ui/src/pipeline.rs` | Pipeline-local defaults builder and split fallback policy | Retired | Consolidated to `DefaultValueRegistry::with_pipeline_defaults(...)` in Phase 4 |
 | `crates/starbreaker-ui/src/ir_compose.rs` | Name/path-based screen/manufacturer hardcoded rendering branches | Retired | Eliminated in Phase 2B source-backed IR pass and guarded by `.github/scripts/check_ui_hardcoding.sh` |
 | `crates/starbreaker-ui/src/pipeline/swf_selection/flash_paths.rs` | Hard-coded `brand_ship_subdirs` / `annunciator_ship_subdirs` ship lists for SWF path probing | Retired (Phase 1, 2026-06-05) | Replaced by `p4k_ship_subdirs` which enumerates P4K brand dir dynamically; no hard-coded ship names remain. |

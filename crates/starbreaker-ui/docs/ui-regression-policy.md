@@ -1,6 +1,6 @@
 # UI Regression Policy
 
-> Satellite doc — the authoritative process is `docs/ui-workflow.md`; commands/tools/data live in `docs/ui-reference.md`.
+> Satellite doc — the authoritative process is `crates/starbreaker-ui/docs/ui-workflow.md`; commands/tools/data live in `crates/starbreaker-ui/docs/ui-reference.md`.
 
 This policy defines required regression coverage for `starbreaker-ui` changes.
 
@@ -42,7 +42,7 @@ still gated separately by `manifest_live_ir_guard`.
 ## Contributor Guardrails
 
 - New fallback logic requires:
-  - entry in `docs/ui-fallback-register.md`,
+  - entry in `crates/starbreaker-ui/docs/ui-fallback-register.md`,
   - explicit trigger signal,
   - retirement target.
 - Hardcoded ship/manufacturer/screen/name/path behavior in production UI code is forbidden.

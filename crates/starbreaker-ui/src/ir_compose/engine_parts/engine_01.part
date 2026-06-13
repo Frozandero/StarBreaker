@@ -1,6 +1,6 @@
 // Consolidated engine chunk 01 (formerly: part_01.part, part_02.part, part_03.part, part_04.part, part_05.part, part_06.part, part_07.part).
 //   part_01.part: Canonical UI IR renderer for generic BuildingBlocks output.
-//   part_06.part: Registered fallback (docs/ui-fallback-register.md): the word-space gap inserted between
+//   part_06.part: Registered fallback (crates/starbreaker-ui/docs/ui-fallback-register.md): the word-space gap inserted between
 //   part_07.part: Fit a SWF text size to its container rect using *real glyph metrics*.
 
 // Canonical UI IR renderer for generic BuildingBlocks output.
@@ -703,7 +703,7 @@ fn linear_channel_to_srgb(l: f32) -> f32 {
 /// (15,9,3) where linear-light blending (and the in-game reference) gives
 /// ~(68,38,8) at the chiclet edge. Scoped to the white-mask overlay path;
 /// the renderer-wide linear migration is a separate gated workstream
-/// (docs/ui-clipper-parity-handoff.md item 10).
+/// (crates/starbreaker-ui/docs/ui-clipper-parity-handoff.md item 10).
 fn blit_white_mask_overlay_linear(
     pixmap: &mut Pixmap,
     img: &RgbaImage,
@@ -1953,7 +1953,7 @@ fn stacked_label_caption_pair_text_rects(
         0.0
     };
     let top_padding = if right_anchored_pair {
-        // Registered pin (docs/ui-fallback-register.md): the right-anchored
+        // Registered pin (crates/starbreaker-ui/docs/ui-fallback-register.md): the right-anchored
         // pair's COMPONENT RECT is misplaced by the med2 multi-canvas slot
         // composition (the eob MEDGELS rect computes y=-15.2 while the meter
         // anchored to its bottom lands ~35px above the capture's meter), so

@@ -81,7 +81,7 @@ Top-level structure:
 freeze (`<added>`/`<removed>` for new/vanished identities or targets). The
 freeze tool prints it and refuses a no-op re-freeze without `--allow-empty`;
 the `reason` and the freeze commit message must account for every entry
-(`docs/ui-workflow.md` §7).
+(`crates/starbreaker-ui/docs/ui-workflow.md` §7).
 
 ## Required Fields
 

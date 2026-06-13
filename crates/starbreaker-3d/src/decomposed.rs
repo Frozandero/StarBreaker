@@ -3506,7 +3506,7 @@ fn sanitize_identifier(value: &str) -> String {
 /// Marker written next to the generated UI PNGs on every export that produced
 /// them. The starbreaker-ui visual guard reads it to hard-fail comparisons
 /// against PNGs that predate the current build (the stale-export trap —
-/// `docs/ui-process-improvements.md` ledger item 20).
+/// `crates/starbreaker-ui/docs/ui-process-improvements.md` ledger item 20).
 const UI_EXPORT_STAMP_PATH: &str = "Data/UI/Generated/.export_stamp.json";
 
 /// Insert `.export_stamp.json` when this export produced any generated UI

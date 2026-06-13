@@ -39,7 +39,7 @@ struct SnapshotFreezeFile {
     signature: Option<String>,
     manifest_path: String,
     /// Self-audit: per-identity changes vs the previous freeze
-    /// (docs/ui-workflow.md §7). Empty on first freeze of a new file.
+    /// (crates/starbreaker-ui/docs/ui-workflow.md §7). Empty on first freeze of a new file.
     delta: Vec<starbreaker_ui::freeze_audit::FreezeDelta>,
     targets: Vec<SnapshotFreezeTarget>,
 }
@@ -415,7 +415,7 @@ fn main() -> Result<(), String> {
         targets,
     };
 
-    // Self-auditing delta report (docs/ui-workflow.md §7): diff against the
+    // Self-auditing delta report (crates/starbreaker-ui/docs/ui-workflow.md §7): diff against the
     // existing freeze, print every changed identity, embed the delta in the
     // written file, and refuse a no-op re-freeze unless --allow-empty.
     // The comparison goes through the SERIALIZED form so float formatting is

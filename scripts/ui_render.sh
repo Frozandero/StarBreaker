@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build-then-replay wrapper (docs/ui-process-improvements.md Part C).
+# Build-then-replay wrapper (crates/starbreaker-ui/docs/ui-process-improvements.md Part C).
 #
 # Twice in one session a render silently used a STALE binary because the
 # preceding `cargo build` ran in the wrong working directory (background
@@ -34,7 +34,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 if [[ -z "$HELPER" ]]; then
-    echo "error: --helper is required (see the screen dossier in docs/ui-reference.md)" >&2
+    echo "error: --helper is required (see the screen dossier in crates/starbreaker-ui/docs/ui-reference.md)" >&2
     exit 2
 fi
 OUT="${OUT:-/tmp/ui_render/$HELPER}"

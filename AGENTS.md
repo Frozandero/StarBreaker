@@ -377,17 +377,17 @@ the `//!` first line of each file in the module directory.
   reusable Blender material node templates.
 - `docs/blender-shader-family-inventory.json` — the canonical list of
   CryEngine shader families we know about.
-- `docs/ui-workflow.md` — THE UI parity process (TDD loop, review
+- `crates/starbreaker-ui/docs/ui-workflow.md` — THE UI parity process (TDD loop, review
   phase, guard adjudication, freezes); read before any UI matching work.
-- `docs/ui-reference.md` — UI commands, MCP usage, probes, data
+- `crates/starbreaker-ui/docs/ui-reference.md` — UI commands, MCP usage, probes, data
   locations, and the per-screen dossier. Validation entry point:
   `scripts/ui_check.sh` (add `--full` at workstream boundaries).
-- `docs/ui-fallback-register.md` — active and retired UI fallback
+- `crates/starbreaker-ui/docs/ui-fallback-register.md` — active and retired UI fallback
   register with owner, trigger signal, and sunset target.
-- `docs/ui-architecture-runbook.md` — UI pipeline architecture and
+- `crates/starbreaker-ui/docs/ui-architecture-runbook.md` — UI pipeline architecture and
   troubleshooting flow for source->IR->render drift.
-- `docs/ui-regression-policy.md` — required regression coverage,
+- `crates/starbreaker-ui/docs/ui-regression-policy.md` — required regression coverage,
   contributor guardrails, and CI checks for UI changes.
-- `docs/ui-font-size-harness.md` — `SB_UI_FONT_DUMP` + `scripts/font_size_check.py`
+- `crates/starbreaker-ui/docs/ui-font-size-harness.md` — `SB_UI_FONT_DUMP` + `scripts/font_size_check.py`
   for auditing per-element rendered font sizes against the platinum/gold baseline.
   Run it whenever you touch anything affecting text size.

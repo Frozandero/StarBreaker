@@ -3,10 +3,10 @@
 THE process for UI-matching work in `starbreaker-ui`: getting a rendered
 screen to match its in-game reference, engine-faithfully and generically.
 Commands, tools, data locations, and the per-screen dossier live in the
-companion **`docs/ui-reference.md`** — this doc is the *how to work*, that
+companion **`crates/starbreaker-ui/docs/ui-reference.md`** — this doc is the *how to work*, that
 doc is the *what to type*.
 
-Starting fresh? Read this doc, then `docs/ui-reference.md`, then the current
+Starting fresh? Read this doc, then `crates/starbreaker-ui/docs/ui-reference.md`, then the current
 arc's handoff doc (see the dossier's "open issues" column). The short
 per-screen prompt template is
 `crates/starbreaker-ui/docs/ui-matching-agent-prompt.md`.
@@ -57,7 +57,7 @@ per-screen prompt template is
 ## 2. The architecture in one page
 
 Pipeline stages and the bug classes they own (deep dive:
-`docs/ui-architecture-runbook.md`):
+`crates/starbreaker-ui/docs/ui-architecture-runbook.md`):
 
 | Stage | Files | Owns |
 |---|---|---|
@@ -74,7 +74,7 @@ last in every pass; an inline `FontSize` is marked `__InlineFontSize` and
 outranks the brand-table standard in font resolution). Each tier is a
 `bb_style_engine::StyleSheet` with a `Tier`; the full pass list (incl.
 widget-standard module sheets, deferred late-state subtree passes, and the
-text-format route gated on `Tier::Brand`) is `docs/ui-cascade-passes.md`.
+text-format route gated on `Tier::Brand`) is `crates/starbreaker-ui/docs/ui-cascade-passes.md`.
 
 Per-ship values: derived at export in
 `starbreaker-3d/src/ui_pipeline/ship_values.rs` → `PipelineInputs::derived_values`;
@@ -187,7 +187,7 @@ fails; within `confidence` → graduate to a strict freeze. Field-generic
 (geometry, alpha, font_size, text tops, tint rgba/token). Gotcha: freeze
 pipeline font metrics differ from full renders — anchor text-top targets as
 `frozen_snapshot_value − measured_render_delta`. Full policy:
-`docs/ui-regression-policy.md`.
+`crates/starbreaker-ui/docs/ui-regression-policy.md`.
 
 ## 7. Freezes, target onboarding, tier changes
 
@@ -217,7 +217,7 @@ Flows (commands in the reference doc §2/§7):
 - No image binaries in freeze commits (`test-artifacts/ui/*.png` stays
   untracked).
 - Every UI defect fix lands with a regression guard in the same change
-  (category guidance: `docs/ui-regression-policy.md`). Pixel regression is
+  (category guidance: `crates/starbreaker-ui/docs/ui-regression-policy.md`). Pixel regression is
   the content-agnostic whole-image guard — do NOT add per-screen ROI pixel
   checks.
 
@@ -230,7 +230,7 @@ Flows (commands in the reference doc §2/§7):
   (registry or derivation constants) with a TODO + provenance note —
   documented IOUs, not silent magic.
 - New fallback logic of any kind requires an entry in
-  `docs/ui-fallback-register.md` (trigger signal + retirement target).
+  `crates/starbreaker-ui/docs/ui-fallback-register.md` (trigger signal + retirement target).
 
 ## 9. Memory, handoffs, prompts
 
@@ -247,7 +247,7 @@ Flows (commands in the reference doc §2/§7):
   paste the process retrospective prompt
   (`crates/starbreaker-ui/docs/ui-process-retro-prompt.md`): it runs on the
   session's lived experience (the friction only that session knows);
-  findings append to the `docs/ui-process-improvements.md` ledger and get
+  findings append to the `crates/starbreaker-ui/docs/ui-process-improvements.md` ledger and get
   implemented, so each arc lowers the next one's bootstrap cost.
 
 ## 10. Known pain points & don't-retry list
@@ -274,9 +274,9 @@ Flows (commands in the reference doc §2/§7):
   models: IR font size = design-em px (factor 1.0), inline pairs continue
   at glyph-advance, caption pairs stack by the line box. The data-backed
   font model owns sizing — a tuned scalar is a regression
-  (`docs/ui-font-size-harness.md` guards it; run via `ui_check.sh --full`
+  (`crates/starbreaker-ui/docs/ui-font-size-harness.md` guards it; run via `ui_check.sh --full`
   whenever text size could change). Engine-model detail:
-  `docs/ui-architecture-runbook.md` §"engine models settled".
+  `crates/starbreaker-ui/docs/ui-architecture-runbook.md` §"engine models settled".
 - **`.tif` in canvas JSON = `.dds` in P4K.**
 - **Stale generated PNGs**: `ships/Data/UI/Generated/...` only refreshes on
   full export. Iterate via replay; export before freezing artifacts.

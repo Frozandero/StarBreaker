@@ -268,7 +268,7 @@ fn apply_body_background_standard_styles(
 // match the expanded ghost-button node. That match is UNVERIFIED: no frozen
 // target exercises a ghost button, and the brands whose RootGhost carries
 // radii (aegs/bioc/crus/orig/crlf) are not in the frozen set. Per
-// docs/ui-workflow.md §5 (a clean disable->adjudicate proves "no frozen pin",
+// crates/starbreaker-ui/docs/ui-workflow.md §5 (a clean disable->adjudicate proves "no frozen pin",
 // not "correct everywhere"), the pluck is KEPT. DELETION CRITERION: a
 // reference for any ghost-button screen confirming the engine's
 // condition-matched application reproduces the radius — then this and

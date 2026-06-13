@@ -7,7 +7,7 @@ executed from fresh context: every file path, command, and acceptance
 criterion is explicit.
 
 Status: **IMPLEMENTED 2026-06-11** (commits 2c6029f49, 845612154, ace9af280, 6304571ab, 8c4352623, 5a5b51f71, 89d6a4d51 — per-step [done] markers below). The current arc's work-state handoff is separate:
-`docs/ui-clipper-parity-handoff.md`.
+`crates/starbreaker-ui/docs/ui-clipper-parity-handoff.md`.
 
 ---
 
@@ -197,7 +197,7 @@ known-outlier (`crates/starbreaker-ui/tests/fixtures/ui_ir/ui_known_outliers.jso
 written to the project memory *before* implementation started, which is what
 allowed the work to survive context compaction; conversely, earlier
 diagnoses written "when context ran low" were rushed. The end-of-arc handoff
-doc (`docs/ui-clipper-parity-handoff.md`) proved the right vehicle for
+doc (`crates/starbreaker-ui/docs/ui-clipper-parity-handoff.md`) proved the right vehicle for
 session-spanning state.
 
 **Action:** standing rules in the new workflow doc: a non-trivial diagnosis
@@ -218,7 +218,7 @@ invisible at the data file.
 **Action:** a sibling
 `crates/starbreaker-ui/data/default_value_registry_v1.notes.md` mapping each
 pinned path → provenance + sunset condition (move-to-derivation), updated in
-the same commits that touch the registry; `docs/ui-fallback-register.md`
+the same commits that touch the registry; `crates/starbreaker-ui/docs/ui-fallback-register.md`
 links to it.
 
 ### 11. Consolidated process documentation (NEW — the centrepiece)
@@ -262,7 +262,7 @@ parallel half-truths left to confuse.
 **Action — write the following two documents** (do not implement until the
 phased plan is executed; full content requirements below so nothing is lost):
 
-#### `docs/ui-workflow.md` — THE process (authoritative)
+#### `crates/starbreaker-ui/docs/ui-workflow.md` — THE process (authoritative)
 
 Must contain, in this order:
 
@@ -280,7 +280,7 @@ Must contain, in this order:
    (below), the arc's current handoff doc, and the Claude memory file for
    the arc when resuming.
 3. **The architecture in one page** + pointer to
-   `docs/ui-architecture-runbook.md`: pipeline stages
+   `crates/starbreaker-ui/docs/ui-architecture-runbook.md`: pipeline stages
    (bb_resolve Pass-1/Pass-2 → brand/style cascade → bb_bindings →
    bb_layout → ui_ir → ir_compose), where each class of bug lives, and the
    style cascade order (style-link < sharedStyles < brand < embedded <
@@ -321,7 +321,7 @@ Must contain, in this order:
     imperfect (skew/bloom/resolution — structural comparison, not naive
     pixel matching; power-screen pip outlines are mouse-hover artifacts).
 
-#### `docs/ui-reference.md` — commands, tools, data (the lookup half)
+#### `crates/starbreaker-ui/docs/ui-reference.md` — commands, tools, data (the lookup half)
 
 Must contain (every entry verified against the current code before
 writing):
@@ -389,21 +389,21 @@ writing):
 
 | Document | Disposition |
 |---|---|
-| `crates/starbreaker-ui/docs/ui-matching-workflow.md` | **Delete**; content absorbed (corrected) into `docs/ui-workflow.md`. Leave no stub — update every reference. |
-| `crates/starbreaker-ui/docs/ui-matching-agent-prompt.md` | **Rewrite** as the SHORT PER-SCREEN PROMPT template (~20 lines): (1) read `docs/ui-workflow.md` then `docs/ui-reference.md`; (2) look up `<SCREEN>` in the reference doc's screen dossier; (3) goal = close the gap to the dossier's reference image — replay-render, run `ui_compare.py`, build/extend the diff catalog, then the TDD loop with `ui_check.sh`, guard-adjudication on trips, audited freezes only with approval; (4) per-arc variables block (`SCREEN=`, optional `HANDOFF=`, optional known-symptom list); ships with one filled-in example. |
+| `crates/starbreaker-ui/docs/ui-matching-workflow.md` | **Delete**; content absorbed (corrected) into `crates/starbreaker-ui/docs/ui-workflow.md`. Leave no stub — update every reference. |
+| `crates/starbreaker-ui/docs/ui-matching-agent-prompt.md` | **Rewrite** as the SHORT PER-SCREEN PROMPT template (~20 lines): (1) read `crates/starbreaker-ui/docs/ui-workflow.md` then `crates/starbreaker-ui/docs/ui-reference.md`; (2) look up `<SCREEN>` in the reference doc's screen dossier; (3) goal = close the gap to the dossier's reference image — replay-render, run `ui_compare.py`, build/extend the diff catalog, then the TDD loop with `ui_check.sh`, guard-adjudication on trips, audited freezes only with approval; (4) per-arc variables block (`SCREEN=`, optional `HANDOFF=`, optional known-symptom list); ships with one filled-in example. |
 | `crates/starbreaker-ui/docs/ui-matching-text-prompt.md` | **Delete** (text-only variant obsolete — agents in use are vision-capable; the rewritten prompt covers both). |
-| `docs/ui-regression-baseline-workflow.md` | **Delete**; freeze flows live in `docs/ui-workflow.md` §7; schema details stay in `crates/starbreaker-ui/docs/ir-freeze-schema.md`. |
+| `docs/ui-regression-baseline-workflow.md` | **Delete**; freeze flows live in `crates/starbreaker-ui/docs/ui-workflow.md` §7; schema details stay in `crates/starbreaker-ui/docs/ir-freeze-schema.md`. |
 | `docs/ui-matching-tasks/target-master-findings.md` | **Delete** (stale findings; anything still true is in the runbook/memory). |
-| `HANDOFF-item2-medical2.md`, `HANDOFF-medical2-followup.md` (repo root) | **Delete**; superseded by memory + `docs/ui-clipper-parity-handoff.md`; the medical outstanding items are restated there. |
-| `crates/starbreaker-ui/docs/gold-platinum-regression-deep-dive.md` | **Keep** as historical analysis; add a header line "background reading; process lives in docs/ui-workflow.md". |
+| `HANDOFF-item2-medical2.md`, `HANDOFF-medical2-followup.md` (repo root) | **Delete**; superseded by memory + `crates/starbreaker-ui/docs/ui-clipper-parity-handoff.md`; the medical outstanding items are restated there. |
+| `crates/starbreaker-ui/docs/gold-platinum-regression-deep-dive.md` | **Keep** as historical analysis; add a header line "background reading; process lives in crates/starbreaker-ui/docs/ui-workflow.md". |
 | `crates/starbreaker-ui/docs/ir-freeze-schema.md`, `ir-style-authority-migration-plan.md` | **Keep** (schema + migration state), linked from the new docs. |
-| `docs/ui-architecture-runbook.md`, `docs/ui-regression-policy.md`, `docs/ui-font-size-harness.md`, `docs/ui-fallback-register.md` | **Keep** as satellites; dedupe any process text that moved into `docs/ui-workflow.md`; each gets a "process: see docs/ui-workflow.md" header. |
+| `crates/starbreaker-ui/docs/ui-architecture-runbook.md`, `crates/starbreaker-ui/docs/ui-regression-policy.md`, `crates/starbreaker-ui/docs/ui-font-size-harness.md`, `crates/starbreaker-ui/docs/ui-fallback-register.md` | **Keep** as satellites; dedupe any process text that moved into `crates/starbreaker-ui/docs/ui-workflow.md`; each gets a "process: see crates/starbreaker-ui/docs/ui-workflow.md" header. |
 | `crates/starbreaker-ui/AGENTS.md`, `StarBreaker/AGENTS.md`, `.github/copilot-instructions.md` | **Update** required-reads/validation-commands sections to the new docs + `ui_check.sh`. |
 | Workspace `~/projects/scorg_tools/docs/` ui plans/research | Out of repo — leave, but the new docs state explicitly: *repo docs are authoritative; workspace docs are archive*. |
 
 **Acceptance for item 11:** a fresh agent given only "read
-`docs/ui-workflow.md` and `docs/ui-reference.md`, then continue
-`docs/ui-clipper-parity-handoff.md`" can execute a full TDD+review cycle
+`crates/starbreaker-ui/docs/ui-workflow.md` and `crates/starbreaker-ui/docs/ui-reference.md`, then continue
+`crates/starbreaker-ui/docs/ui-clipper-parity-handoff.md`" can execute a full TDD+review cycle
 without consulting any superseded doc; `grep -rn "ui-matching-workflow"`
 across the repo returns only historical mentions in git log; every command
 in the new docs has been executed once during writing (no untested
@@ -419,7 +419,7 @@ is run once at writing time; (b) renames/removals of CLI subcommands,
 scripts, probes, or doc files include a repo-wide grep for references in the
 same commit.
 
-**Action:** state both rules in `docs/ui-workflow.md`; add a lightweight
+**Action:** state both rules in `crates/starbreaker-ui/docs/ui-workflow.md`; add a lightweight
 `tests/docs_reference_guard.rs`-style check IF cheap (greps the two new docs
 for `scripts/*.sh` / example names and asserts the files exist — best-effort,
 phase 4).
@@ -443,7 +443,7 @@ override and the EnableBackground flip both "did nothing" until rebuilt).
 
 **Action:** `scripts/ui_render.sh` — resolves the repo root from its own
 location, always builds first, prints the binary mtime, then replays.
-Documented as the preferred replay entry point in `docs/ui-reference.md`
+Documented as the preferred replay entry point in `crates/starbreaker-ui/docs/ui-reference.md`
 §2. General rule: wrapper scripts with self-resolved roots beat command
 sequences for anything run across shell resets.
 
@@ -471,7 +471,7 @@ from Base and Bright ON THE SAME capture), and the annunciator
 backplate-vs-bloom adjudication (no-bloom zones are NEUTRAL — hue survives
 any tone curve, so a warm plate cannot be hiding there).
 
-**Method (now codified in `docs/ui-reference.md` §3):** judge hue from
+**Method (now codified in `crates/starbreaker-ui/docs/ui-reference.md` §3):** judge hue from
 R-normalised ratios, never raw values; estimate each capture's cast from a
 known anchor (footer text = Base, pip slabs = Bright) before judging an
 unknown colour; expect bloom to lift B near bright elements.
@@ -490,7 +490,7 @@ the design couples baseline identity to expansion ORDER.
 
 **Direction:** band lanes per host type (or a second band for new types)
 in `merge_child_scene`; concrete plan parked with P3 in
-`docs/ui-clipper-parity-handoff.md` item 12.
+`crates/starbreaker-ui/docs/ui-clipper-parity-handoff.md` item 12.
 
 ### 17. ONE brand-context resolver (architecture debt, recorded)
 
@@ -513,7 +513,7 @@ The white-mask glow path now converts (scoped, landed); the renderer-wide
 migration would change every alpha blend including text antialiasing —
 full re-freeze + re-adjudication of all targets, but the evidence says it
 moves EVERYTHING toward the references. Candidate for a dedicated arc;
-numbers in `docs/ui-clipper-parity-handoff.md` items 10/11.
+numbers in `crates/starbreaker-ui/docs/ui-clipper-parity-handoff.md` items 10/11.
 
 ### 19. What demonstrably worked (keep doing)
 
@@ -577,17 +577,17 @@ spec.
 1. [done 2026-06-11] Re-read (for content to absorb/correct):
    `crates/starbreaker-ui/docs/ui-matching-workflow.md`,
    `ui-matching-agent-prompt.md`, `ui-matching-text-prompt.md`,
-   `docs/ui-regression-baseline-workflow.md`, `docs/ui-regression-policy.md`,
-   `docs/ui-architecture-runbook.md`, `docs/ui-font-size-harness.md`,
+   `docs/ui-regression-baseline-workflow.md`, `crates/starbreaker-ui/docs/ui-regression-policy.md`,
+   `crates/starbreaker-ui/docs/ui-architecture-runbook.md`, `crates/starbreaker-ui/docs/ui-font-size-harness.md`,
    `crates/starbreaker-ui/AGENTS.md`, `StarBreaker/AGENTS.md` (UI parts),
    `.github/copilot-instructions.md` (UI parts),
-   `docs/ui-clipper-parity-handoff.md` (mechanisms quick reference),
+   `crates/starbreaker-ui/docs/ui-clipper-parity-handoff.md` (mechanisms quick reference),
    and the Claude memory file `power-screen-parity-plan.md`.
-2. [done 2026-06-11 845612154] Write `docs/ui-workflow.md` per item 11 spec (sections 1–10). While
+2. [done 2026-06-11 845612154] Write `crates/starbreaker-ui/docs/ui-workflow.md` per item 11 spec (sections 1–10). While
    writing, RUN every command (item 12a). Correct as you go: no
    `ui debug`/`ui styles` (use `ui render --dump-ir-dir` + the MCP trio);
    no mandatory `SC_DATA_P4K`; validation = `ui_check.sh`.
-3. [done 2026-06-11 845612154] Write `docs/ui-reference.md` per item 11 spec (sections 1–8), including
+3. [done 2026-06-11 845612154] Write `crates/starbreaker-ui/docs/ui-reference.md` per item 11 spec (sections 1–8), including
    the probe registry table (item 7) and the verified MCP tool list (run
    each MCP tool once or cite a this-arc usage).
 4. [done 2026-06-11 845612154] Apply the supersede table: deletes, the prompt rewrite, satellite-doc
@@ -595,8 +595,8 @@ spec.
    `grep -rn "ui-matching-workflow\|ui-matching-text-prompt\|ui-regression-baseline-workflow\|HANDOFF-item2\|HANDOFF-medical2\|ui debug\|ui styles" --include='*.md' --include='*.rs' --include='*.sh' .`
    and fix every live hit.
 5. [done 2026-06-11] Update the Claude memory: `power-screen-parity-plan.md` and `MEMORY.md`
-   gain a pointer "process docs consolidated → docs/ui-workflow.md +
-   docs/ui-reference.md"; fix the `MFD_IR_DUMP_LOG` ghost-probe note
+   gain a pointer "process docs consolidated → crates/starbreaker-ui/docs/ui-workflow.md +
+   crates/starbreaker-ui/docs/ui-reference.md"; fix the `MFD_IR_DUMP_LOG` ghost-probe note
    (correct name: `ui render --dump-ir-dir`).
 6. [done 2026-06-11 845612154 — reference check scripted, dry-run via the docs-only check; the guard test (8c4352623) keeps it honest] Acceptance (item 11's, strengthened): the deliverable is the SHORT
    PROMPT — instantiate the rewritten template for one screen (e.g.
@@ -619,7 +619,7 @@ spec.
    `delta` array (target, identity, field, old, new) into the freeze JSON
    next to approver/reason; exit non-zero with a clear message when invoked
    with no changes (`--allow-empty` escape hatch). TDD: a unit test against
-   two small in-memory snapshots. Update `docs/ui-workflow.md` §freeze flow
+   two small in-memory snapshots. Update `crates/starbreaker-ui/docs/ui-workflow.md` §freeze flow
    + `ir-freeze-schema.md` (schema gains `delta`); run
    `validate_ui_snapshot_freeze.sh` (extend it to tolerate/check the new
    field).
@@ -632,7 +632,7 @@ spec.
    keys (platinum-pinned at pre-composition paths — migrate keys before
    composing relative urlPostfix namespaces), emissions signature paths
    (now derived in ship_values.rs — note they bypass the registry),
-   localization-ish entries. Link from `docs/ui-fallback-register.md`.
+   localization-ish entries. Link from `crates/starbreaker-ui/docs/ui-fallback-register.md`.
 3. Commit per item.
 
 ### Phase 3 — approval-gated baseline refreshes (item 3b + deferred freezes)
@@ -652,13 +652,13 @@ Do NOT start without the owner's go-ahead in-session; present the deltas first.
    `bash scripts/freeze_ui_regression_artifacts.sh --approver owner --reason
    "<cite the arc's commits>"`; both validate scripts; `ui_check.sh --full`.
    (Sequencing note: this naturally belongs at the END of the parity arc's
-   step 7 in `docs/ui-clipper-parity-handoff.md` — whichever happens first
+   step 7 in `crates/starbreaker-ui/docs/ui-clipper-parity-handoff.md` — whichever happens first
    carries it.)
 
 ### Phase 4 — adoption guard (item 12b, optional)
 
 1. [done 2026-06-11 8c4352623] `crates/starbreaker-ui/tests/docs_reference_guard.rs`: read
-   `docs/ui-workflow.md` + `docs/ui-reference.md`; extract
+   `crates/starbreaker-ui/docs/ui-workflow.md` + `crates/starbreaker-ui/docs/ui-reference.md`; extract
    `scripts/<name>.sh|py` and `examples/<name>.rs` tokens; assert each file
    exists. Keep it dumb and forgiving (only flags vanished files, not prose).
 2. [done 2026-06-11 845612154 — covered by the Phase 1 AGENTS.md update] AGENTS.md mentions.
@@ -669,7 +669,7 @@ When executing this plan, track progress IN THIS FILE by appending `[done
 <date> <commit>]` to each numbered step, so a context-compacted or fresh
 agent can resume mid-phase without re-deriving state. The companion
 work-state doc for the parity arc itself remains
-`docs/ui-clipper-parity-handoff.md` — do not mix the two.
+`crates/starbreaker-ui/docs/ui-clipper-parity-handoff.md` — do not mix the two.
 
 ---
 
@@ -738,7 +738,7 @@ in one session — far cheaper than per-rule reference archaeology. But its
 verdict is only "no FROZEN PIN references this" (five screens, one ship),
 and item 20 shows it can lie when comparison inputs are stale.
 
-**Improvement:** document the method in `docs/ui-workflow.md` §5 with its
+**Improvement:** document the method in `crates/starbreaker-ui/docs/ui-workflow.md` §5 with its
 two preconditions (fresh export; lib+IR+visual suites all consulted) and
 its scope caveat.
 

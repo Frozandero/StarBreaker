@@ -424,7 +424,7 @@ pub fn stable_hash_ui_ir(document: &UiIrDocument) -> Result<String, serde_json::
 /// annotation pass uses it to write `_DrawTextWidthPx_`/`_DrawTextHeightPx_`
 /// so `bb_layout`'s intrinsic text boxes hug the glyphs the draw will paint
 /// (the SWF path renders at the IR font size with NO TTF calibration — a TTF
-/// estimate overshoots ~1.5×; see docs/ui-clipper-parity-handoff.md #3).
+/// estimate overshoots ~1.5×; see crates/starbreaker-ui/docs/ui-clipper-parity-handoff.md #3).
 /// Returns `None` when no draw font would be selected for the element (the
 /// renderer falls back to the TTF path, whose estimate bb_layout already
 /// models).
@@ -725,7 +725,7 @@ fn missing_strict_renderer_style_semantics(node: &UiIrNode) -> Vec<String> {
 /// `_DrawTextWidthPx_`/`_DrawTextHeightPx_`: the SWF draw path renders at the
 /// IR font size (no TTF calibration), so only a measure over the same font
 /// the renderer selects keeps intrinsic boxes hugging the painted glyphs
-/// (docs/ui-clipper-parity-handoff.md catalog #3). The measured size mirrors
+/// (crates/starbreaker-ui/docs/ui-clipper-parity-handoff.md catalog #3). The measured size mirrors
 /// the IR build path: a styled (brand-table) size verbatim, a plain size with
 /// the font record's imageSizePercent boost.
 #[allow(clippy::too_many_arguments)]

@@ -1,6 +1,6 @@
 # UI Architecture and Troubleshooting Runbook
 
-> Satellite doc — the authoritative process is `docs/ui-workflow.md`; commands/tools/data live in `docs/ui-reference.md`.
+> Satellite doc — the authoritative process is `crates/starbreaker-ui/docs/ui-workflow.md`; commands/tools/data live in `crates/starbreaker-ui/docs/ui-reference.md`.
 
 ## Architecture Summary
 
@@ -297,7 +297,7 @@ added the engine note at the end):
   every entry-application pass onto `bb_style_engine::apply` (a
   `StyleSheet` per container, tagged with its `Tier`); the legacy
   per-entry-point wrappers and the identifier-prefix sniff are deleted.
-  The authoritative pass list + order is `docs/ui-cascade-passes.md`
+  The authoritative pass list + order is `crates/starbreaker-ui/docs/ui-cascade-passes.md`
   (unchanged by the migration — verified byte-identical on all frozen
   targets).
 

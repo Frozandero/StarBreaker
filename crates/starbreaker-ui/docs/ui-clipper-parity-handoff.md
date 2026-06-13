@@ -1,7 +1,7 @@
 # Clipper UI parity — handoff (2026-06-11)
 
 > NOTE 2026-06-11: the `engine_parts/part_NN.part` files were consolidated
-> into `engine_NN.part` chunks (cap 3000, target ≤2500 — `docs/ui-workflow.md`
+> into `engine_NN.part` chunks (cap 3000, target ≤2500 — `crates/starbreaker-ui/docs/ui-workflow.md`
 > rule 5). Old part names are listed in each chunk's header comment, so
 > `grep -rn "part_NN.part" crates/starbreaker-ui/src` locates the absorbing
 > chunk for any stale reference (memory notes included).
@@ -10,10 +10,10 @@ State, remaining issues, and the ongoing plan for the Drake Clipper screen
 parity arc (plan `~/.claude/plans/wondrous-sparking-sketch.md`, branch
 `feature/ui`). Companion documents:
 
-- `docs/ui-process-improvements.md` — process changes adopted mid-arc.
+- `crates/starbreaker-ui/docs/ui-process-improvements.md` — process changes adopted mid-arc.
 - Project memory `power-screen-parity-plan.md` (Claude session memory) — the
   full mechanism research log; this handoff supersedes its "remaining" lists.
-- `docs/ui-workflow.md` + `docs/ui-reference.md` — the rules and the
+- `crates/starbreaker-ui/docs/ui-workflow.md` + `crates/starbreaker-ui/docs/ui-reference.md` — the rules and the
   command/tool reference (TDD, no per-asset hacks, audited freezes only).
   Fresh sessions: instantiate
   `crates/starbreaker-ui/docs/ui-matching-agent-prompt.md` with
@@ -51,10 +51,10 @@ artifacts — ignore (owner's rule).
 | ffd587211 | Steps 4+12-fonts: node `inlineStyles` cascade (FINAL stage, `__InlineFontSize` outranks brand standard) → OUTPUT/BATTERY FontSize 30; mixed-row Auto text intrinsics (BATTERY right of icon); `font_size_check.py` parser fix |
 | 1161e705a | Step 7: bound `AnchorX/AnchorY` applied in `resolve_geometry_fields_into_scene` (marker = `1 − current/max`); beyond-edge-anchored Auto-hint textfields size to text (°C below gauge); bb_layout part_15 split |
 | 1b486f82e | Step 8 (values): clone `urlPostfix` namespaces cloned bindings; ABSOLUTE WidgetCanvas `urlPostfix` → child namespace; `LocalizedFromNumber` + `LocalizedSIUnitFromNumber` eval; signature derivation paths |
-| e4a4bdef6, 9ba1c94b9, a3b16bc92 | `docs/ui-process-improvements.md` (retrospective → consolidation spec → phased plan) |
+| e4a4bdef6, 9ba1c94b9, a3b16bc92 | `crates/starbreaker-ui/docs/ui-process-improvements.md` (retrospective → consolidation spec → phased plan) |
 | b0d57a684 | Step 9R fixes: SizeX/SizeY modifiers preserve authored sizing behaviour (+ audited gold re-freeze, see below); boolean params take registry value by NAME (`iscast=false`); flex enum modifiers (FlexDirection etc.); clone roots inherit `layoutItemCommon` (IR, EM, CS order) |
 | 837e6caff | this handoff doc |
-| 2c6029f49 … 89d6a4d51 | process-plan implementation: `ui_check.sh`, `ui_compare.py`, harness self-check, `ui_stage_diff`; `docs/ui-workflow.md` + `docs/ui-reference.md` (old ui-matching docs DELETED); self-auditing freezes (delta embedded, no-op refused); registry `.notes.md`; docs reference guard; font TSV re-captured; artifact freeze refreshed |
+| 2c6029f49 … 89d6a4d51 | process-plan implementation: `ui_check.sh`, `ui_compare.py`, harness self-check, `ui_stage_diff`; `crates/starbreaker-ui/docs/ui-workflow.md` + `crates/starbreaker-ui/docs/ui-reference.md` (old ui-matching docs DELETED); self-auditing freezes (delta embedded, no-op refused); registry `.notes.md`; docs reference guard; font TSV re-captured; artifact freeze refreshed |
 | 3b3957562 … c256e3efc | engine-part consolidation: 83 `part_NN.part` → 12 `engine_NN.part` chunks (cap 3000); zero code changes |
 | 6b958b4e5 | CI: P4K-backed MCP tests SKIP without game data; validator tests cfg(unix) |
 
@@ -314,7 +314,7 @@ engine-faithful).
 
 ### 12. Power MFD review round 2 — catalog (2026-06-12, render /tmp/power_v3 vs Screen_Left_Lower_RTT.png)
 
-Review phase per docs/ui-workflow.md §4 (after the body backplate landed —
+Review phase per crates/starbreaker-ui/docs/ui-workflow.md §4 (after the body backplate landed —
 overall warmth now matches; crops read with vision at full scale):
 
 | # | region | difference | sev | root-cause hypothesis | decision |
@@ -519,7 +519,7 @@ content text scale ×4/3 (ºC discriminator), IR/EM/CS colour (shared
 'Icon Color' restyling question), P13 side bars, P3 separator dots, P7
 slider width, the §12 P4 pips. The UI improvement plan that carried the
 remediation/tooling work is COMPLETE (all phases) and was removed; its
-findings live in `docs/ui-process-improvements.md` (the ledger).
+findings live in `crates/starbreaker-ui/docs/ui-process-improvements.md` (the ledger).
 
 ### 14. USER PRIORITY ITEMS 2026-06-12 (tasks #8–#11) — DONE (see §15)
 
@@ -564,7 +564,7 @@ in a test fixture; this session added more such TEST fixtures incl.
   `auto_text_intrinsic_main` (any row), columns pending 1b; scrollable
   (`scrollPolicy`) and wrap rows exempt from shrink. SpaceBetween axis
   justification is NOT implemented (falls back to Start) — minor open.
-- **Probes**: full registry in `docs/ui-reference.md` §6
+- **Probes**: full registry in `crates/starbreaker-ui/docs/ui-reference.md` §6
   (`BB_SHRINK_PROBE`, `SB_UI_GEOM_PROBE`, `BB_A3_STYLE_PROBE`,
   `BB_A3_TEXT_PROBE`, `SB_SHIP_VALUES_DUMP`, `SB_UI_FONT_DUMP`,
   `ui render --dump-ir-dir <dir>`).

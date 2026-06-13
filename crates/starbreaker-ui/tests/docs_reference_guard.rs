@@ -1,6 +1,6 @@
-//! Guardrail: the consolidated UI docs (`docs/ui-workflow.md`,
-//! `docs/ui-reference.md`, the agent prompt) must not reference scripts,
-//! docs, or examples that no longer exist (docs/ui-process-improvements.md
+//! Guardrail: the consolidated UI docs (`crates/starbreaker-ui/docs/ui-workflow.md`,
+//! `crates/starbreaker-ui/docs/ui-reference.md`, the agent prompt) must not reference scripts,
+//! docs, or examples that no longer exist (crates/starbreaker-ui/docs/ui-process-improvements.md
 //! item 12 — verify-on-write). Deliberately forgiving: it only flags
 //! vanished FILES, not prose accuracy.
 
@@ -40,8 +40,8 @@ fn extract<'a>(text: &'a str, pattern: &str) -> Vec<String> {
 fn ui_docs_reference_existing_files() {
     let root = repo_root();
     let docs = [
-        "docs/ui-workflow.md",
-        "docs/ui-reference.md",
+        "crates/starbreaker-ui/docs/ui-workflow.md",
+        "crates/starbreaker-ui/docs/ui-reference.md",
         "crates/starbreaker-ui/docs/ui-matching-agent-prompt.md",
         "crates/starbreaker-ui/docs/ui-process-retro-prompt.md",
     ];

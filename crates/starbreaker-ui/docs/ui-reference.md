@@ -1,6 +1,6 @@
 # UI parity reference — commands, tools, data
 
-The lookup half of the UI workflow (`docs/ui-workflow.md` is the process).
+The lookup half of the UI workflow (`crates/starbreaker-ui/docs/ui-workflow.md` is the process).
 Every command here was executed during writing (2026-06-11). Paths marked
 (ws) are workspace-specific (this machine); the repo-relative ones are
 universal.
@@ -60,7 +60,7 @@ a stale comparison mis-adjudicated a real regression as "zero drift" on
 Required before artifact freezes. The generated PNGs are written near the
 END of the run — never diff/freeze until the process exits.
 
-**Freeze tooling** (flows in `docs/ui-workflow.md` §7). The whole artifact
+**Freeze tooling** (flows in `crates/starbreaker-ui/docs/ui-workflow.md` §7). The whole artifact
 cycle (release build → export → stale-comparison cleanup → freeze → both
 validators → full battery) is one command:
 ```bash
@@ -117,7 +117,7 @@ PNGs in `ships/Data/UI/Generated/ship/drak/Clipper/` named
 
 | Screen | Helper / scene | Canvas | Reference image | Preset | Tier / target id | Open issues |
 |---|---|---|---|---|---|---|
-| Power MFD | `Screen_Left_Lower_RTT` / LOD0 scene | `MC_S_Power_Master` (via `M_MFD_Screen` frame) | `Screen_Left_Lower_RTT.png` | `power` | not frozen (arc in progress) | text parity reached 2026-06-12; open: P3 separator dots, P4 pip brightness, P13 header side bars, P7 slider width (engine `_SizeRatio` input — plan P2.2b), P8 letter pitch (`docs/ui-clipper-parity-handoff.md`) |
+| Power MFD | `Screen_Left_Lower_RTT` / LOD0 scene | `MC_S_Power_Master` (via `M_MFD_Screen` frame) | `Screen_Left_Lower_RTT.png` | `power` | not frozen (arc in progress) | text parity reached 2026-06-12; open: P3 separator dots, P4 pip brightness, P13 header side bars, P7 slider width (engine `_SizeRatio` input — plan P2.2b), P8 letter pitch (`crates/starbreaker-ui/docs/ui-clipper-parity-handoff.md`) |
 | Target MFD | `Screen_Right_Upper_RTT` / LOD0 scene | `MC_S_Target_Master` | `Screen_Right_Upper_RTT.png` | `target` | GOLD `clipper_target_master` | A7 backdrop stack remainder (handoff) |
 | Medical bed | usable screen / LOD1 scene | `I_Med_MedicalBed_A` | `screen_16x9_a-[medical1].png` | — (add) | PLATINUM `ui_target_a` | handoff steps 10–13 |
 | Medical end-of-bed | usable screen / LOD1 scene | `I_Med_MedicalEndOfBed_A` | `mesh_end_screen_plane-[medical2].png` | — (add) | PLATINUM `ui_target_b` | logo −12px check (handoff) |
@@ -173,11 +173,11 @@ client.
 | IR freeze (baselines) | `crates/starbreaker-ui/tests/fixtures/ui_ir/ui_snapshot_freeze.json` (schema: `crates/starbreaker-ui/docs/ir-freeze-schema.md`) |
 | Known outliers | `crates/starbreaker-ui/tests/fixtures/ui_ir/ui_known_outliers.json` |
 | Measurement bank (settled reference numbers — consult FIRST, workflow §4) | `crates/starbreaker-ui/tests/fixtures/ui_ir/reference_measurements_v1.json` + `.notes.md` |
-| Font baseline | `crates/starbreaker-ui/tests/fixtures/font_size_baseline.tsv` (`docs/ui-font-size-harness.md`) |
+| Font baseline | `crates/starbreaker-ui/tests/fixtures/font_size_baseline.tsv` (`crates/starbreaker-ui/docs/ui-font-size-harness.md`) |
 | Default-value registry + provenance | `crates/starbreaker-ui/data/default_value_registry_v1.json` + `.notes.md` |
 | Ship-value derivation | `crates/starbreaker-3d/src/ui_pipeline/ship_values.rs` (+ `ship_values/tests.rs`) |
-| Pipeline stages | see `docs/ui-workflow.md` §2 table; engine code in `crates/starbreaker-ui/src/<stage>/engine_parts/*.part` |
-| Fallback register | `docs/ui-fallback-register.md` |
+| Pipeline stages | see `crates/starbreaker-ui/docs/ui-workflow.md` §2 table; engine code in `crates/starbreaker-ui/src/<stage>/engine_parts/*.part` |
+| Fallback register | `crates/starbreaker-ui/docs/ui-fallback-register.md` |
 
 ## 6. Probe registry
 
@@ -234,5 +234,5 @@ Example: `BB_SHRINK_PROBE=1 ./target/debug/starbreaker ui render --scene
   max(target/stage) of `BuildingBlocks_root.swf` (1280×720 → ×1.667 at
   1600×1200); geometry does NOT scale.
 - **BB_ColorStyle slot order**: authoritative enum index (Base=0 …
-  Bright=6, Selected=7, Disabled=8…) — see `docs/ui-architecture-runbook.md`.
+  Bright=6, Selected=7, Disabled=8…) — see `crates/starbreaker-ui/docs/ui-architecture-runbook.md`.
 - **LOD0 / LOD1 scene**: cockpit MFDs vs interior usables (dossier §3).

@@ -2,7 +2,7 @@
 
 The measurement bank (plan P1.4, ledger item 19): settled in-game reference
 measurements so pixel adjudications are lookups, not re-measurements.
-Adjudications consult this bank FIRST (`docs/ui-workflow.md` §4).
+Adjudications consult this bank FIRST (`crates/starbreaker-ui/docs/ui-workflow.md` §4).
 
 ## Provenance
 
@@ -17,7 +17,7 @@ Adjudications consult this bank FIRST (`docs/ui-workflow.md` §4).
   plan P1.2). `cap_height_px` = the tallest non-suspect bright-row run.
 - **Measured**: 2026-06-12, re-measured with the tool from the values
   settled during the 2026-06-12 power/MFD text arc
-  (`docs/ui-clipper-parity-handoff.md` §13-§16).
+  (`crates/starbreaker-ui/docs/ui-clipper-parity-handoff.md` §13-§16).
 
 ## Re-measurement deltas vs the arc's session numbers
 

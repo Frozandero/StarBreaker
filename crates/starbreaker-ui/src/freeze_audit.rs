@@ -1,4 +1,4 @@
-//! Freeze-file delta audit (docs/ui-process-improvements.md item 5).
+//! Freeze-file delta audit (crates/starbreaker-ui/docs/ui-process-improvements.md item 5).
 //!
 //! Diffs two IR snapshot-freeze documents (`ui_snapshot_freeze.json` shape:
 //! `targets[] -> baseline_snapshot.elements[]` keyed by `identity`) and

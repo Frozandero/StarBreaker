@@ -1,5 +1,5 @@
 //! Pipeline-stage bisection diagnostic for layout/geometry bugs
-//! (docs/ui-process-improvements.md item 6).
+//! (crates/starbreaker-ui/docs/ui-process-improvements.md item 6).
 //!
 //! Runs a BuildingBlocks canvas through (a) PARSE-ONLY and (b) FULL RESOLVE
 //! (canvas-graph merge + style cascade), lays both out at the same size, and

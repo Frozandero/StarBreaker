@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-command artifact freeze cycle (docs/ui-process-improvements.md Part C).
+# One-command artifact freeze cycle (crates/starbreaker-ui/docs/ui-process-improvements.md Part C).
 #
 # Runs the full documented flow that was previously seven hand-typed steps
 # (and was run five times in one session): release build -> full export ->
