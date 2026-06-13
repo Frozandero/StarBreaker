@@ -8,7 +8,9 @@ The UI pipeline is split into four stages:
 
 1. Source resolution
 - Resolve BuildingBlocks canvases, styles, bindings, and localization.
-- Files: `bb_resolve.rs`, `bb_state_filter.rs`, `bb_bindings.rs`, `bb_brand_apply.rs`.
+- Files: `bb_resolve/`, `bb_state_filter.rs`, `bb_bindings/`, `bb_style_engine.rs`
+  (the single style-cascade application engine, P4) + `bb_brand_apply/`
+  (its condition/modifier kernel).
 
 2. Canonical IR compilation
 - Compile deterministic `UiIrDocument` output with fidelity fields and provenance.
@@ -227,10 +229,12 @@ buttonsecondarystyles`) supplies padding/borders/corner radii; a padded
 parent's content box caps fixed-size children in layout (overlay and
 flex no-grow paths).
 
-## Reference: engine models settled by the 2026-06-12 arcs (ledger item 24)
+## Reference: engine models settled by the 2026-06-12/13 arcs (ledger item 24)
 
-Four capture-derived models that previously lived only in code comments
-and handoffs:
+Capture-derived models that previously lived only in code comments and
+handoffs (the 2026-06-13 text-calibration arc, plan P3, added the em /
+advance / line-box trio below; the cascade-unification arc, plan P4,
+added the engine note at the end):
 
 - **Padding × canvas geometry scale.** Authored TRBL padding scales with
   the canvas's geometry scale to the render target — the 800×600 MFD
@@ -239,11 +243,41 @@ and handoffs:
   frozen power pins after the content-scale fix; owning code in
   `bb_layout`.
 - **The text-format style route + literal-match precedence.** A
-  Parent-wrapped style entry on a brand `s_*` container styles a
+  Parent-wrapped style entry on a **Brand-tier** sheet styles a
   textfield's TEXT FORMAT (FontSize/FillColor) rather than the widget;
   only a text-format-routed FontSize (`__EntryFontSize`) outranks the
   named-style table — a LITERAL widget match does not. Counterexample
-  that pinned it: the medical header T3 (commit `07c821a83`).
+  that pinned it: the medical header T3 (commit `07c821a83`). (P4.3
+  replaced the original `s_*`-identifier-prefix trigger with the
+  explicit `Tier::Brand` gate in `bb_style_engine`.)
+- **Text sizing is the design-em model — NO calibration constant.** The
+  IR font size IS the design-em pixel size (em = ascent + |descent|);
+  the SWF renderer maps em→raster via the font's own `units_per_em`, and
+  the TTF (DejaVu) fallback's rusttype `Scale` already normalises to the
+  same span, so a 30px field measures ~30px tall with factor 1.0. Plan
+  P3.2 retired the tuned `TEXT_RENDER_SIZE_CALIBRATION` /
+  `LAYOUT_TEXT_MEASURE_CALIBRATION` = 1.5 pair (calibrated when DejaVu
+  stood in for game fonts on live screens — a dead case: the shared
+  `fonts_en` fontlib merges into every binding). Glyph rasterisation is
+  **Terathon Slug**, confirmed from `StarCitizen.exe` strings (see the
+  Ruffle section); the SWF carries font DATA only.
+- **Inline nested-textfield continuation = advance at draw size.** A
+  child textfield with pivot.x≈1 / anchor.x>1 / Center valign that shares
+  its parent's style continues the parent's inline run: its origin is the
+  parent's glyph-advance end measured at the parent's ACTUAL draw size,
+  and the glyphs' own side bearings supply the visible gap (medical1
+  "T3"→"M" ink gap ~3px, letter-gap scale — NOT a typeset word space).
+  Plan P3.3/P3.4 retired the `SWF_TEXT_RENDER_SIZE_CALIBRATION = 0.84` +
+  `INLINE_NESTED_TEXTFIELD_WORD_GAP = 0.33` pair.
+- **Caption-pair line-box stack.** A `ComponentLabelCaptionPair` stacks
+  label over value in a flex Column with `rowSpacing = 0`; the engine's
+  line box IS the em box (line advance == font size), so the value's line
+  top sits exactly one label-em below the label's — no overlap
+  subtraction, no tuned spacing. Verified: medical1 MEDGELS→200/200
+  top-to-top 29px = capture. Plan P3.4 retired
+  `LABEL_CAPTION_PAIR_FLEX_ROW_SPACING = -8.0`. (Right-anchored pairs
+  carry a registered top-padding pin compensating the med2 slot rect —
+  see the fallback register.)
 - **Host-path `imageSizePercent` division.** On the GFx-host (framed
   MFD) path, EVERY font-size class divides by the font record's
   `imageSizePercent` (0.75 → ×4/3) at draw; non-host canvases use styled
@@ -259,6 +293,13 @@ and handoffs:
   `--anchor-rgb`; model documented in its docstring); settled values
   live in the measurement bank
   (`crates/starbreaker-ui/tests/fixtures/ui_ir/reference_measurements_v1.json`).
+- **The style cascade applies through ONE engine.** Plan P4 unified
+  every entry-application pass onto `bb_style_engine::apply` (a
+  `StyleSheet` per container, tagged with its `Tier`); the legacy
+  per-entry-point wrappers and the identifier-prefix sniff are deleted.
+  The authoritative pass list + order is `docs/ui-cascade-passes.md`
+  (unchanged by the migration — verified byte-identical on all frozen
+  targets).
 
 ## Reference-capture measurement methodology
 

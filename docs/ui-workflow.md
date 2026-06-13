@@ -63,7 +63,7 @@ Pipeline stages and the bug classes they own (deep dive:
 
 | Stage | Files | Owns |
 |---|---|---|
-| Source resolution | `bb_resolve/` (Pass-1 canvas-ref entries, Pass-2 WidgetCanvas urls, widget-standard expansion, list/array materialisation, namespaces), `bb_state_filter.rs`, `bb_brand_apply/` (style cascade), `bb_scene/` (parse, WidgetClone expansion) | which nodes exist, their authored fields, applied styles |
+| Source resolution | `bb_resolve/` (Pass-1 canvas-ref entries, Pass-2 WidgetCanvas urls, widget-standard expansion, list/array materialisation, namespaces), `bb_state_filter.rs`, `bb_style_engine` (the single style-cascade application engine, P4) + `bb_brand_apply/` (its condition/modifier kernel), `bb_scene/` (parse, WidgetClone expansion) | which nodes exist, their authored fields, applied styles |
 | Bindings | `bb_bindings/` (op-graph eval vs `DefaultValueRegistry`, bound geometry/state-tags/text) | values: text, numbers, booleans, bound SizeX/Y + AnchorX/Y, state tags |
 | Layout | `bb_layout/` | rects: flex (order, grow/no-grow, shrink, intrinsic text), overlay anchors/pivots |
 | IR compile | `ui_ir/` | the canonical `UiIrDocument`: which authored metadata survives, effective font sizes, clip rects, payload classification |
@@ -73,7 +73,10 @@ Pipeline stages and the bug classes they own (deep dive:
 Style cascade order (lowest first): canvas `style` record link < `sharedStyles`
 < selected `brandStyles[]` < `embeddedStyles` < node `inlineStyles` (applied
 last in every pass; an inline `FontSize` is marked `__InlineFontSize` and
-outranks the brand-table standard in font resolution).
+outranks the brand-table standard in font resolution). Each tier is a
+`bb_style_engine::StyleSheet` with a `Tier`; the full pass list (incl.
+widget-standard module sheets, deferred late-state subtree passes, and the
+text-format route gated on `Tier::Brand`) is `docs/ui-cascade-passes.md`.
 
 Per-ship values: derived at export in
 `starbreaker-3d/src/ui_pipeline/ship_values.rs` → `PipelineInputs::derived_values`;
@@ -266,11 +269,16 @@ Flows (commands in the reference doc §2/§7):
 - **Column-wide intrinsic text sizing**: medical baselines pin the
   fill/auto_main placement for non-zero Auto hints in columns; only
   Auto == 0.0 (pure content hint) is in scope for column intrinsics.
-- **Caps font-size fudges**: the 0.98 all-caps reduction was removed; styled
-  text renders the full brand nominal. Don't reintroduce nominal-scale
-  constants — the data-backed font model owns sizing
-  (`docs/ui-font-size-harness.md` guards it; run it via `ui_check.sh
-  --full` whenever text size could change).
+- **Text-size calibration constants are RETIRED — do not reintroduce.**
+  The 0.98 all-caps reduction (2026-06), then the `1.5` TTF draw/measure
+  pair, the `0.84` SWF calibration, the `0.33` inline word-gap and the
+  `-8.0` caption overlap (all P3, 2026-06-13) were removed for derived
+  models: IR font size = design-em px (factor 1.0), inline pairs continue
+  at glyph-advance, caption pairs stack by the line box. The data-backed
+  font model owns sizing — a tuned scalar is a regression
+  (`docs/ui-font-size-harness.md` guards it; run via `ui_check.sh --full`
+  whenever text size could change). Engine-model detail:
+  `docs/ui-architecture-runbook.md` §"engine models settled".
 - **`.tif` in canvas JSON = `.dds` in P4K.**
 - **Stale generated PNGs**: `ships/Data/UI/Generated/...` only refreshes on
   full export. Iterate via replay; export before freezing artifacts.
