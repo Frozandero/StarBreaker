@@ -34,8 +34,12 @@ cwd reset twice caused renders from a STALE binary that looked like a fix
 had no effect):
 ```bash
 bash scripts/ui_render.sh --helper Screen_Annunciator_L [--ir] \
-  [--scene <scene.json>] [--out <dir>]   # default scene: LOD1 Clipper
+  [--lod 0|1] [--scene <scene.json>] [--out <dir>]
 ```
+The scene is picked automatically: `--scene` wins; else `--lod`; else derived
+from the helper — cockpit MFD `*_RTT` screens (e.g. `Screen_Left_Lower_RTT`) use
+LOD0, interior usables (medical/door/annunciator) LOD1. So the power screen no
+longer needs the long `--scene` path: `ui_render.sh --helper Screen_Left_Lower_RTT --ir`.
 Raw form (when the wrapper's defaults don't fit):
 ```bash
 ./target/debug/starbreaker ui render \
