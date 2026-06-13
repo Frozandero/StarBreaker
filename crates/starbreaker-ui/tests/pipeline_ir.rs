@@ -362,6 +362,11 @@ fn render_for_binding_ir_honours_canvas_style_override() {
     let canvas_style = serde_json::json!({
         "_RecordName_": "s_bioc",
         "_RecordValue_": {
+            // BB_ColorStyle slots: the screen background reads slot 9
+            // (Background), NOT slot 8 (Disabled) — plan P5.3, reference-
+            // verified against the dark-room captures. Slot 8 here is a
+            // DECOY: a regression back to slot-8 would render (99,99,99)
+            // and fail this assertion.
             "colorStyles": [
                 {"color": {"r": 64, "g": 200, "b": 255, "a": 255}},
                 {"color": {"r": 0, "g": 0, "b": 0, "a": 255}},
@@ -371,6 +376,7 @@ fn render_for_binding_ir_honours_canvas_style_override() {
                 {"color": {"r": 0, "g": 0, "b": 0, "a": 255}},
                 {"color": {"r": 0, "g": 0, "b": 0, "a": 255}},
                 {"color": {"r": 0, "g": 0, "b": 0, "a": 255}},
+                {"color": {"r": 99, "g": 99, "b": 99, "a": 255}},
                 {"color": {"r": 5, "g": 10, "b": 20, "a": 255}}
             ]
         }

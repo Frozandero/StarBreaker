@@ -103,10 +103,9 @@ mod tests {
     use crate::bb_atlas::AtlasLibrary;
     use crate::compose::ComposeContext;
     use crate::defaults::DefaultValueRegistry;
-    use crate::style::{CrtParams, ManufacturerStyle};
+    use crate::style::ManufacturerStyle;
     use crate::swf_assets::SwfAssetLibrary;
     use crate::ui_ir::{UI_IR_SCHEMA_VERSION, UiIrDocument, UiRendererHint};
-    use crate::canvas::RgbaColor;
 
     struct EmptyFetcher;
 

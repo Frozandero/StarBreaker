@@ -3,7 +3,6 @@ use crate::bb_atlas::AssetFetcher;
 use crate::bb_scene::{BbCoordinateMethod, BbScene};
 use crate::canvas::{CanvasRecord, ResolvedCanvas};
 use crate::defaults::DefaultValueRegistry;
-use crate::style::StyleLoader;
 use crate::swf_assets::SwfAssetLibrary;
 use std::collections::BTreeMap;
 

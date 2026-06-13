@@ -226,7 +226,7 @@ fn mfd_base_root_alpha_patched_to_one() {
 // ── Test 3: text_ScreenName gets injected screen name ─────────────────────────
 
 #[test]
-fn mfd_screen_name_injected_into_text_ScreenName() {
+fn mfd_screen_name_injected_into_text_screen_name() {
     let fetcher = mfd_fetcher();
     let binding = mfd_binding(Some("@ui_MFD_View_TargetStatus"));
     let mut loc_map = HashMap::new();

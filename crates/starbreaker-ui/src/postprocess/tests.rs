@@ -1,4 +1,3 @@
-use crate::canvas::RgbaColor;
 use crate::style::{CrtParams, ManufacturerStyle};
 use image::{Rgba, RgbaImage};
 

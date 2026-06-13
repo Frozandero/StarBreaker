@@ -34,6 +34,16 @@
 //!   `draw_swf_symbol_excluding` (suppress one state, verify the other is
 //!   still rendered and the always-placed shape remains).
 
+// Shared test-fixture module included by six swf_* integration tests
+// (`mod swf_helpers;`). Rust's dead_code lint is per-crate: a helper used by
+// one test binary still warns in another's separate compilation. AUDITED
+// 2026-06-13 — EVERY fn here is used by >=1 includer, directly or
+// transitively (e.g. place_with_ct/color_mult/translate_matrix via
+// make_*_color_transform_swf, remove_tag via make_labeled_frames_swf), so
+// there is no genuinely dead code to delete; this allow suppresses only the
+// per-crate-locality false positive. Re-run the audit if helpers are removed.
+#![allow(dead_code)]
+
 use swf::{
     Color, ColorTransform, Compression, ExportedAsset, FillStyle, Fixed8, Fixed16,
     Font, FontFlag, FontLayout, FrameLabel, Glyph, GlyphEntry, Header, Language,
