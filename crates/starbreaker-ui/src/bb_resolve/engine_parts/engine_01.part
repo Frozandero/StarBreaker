@@ -703,15 +703,16 @@ fn apply_shared_styles(
                 // palette. Chrome (Background*/Border*) roles may resolve via the
                 // fetched brand Style record; fill roles keep the container-only
                 // behaviour (see `PaletteSources`).
-                let brand = bb_brand_style::BrandStyle {
-                    identifier: extract_record_name(shared_url),
-                    entries: entries.as_slice(),
-                    raw: fills_palette,
-                };
-                crate::bb_brand_apply::apply_brand_modifiers_with_palette(
+                crate::bb_style_engine::apply(
                     scene,
-                    &brand,
-                    chrome_palette,
+                    &[crate::bb_style_engine::StyleSheet {
+                        tier: crate::bb_style_engine::Tier::Shared,
+                        identifier: extract_record_name(shared_url),
+                        fills: fills_palette,
+                        chrome: chrome_palette,
+                        entries: entries.as_slice(),
+                        scope: crate::bb_style_engine::SheetScope::Scene,
+                    }],
                     loc_fetcher,
                 );
             }
@@ -915,12 +916,16 @@ fn apply_canvas_style_cascade(
             .map(crate::record_name::extract_record_name)
             .unwrap_or_else(|| "linked_style".to_string());
         let filtered = filter_pending(entries);
-        let brand = bb_brand_style::BrandStyle {
-            identifier,
-            entries: filtered.as_slice(),
-            raw: style_value,
-        };
-        crate::bb_brand_apply::apply_brand_modifiers(scene, &brand, loc_fetcher);
+        crate::bb_style_engine::apply(
+            scene,
+            &[crate::bb_style_engine::StyleSheet::uniform(
+                crate::bb_style_engine::Tier::StyleLink,
+                identifier,
+                style_value,
+                filtered.as_slice(),
+            )],
+            loc_fetcher,
+        );
     }
     // Shared ColorStyle roles (Bright/Disabled) resolve against the full brand palette, not the canvas's narrower one.
     let shared_fills = brand_style
@@ -957,18 +962,31 @@ fn apply_canvas_style_cascade(
     if let Some(entries) = record_value.get("embeddedStyles").and_then(|v| v.as_array()) {
         let palette_source = palette_source.unwrap_or(record_value);
         let filtered = filter_pending(entries);
-        let brand = bb_brand_style::BrandStyle {
-            identifier: "embeddedStyles".to_string(),
-            entries: filtered.as_slice(),
-            raw: palette_source,
-        };
-        crate::bb_brand_apply::apply_brand_modifiers(scene, &brand, loc_fetcher);
+        crate::bb_style_engine::apply(
+            scene,
+            &[crate::bb_style_engine::StyleSheet::uniform(
+                crate::bb_style_engine::Tier::Embedded,
+                "embeddedStyles",
+                palette_source,
+                filtered.as_slice(),
+            )],
+            loc_fetcher,
+        );
     }
     // Node-authored `inlineStyles` are the final cascade stage. Every entry
     // pass above already re-applies them last, but a canvas with no brand /
     // shared / embedded entries would otherwise never run a pass at all —
     // an empty-entry pass guarantees they apply.
-    crate::bb_brand_apply::apply_scene_style_entries(scene, &[], shared_fills, loc_fetcher);
+    crate::bb_style_engine::apply(
+        scene,
+        &[crate::bb_style_engine::StyleSheet::uniform(
+            crate::bb_style_engine::Tier::Inline,
+            "inline",
+            shared_fills,
+            &[],
+        )],
+        loc_fetcher,
+    );
 }
 
 /// Inner recursive resolver.  `visited` accumulates normalised record names
