@@ -78,6 +78,7 @@ pub fn apply_brand_modifiers(
         None,
         true,
         true,
+        false,
     );
 }
 
@@ -91,7 +92,7 @@ pub fn apply_scene_style_entries(
     loc_fetcher: Option<&dyn LocFetcher>,
 ) {
     let palettes = PaletteSources::uniform(palette_source);
-    apply_style_entries_gated(scene, entries, &palettes, None, loc_fetcher, None, None, false, false);
+    apply_style_entries_gated(scene, entries, &palettes, None, loc_fetcher, None, None, false, false, false);
 }
 
 
@@ -110,6 +111,7 @@ pub(crate) fn apply_style_entries_for_engine(
     scope_marker: Option<&str>,
     allowed_nodes: Option<&std::collections::HashSet<BbNodeId>>,
     brand_tier: bool,
+    shared_tier: bool,
 ) {
     let palettes = PaletteSources {
         fills: fills_palette,
@@ -125,6 +127,7 @@ pub(crate) fn apply_style_entries_for_engine(
         allowed_nodes,
         brand_tier,
         brand_tier,
+        shared_tier,
     )
 }
 
@@ -141,6 +144,7 @@ fn apply_style_entries_gated(
     allowed_nodes: Option<&std::collections::HashSet<BbNodeId>>,
     text_format_route: bool,
     stamp_brand: bool,
+    shared_tier: bool,
 ) {
     let style_probe = std::env::var("BB_A3_STYLE_PROBE").as_deref() == Ok("1");
     let node_ids: Vec<_> = scene.nodes.keys().copied().collect();
@@ -269,7 +273,7 @@ fn apply_style_entries_gated(
                         .collect::<String>()
                 );
             }
-            apply_entry_modifiers(entry, node, palettes, loc_fetcher);
+            apply_entry_modifiers(entry, node, palettes, loc_fetcher, shared_tier);
             record_applied_style_entry(node, entry);
         }
         for entry in &text_format_entries {
@@ -301,7 +305,9 @@ fn apply_style_entries_gated(
                     mods.iter()
                         .any(|m| m.get("field").and_then(|f| f.as_str()) == Some("FontSize"))
                 });
-            apply_entry_modifiers(entry, node, palettes, loc_fetcher);
+            // Inline styles are the node's own highest-priority authoring; the
+            // shared-tier background suppression never applies to them.
+            apply_entry_modifiers(entry, node, palettes, loc_fetcher, false);
             if sets_font_size
                 && let Some(obj) = node.raw.as_object_mut()
             {
@@ -396,11 +402,17 @@ fn apply_entry_text_format_modifiers(
 }
 
 /// Apply all modifiers from a matching entry to a node.
+///
+/// `shared_tier` marks the generic shared sheets (`mfd_g_*`): they are NOT the
+/// styling authority for a custom shape's intrinsic fill, so their
+/// `BackgroundColor` modifier is skipped when the shape already carries an
+/// authored background colour (see `shared_background_override_suppressed`).
 fn apply_entry_modifiers(
     entry: &serde_json::Value,
     node: &mut BbNode,
     palettes: &PaletteSources<'_>,
     loc_fetcher: Option<&dyn LocFetcher>,
+    shared_tier: bool,
 ) {
     let modifiers = match entry.get("modifiers").and_then(|v| v.as_array()) {
         Some(m) => m,
@@ -408,7 +420,34 @@ fn apply_entry_modifiers(
     };
 
     for modifier in modifiers {
+        if shared_tier && shared_background_override_suppressed(modifier, node) {
+            continue;
+        }
         apply_modifier(modifier, node, palettes, loc_fetcher);
     }
+}
+
+/// True when a shared-tier `BackgroundColor` modifier targets a
+/// `WidgetCustomShape` that authors its own enabled background colour. The
+/// emissions header separators author `Accent1`/`Accent2`; the shared
+/// `mfd_g_emissions` "New Style" entry otherwise recolours them to `Base`,
+/// but the in-game bars keep their authored accent (the brand tier, which IS
+/// the styling authority, is unaffected and can still restyle them).
+fn shared_background_override_suppressed(modifier: &serde_json::Value, node: &BbNode) -> bool {
+    if !matches!(node.ty, crate::bb_scene::BbNodeType::WidgetCustomShape) {
+        return false;
+    }
+    let is_background_color = modifier.get("_Type_").and_then(|v| v.as_str())
+        == Some("BuildingBlocks_FieldModifierColor")
+        && modifier.get("field").and_then(|v| v.as_str()) == Some("BackgroundColor");
+    if !is_background_color {
+        return false;
+    }
+    let Some(background) = node.raw.get("background") else {
+        return false;
+    };
+    let has_authored_colour = background.get("color").is_some_and(|c| !c.is_null());
+    let enabled = background.get("enable").and_then(|e| e.as_bool()) != Some(false);
+    has_authored_colour && enabled
 }
 

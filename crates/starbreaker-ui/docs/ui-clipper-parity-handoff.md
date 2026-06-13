@@ -47,9 +47,10 @@ Four reported symptoms, mapped to root cause (one landed, three already-open):
    now **FAITHFUL**: the thumb formula (viewport/content × track) is already correct
    in `apply_scroll_thumb_rects`; 393px matches the DataCore-derived 7-column
    content; the reference 432 is bloom on the orange slider. No fix.
-2. **Header side bars red + further out** — POSITION **LANDED** (SpaceBetween,
-   see P13); COLOUR open = shared/brand **cascade** (Sep2/3 already Accent1; Sep1/4
-   wrongly Base), NOT overlay-default — see P13.
+2. **Header side bars red + further out** — POSITION **LANDED** (SpaceBetween) +
+   COLOUR **LANDED** (shared-tier `BackgroundColor` no longer overrides the bars'
+   authored Accent on custom shapes) — both see P13. Minor ~30px edge-position
+   residual open.
 3. **Output-card dotted separator** + **4c battery dotted separator** — empty
    `BuildingBlocks_WidgetSeparator` hosts (power titles id=604/607, emissions
    Sep*) with `asset_layout` but no `custom_shape`/`asset_ref`/children — need the
@@ -126,28 +127,28 @@ inside the container's ~17px padding) — matches the reference. Clean across al
 three suites (lib + IR-snapshot + whole-image visual after re-export); no frozen
 target uses a slack-bearing space mode, so nothing shifted.
 
-**COLOUR — open, = brand-context-resolver (Blocker B), fully mapped 2026-06-13:**
-the only VISIBLE header bars are Sep1 (x≈88) and Sep4 (x≈1510), both solid-fill
-custom shapes (`render_shape:true`, empty `svg_path`) with token `Base` (orange).
-Sep2/Sep3 carry token `Accent1` but render **zero-size** (w=0,h=0) — not visible.
-Zoomed rectified-reference crops confirm the visible edge bars are **red** (salmon,
-≈Accent1) and sit ~30px further out (x≈1540) than ours. So the bug is real.
-Root cause: `BB_A3_STYLE_PROBE` (full) shows Sep1/Sep4 match exactly ONE entry —
-the shared `mfd_g_emissions` **"New Style"** (`ConditionParent` → `AnyOfTag{80c85b19
-(sep1),21cf313d(sep4)}`, modifier `BackgroundColor=Base@1.0`, file line ~177) — and
-the brand pass `s_drak_hud` provides NO separator colour/visibility override (pass
-order is correct: shared `mfd_g_emissions` BEFORE brand `s_drak_hud`, so a brand
-entry *would* win — there just isn't one). The Accent1/visibility entries
-("Vertical Separators Color" Accent1 on sep1/2/3; "Vertical Separator 1/4" IsActive
-toggles; "Separator N" SizeX=2) live in `brandStyles[2]/[4]` — a brand index the
-Clipper's resolver does NOT select. So the fix is the **brand-context resolver**
-(select the right brand so its separator entries surface), NOT a scoped hack: a
-blanket `primary→Accent1` fill rule would wrongly recolour the card greebles
-(`card_BackgroundGreeble`, also `primary`+`Base` custom shapes) red. Same resolver
-unblocks the dotted separators (P3 Blocker B). Touches the GOLD
-`clipper_target_master` emissions header → audited gold re-freeze. The overlay
-default (`custom_shape_overlay_icon_default`) is NOT involved (needs an SVG source
-these bars lack).
+**COLOUR — LANDED 2026-06-13 (shared-tier background suppression).** The visible
+edge bars Sep1 (x≈88) and Sep4 (x≈1510) are solid-fill `WidgetCustomShape`s that
+AUTHOR `background.color` = **Accent2 (Sep1) / Accent1 (Sep2/3/4)** — i.e. red.
+They rendered orange because the shared `mfd_g_emissions` **"New Style"** entry
+(`ConditionParent`→`AnyOfTag{80c85b19(sep1),21cf313d(sep4)}`, `BackgroundColor=Base`)
+overrode the authored accent → `Base`; Sep2/Sep3 (not matched) kept `Accent1`.
+(Earlier mis-called "faithful" — the rectified reference smears the 2px bar into the
+orange screen-grid, lifting G/R to 0.64≈Base; the CRISP original measures G/R≈0.52,
+B/R 0.31≈Accent1, and the owner confirmed visually.) FIX: a **shared-tier**
+(`Tier::Shared`) `BackgroundColor` modifier is suppressed when the target is a
+`WidgetCustomShape` that already authors an enabled `background.color` — a generic
+shared sheet is not the styling authority for a shape's intrinsic fill; brand /
+embedded / inline tiers still override (`bb_brand_apply::shared_background_override_suppressed`,
+threaded via `apply_sheet`'s `sheet.tier == Tier::Shared`; test
+`shared_tier_background_color_keeps_custom_shape_authored_colour`). Rendered bars
+now G/R 0.41–0.47 (red, matching). Validated clean across all three suites (lib +
+IR-snapshot + whole-image visual after re-export) — no frozen target regressed
+(the gate is scoped to custom-shapes, leaving card backgrounds like the MFD footer's
+authored-Base→styled-Disabled untouched). This was NOT the brand-context resolver
+and NOT the overlay default. RESIDUAL (minor, open): the bars sit ~30px inside the
+reference edge position (content edge vs container edge) — likely capture bloom;
+not chased. Sep2/Sep3 zero-size is faithful for DRAK.
 
 ### P7 — scrollbar slider width
 
@@ -228,3 +229,4 @@ constant/fallback retirements in `ui-fallback-register.md`). Kept so the
 | §15 | text-format route landed + hard-coding remediation | 07c821a83, 4803d3c48 |
 | §16 | MFD text size — host-path `imageSizePercent` division | 15d1e3b99 |
 | P13-pos | header side bars reach edges — `bb_layout` SpaceBetween/Around/Evenly (were unimplemented → Start) | (2026-06-13) |
+| P13-col | header side bars red — shared-tier `BackgroundColor` no longer overrides a custom shape's authored Accent (`shared_background_override_suppressed`) | (2026-06-13) |

@@ -113,6 +113,10 @@ fn apply_sheet(scene: &mut BbScene, sheet: &StyleSheet<'_>, loc_fetcher: Option<
         // The text-format route and the `__BrandIdentifier` stamp are
         // brand-TIER semantics, not identifier-prefix semantics.
         sheet.tier == Tier::Brand,
+        // A shared/generic sheet (mfd_g_*) is not the styling authority for a
+        // custom shape's intrinsic authored fill — suppresses the emissions
+        // separator recolour-to-Base; brand/embedded/inline still override.
+        sheet.tier == Tier::Shared,
     );
 }
 
@@ -191,6 +195,59 @@ mod tests {
         ];
         apply(&mut scene, &sheets, None);
         assert_eq!(node_alpha(&scene, "root"), 0.75, "later sheet wins");
+    }
+
+    #[test]
+    fn shared_tier_background_color_keeps_custom_shape_authored_colour() {
+        // The emissions header separators are WidgetCustomShapes that author
+        // `background.color = Accent1/Accent2` (the in-game bars are that red).
+        // The shared `mfd_g_emissions` "New Style" entry (BackgroundColor=Base)
+        // must NOT recolour them — a generic shared sheet is not the styling
+        // authority for a shape's intrinsic fill. A BRAND-tier entry still can.
+        let canvas = serde_json::json!({
+            "_RecordValue_": {
+                "_Type_": "BuildingBlocks_Canvas",
+                "size": {"x": 100.0, "y": 100.0},
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_WidgetCustomShape",
+                     "name": "sep", "isActive": true,
+                     "styleTags": [{"_RecordId_": "aaaa-tag"}],
+                     "background": {"_Type_": "BuildingBlocks_Background", "enable": true,
+                        "color": {"_Type_": "BuildingBlocks_ColorStyle", "color": "Accent1", "alpha": 1.0}}}
+                ]
+            }
+        });
+        let bg_entry = |token: &str| serde_json::json!({
+            "name": "sep colour",
+            "conditionsList": [{"conditions": [{
+                "_Type_": "BuildingBlocks_StyleSelectorConditionTag",
+                "tag": {"_RecordId_": "aaaa-tag"}}]}],
+            "modifiers": [{"_Type_": "BuildingBlocks_FieldModifierColor", "field": "BackgroundColor",
+                "color": {"_Type_": "BuildingBlocks_ColorStyle", "color": token, "alpha": 1.0}}]
+        });
+        let palette = serde_json::json!({});
+        // Mirror the IR reader (`background_fill_colour_token_from_raw`): a
+        // cascade-written `BackgroundColorToken` wins, else the authored
+        // `background.color`.
+        fn effective_bg(scene: &BbScene) -> Option<String> {
+            let node = scene.nodes.values().find(|n| n.name == "sep")?;
+            if let Some(token) = node.raw.get("BackgroundColorToken").and_then(|v| v.as_str()) {
+                return Some(token.to_owned());
+            }
+            node.raw.get("background")?.get("color")?.get("color")?.as_str().map(str::to_owned)
+        }
+
+        let mut shared_scene = parse_bb_canvas(&canvas).expect("parses");
+        let shared = [bg_entry("Base")];
+        apply(&mut shared_scene, &[StyleSheet::uniform(Tier::Shared, "mfd_g_emissions", &palette, &shared)], None);
+        assert_eq!(effective_bg(&shared_scene).as_deref(), Some("Accent1"),
+            "shared-tier BackgroundColor must not override a custom shape's authored colour");
+
+        let mut brand_scene = parse_bb_canvas(&canvas).expect("parses");
+        let brand = [bg_entry("Base")];
+        apply(&mut brand_scene, &[StyleSheet::uniform(Tier::Brand, "s_drak_hud", &palette, &brand)], None);
+        assert_eq!(effective_bg(&brand_scene).as_deref(), Some("Base"),
+            "brand-tier BackgroundColor still overrides (a brand CAN restyle the shape)");
     }
 
     #[test]
