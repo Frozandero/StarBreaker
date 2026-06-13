@@ -1168,7 +1168,7 @@ fn build_ui_ir_nodes(
             None
         };
 
-        let asset_ref = collect_node_asset_refs(node)
+        let mut asset_ref = collect_node_asset_refs(node)
             .into_iter()
             .next()
             .or_else(|| {
@@ -1186,14 +1186,33 @@ fn build_ui_ir_nodes(
                     .map(str::to_owned)
             });
 
-        let custom_shape = build_custom_shape(node);
+        let mut custom_shape = build_custom_shape(node);
 
         let stroke_extent = separator_stroke_extent_from_raw(node);
         let separator_style = separator_standard_style_from_source(
             node,
             selected_style_source.as_deref(),
             canvas_fetcher,
+            design_text_scale > 1.0,
         );
+        // A resolved widget-standard separator paints its brand's dotted SVG via
+        // the asset_ref rasteriser (nine-slice tiles the dots). The colour/alpha
+        // below still apply as the overlay tint; EnableColorOverlay=false keeps
+        // the glyph's own ink (no MissionObjectives tint).
+        if let Some(style) = separator_style.as_ref()
+            && let Some(svg) = style.svg_path.as_deref()
+        {
+            asset_ref = Some(svg.to_string());
+            custom_shape = Some(UiIrCustomShape {
+                shape_type: None,
+                shape: None,
+                svg_path: Some(svg.to_string()),
+                render_shape: Some(true),
+                enable_nine_slice_rect: Some(style.nine_slice_rect.is_some()),
+                nine_slice_rect: style.nine_slice_rect,
+                nine_slice_scale: None,
+            });
+        }
         let alpha_base = separator_style
             .as_ref()
             .and_then(|style| style.alpha_override)

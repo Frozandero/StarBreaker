@@ -355,12 +355,20 @@ struct SeparatorStyleSource {
     colour_token: Option<String>,
     colour_alpha: Option<f32>,
     alpha_override: Option<f32>,
+    /// The brand's separator SVG (e.g. DRAK_S42_seperator_vertical_2.svg) and
+    /// its nine-slice / flip so the dotted glyph rasterises via the asset_ref
+    /// path. Only resolved for MFD-frame hosts (see the caller's gate) so the
+    /// physical medical screens keep their byte-identical no-separator render.
+    svg_path: Option<String>,
+    nine_slice_rect: Option<[f32; 4]>,
+    enable_color_overlay: Option<bool>,
 }
 
 fn separator_standard_style_from_source(
     node: &crate::bb_scene::BbNode,
     selected_style_source: Option<&str>,
     canvas_fetcher: Option<&dyn CanvasFetcher>,
+    mfd_frame: bool,
 ) -> Option<SeparatorStyleSource> {
     if !matches!(node.ty, BbNodeType::Other(ref ty) if ty.eq_ignore_ascii_case("BuildingBlocks_WidgetSeparator")) {
         return None;
@@ -390,19 +398,67 @@ fn separator_standard_style_from_source(
         _ => return None,
     };
 
-    let selected_style_slug = style_source_slug(selected_style_source)?;
+    // Colour/alpha match the canvas's DIRECT style slug (the existing
+    // behaviour: `canvas:s_bioc` -> `s_bioc`). The dotted SVG additionally
+    // resolves the brand by manufacturer family (`manufacturer:drak` ->
+    // `s_drak_env`) but ONLY on MFD frames — so physical interior screens
+    // (medical, door) match nothing here and keep their byte-identical
+    // no-separator render. The frozen medical platinum is never touched.
+    let mut match_slugs = match style_source_slug(selected_style_source) {
+        Some(slug) => vec![slug],
+        None => Vec::new(),
+    };
+    if mfd_frame {
+        match_slugs.extend(separator_brand_candidate_slugs(selected_style_source));
+    }
+    if match_slugs.is_empty() {
+        return None;
+    }
     let standard = canvas_fetcher?.fetch_canvas_by_name(record_name).ok()?;
-    separator_style_from_standard_record(&standard, &selected_style_slug)
+    separator_style_from_standard_record(&standard, &match_slugs, mfd_frame)
+}
+
+/// The standard's brand slug for a separator is `s_<mfr>_env` (the env sibling
+/// the modularkit authors the dotted glyph under), derived from the canvas's
+/// selected style source (`manufacturer:drak` or a `s_drak_hud` style-link).
+/// Returns env/hud/bare candidates in priority order.
+fn separator_brand_candidate_slugs(selected_style_source: Option<&str>) -> Vec<String> {
+    let Some(slug) = style_source_slug(selected_style_source) else {
+        return Vec::new();
+    };
+    let mfr = if let Some(rest) = slug.strip_prefix("manufacturer:") {
+        rest.to_string()
+    } else if let Some(rest) = slug.strip_prefix("s_") {
+        rest.split('_').next().unwrap_or(rest).to_string()
+    } else {
+        return vec![slug];
+    };
+    if mfr.is_empty() {
+        return Vec::new();
+    }
+    // The ship brand first, then `orig` — the modularkit default the engine
+    // falls back to when a ship has no separator vector of its own (DRAK ships
+    // none in this build).
+    vec![
+        format!("s_{mfr}_env"),
+        format!("s_{mfr}_hud"),
+        format!("s_{mfr}"),
+        "orig".to_string(),
+    ]
 }
 
 fn separator_style_from_standard_record(
     standard: &serde_json::Value,
-    selected_style_slug: &str,
+    candidate_slugs: &[String],
+    extract_svg: bool,
 ) -> Option<SeparatorStyleSource> {
     let brand_styles = standard.get("_RecordValue_")?.get("brandStyles")?.as_array()?;
+    // Honour candidate priority (env before hud before bare): the first
+    // candidate with a brand entry that yields a style wins.
+    for candidate in candidate_slugs {
     for brand_style in brand_styles {
         let brand_identifier = brand_style.get("brandIdentifier").and_then(|value| value.as_str());
-        if style_source_slug(brand_identifier).as_deref() != Some(selected_style_slug) {
+        if style_source_slug(brand_identifier).as_deref() != Some(candidate.as_str()) {
             continue;
         }
 
@@ -421,6 +477,40 @@ fn separator_style_from_standard_record(
                     .get("value")
                     .and_then(|value| value.as_f64())
                     .map(|value| (value as f32).clamp(0.0, 1.0));
+                continue;
+            }
+            if field.eq_ignore_ascii_case("SvgPath") {
+                if extract_svg {
+                    source.svg_path = modifier
+                        .get("value")
+                        .and_then(|value| value.as_str())
+                        .map(str::trim)
+                        .filter(|path| !path.is_empty())
+                        .map(str::to_owned);
+                }
+                continue;
+            }
+            if field.eq_ignore_ascii_case("EnableColorOverlay") {
+                source.enable_color_overlay =
+                    Some(modifier.get("value").and_then(|value| value.as_bool()).unwrap_or(false));
+                continue;
+            }
+            // Nine-slice fractions (SVG-only): the standard authors the inner
+            // band that tiles the dots, e.g. drak vertical = Top 0.49 / Bottom
+            // 0.51. Colour/alpha below stay unconditional.
+            if extract_svg
+                && let Some(slot) = match field.to_ascii_lowercase().as_str() {
+                    "ninesliceleft" => Some(0usize),
+                    "nineslicetop" => Some(1),
+                    "ninesliceright" => Some(2),
+                    "nineslicebottom" => Some(3),
+                    _ => None,
+                }
+            {
+                if let Some(value) = modifier.get("value").and_then(|value| value.as_f64()) {
+                    let rect = source.nine_slice_rect.get_or_insert([0.0, 0.0, 1.0, 1.0]);
+                    rect[slot] = value as f32;
+                }
                 continue;
             }
 
@@ -442,9 +532,14 @@ fn separator_style_from_standard_record(
                 .or_else(|| source.colour.map(|colour| colour[3]));
         }
 
-        if source.colour.is_some() || source.colour_token.is_some() || source.alpha_override.is_some() {
+        if source.colour.is_some()
+            || source.colour_token.is_some()
+            || source.alpha_override.is_some()
+            || source.svg_path.is_some()
+        {
             return Some(source);
         }
+    }
     }
 
     None

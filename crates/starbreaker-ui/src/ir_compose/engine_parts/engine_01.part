@@ -209,8 +209,14 @@ fn draw_non_text_node(
         .eq_ignore_ascii_case("BuildingBlocks_WidgetSeparator")
         || node.node_type.eq_ignore_ascii_case("widget_separator")
     {
-        draw_widget_separator(ctx, pixmap, node, tsk_rect, node.alpha);
-        return;
+        // A widget-standard separator that resolved a brand SVG (the dotted
+        // glyph) falls through to the asset_ref rasteriser below; the bare /
+        // procedural strips keep the solid-fill draw.
+        let has_brand_svg = node.custom_shape.is_some() && node.asset_ref.is_some();
+        if !has_brand_svg {
+            draw_widget_separator(ctx, pixmap, node, tsk_rect, node.alpha);
+            return;
+        }
     }
 
     if node.meter_progress.is_some() {
