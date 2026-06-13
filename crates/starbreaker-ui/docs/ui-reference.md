@@ -123,7 +123,13 @@ worked). References live in
 `~/projects/scorg_tools/reference/in-game/Clipper/` (ws); generated
 PNGs in `ships/Data/UI/Generated/ship/drak/Clipper/` named
 `buildingblocks_canvas_<canvas>.png`; scenes in
-`~/projects/scorg_tools/ships/Packages/` (ws).
+`~/projects/scorg_tools/ships/Packages/` (ws). **Reference variant:** when a
+screen has several captures, prefer the straight-on one that carries a
+`<name>.corners.json` sidecar (`ui_compare` auto-rectifies it) over the
+dossier's legacy name — e.g. the power screen uses `Screen_Left_Lower_RTT_dark.png`
+(rectifiable), NOT the un-cornered `Screen_Left_Lower_RTT.png`. (Then heed the
+thin-feature colour caveat above: rectify for position, measure thin colour on
+the original.)
 
 | Screen | Helper / scene | Canvas | Reference image | Preset | Tier / target id | Open issues |
 |---|---|---|---|---|---|---|
@@ -144,7 +150,10 @@ the four frozen interior targets need LOD1.
 
 Policy: MCP-first for data archaeology; CLI for renders/exports; LOCAL
 PNGs/JSON are read directly with the Read tool (vision for images) — never
-via MCP. Confirm data is loaded with `p4k_data_status`.
+via MCP. Confirm data is loaded with `p4k_data_status`. **`canvas` arg = the
+record GUID or name, NOT the dcb_canvas mirror file path** (a path returns
+`canvas_not_found`); get the GUID from the mirror file's top-of-file
+`_RecordId_` / `_RecordName_` (e.g. `BuildingBlocks_Canvas.GEN_MC_S_Emissions`).
 
 **Style/IR investigation order** (run BEFORE editing style logic; if a
 change has no effect in these, revert it):
@@ -196,7 +205,7 @@ in the same commit that introduces them.
 
 | Probe | Owner | Channel | Prints |
 |---|---|---|---|
-| `BB_A3_STYLE_PROBE=1` | `bb_brand_apply` | stderr (`eprintln`) | per node, per cascade pass: name, style tags, matched entry names |
+| `BB_A3_STYLE_PROBE=1` | `bb_brand_apply` | stderr (`eprintln`) | per node, per cascade pass: name, style tags, matched entry names + their key modifiers (`Name[BackgroundColor=Base]`, `[IsActive=false]`, `[SizeY=0.5]`) |
 | `BB_A3_TEXT_PROBE=1` | `bb_bindings` (LocalizedFromBoolean) | log (`log::info` — needs `RUST_LOG=info`) | text branch selection + resolved values |
 | `BB_SHRINK_PROBE=1` | `bb_layout` flex shrink | stderr (`eprintln`) | shrink scale + each child's name/type/main-axis sizing |
 | `SB_UI_GEOM_PROBE=1` | `bb_bindings::resolve_geometry_fields_into_scene` | stderr (`eprintln`) | bound SizeX/SizeY input chains + resolved values per node |

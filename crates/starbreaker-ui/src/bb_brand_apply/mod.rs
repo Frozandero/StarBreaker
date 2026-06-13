@@ -199,9 +199,20 @@ fn apply_style_entries_gated(
                 Vec::new()
             };
             if style_probe {
-                let matched_names: Vec<&str> = matches
+                // Show what each matched entry SETS, not just its name (the
+                // cascade-colour debugging shortcut, ledger item 41): e.g.
+                // `New Style[BackgroundColor=Base]`, `Vertical Separator 1[IsActive=false]`.
+                let matched_names: Vec<String> = matches
                     .iter()
-                    .filter_map(|e| e.get("name").and_then(|v| v.as_str()))
+                    .map(|e| {
+                        let name = e.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+                        let mods = probe_modifier_summary(e);
+                        if mods.is_empty() {
+                            name.to_string()
+                        } else {
+                            format!("{name}[{mods}]")
+                        }
+                    })
                     .collect();
                 let text_format_names: Vec<&str> = text_format_matches
                     .iter()
@@ -327,6 +338,37 @@ fn record_applied_style_entry(node: &mut BbNode, entry: &serde_json::Value) {
     if let serde_json::Value::Array(items) = slot {
         items.push(entry.clone());
     }
+}
+
+/// Compact summary of an entry's colour / visibility / size modifiers for
+/// `BB_A3_STYLE_PROBE` (ledger item 41) — so the probe shows what a matched
+/// entry SETS, not just its name. Colour modifiers print `Field=Token`; the
+/// IsActive / Size* / Anchor* booleans+numbers print `Field=value`.
+fn probe_modifier_summary(entry: &serde_json::Value) -> String {
+    let Some(mods) = entry.get("modifiers").and_then(|v| v.as_array()) else {
+        return String::new();
+    };
+    let mut parts = Vec::new();
+    for modifier in mods {
+        let Some(field) = modifier.get("field").and_then(|v| v.as_str()) else {
+            continue; // enumerated-type fields are objects, not strings — skip
+        };
+        if modifier.get("_Type_").and_then(|v| v.as_str())
+            == Some("BuildingBlocks_FieldModifierColor")
+        {
+            let token = modifier
+                .get("color")
+                .and_then(|colour| colour.get("color"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("?");
+            parts.push(format!("{field}={token}"));
+        } else if matches!(field, "IsActive" | "SizeX" | "SizeY" | "AnchorX" | "AnchorY") {
+            if let Some(value) = modifier.get("value") {
+                parts.push(format!("{field}={value}"));
+            }
+        }
+    }
+    parts.join(",")
 }
 
 

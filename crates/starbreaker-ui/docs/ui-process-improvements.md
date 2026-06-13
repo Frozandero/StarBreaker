@@ -1056,6 +1056,45 @@ recorded as WRONG (authored Accent).
 
 **Action:** [done 2026-06-13 — runbook engine-models bullet added.]
 
+### 39. The dossier pointed at a non-rectifiable reference → corners-variant note
+
+**Observed:** the dossier lists `Screen_Left_Lower_RTT.png`, but only the `_dark`
+capture carries a `.corners.json` sidecar; a fresh agent following the dossier
+gets the un-rectifiable legacy capture (and the per-screen prompt overrode it to
+`_dark.png` without the dossier explaining why).
+
+**Improvement:** `ui-reference.md` §3 dossier intro — prefer the straight-on
+capture with a `<name>.corners.json` sidecar (auto-rectified); the power screen's
+is `Screen_Left_Lower_RTT_dark.png`.
+
+**Action:** [done 2026-06-13 — reference §3 dossier note.]
+
+### 40. MCP style tools rejected the mirror file path → GUID note
+
+**Observed:** `ui_scene_style_probe` / `ui_canvas_style_inventory` returned
+`canvas_not_found` when given the dcb_canvas mirror file PATH; they want the
+record GUID/name (resolvable from the file's `_RecordId_`/`_RecordName_`).
+
+**Improvement:** `ui-reference.md` §4 — the `canvas` arg is the record GUID/name,
+not the mirror path; get it from the file's top-of-file `_RecordId_`/`_RecordName_`.
+
+**Action:** [done 2026-06-13 — reference §4 note.]
+
+### 41. The cascade probe showed entry NAMES but not what they SET → modifier summary
+
+**Observed:** the single biggest time-sink was tracing WHY a node resolved a
+colour. `BB_A3_STYLE_PROBE` printed `matches=["New Style"]` (the entry name) but
+not its modifier, so confirming the Sep1/Sep4 override meant separately
+re-reading the `mfd_g_emissions` record to find "New Style" = `BackgroundColor=Base`.
+
+**Improvement:** the probe appends each matched entry's key modifiers
+(`probe_modifier_summary`): colour modifiers as `Field=Token`, IsActive / Size* /
+Anchor* as `Field=value` — `New Style[BackgroundColor=Base]`,
+`Vertical Separator 1[IsActive=false]`. Probe-gated (render-neutral).
+
+**Action:** [done 2026-06-13 — bb_brand_apply probe + reference §6 row; verified
+`New Style[BackgroundColor=Base]` on the power render.]
+
 ### Phase H — implementation (all done 2026-06-13, this session)
 
 Render-neutral tooling + docs only (no freeze/baseline touched; the SpaceBetween
@@ -1064,5 +1103,6 @@ retro). `ui_check.sh` green after the doc edits (docs_reference_guard included).
 1. `ui_ir_query.py children` (item 36). [done]
 2. `ui_compare.py --box` (item 37). [done]
 3. `ui_measure.py` feature_width + thin-feature warning (item 35 tooling). [done]
-4. Docs: workflow §10 + reference §3/§7 (items 35–37); runbook engine model
-   (item 38). [done]
+4. `BB_A3_STYLE_PROBE` matched-entry modifier summary (item 41). [done]
+5. Docs: workflow §10 + reference §3/§4/§6/§7 (items 35–37, 39–41); runbook
+   engine model (item 38). [done]
