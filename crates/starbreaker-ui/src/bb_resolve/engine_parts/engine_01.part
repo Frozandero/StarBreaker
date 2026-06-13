@@ -255,6 +255,24 @@ fn apply_body_background_standard_styles(
     }
 }
 
+// P4.4 audit (2026-06-13, plan): this name-pluck (find the entry literally
+// named "RootGhost", copy its uniform corner radius onto ghost
+// `ComponentGeneralButtonSecondary` nodes) SURVIVES the selector-engine
+// unification. disable->adjudicate (env P44_DISABLE_ROOTGHOST, fresh export):
+// NO frozen pin depends on it — drak's RootGhost has no radius modifiers
+// (only EnableBackground:false) and the bioc medical targets contain no ghost
+// buttonsecondary nodes. The modifier kernel now DOES handle Border*Radius
+// (modifiers_number.rs `set_raw_corner_radius`), so the buttonsecondary sheet
+// the engine already runs right after this call would apply RootGhost's radii
+// generically IFF the entry's conditions (Tag 21788313 + Parent(AnyOfTag))
+// match the expanded ghost-button node. That match is UNVERIFIED: no frozen
+// target exercises a ghost button, and the brands whose RootGhost carries
+// radii (aegs/bioc/crus/orig/crlf) are not in the frozen set. Per
+// docs/ui-workflow.md §5 (a clean disable->adjudicate proves "no frozen pin",
+// not "correct everywhere"), the pluck is KEPT. DELETION CRITERION: a
+// reference for any ghost-button screen confirming the engine's
+// condition-matched application reproduces the radius — then this and
+// `apply_buttonsecondary_modular_styles` become redundant.
 fn extract_rootghost_button_secondary_corner_radius(style_entries: &[serde_json::Value]) -> Option<f32> {
     let root_ghost_entry = style_entries.iter().find(|entry| {
         entry

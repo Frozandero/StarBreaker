@@ -447,7 +447,33 @@ surviving name-keyed rules and ledger item 17 land here.)
       deferred late-state (its origin-identifier logic becomes
       `Tier::DeferredState` + the original tier), then inline. Delete
       `apply_style_entries_filtered`'s special-casing as it empties.
-- [ ] **P4.4 Re-audit the survivors on the new engine.** Re-run the
+- [x] (2026-06-13, commit "plan P4.4") **P4.4 Re-audit the survivors on the new engine.**
+      Audit result: 0 deletions, all four KEPT with reasons (the engine
+      covers NONE — three live in a different pipeline stage than the
+      cascade the engine unified, the fourth can't be safely deleted):
+      - **base_animatedelements**: already retired in P5.1 (the name
+        match became the `exportNode:false` subtree rule); nothing left
+        to audit.
+      - **annunciator 25px frame**: IR-compile-stage padding pin
+        (`ui_ir`), NOT a bb_resolve cascade pass — the selector engine
+        cannot cover it by construction. P5.2 exhausted its derivation
+        and registered it; unchanged.
+      - **Bright role-tag directive**: IR-compile-stage tag→colour
+        (`ui_ir/engine_02`), not a cascade entry application. Out of the
+        engine's scope; the remediation arc already pared it to the
+        single literal-role arm (medical eob pins it). Kept.
+      - **RootGhost chrome extraction**: SAME stage as the engine and a
+        genuine name-pluck. disable→adjudicate (env P44_DISABLE_ROOTGHOST
+        + fresh export): NO frozen pin depends on it (drak RootGhost has
+        no radii; the bioc medical targets have no ghost buttonsecondary
+        nodes). The modifier kernel now handles Border*Radius, so the
+        engine would apply it generically IFF the RootGhost entry's
+        conditions match the expanded ghost button — UNVERIFIED (no
+        frozen ghost-button reference; the radius-bearing brands
+        aegs/bioc/crus/orig/crlf aren't frozen). Per workflow §5's scope
+        caveat (clean audit proves "no frozen pin", not "correct
+        everywhere"), KEPT with a documented deletion criterion at the
+        function. Re-run the
       disable→adjudicate audit (workflow §5 method, fresh export!) on:
       the `Bright` role-tag directive, `base_animatedelements`
       deactivation, the annunciator 25px frame, `RootGhost` chrome

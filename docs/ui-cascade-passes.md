@@ -8,6 +8,18 @@ code: `bb_resolve/engine_parts/engine_01.part` (`apply_canvas_style_cascade`
 and its caller `resolve_canvas_graph_inner`) + `bb_brand_apply/mod.rs` +
 `pipeline/style_projection.rs`.
 
+## Status: unified on `bb_style_engine` (plan P4.2–P4.4, 2026-06-13)
+
+Every pass below now applies through the SINGLE selector engine
+`bb_style_engine::apply` (a `StyleSheet` per container, tagged with its
+`Tier`); the legacy per-entry-point wrappers and the identifier-prefix
+sniff are deleted. This document remains the authoritative map of WHICH
+sheets run and in what order — that order is unchanged, and the migration
+was verified byte-identical on all frozen targets. The P4.4 re-audit kept
+all four named survivors (see the plan): three are IR-compile-stage rules
+the cascade engine does not own, and `RootGhost` is a name-pluck retained
+pending a ghost-button reference.
+
 ## Execution order, per canvas resolve level
 
 `resolve_canvas_graph_inner` runs bottom-up: children fully resolve (each
