@@ -210,6 +210,7 @@ in the same commit that introduces them.
 | Probe | Owner | Channel | Prints |
 |---|---|---|---|
 | `BB_A3_STYLE_PROBE=1` | `bb_brand_apply` | stderr (`eprintln`) | per node, per cascade pass: name, style tags, matched entry names + their key modifiers (`Name[BackgroundColor=Base]`, `[IsActive=false]`, `[SizeY=0.5]`) |
+| `SB_UI_STYLE_PROVENANCE=1` | `bb_brand_apply` | IR field (with `--dump-ir-dir`) | adds `UiIrNode.style_provenance` = `{field: "pass/entry"}` recording which cascade entry WON each colour / `IsActive` / `Size*` / `Anchor*` field — only modifiers actually applied, so a gate-suppressed override is NOT credited (query: `ui_ir_query.py … --fields style_provenance`). None in normal compiles, so freezes/hashes are unaffected |
 | `BB_A3_TEXT_PROBE=1` | `bb_bindings` (LocalizedFromBoolean) | log (`log::info` — needs `RUST_LOG=info`) | text branch selection + resolved values |
 | `BB_SHRINK_PROBE=1` | `bb_layout` flex shrink | stderr (`eprintln`) | shrink scale + each child's name/type/main-axis sizing |
 | `SB_UI_GEOM_PROBE=1` | `bb_bindings::resolve_geometry_fields_into_scene` | stderr (`eprintln`) | bound SizeX/SizeY input chains + resolved values per node |

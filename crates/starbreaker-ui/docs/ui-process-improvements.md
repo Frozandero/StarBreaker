@@ -1106,3 +1106,34 @@ retro). `ui_check.sh` green after the doc edits (docs_reference_guard included).
 4. `BB_A3_STYLE_PROBE` matched-entry modifier summary (item 41). [done]
 5. Docs: workflow §10 + reference §3/§4/§6/§7 (items 35–37, 39–41); runbook
    engine model (item 38). [done]
+
+### Phase H — deferred follow-ups (items A–C, all done 2026-06-13)
+
+Three retro findings needed code (not just docs/tooling) and were deferred from
+the Phase-H batch above so the gaps could be researched first. All three are
+render-neutral (a new opt-in probe field, an MCP label, a script selector — no
+freeze/baseline touched). `ui_check.sh` green after each.
+
+- **Item C — `ui_render.sh` scene selection.** The replay script always took an
+  explicit `--scene`; the LOD0 (cockpit `_RTT`) vs LOD1 (interior usable) split
+  was tribal knowledge. Gap research: confirmed the helper-name `*_RTT` → LOD0
+  rule against the dossier. Now `--scene` wins, else `--lod 0|1`, else derived
+  from the helper. [done — commit `264d0330c`; reference §2.]
+- **Item B — brand per `brandStyles[N]`.** `ui_canvas_style_inventory` listed
+  `brandStyles[]` by index only, so confirming "is this the s_drak_hud brand?"
+  meant a separate `datacore_record` read. Gap research: the brand is the
+  `brandIdentifier` path basename on each entry. `brand_style_label(brand, idx)`
+  now renders `brandStyles[1] s_drak_hud`. [done — commit `010df3214`; unit test
+  `brand_style_label_uses_brand_identifier_basename`; reference §4.]
+- **Item A — winning style-cascade source per field.** The single biggest parity
+  time-sink (item 41's sibling): a node resolved a colour and you had to infer
+  WHICH pass/entry set it. Gap research: where to record without polluting the
+  freeze — recording must sit AFTER `apply_modifier` and inside the
+  non-suppressed branch, or a shared override that LOST the colour gate is
+  falsely credited (caught and fixed: Sep1 stamps null, not `New Style/Base`).
+  `SB_UI_STYLE_PROVENANCE=1` stamps `node.raw["__StyleProvenance"][field] =
+  "pass/entry"`; surfaced as the always-None-in-normal-compiles
+  `UiIrNode.style_provenance`, queryable with `ui_ir_query.py … --fields
+  style_provenance`. [done — commit `e788b1470`; probe §6, IR field §7; verified
+  80 genuine fields on the power render, e.g. `PipBox_Fill BackgroundColor =
+  s_drak_hud/PipBox_Fill_Unpowered`.]
