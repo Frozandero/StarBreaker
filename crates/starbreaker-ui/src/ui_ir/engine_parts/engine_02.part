@@ -415,7 +415,52 @@ fn separator_standard_style_from_source(
         return None;
     }
     let standard = canvas_fetcher?.fetch_canvas_by_name(record_name).ok()?;
-    separator_style_from_standard_record(&standard, &match_slugs, mfd_frame)
+    let mut source = separator_style_from_standard_record(&standard, &match_slugs, mfd_frame)?;
+    if mfd_frame {
+        // The per-ship modularkit SVG override (e.g. `DRAK_S42_…`) is absent from
+        // this build for most ships, so the engine paints the standard's DEFAULT
+        // MFD divider — `PU_MFD_Generic_…_V_Divider` (a column of dots that scales
+        // to the rect, no nine-slice). Prefer it over the (usually missing) brand
+        // override so the dots actually render.
+        if let Some(default_svg) = separator_default_svg_path(&standard) {
+            source.svg_path = Some(default_svg);
+            source.nine_slice_rect = None;
+        }
+    }
+    Some(source)
+}
+
+/// The standard's DEFAULT (non-brand) `SvgPath` — the base MFD divider the
+/// engine falls back to when a ship has no modularkit separator vector. Scans
+/// outside `brandStyles`.
+fn separator_default_svg_path(standard: &serde_json::Value) -> Option<String> {
+    fn scan(value: &serde_json::Value) -> Option<String> {
+        match value {
+            serde_json::Value::Object(map) => {
+                if map.get("_Type_").and_then(|t| t.as_str()) == Some("BuildingBlocks_BrandStyles") {
+                    return None;
+                }
+                if modifier_field_name(value) == Some("SvgPath")
+                    && let Some(path) = value.get("value").and_then(|v| v.as_str())
+                    && !path.trim().is_empty()
+                {
+                    return Some(path.trim().to_string());
+                }
+                for (key, child) in map {
+                    if key == "brandStyles" {
+                        continue;
+                    }
+                    if let Some(found) = scan(child) {
+                        return Some(found);
+                    }
+                }
+                None
+            }
+            serde_json::Value::Array(items) => items.iter().find_map(scan),
+            _ => None,
+        }
+    }
+    scan(standard.get("_RecordValue_")?)
 }
 
 /// The standard's brand slug for a separator is `s_<mfr>_env` (the env sibling

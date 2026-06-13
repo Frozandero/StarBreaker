@@ -566,6 +566,74 @@ mod tests_d {
         assert_eq!(node.colour_blend_mode, Some(UiIrColourBlendMode::Additive));
         assert!((node.alpha - 0.15).abs() < 0.001, "expected styled alpha 0.15, got {}", node.alpha);
     }
+
+    /// A Vertical Tertiary separator on an MFD frame (`design_text_scale > 1`)
+    /// paints the standard's DEFAULT divider SVG — the dotted glyph the engine
+    /// falls back to because DRAK ships no separator vector of its own. On a
+    /// non-MFD (physical) frame it resolves NOTHING, so the medical bed /
+    /// end-of-bed keep their byte-identical no-separator render.
+    #[test]
+    fn compile_ir_mfd_separator_paints_default_divider_but_skips_physical_screens() {
+        let canvas = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.TestMfdSeparator",
+            "_RecordValue_": {
+                "size": {"x": 100, "y": 100},
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_WidgetSeparator",
+                     "name": "title_separator", "isActive": true,
+                     "direction": "Vertical", "style": "Tertiary",
+                     "sizing": {"width": {"behavior": "Fixed", "value": 30.0},
+                                "height": {"behavior": "Fixed", "value": 60.0}}}
+                ],
+                "operations": []
+            }
+        });
+        let standard = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.VerticalSeparatorTertiaryWidgetStandard",
+            "_RecordValue_": {
+                "scene": [
+                    {"_Type_": "BuildingBlocks_WidgetCustomShape", "name": "ComponentRoot",
+                     "entries": [{"name": "Default", "modifiers": [
+                        {"_Type_": "BuildingBlocks_FieldModifierString", "field": "SvgPath",
+                         "value": "UI/Textures/Vector/MFD/PU_MFD_Generic_V_Divider.svg"}]}]}
+                ],
+                "brandStyles": [
+                    {"brandIdentifier": "file://x/s_drak_env.json",
+                     "entries": [{"name": "Root", "modifiers": [
+                        {"_Type_": "BuildingBlocks_FieldModifierString", "field": "SvgPath",
+                         "value": "UI/Textures/Vector/ModularKitStyles/DRAK_S42/absent.svg"},
+                        {"_Type_": "BuildingBlocks_FieldModifierColor", "field": "FillColor",
+                         "color": {"_Type_": "BuildingBlocks_ColorStyle", "color": "Base", "alpha": 1.0}}]}]}
+                ]
+            }
+        });
+        let fetcher = TestCanvasFetcher {
+            by_guid: std::collections::HashMap::new(),
+            by_path: std::collections::HashMap::from([("vertical-tertiary".to_string(), standard)]),
+        };
+        let scene = crate::bb_scene::parse_bb_canvas(&canvas).expect("scene parse");
+        let compile = |scale: f32| compile_ui_ir_from_scene_with_animation_sample(
+            &scene, Some(&fetcher), "guid-mfd-sep",
+            Some("BuildingBlocks_Canvas.TestMfdSeparator"), (100, 100), &defaults(),
+            Some("manufacturer:drak".to_owned()), None, &[],
+            Vec::new(), Vec::new(), None, 100, scale, None,
+        );
+
+        let mfd = compile(1.667);
+        let sep = mfd.nodes.iter().find(|n| n.name == "title_separator").expect("sep");
+        assert_eq!(
+            sep.asset_ref.as_deref(),
+            Some("UI/Textures/Vector/MFD/PU_MFD_Generic_V_Divider.svg"),
+            "MFD separator paints the default divider SVG (the missing DRAK override is skipped)"
+        );
+
+        let physical = compile(1.0);
+        let sep = physical.nodes.iter().find(|n| n.name == "title_separator").expect("sep");
+        assert_eq!(
+            sep.asset_ref, None,
+            "physical-screen separator stays empty so medical platinum is byte-identical"
+        );
+    }
 }
 
 #[cfg(test)]

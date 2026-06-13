@@ -210,9 +210,12 @@ fn draw_non_text_node(
         || node.node_type.eq_ignore_ascii_case("widget_separator")
     {
         // A widget-standard separator that resolved a brand SVG (the dotted
-        // glyph) falls through to the asset_ref rasteriser below; the bare /
-        // procedural strips keep the solid-fill draw.
-        let has_brand_svg = node.custom_shape.is_some() && node.asset_ref.is_some();
+        // glyph) falls through to the asset_ref rasteriser below (Contain-fit, no
+        // custom_shape); the bare / procedural strips keep the solid-fill draw.
+        let has_brand_svg = node
+            .asset_ref
+            .as_deref()
+            .is_some_and(|asset| asset.to_ascii_lowercase().ends_with(".svg"));
         if !has_brand_svg {
             draw_widget_separator(ctx, pixmap, node, tsk_rect, node.alpha);
             return;
