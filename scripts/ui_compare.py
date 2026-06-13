@@ -203,6 +203,15 @@ def main():
         "coords of the screen corners); default: <reference>.corners.json "
         "is used automatically when present",
     )
+    ap.add_argument(
+        "--box",
+        action="append",
+        default=None,
+        metavar="x0,y0,x1,y1",
+        help="ad-hoc region (repeatable): stacked render|reference crop of an "
+        "arbitrary rectangle, no preset needed. Honours --rectify and --stats. "
+        "Writes cmp_box_<i>.png.",
+    )
     args = ap.parse_args()
 
     if args.regions == "list":
@@ -254,8 +263,21 @@ def main():
             written.append(path)
             if args.stats:
                 region_stats(name, a, bcrop)
-    elif args.stats:
+    elif args.stats and not args.box:
         region_stats("full", render, ref)
+
+    for index, spec in enumerate(args.box or []):
+        try:
+            l, t, r, b = (int(round(float(value))) for value in spec.split(","))
+        except ValueError:
+            harness_error(f"--box must be x0,y0,x1,y1 (got {spec!r})")
+        a = render.crop((l, t, min(r, render.width), min(b, render.height)))
+        bcrop = ref.crop((l, t, min(r, ref.width), min(b, ref.height)))
+        path = os.path.join(args.out_dir, f"cmp_box_{index}.png")
+        stack(a, bcrop).save(path)
+        written.append(path)
+        if args.stats:
+            region_stats(f"box_{index}", a, bcrop)
 
     for p in written:
         print(p)

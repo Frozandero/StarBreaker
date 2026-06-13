@@ -975,3 +975,94 @@ only cross-cutting / non-UI docs (the decomposed-export contract, blender
 material/shader docs, animation + lighting research). The `*.notes.md`
 provenance sidecars stay co-located with their fixtures/data (registry
 pattern), not in docs/.
+
+---
+
+## Part H — sixth retrospective (2026-06-13, power SpaceBetween + colour-gate session)
+
+Evidence base: the `Screen_Left_Lower_RTT` (power MFD) parity arc — landed
+`SpaceBetween`/`SpaceAround`/`SpaceEvenly` flex justification (`d2d26297e`,
+P13 position) and the shared-tier background suppression that made the header
+side bars render their authored red (`2c2f50b72`, P13 colour). Both went through
+the normal TDD/guard flow and landed clean (no frozen regression). The findings
+below cost real time; #35 produced a wrong verdict the owner had to overturn.
+
+### 35. The rectified reference silently smears thin-feature colour → wrong "faithful" verdict
+
+**Observed:** I judged the header side bars' colour with the photometric anchor
+method (item 27) but ran it on the RECTIFIED reference (item 21's homography
+output). The bars are 2px wide; the warp interpolates them with the orange
+screen-grid behind, lifting the measured G/R to 0.64 — indistinguishable from
+the same-capture Base anchor (footer text, 0.63). I recorded the orange bars as
+FAITHFUL. They are not: the nodes AUTHOR `background.color` = Accent1/Accent2,
+the CRISP original measures G/R 0.52 / B/R 0.31 = Accent1, and the owner saw red
+at a glance. The anchor method was sound; it ran on the wrong image.
+Rectification is right for POSITION and wrong for THIN-FEATURE COLOUR, and
+nothing flagged the dilution.
+
+**Improvement:** (a) `ui-workflow.md` §10 don't-retry rule + `ui-reference.md`
+§3 caveat: a thin feature's (≤~4px: bars, strokes, dotted separators) COLOUR is
+judged on the CRISP ORIGINAL, never the rectified capture. (b)
+`scripts/ui_measure.py` reports `feature_width` and warns (JSON + stderr) when it
+is ≤4px.
+
+**Action:** [done 2026-06-13 — ui_measure feature_width + warning; workflow §10
++ reference §3/§7 caveats; verified the warning fires on the 2px bar and stays
+quiet on the 220px OUTPUT text.]
+
+### 36. IR descendant dumps were re-typed all session → `ui_ir_query.py children`
+
+**Observed:** `ui_ir_query.py` had `query` (flat regex) and `tree` (ancestor
+chain) but no DESCENDANTS view. Tracing the pip-column clip, the heat-bar
+overflow, the battery container stack and the four separators, I hand-wrote
+inline `parent→children with rect/clip/overflow/is_active` python at least six
+times — the most-retyped diagnostic of the session.
+
+**Improvement:** `ui_ir_query.py children <ir.json> <node_id> [--depth N]
+[--fields a.b,c]` — the descendant subtree (rect, `right`=x+w, is_active, a
+non-Visible overflow mode), the mirror of `tree`.
+
+**Action:** [done 2026-06-13 — subcommand added; verified on the power IR
+(canvas_PowerSystems subtree); reference §7 row added.]
+
+### 37. Ad-hoc rectify-and-crop was re-typed all session → `ui_compare.py --box`
+
+**Observed:** `ui_compare.py` compared only the fixed PRESET regions. To compare
+an arbitrary rectangle (header bars, right pip area, battery/output cards) of
+render vs rectified-reference I imported the module, called `rectify_reference`
+and hand-cropped with PIL ~ten times.
+
+**Improvement:** `ui_compare.py --box x0,y0,x1,y1` (repeatable) — a stacked
+render|rectified-ref crop of an ad-hoc region, honouring `--rectify`/`--stats`,
+reusing the existing rectify+stack+stats helpers.
+
+**Action:** [done 2026-06-13 — `--box` added; verified on the header region;
+reference §3 usage line added.]
+
+### 38. Cascade-tier + brand-index facts re-derived → runbook engine model
+
+**Observed:** re-derived from scratch the facts the colour fix turned on: the
+emissions header bars AUTHOR Accent1/Accent2 (the shared `mfd_g_emissions`
+"New Style" overrode them to Base); the emissions brandStyles index→brand map
+(`brandStyles[1]` = `s_drak_hud` = DRAK, which authors NO separator colour — the
+Accent1/visibility separator entries live in `s_argo_hud`/`s_grin_hud`, never
+selected for the Clipper); and the cascade-tier override semantics.
+
+**Improvement:** `ui-architecture-runbook.md` engine-model bullet — a shared-tier
+`BackgroundColor` does not override a custom shape's authored colour
+(`shared_background_override_suppressed`), with the separator authored accents
+and the brand-index note. The "emissions header bars are Base/orange" premise is
+recorded as WRONG (authored Accent).
+
+**Action:** [done 2026-06-13 — runbook engine-models bullet added.]
+
+### Phase H — implementation (all done 2026-06-13, this session)
+
+Render-neutral tooling + docs only (no freeze/baseline touched; the SpaceBetween
+and colour fixes themselves went through the arc's TDD/guard flow, not this
+retro). `ui_check.sh` green after the doc edits (docs_reference_guard included).
+1. `ui_ir_query.py children` (item 36). [done]
+2. `ui_compare.py --box` (item 37). [done]
+3. `ui_measure.py` feature_width + thin-feature warning (item 35 tooling). [done]
+4. Docs: workflow §10 + reference §3/§7 (items 35–37); runbook engine model
+   (item 38). [done]

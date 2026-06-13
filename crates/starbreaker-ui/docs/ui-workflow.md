@@ -280,3 +280,12 @@ Flows (commands in the reference doc §2/§7):
 - **`.tif` in canvas JSON = `.dds` in P4K.**
 - **Stale generated PNGs**: `ships/Data/UI/Generated/...` only refreshes on
   full export. Iterate via replay; export before freezing artifacts.
+- **Thin-feature COLOUR on the rectified reference is wrong (ledger 35).** The
+  homography warp (`ui_compare`/`ui_measure` against a `corners.json`-rectified
+  capture) interpolates a ≤~4px feature — header bars, strokes, dotted
+  separators — with its background, diluting the hue: a 2px Accent1 header bar
+  measured G/R 0.64 ≈ the same-capture Base anchor, so the orange render was
+  recorded "faithful" until the owner overturned it (the bars author Accent1/
+  Accent2; the crisp original is unambiguously red). Rectify for POSITION;
+  judge a thin feature's COLOUR on the CRISP ORIGINAL. `ui_measure.py` warns
+  when `feature_width ≤ 4`.

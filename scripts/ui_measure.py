@@ -28,7 +28,11 @@ Output: one JSON object on stdout.
                the box). Single-edge contact is reported in "touches"
                without raising the flag (a glyph nudging one box edge).
   cap_height   Height of the tallest NON-suspect run (null if none).
-  colour       Mean RGB over above-threshold pixels + R-normalised ratios.
+  colour       Mean RGB over above-threshold pixels + R-normalised ratios +
+               feature_width (horizontal px span of the bright pixels).
+  warnings     Emitted (also to stderr) when feature_width <= 4: a thin bar/
+               stroke/separator measured on a RECTIFIED capture has a smeared
+               hue — measure its colour on the crisp ORIGINAL (ledger item 35).
 
 Additive-haze photometric model (the refined form of docs/ui-reference.md
 §3's method): captures carry a per-capture colour cast plus bloom that adds
@@ -95,6 +99,7 @@ def measure_region(img, box, delta):
 
     bright_rows = {}  # y -> (has_left_edge, has_right_edge)
     bright_px = []
+    min_bright_x = max_bright_x = None
     for y in range(y0, y1):
         edge_left = edge_right = False
         any_bright = False
@@ -103,6 +108,10 @@ def measure_region(img, box, delta):
             if luminance(px) > threshold:
                 any_bright = True
                 bright_px.append(px)
+                if min_bright_x is None or x < min_bright_x:
+                    min_bright_x = x
+                if max_bright_x is None or x > max_bright_x:
+                    max_bright_x = x
                 if x == x0:
                     edge_left = True
                 if x == x1 - 1:
@@ -151,6 +160,7 @@ def measure_region(img, box, delta):
             "mean_rgb": [round(mean_r, 2), round(mean_g, 2), round(mean_b, 2)],
             "ratios": ratios_of(mean_r, mean_g, mean_b),
             "pixels": n,
+            "feature_width": (max_bright_x - min_bright_x + 1) if min_bright_x is not None else None,
         }
 
     clean = [r["h"] for r in glyph_runs if not r["suspect_contamination"]]
@@ -194,6 +204,22 @@ def main():
     img = Image.open(args.image).convert("RGB")
     result = {"image": args.image}
     result.update(measure_region(img, box, args.delta))
+
+    # Thin-feature colour caveat (ledger item 35): a homography-RECTIFIED capture
+    # interpolates a few-px-wide feature (a bar/stroke/dotted separator) with
+    # whatever sits behind it, smearing its hue toward the background — a 2px
+    # Accent1 bar measured ~Base on the rectified power reference and a real
+    # colour bug was nearly closed as "faithful". Rectify for POSITION; measure
+    # thin-feature COLOUR on the crisp ORIGINAL.
+    feature_width = (result.get("colour") or {}).get("feature_width")
+    if feature_width is not None and feature_width <= 4:
+        warning = (
+            f"bright feature is only {feature_width}px wide — if this image is a "
+            "homography-rectified capture, its hue is smeared toward the background; "
+            "measure COLOUR on the crisp ORIGINAL reference (rectify for position only)."
+        )
+        result["warnings"] = [warning]
+        print(f"WARN: {warning}", file=sys.stderr)
 
     if args.anchor:
         anchor_box = parse_box(args.anchor)

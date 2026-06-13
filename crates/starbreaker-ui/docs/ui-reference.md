@@ -87,6 +87,7 @@ bash scripts/validate_ui_regression_repo_only.sh   # hosted CI (no game data)
 python3 scripts/ui_compare.py <render.png> <reference.png> \
   --regions <preset> --out-dir /tmp/ui_compare [--stats]
 python3 scripts/ui_compare.py --regions list   # available presets
+python3 scripts/ui_compare.py <render> <ref> --box x0,y0,x1,y1 [--box …]  # ad-hoc region(s), no preset
 ```
 `--stats` prints per-region bright/dark pixel means + R-normalised ratios
 for both images — the photometric review method. Judge HUE from the ratios,
@@ -109,7 +110,13 @@ four screen-corner pixel coordinates as `<reference>.corners.json`
 corner and read the pointer coordinates off the status bar) and
 `ui_compare.py` homography-rectifies the capture onto the render rectangle
 automatically, printing "rectified via <file>" (or pass `--rectify
-<corners.json>` explicitly).
+<corners.json>` explicitly). **Thin-feature COLOUR caveat (ledger 35):** the
+warp interpolates a few-px-wide feature (a bar/stroke/dotted separator) with
+whatever sits behind it, smearing its hue toward the background — a 2px Accent1
+header bar measured G/R 0.64 ≈ Base on the *rectified* power reference and a real
+colour bug was nearly closed as "faithful". Rectify for POSITION; judge a thin
+feature's COLOUR on the CRISP ORIGINAL (`ui_measure.py` warns when
+`feature_width ≤ 4`).
 
 **Screen dossier** — one row per known screen (extend as screens are
 worked). References live in
@@ -207,7 +214,8 @@ Example: `BB_SHRINK_PROBE=1 ./target/debug/starbreaker ui render --scene
 |---|---|
 | `python3 scripts/ui_ir_query.py query <ir.json> <regex> [--fields a.b,c]` | list IR nodes whose name or text matches the regex: id, parent, type, rect, is_active + dotted-path extras (input: `ui render --dump-ir-dir` output) |
 | `python3 scripts/ui_ir_query.py tree <ir.json> <node_id>` | ancestor chain for one node with rect, authored_size, anchor/pivot, padding, margin |
-| `python3 scripts/ui_measure.py <image> --box x0,y0,x1,y1 [--ir <ir.json> --node <id>] [--delta N] [--anchor … --anchor-rgb …]` | glyph-run cap heights (contamination-flagged) + colour ratios with optional additive-haze correction (JSON to stdout) |
+| `python3 scripts/ui_ir_query.py children <ir.json> <node_id> [--depth N] [--fields a.b,c]` | descendant subtree (rect, `right`=x+w, is_active, non-Visible overflow) — the mirror of `tree`, for clip/overflow tracing |
+| `python3 scripts/ui_measure.py <image> --box x0,y0,x1,y1 [--ir <ir.json> --node <id>] [--delta N] [--anchor … --anchor-rgb …]` | glyph-run cap heights (contamination-flagged) + colour ratios with `feature_width` (warns when ≤4px that a thin feature on a RECTIFIED capture has a smeared hue — measure colour on the ORIGINAL) + optional additive-haze correction (JSON to stdout) |
 | `ui_stage_diff <canvas.json> [WxH] [--records-root <dir>] [--filter <substr>]` | parse-only vs full-resolve layout diff; flags first name-matched divergence (cracks "which stage broke the geometry") |
 | `mfd_ir_dump <canvas-guid> <content-guid> [name-filter] [WxH]` | framed MFD IR dump from the record mirror (filter = lowercase name substring) |
 | `query_ui_layout --canvas-guid <guid> --query <pattern>` | per-node layout/draw/text rects + drawn glyph bounds |

@@ -300,6 +300,21 @@ added the engine note at the end):
   The authoritative pass list + order is `crates/starbreaker-ui/docs/ui-cascade-passes.md`
   (unchanged by the migration — verified byte-identical on all frozen
   targets).
+- **A shared-tier `BackgroundColor` does NOT override a custom shape's
+  authored colour** (2026-06-13, ledger item 38). A generic shared sheet
+  (`Tier::Shared`, the `mfd_g_*` records) is not the styling authority for a
+  `WidgetCustomShape`'s intrinsic fill: when the shape already authors an
+  enabled `background.color`, a shared-tier `BackgroundColor` modifier is
+  skipped (`bb_brand_apply::shared_background_override_suppressed`, threaded
+  via `apply_sheet`'s `sheet.tier == Tier::Shared`). Brand / embedded / inline
+  tiers still override — a brand CAN restyle the shape. Motivating case: the
+  `GEN_MC_S_Emissions` header side bars author `background.color` = Accent2
+  (Sep1) / Accent1 (Sep2–4) = red, which the shared `mfd_g_emissions`
+  "New Style" entry was recolouring to Base (orange); the in-game bars are red.
+  Brand-index note for that canvas: `brandStyles[1]` = `s_drak_hud` is the
+  Clipper's DRAK brand and authors NO separator colour — the Accent1/visibility
+  separator entries live in `s_argo_hud`/`s_grin_hud` (other brands, never
+  selected for the Clipper), so the authored node colour is the only red source.
 
 ## Reference-capture measurement methodology
 

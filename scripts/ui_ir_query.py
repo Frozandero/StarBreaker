@@ -14,6 +14,10 @@ Subcommands:
   tree <ir.json> <node_id>
       Ancestor chain (root first, indented) for one node: computed_rect,
       authored_size, anchor/pivot, padding, margin.
+  children <ir.json> <node_id> [--depth N] [--fields a.b,c]
+      Descendant subtree (indented by depth) for one node: id, name,
+      node_type, x/y/w/h, right (x+w), is_active, and a non-Visible
+      overflow mode — the mirror of `tree`, for clip/overflow tracing.
 
 Dependency-free: stdlib json/re/argparse only.
 """
@@ -116,6 +120,47 @@ def cmd_tree(args):
     return 0
 
 
+def cmd_children(args):
+    _, by_id, nodes = load_nodes(args.ir_json)
+    if args.node_id not in by_id:
+        sys.exit(f"error: node id {args.node_id} not in {args.ir_json}")
+    children_of = {}
+    for node in nodes:
+        children_of.setdefault(node.get("parent_id"), []).append(node)
+    fields = [field for field in (args.fields or "").split(",") if field]
+
+    def overflow_mode(node):
+        mode = node.get("overflow_mode")
+        return mode.get("overflow") if isinstance(mode, dict) else None
+
+    def walk(node, depth):
+        rect = node.get("computed_rect") or {}
+        x = rect.get("x", 0.0)
+        w = rect.get("w", 0.0)
+        row = (
+            "{indent}id={id} {name!r} {ty} x={x:g} y={y:g} w={w:g} h={h:g} "
+            "right={right:g} active={active}".format(
+                indent="  " * depth,
+                id=node.get("id"), name=node.get("name") or "",
+                ty=node.get("node_type"), x=x, y=rect.get("y", 0.0),
+                w=w, h=rect.get("h", 0.0), right=x + w, active=node.get("is_active"),
+            )
+        )
+        mode = overflow_mode(node)
+        if mode and mode != "Visible":
+            row += f" overflow={mode}"
+        for field in fields:
+            row += f" {field}={json.dumps(lookup_path(node, field))}"
+        print(row)
+        if depth >= args.depth:
+            return
+        for child in sorted(children_of.get(node.get("id"), []), key=lambda c: c.get("id")):
+            walk(child, depth + 1)
+
+    walk(by_id[args.node_id], 0)
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -131,6 +176,13 @@ def main():
     tree.add_argument("ir_json")
     tree.add_argument("node_id", type=int)
     tree.set_defaults(func=cmd_tree)
+
+    children = sub.add_parser("children", help="descendant subtree with rect/overflow for one node")
+    children.add_argument("ir_json")
+    children.add_argument("node_id", type=int)
+    children.add_argument("--depth", type=int, default=6, help="max descendant depth (default 6)")
+    children.add_argument("--fields", help="comma-separated dotted paths to also print")
+    children.set_defaults(func=cmd_children)
 
     args = parser.parse_args()
     sys.exit(args.func(args))
