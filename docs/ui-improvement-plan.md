@@ -454,12 +454,22 @@ surviving name-keyed rules and ledger item 17 land here.)
       cascade-relevant when those ships onboard. The 25 is C++-host-side
       (44px-inset family): provenance comment added, pin REGISTERED in
       the fallback register (it was unregistered). Rule unchanged.
-- [ ] **P5.3 Background slot 8 vs 9** (`StyleLoader::
+- [x] (2026-06-13, commit "plan P5.3") **P5.3 Background slot 8 vs 9** (`StyleLoader::
       parse_buildingblocks_style_record` uses slot 8 for `background`;
       the enum names slot 9): ASK TOM for one capture of a screen whose
       slots 8/9 differ visibly (drak: (20,13,5) vs (38,27,10) — any MFD
       in a dark room may discriminate). Approval-gated; do not change
       without the capture.
+      RESOLVED: **slot 9** (the enum's Background; slot 8 is Disabled).
+      Tom supplied TWO dark-room captures (`Screen_Left_Lower_RTT_dark.png`
+      + `_dark2.png`, with corners). Method: both hypotheses rendered;
+      dark-region pairwise ratios (black-subtracted, veil bounded by the
+      sharp screen-edge brightness step) favour slot 9 on 7/10 then 13/15
+      clean pairs; ratio-RMS 2.3× better; response exponent ≈0.91
+      (physical) vs 0.57 (contorted) for slot 8. The emission-washout
+      caveat from Tom ruled out bright-anchor fitting — dark-region
+      ratios only. Landed TDD (slot-9 loader test), all five targets
+      re-frozen via ui_freeze_cycle (approver tom), `--full` ALL GREEN.
 - [x] (2026-06-12, commit "plan P5.4") **P5.4 `HOST_STAGE_SIZE` from the SWF header**: when next touching
       `crates/starbreaker-ui/src/mfd_view.rs`, plumb the host stage size
       (already parsed by `SwfAssetLibrary::stage_size` in the pipeline)

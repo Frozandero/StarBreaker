@@ -75,7 +75,13 @@ impl StyleLoader {
             })?;
 
         let primary_tint = parse_color_style_slot(color_styles, 0).unwrap_or(fallback.primary_tint);
-        let background = parse_color_style_slot(color_styles, 8).unwrap_or(fallback.background);
+        // Slot 9 = the BB_ColorStyle enum's Background. The previous slot-8
+        // read was adjudicated WRONG against two dark-room captures of the
+        // Clipper power MFD (plan P5.3, 2026-06-13): the in-game screen
+        // background matches the slot-9 render on dark-region ratios
+        // (13/15 pairs, ratio RMS 2.3x better, response exponent ~0.91 vs a
+        // contorted 0.57 for slot 8). For drak: (38,27,10), not (20,13,5).
+        let background = parse_color_style_slot(color_styles, 9).unwrap_or(fallback.background);
         let backlight = parse_color_style_slot(color_styles, 11).unwrap_or(fallback.backlight);
         let mut colour_slots: Vec<RgbaColor> = color_styles
             .iter()

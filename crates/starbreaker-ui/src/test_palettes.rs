@@ -48,7 +48,8 @@ pub(crate) fn brand_slot(brand: &str, index: usize) -> RgbaColor {
 
 /// A `ManufacturerStyle` assembled from the fixture palette the same way
 /// `StyleLoader::parse_buildingblocks_style_record` assembles one from the
-/// live record (primary = slot 0, background = slot 8, backlight = slot 11).
+/// live record (primary = slot 0, background = slot 9, backlight = slot 11;
+/// background slot adjudicated in plan P5.3 — see the loader).
 pub(crate) fn brand_style(brand: &str) -> ManufacturerStyle {
     let slots = brand_colour_slots(brand);
     let name = brand.trim_start_matches("s_").split('_').next().unwrap_or(brand);
@@ -57,7 +58,7 @@ pub(crate) fn brand_style(brand: &str) -> ManufacturerStyle {
         primary_tint: slots[0],
         secondary_tint: None,
         colour_slots: slots.clone(),
-        background: slots[8],
+        background: slots[9],
         backlight: slots[11],
         font_family_hints: Vec::new(),
         crt: CrtParams::default(),

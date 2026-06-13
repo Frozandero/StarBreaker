@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "frozen_at": "2026-06-12T15:54:53Z",
+  "frozen_at": "2026-06-13T00:21:31Z",
   "approver": "tom",
-  "reason": "Two reference-adjudicated render changes on the freshly exported PNGs: (1) clipper_target_master 0.95% — MFD host-path text now divides by the font's imageSizePercent for ALL size classes (styled/entry/inline), growing every MFD text x4/3: verified vs Screen_Right_Upper_RTT.png (NO TARGET cap ref~63 = Size_1 entry 45/0.75; footer cap ref~52 = entry-40/0.75) and the power capture (footer P-glyph ref 52 vs render 53; emissions/battery/output all match — measured per element). Non-host screens are unchanged (medical banner cap 25 == ref 27 verbatim). (2) clipper_small_door 2.16% — the authored Accent2 bottom bar now resolves BB enum slot 5 deep orange (222,88,3), matching the Door-closed.png bar (223,110,48 under capture cast); the old light orange came from the deleted hand-mapped Accent2->slot1/2.",
+  "reason": "plan P5.3: screen background = BB_ColorStyle slot 9 (the enum's Background), correcting the loader's slot-8 read. Adjudicated against Tom's two dark-room captures of the Clipper power MFD (Screen_Left_Lower_RTT_dark.png + _dark2.png, 2026-06-13): dark-region pairwise ratios favour slot 9 on 7/10 (capture 1) and 13/15 clean pairs (capture 2); ratio-structure RMS 2.3x better; response exponent ~0.91 (physical) vs 0.57 (contorted) for slot 8. Every target's background brightens drak (20,13,5) -> (38,27,10); all five frozen targets re-frozen for the same single root cause.",
   "signature": null,
   "manifest_path": "crates/starbreaker-ui/tests/fixtures/ui_ir/ui_snapshot_manifest.json",
   "artifacts": [
@@ -31,7 +31,7 @@
       "tier": "gold",
       "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_i_door_small_drak.png",
       "artifact_path": "test-artifacts/ui/clipper_small_door.png",
-      "sha256": "6f144ab11e8b9a0a53d8b33948382c40bed6c3261064818f9ac8d6b6b28f8d45",
+      "sha256": "0ea075a0fba10800339f5d7e72a28adff231b3a8a2fc4e2384f595e652d55d53",
       "width": 1920,
       "height": 1080,
       "channels": "srgba"
@@ -51,7 +51,7 @@
       "tier": "platinum",
       "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_mc_s_target_master.png",
       "artifact_path": "test-artifacts/ui/clipper_target_master.png",
-      "sha256": "44246d36f2aa12bfd639a6bf54cad32c76ba68cccaf370275677c34e38bc48dc",
+      "sha256": "2bdac58fd59cc63b8f0297d7cae41ab766ce1112b6079c68deacbc9e4d559654",
       "width": 1600,
       "height": 1200,
       "channels": "srgba"

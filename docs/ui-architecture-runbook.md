@@ -101,6 +101,12 @@ Authoritative order, dumped from `Data\Game2.dcb` via
 
 Key facts:
 
+- **The screen `background` is slot 9 (`Background`), not slot 8
+  (`Disabled`).** The loader read slot 8 until 2026-06-13; adjudicated
+  against two dark-room captures of the Clipper power MFD (plan P5.3 —
+  dark-region ratio analysis, both captures favour slot 9; drak background
+  is (38,27,10), not (20,13,5)). `StyleLoader::
+  parse_buildingblocks_style_record` + the loader test pin slot 9.
 - **`Bright` (6) is a muted role, distinct from `Base` (0).** Example: a
   `ComponentLabelCaptionPair` label uses `Heading3`→`Base` while its caption
   value uses `Heading6`→`Bright` (e.g. medical "MEDGELS" light blue label over a

@@ -222,3 +222,30 @@ fn snapshot_drake_style_print() {
         reg.screen_state_color("Normal")
     );
 }
+
+/// The screen `background` comes from BB_ColorStyle slot 9 (the enum's
+/// Background slot), NOT slot 8. Adjudicated 2026-06-13 against two dark-room
+/// captures of the Clipper power MFD (plan P5.3): the in-game background's
+/// dark-region ratios match the slot-9 render (13/15 region pairs, ratio RMS
+/// 2.3x better, response exponent ~0.91 vs a contorted 0.57 for slot 8).
+#[test]
+fn buildingblocks_record_background_is_palette_slot_9() {
+    // hardcoding-guard: synthetic — slot 9 white, all other slots black.
+    let mut slots = Vec::new();
+    for index in 0..17 {
+        let v = if index == 9 { 255 } else { 0 };
+        slots.push(serde_json::json!({
+            "color": { "_Type_": "SRGBA8", "r": v, "g": v, "b": v, "a": 255 }
+        }));
+    }
+    let record = serde_json::json!({
+        "_RecordName_": "BuildingBlocks_Style.SyntheticSlotTest",
+        "_RecordValue_": { "colorStyles": slots }
+    });
+    let style = loader().parse_buildingblocks_style_record(&record).unwrap();
+    assert_eq!(
+        style.background,
+        RgbaColor { r: 255, g: 255, b: 255, a: 255 },
+        "background must read slot 9 (enum Background), not slot 8"
+    );
+}
