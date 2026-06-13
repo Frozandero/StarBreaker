@@ -77,10 +77,15 @@ an `--ops <class-substring>` opcode trace for reading formulas. Findings:
   framework subset (66–83 classes); the only app-level numerics are
   time/angle math (60/360/3600) and `0xFFFFFF`. Their value remains the
   static `DefineEditText` typography (above), not bytecode.
-- Lead from the same logs: CIG licenses Terathon's **Slug** GPU text engine
-  (RTTI/strings via the Ghidra investigation) — the engine's glyph
-  rasterization model may be Slug's, not GFx's; relevant to the residual
-  `SWF_TEXT_RENDER_SIZE_CALIBRATION = 0.84` derivation.
+- **CONFIRMED 2026-06-13** (plan P3.3, strings-scan of the live
+  `StarCitizen.exe`): BuildingBlocks text rasterises via Terathon's **Slug**
+  GPU text engine — `Terathon::Slug::FontHeader`/`AlbumHeader` via
+  `CPaintManager`, `CSlugPipeline::{Execute,SubmitPolygon}`, `eVF_SLUG`,
+  and `"[BuildingBlocks] ... incomplete SLUG format directive tag"`. Glyph
+  rasterisation is Slug curve rendering, not GFx; the SWF files supply font
+  DATA only. (The former `SWF_TEXT_RENDER_SIZE_CALIBRATION = 0.84` this
+  lead was recorded for is retired — the inline-pair width it served now
+  measures at draw size.)
 
 ## Reference: BB_ColorStyle colour roles
 

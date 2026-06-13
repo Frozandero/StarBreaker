@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "frozen_at": "2026-06-13T00:38:21Z",
+  "frozen_at": "2026-06-13T01:42:33Z",
   "approver": "owner",
-  "reason": "metadata-only re-freeze: approver normalised to 'owner' and the P5.3 reason reworded without personal names. P5.3 substance unchanged: screen background = BB_ColorStyle slot 9 (Background), corrected from slot 8 (Disabled); adjudicated against two owner-supplied dark-room captures of the Clipper power MFD (dark + dark2): dark-region pairwise ratios favour slot 9 (7/10 then 13/15 clean pairs), ratio-structure RMS 2.3x better, physical response exponent ~0.91 vs contorted 0.57 for slot 8; drak background (20,13,5) -> (38,27,10), all five targets re-frozen for the single root cause",
+  "reason": "plan P3.5: text-calibration arc artifact re-freeze. Changed pixels confined to the reference-adjudicated caption pairs: ui_target_a (bed) 0.44% of pixels — MEDGELS pair top-to-top 28->29 (capture 29, exact) and PATIENT NAME pair 1010->1004 (capture 1004, exact; outlier graduated); ui_target_b (eob) 0.15% — MEDGELS pair top-to-top 28->29 (capture 29), meter 86->84 (capture 84, exact), label 36->37 (within 1px of prior). clipper_small_door / eng_annunciator_master_left / clipper_target_master byte-identical (max abs diff 0.0). Constants retired per the register: the 1.5 TTF pair (em model), 0.84+0.33 inline pair (advance-at-draw-size), -8 caption handoff (pure line-box stack); one new registered pin (right-anchored pair top padding) preserving the med2-rect compensation.",
   "signature": null,
   "manifest_path": "crates/starbreaker-ui/tests/fixtures/ui_ir/ui_snapshot_manifest.json",
   "artifacts": [
@@ -11,7 +11,7 @@
       "tier": "platinum",
       "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_i_med_medicalbed_a.png",
       "artifact_path": "test-artifacts/ui/ui_target_a.png",
-      "sha256": "24ebf1298cd5ce100308437753f796516d243ba68651a088276ba8d25f0232ed",
+      "sha256": "d1dac5034b9e7b905076db4282e22dd59764ccff790849f0f55296b83837fde5",
       "width": 1920,
       "height": 1080,
       "channels": "srgba"
@@ -21,7 +21,7 @@
       "tier": "platinum",
       "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_i_med_medicalendofbed_a.png",
       "artifact_path": "test-artifacts/ui/ui_target_b.png",
-      "sha256": "550a7f4bb9f295a0051882e1ba84077a054572be7f7449dc168571e1fb5993b9",
+      "sha256": "a2d108280d95ce5d0ae26a2346ad1f98f74d09ecac0b34d0d6bac08cb0dceb5e",
       "width": 1920,
       "height": 1080,
       "channels": "srgba"

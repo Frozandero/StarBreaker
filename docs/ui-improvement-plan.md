@@ -318,7 +318,12 @@ word-gap `0.33` (register entries carry their criteria). This arc
 re-freezes every text baseline — get owner approval BEFORE starting it,
 and again at the freeze.
 
-- [ ] **P3.1 Kill the DejaVu fallback's reason to exist.** The TTF
+- [x] (2026-06-13, commit "plan P3.2+P3.3+P3.4") **P3.1 Kill the DejaVu fallback's reason to exist.**
+      ALREADY SATISFIED: `load_first_swf` merges the shared fontlib
+      (`Data/UI/fonts/Shared/fonts_en.gfx`) into EVERY binding's assets,
+      incl. a minimal-SWF path when the binding has none. Font telemetry:
+      110/110 elements resolve their record symbol on BOTH scenes; zero
+      DejaVu draws; zero harness deltas. DejaVu = no-game-data CI only. The TTF
       fallback (`crates/starbreaker-ui/src/text/mod.rs`, bundled
       DejaVuSans/Mono) renders text when no imported SWF font is
       selected. The game's fonts are ALL in `fonts_en.swf` (29
@@ -335,7 +340,11 @@ and again at the freeze.
       (`scripts/font_size_check.py` via `ui_check.sh --full`) deltas are
       presented for owner approval (expected: small drifts — STOP for approval before
       re-capturing the TSV per `docs/ui-font-size-harness.md`).
-- [ ] **P3.2 Derive the 1.5.** With game fonts on the fallback path, the
+- [x] (2026-06-13, commit "plan P3.2+P3.3+P3.4") **P3.2 Derive the 1.5.**
+      DELETED both (em model: rusttype Scale already normalises to
+      ascent+|descent| = the SWF path's model at 1.0). TDD red 45->green
+      30; 517 lib tests green; renders byte-identical except the
+      reference-adjudicated caption pairs (P3.4). With game fonts on the fallback path, the
       1.5 estimate must be re-derived or die: measure (with
       `scripts/ui_measure.py`) the frozen-target texts that previously
       used DejaVu vs their references; if game-font rendering at nominal
@@ -344,14 +353,27 @@ and again at the freeze.
       measure==draw); if a factor remains, derive it from the font record
       (`ascent+|descent|` vs `units_per_em` are parsed in `swf_assets`)
       and write the formula, not a constant.
-- [ ] **P3.3 Derive the 0.84.** Same procedure on the SWF-path
+- [x] (2026-06-13, commit "plan P3.2+P3.3+P3.4") **P3.3 Derive the 0.84.**
+      DELETED. Slug CONFIRMED from StarCitizen.exe strings
+      (Terathon::Slug::FontHeader, CSlugPipeline — runbook updated). The
+      0.84's only surviving site (inline-pair parent width) now measures
+      at DRAW size; T3->M ink offset 54 vs capture 55, unchanged. Same procedure on the SWF-path
       calibration. Investigate the Slug lead first (the engine may
       rasterize via Terathon Slug — `docs/ui-architecture-runbook.md`
       §Ruffle note): if Ghidra access exists, confirm via RTTI strings;
       otherwise derive empirically per font record from the measurement
       bank. A surviving constant goes back to the register with the new
       evidence; a derived formula deletes it.
-- [ ] **P3.4 Caption-pair stack + inline word gap.** Model the
+- [x] (2026-06-13, commit "plan P3.2+P3.3+P3.4") **P3.4 Caption-pair stack + inline word gap.**
+      -8.0 + overlap DELETED for the pure line-box stack (the ORIGINAL
+      020191279 derivation); 0.33 DELETED — the capture shows the inline
+      pair abutting at letter-gap scale (~3px ink), no word space; the
+      "~17px" in the old register entry was a coarser-method number.
+      Verified: MEDGELS top-to-top 29 (capture 29, exact), PATIENT NAME
+      1004 (capture 1004, exact — outliers graduated), eob meter 84
+      (capture 84, exact). NEW registered pin: right-anchored pair top
+      padding derived×1.5+0.25em compensating the med2-misplaced rect
+      (retires with that parked arc). Model the
       label→value handoff from line-box font metrics (ascent/descent of
       the two styles) instead of `-8.0`; the inline nested-textfield gap
       from the measured space-glyph advance instead of `0.33×em` (the
@@ -360,7 +382,11 @@ and again at the freeze.
       `swf_space_advance_px`). Verify against medical1's
       MEDGELS→200/200 (~28px top-to-top) and T3→MEDICAL (~17px gap) from
       the measurement bank.
-- [ ] **P3.5 The audited re-freeze.** Full export; present per-target
+- [x] (2026-06-13, commit "plan P3.5") **P3.5 The audited re-freeze.**
+      IR freeze + artifact freeze cycle both landed (approver: owner)
+      with every identity quoted; validators green; `--full` ALL GREEN;
+      font harness 26/26 — NO TSV re-capture needed (draw sizes
+      unchanged). Register: 5 retirements + 1 new pin. Full export; present per-target
       deltas; `bash scripts/ui_freeze_cycle.sh --approver owner --reason
       "<cite every identity>"` plus
       `bash scripts/freeze_ui_snapshot_ir.sh` if IR fields moved; both
