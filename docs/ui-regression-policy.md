@@ -83,6 +83,24 @@ Rules:
 - An override is an explicit, auditable IOU for a real fix — not a way to hide a
   hardcoded workaround. The hardcoding guard still applies to production code.
 
+## Gold-standard targets and tier selection
+
+- **`medical1` / `medical2` are PLATINUM gold-standard** outputs: deviations are
+  presumed broken until proven to be an intentional, source-backed contract
+  change with explicit owner approval. Never auto-write or auto-bless a medical
+  baseline; baseline changes are explicit, manual, code-reviewed, and land in a
+  dedicated commit that states why the drift is expected.
+- **A medical render or live IR showing visible placeholder text, unresolved
+  keys, or missing major elements is a PRODUCT regression signal — STOP.** That
+  is not baseline drift; fix the product path first, do not touch the baseline.
+- **Tier selection** when onboarding a target (the full onboarding flow is
+  `ui-workflow.md` §7 + `ui-reference.md` §2/§7):
+  - `platinum` — critical surfaces where drift must stay tight (medical, safety,
+    high-trust readouts); pixel budget 0.5%.
+  - `gold` — important but moderately variable surfaces where controlled drift is
+    acceptable (e.g. `clipper_small_door`); pixel budget 1%.
+  - The final tier is owner-approved.
+
 ## Review Checklist Addendum
 
 Reviewers should verify:

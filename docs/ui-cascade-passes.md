@@ -3,7 +3,7 @@
 Every place a style entry is applied to the resolved scene today, in
 execution order, with source container, palette sources, scope, and the
 reference evidence that pinned it. This is the input inventory for the
-Phase-4 selector-engine unification (`docs/ui-improvement-plan.md` P4.2+);
+Phase-4 selector-engine unification (plan completed; history in `docs/ui-process-improvements.md`);
 code: `bb_resolve/engine_parts/engine_01.part` (`apply_canvas_style_cascade`
 and its caller `resolve_canvas_graph_inner`) + `bb_brand_apply/mod.rs` +
 `pipeline/style_projection.rs`.

@@ -4,9 +4,7 @@ THE process for UI-matching work in `starbreaker-ui`: getting a rendered
 screen to match its in-game reference, engine-faithfully and generically.
 Commands, tools, data locations, and the per-screen dossier live in the
 companion **`docs/ui-reference.md`** — this doc is the *how to work*, that
-doc is the *what to type*. Supersedes the former
-`crates/starbreaker-ui/docs/ui-matching-workflow.md`,
-`ui-matching-text-prompt.md`, and `docs/ui-regression-baseline-workflow.md`.
+doc is the *what to type*.
 
 Starting fresh? Read this doc, then `docs/ui-reference.md`, then the current
 arc's handoff doc (see the dossier's "open issues" column). The short

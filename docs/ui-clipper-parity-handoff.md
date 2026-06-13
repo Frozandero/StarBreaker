@@ -517,8 +517,9 @@ banner; harness 26/26 zero drift).
 adjudications frozen. STILL OPEN for the next power session: the MFD
 content text scale ×4/3 (ºC discriminator), IR/EM/CS colour (shared
 'Icon Color' restyling question), P13 side bars, P3 separator dots, P7
-slider width, the §12 P4 pips. The remediation backlog now lives in `docs/ui-improvement-plan.md`
-(the original remediation plan was completed and removed, 7a69b7112).
+slider width, the §12 P4 pips. The UI improvement plan that carried the
+remediation/tooling work is COMPLETE (all phases) and was removed; its
+findings live in `docs/ui-process-improvements.md` (the ledger).
 
 ### 14. USER PRIORITY ITEMS 2026-06-12 (tasks #8–#11) — DONE (see §15)
 

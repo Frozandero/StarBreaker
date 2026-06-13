@@ -429,7 +429,8 @@ pub fn render_for_binding_ir(inputs: &PipelineInputs<'_>) -> Result<Vec<u8>, UiE
     // comparing STALE exported PNGs — a fresh render regressed the
     // annunciator/door strips by a global warm haze. Tag names come from
     // the authored tag database (data); the open remediation item is the
-    // DERIVED semantic, tracked in docs/ui-improvement-plan.md (P4.4/P5).
+    // DERIVED semantic (the P4.4/P5 re-audit kept this rule — see
+    // crates/starbreaker-ui/docs/ui-fallback-register.md / ui-cascade-passes.md).
     let suppresses_placeholder_screen_background = ir.selected_swf_source.is_some()
         && ir.nodes.iter().any(|node| {
             node.node_type.eq_ignore_ascii_case("widget_image")
