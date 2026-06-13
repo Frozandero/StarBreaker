@@ -8,7 +8,7 @@ prompt short and let those docs do the arming. Companion:
 ## Template
 
 ```text
-You are working in /home/tom/projects/scorg_tools/StarBreaker (branch
+You are working in ~/projects/scorg_tools/StarBreaker (branch
 feature/ui), crate starbreaker-ui.
 
 Read, in order:

@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "frozen_at": "2026-06-13T00:21:31Z",
-  "approver": "tom",
-  "reason": "plan P5.3: screen background = BB_ColorStyle slot 9 (the enum's Background), correcting the loader's slot-8 read. Adjudicated against Tom's two dark-room captures of the Clipper power MFD (Screen_Left_Lower_RTT_dark.png + _dark2.png, 2026-06-13): dark-region pairwise ratios favour slot 9 on 7/10 (capture 1) and 13/15 clean pairs (capture 2); ratio-structure RMS 2.3x better; response exponent ~0.91 (physical) vs 0.57 (contorted) for slot 8. Every target's background brightens drak (20,13,5) -> (38,27,10); all five frozen targets re-frozen for the same single root cause.",
+  "frozen_at": "2026-06-13T00:38:21Z",
+  "approver": "owner",
+  "reason": "metadata-only re-freeze: approver normalised to 'owner' and the P5.3 reason reworded without personal names. P5.3 substance unchanged: screen background = BB_ColorStyle slot 9 (Background), corrected from slot 8 (Disabled); adjudicated against two owner-supplied dark-room captures of the Clipper power MFD (dark + dark2): dark-region pairwise ratios favour slot 9 (7/10 then 13/15 clean pairs), ratio-structure RMS 2.3x better, physical response exponent ~0.91 vs contorted 0.57 for slot 8; drak background (20,13,5) -> (38,27,10), all five targets re-frozen for the single root cause",
   "signature": null,
   "manifest_path": "crates/starbreaker-ui/tests/fixtures/ui_ir/ui_snapshot_manifest.json",
   "artifacts": [

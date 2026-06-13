@@ -276,6 +276,18 @@ SC_DATA_P4K=<path to Data.p4k> \
 `docs/decomposed-export-contract.md`. Workspace-specific ship paths
 and the `SC_DATA_P4K` location are in the workspace-root AGENTS.md.
 
+## Naming & paths in repo content
+
+- **Never refer to the maintainer by name** in code, comments, docs,
+  commit messages, or freeze/audit metadata. Use the role word instead:
+  prose says "the owner"; audit fields use `--approver owner`.
+- **No machine-specific home prefixes** in repo content. Shell scripts
+  use `$HOME/...`; runnable command examples in docs use
+  `"$HOME/..."` (tilde does not expand inside quotes); prose path
+  mentions use `~/...`; Rust diagnostics/tests derive defaults from
+  `std::env::var("HOME")`; checked-in fixtures record workspace-relative
+  paths.
+
 ## Git
 
 The StarBreaker repo is self-contained (root = `StarBreaker/`); the

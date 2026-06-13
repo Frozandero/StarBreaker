@@ -36,7 +36,7 @@ if [[ -z "$APPROVER" || -z "$REASON" ]]; then
     exit 2
 fi
 
-EXPORT_ROOT="/home/tom/projects/scorg_tools/ships"
+EXPORT_ROOT="$HOME/projects/scorg_tools/ships"
 
 echo "==> cargo build --release"
 cargo build --release

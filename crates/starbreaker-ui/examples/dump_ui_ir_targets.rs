@@ -234,7 +234,7 @@ fn dump_one(
 }
 
 fn main() -> Result<(), String> {
-    let workspace = PathBuf::from("/home/tom/projects/scorg_tools");
+    let workspace = PathBuf::from(format!("{}/projects/scorg_tools", std::env::var("HOME").unwrap_or_default()));
     let canvas_root = workspace.join("ships/dcb_canvas/libs/foundry/records");
     let localization_map = load_localization_map(&workspace);
 

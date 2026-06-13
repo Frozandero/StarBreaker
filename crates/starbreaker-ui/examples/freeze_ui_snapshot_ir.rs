@@ -367,6 +367,12 @@ fn main() -> Result<(), String> {
         let basename = canvas_basename_from_source_path(&target.source_generated_png)?;
         let (canvas_guid, canvas_record_path, target_size) =
             resolve_canvas_record(&ui_records_root, &basename)?;
+        // Workspace-relative provenance: no machine-specific home prefix in
+        // the checked-in fixture (owner preference, 2026-06-13).
+        let canvas_record_path = canvas_record_path
+            .strip_prefix(&format!("{}/", workspace_root.display()))
+            .map(str::to_owned)
+            .unwrap_or(canvas_record_path);
         let manufacturer_id = manufacturer_from_source_path(&target.source_generated_png);
         let baseline_snapshot = compile_snapshot(
             &fetcher,

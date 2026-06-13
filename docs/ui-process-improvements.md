@@ -145,7 +145,7 @@ print per-node typed sizing + rects, flagging the first divergence.
 (`cargo run -p starbreaker-ui --example ui_stage_diff -- <canvas.json>
 [WxH] [--records-root <dir>] [--filter <name-substring>]`), defaulting
 `--records-root` to the decompiled mirror
-`/home/tom/projects/scorg_tools/ships/dcb_canvas/libs/foundry/records`.
+`~/projects/scorg_tools/ships/dcb_canvas/libs/foundry/records`.
 Delete `repro_emissions.rs`.
 
 ### 7. A probe registry instead of folklore
@@ -237,7 +237,7 @@ wrong, across FOUR places:
    `crates/starbreaker-ui/AGENTS.md`.
 3. **Repo root**: stale one-off handoffs `HANDOFF-item2-medical2.md`,
    `HANDOFF-medical2-followup.md`.
-4. **Workspace (outside the repo)**: `/home/tom/projects/scorg_tools/docs/`
+4. **Workspace (outside the repo)**: `~/projects/scorg_tools/docs/`
    (ui-plan2.md and archives, `docs/StarBreaker/*` research notes) — and the
    Claude session memory.
 
@@ -249,7 +249,7 @@ Concrete drift found during this review:
   current CLI has `ui render` and `ui mfd` only; `ui render --dump-ir-dir`
   is the IR dump path now).
 - It mandates `SC_DATA_P4K=...` on every command; the P4K is **auto-detected
-  now** (per Tom's standing feedback) — needed only for non-default data.
+  now** (per the owner's standing feedback) — needed only for non-default data.
 - Its validation loop omits `line_count_guard` and the font harness.
 - The agent-prompt template embeds a stale export invocation.
 - A memory note referenced a non-existent probe (item 7).
@@ -336,13 +336,13 @@ writing):
      [--dump-ir-dir /tmp/out/ir] [--mip N]`.
    - Full export (canonical PNGs, ~6 min, needed before artifact freezes):
      `./target/release/starbreaker entity export drak_clipper
-     /home/tom/projects/scorg_tools/ships --kind decomposed` (P4K
+     ~/projects/scorg_tools/ships --kind decomposed` (P4K
      auto-detected; do NOT set `RAYON_NUM_THREADS=1` except when
      benchmarking).
    - Which scene has which bindings: LOD0 = cockpit MFD screens; LOD1 =
      medical/door/annunciator etc. (list them).
 3. **Comparison**: `scripts/ui_compare.py` usage + preset list; reference
-   image inventory (`/home/tom/projects/scorg_tools/reference/in-game/...`
+   image inventory (`~/projects/scorg_tools/reference/in-game/...`
    per screen, with resolution caveats).
 3b. **Screen dossier table** — ONE ROW PER KNOWN SCREEN so a per-screen
    prompt needs only the screen name: helper name | scene.json that carries
@@ -368,7 +368,7 @@ writing):
      MCP; MCP server redeploy procedure (kill, rebuild, copy — from
      AGENTS.md).
 5. **Local data locations**: the decompiled record mirror
-   `/home/tom/projects/scorg_tools/ships/dcb_canvas/libs/foundry/records`
+   `~/projects/scorg_tools/ships/dcb_canvas/libs/foundry/records`
    (grep-able authored canvases — the workhorse of this arc), the export
    tree `ships/Packages/<Ship>_LODn_TEXn/scene.json` + generated PNGs
    `ships/Data/UI/Generated/ship/<mfr>/<Ship>/...`, fixtures
@@ -399,7 +399,7 @@ writing):
 | `crates/starbreaker-ui/docs/ir-freeze-schema.md`, `ir-style-authority-migration-plan.md` | **Keep** (schema + migration state), linked from the new docs. |
 | `docs/ui-architecture-runbook.md`, `docs/ui-regression-policy.md`, `docs/ui-font-size-harness.md`, `docs/ui-fallback-register.md` | **Keep** as satellites; dedupe any process text that moved into `docs/ui-workflow.md`; each gets a "process: see docs/ui-workflow.md" header. |
 | `crates/starbreaker-ui/AGENTS.md`, `StarBreaker/AGENTS.md`, `.github/copilot-instructions.md` | **Update** required-reads/validation-commands sections to the new docs + `ui_check.sh`. |
-| Workspace `/home/tom/projects/scorg_tools/docs/` ui plans/research | Out of repo — leave, but the new docs state explicitly: *repo docs are authoritative; workspace docs are archive*. |
+| Workspace `~/projects/scorg_tools/docs/` ui plans/research | Out of repo — leave, but the new docs state explicitly: *repo docs are authoritative; workspace docs are archive*. |
 
 **Acceptance for item 11:** a fresh agent given only "read
 `docs/ui-workflow.md` and `docs/ui-reference.md`, then continue
@@ -534,7 +534,7 @@ numbers in `docs/ui-clipper-parity-handoff.md` items 10/11.
 
 Execute phases in order; each phase is independently committable and ends
 with its acceptance check. Work happens in
-`/home/tom/projects/scorg_tools/StarBreaker` on `feature/ui` (no remote;
+`~/projects/scorg_tools/StarBreaker` on `feature/ui` (no remote;
 self-contained repo). General rules while executing: TDD where code changes
 behaviour; `cargo build` debug for iteration; commit per phase (or per item
 within a phase) with messages citing this doc's item numbers; do NOT touch
@@ -637,19 +637,19 @@ spec.
 
 ### Phase 3 — approval-gated baseline refreshes (item 3b + deferred freezes)
 
-Do NOT start without Tom's go-ahead in-session; present the deltas first.
+Do NOT start without the owner's go-ahead in-session; present the deltas first.
 
-1. [done 2026-06-11 5a5b51f71 — approval: Tom's 'fully implement this plan'; 7 deltas quoted in the commit] **Font baseline TSV** (item 3b): rebuild debug CLI; dump from the LOD1
+1. [done 2026-06-11 5a5b51f71 — approval: the owner's 'fully implement this plan'; 7 deltas quoted in the commit] **Font baseline TSV** (item 3b): rebuild debug CLI; dump from the LOD1
    scene (`SB_UI_FONT_DUMP=1 ./target/debug/starbreaker ui render --scene
    ".../DRAK Clipper_LOD1_TEX2/scene.json" --out-dir /tmp/fontcheck 2>&1 |
-   grep '^FONTDUMP' > /tmp/font_dump.tsv`), show Tom the 7 drifts with the
+   grep '^FONTDUMP' > /tmp/font_dump.tsv`), present the 7 drifts with the
    responsible (already-approved) changes, then replace
    `font_size_baseline.tsv` with the new dump filtered to the 4 target
    canvases and re-run `font_size_check.py` (expect PASS, 26+ matched).
 2. [done 2026-06-11 89d6a4d51 — release re-export produced byte-identical target PNGs (hashes unchanged); freeze metadata refreshed; ui_check --full ALL GREEN] **Power-arc artifact freeze** (deferred from the gold re-freeze): after
    the power screen work wraps — `cargo build --release -p starbreaker`;
    re-export drak_clipper; `bash scripts/generate_ui_regression_artifacts.sh`;
-   `bash scripts/freeze_ui_regression_artifacts.sh --approver tom --reason
+   `bash scripts/freeze_ui_regression_artifacts.sh --approver owner --reason
    "<cite the arc's commits>"`; both validate scripts; `ui_check.sh --full`.
    (Sequencing note: this naturally belongs at the END of the parity arc's
    step 7 in `docs/ui-clipper-parity-handoff.md` — whichever happens first
@@ -719,7 +719,7 @@ missing/stale. Docs already say "re-export before any artifact comparison
 
 ### 21. Reference perspective skew burns sessions → rectification helper
 
-**Observed (Tom):** captures are manual, often low-res and
+**Observed (owner):** captures are manual, often low-res and
 non-perpendicular, compensated by hand in GIMP. The power-screen padding
 investigation burned hours inside ±10px skew ambiguity; several layout
 models were UNDECIDABLE against the capture.

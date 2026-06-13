@@ -48,7 +48,7 @@ if [[ "$FULL" == 1 ]]; then
   # when the test binary is >30min newer than the export stamp — surface the
   # stamp age BEFORE minutes of suites run, so a needed re-export (~50s)
   # happens first. Warning only; the in-guard check stays authoritative.
-  STAMP="/home/tom/projects/scorg_tools/ships/Data/UI/Generated/.export_stamp.json"
+  STAMP="$HOME/projects/scorg_tools/ships/Data/UI/Generated/.export_stamp.json"
   if [[ -f "$STAMP" ]]; then
     AGE_MIN=$(( ( $(date +%s) - $(python3 -c "import json;print(json.load(open('$STAMP'))['written_at_epoch_s'])") ) / 60 ))
     echo "export stamp age: ${AGE_MIN}min"
@@ -71,7 +71,7 @@ if [[ "$FULL" == 1 ]]; then
   step "starbreaker-3d lib tests"
   cargo test -p starbreaker-3d --lib
 
-  SCENE="${UI_CHECK_SCENE:-/home/tom/projects/scorg_tools/ships/Packages/DRAK Clipper_LOD1_TEX2/scene.json}"
+  SCENE="${UI_CHECK_SCENE:-$HOME/projects/scorg_tools/ships/Packages/DRAK Clipper_LOD1_TEX2/scene.json}"
   if [[ -f "$SCENE" ]]; then
     step "font-size harness (scene: $SCENE)"
     DUMP="$(mktemp /tmp/ui_check_fontdump.XXXXXX.tsv)"

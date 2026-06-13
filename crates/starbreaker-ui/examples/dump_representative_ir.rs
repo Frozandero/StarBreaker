@@ -142,7 +142,7 @@ fn dump_one(
     let ir = compile_ir_for_binding(&inputs)
         .map_err(|error| format!("failed to compile IR for {fixture_guid}: {error}"))?;
 
-    let output_path = PathBuf::from("/home/tom/projects/scorg_tools/docs/StarBreaker/ui-rework-artifacts/phase-1/ir-dumps")
+    let output_path = PathBuf::from(format!("{}/projects/scorg_tools/docs/StarBreaker/ui-rework-artifacts/phase-1/ir-dumps", std::env::var("HOME").unwrap_or_default()))
         .join(output_name);
     if let Some(parent) = output_path.parent() {
         fs::create_dir_all(parent)

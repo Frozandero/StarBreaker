@@ -15,20 +15,24 @@
 //!
 //! - `WxH` defaults to the canvas's authored size.
 //! - `--records-root` defaults to the decompiled record mirror
-//!   `/home/tom/projects/scorg_tools/ships/dcb_canvas/libs/foundry/records`.
+//!   `~/projects/scorg_tools/ships/dcb_canvas/libs/foundry/records`.
 //! - Nodes are matched ACROSS stages by NAME (resolve remaps ids); names that
 //!   are not unique within a stage are compared positionally per occurrence.
 
 use std::collections::BTreeMap;
 
-const DEFAULT_RECORDS_ROOT: &str =
-    "/home/tom/projects/scorg_tools/ships/dcb_canvas/libs/foundry/records";
+fn default_records_root() -> String {
+    format!(
+        "{}/projects/scorg_tools/ships/dcb_canvas/libs/foundry/records",
+        std::env::var("HOME").unwrap_or_default()
+    )
+}
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let mut canvas_path = None;
     let mut size: Option<(u32, u32)> = None;
-    let mut records_root = DEFAULT_RECORDS_ROOT.to_string();
+    let mut records_root = default_records_root().to_string();
     let mut filter = String::new();
     let mut it = args.into_iter();
     while let Some(arg) = it.next() {

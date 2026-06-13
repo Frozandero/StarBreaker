@@ -36,7 +36,7 @@ bash scripts/ui_render.sh --helper Screen_Annunciator_L [--ir] \
 Raw form (when the wrapper's defaults don't fit):
 ```bash
 ./target/debug/starbreaker ui render \
-  --scene "/home/tom/projects/scorg_tools/ships/Packages/DRAK Clipper_LOD0_TEX0/scene.json" \
+  --scene "$HOME/projects/scorg_tools/ships/Packages/DRAK Clipper_LOD0_TEX0/scene.json" \
   --out-dir /tmp/ui_replay \
   [--helper Screen_Left_Lower_RTT]   # filter to one screen
   [--dump-ir-dir /tmp/ui_replay/ir]  # write composed IR JSON per helper
@@ -55,7 +55,7 @@ a stale comparison mis-adjudicated a real regression as "zero drift" on
 2026-06-12):**
 ```bash
 ./target/release/starbreaker entity export drak_clipper \
-  /home/tom/projects/scorg_tools/ships --kind decomposed
+  ~/projects/scorg_tools/ships --kind decomposed
 ```
 Required before artifact freezes. The generated PNGs are written near the
 END of the run — never diff/freeze until the process exits.
@@ -110,10 +110,10 @@ automatically, printing "rectified via <file>" (or pass `--rectify
 
 **Screen dossier** — one row per known screen (extend as screens are
 worked). References live in
-`/home/tom/projects/scorg_tools/reference/in-game/Clipper/` (ws); generated
+`~/projects/scorg_tools/reference/in-game/Clipper/` (ws); generated
 PNGs in `ships/Data/UI/Generated/ship/drak/Clipper/` named
 `buildingblocks_canvas_<canvas>.png`; scenes in
-`/home/tom/projects/scorg_tools/ships/Packages/` (ws).
+`~/projects/scorg_tools/ships/Packages/` (ws).
 
 | Screen | Helper / scene | Canvas | Reference image | Preset | Tier / target id | Open issues |
 |---|---|---|---|---|---|---|
@@ -165,10 +165,10 @@ client.
 
 | What | Where |
 |---|---|
-| Decompiled record mirror (grep-able authored canvases/styles/tags — the workhorse) | `/home/tom/projects/scorg_tools/ships/dcb_canvas/libs/foundry/records/` (ws); UI under `ui/buildingblocks/...` |
-| Decomposed export | `/home/tom/projects/scorg_tools/ships/Packages/<Ship>_LODn_TEXm/scene.json` (ws) |
+| Decompiled record mirror (grep-able authored canvases/styles/tags — the workhorse) | `~/projects/scorg_tools/ships/dcb_canvas/libs/foundry/records/` (ws); UI under `ui/buildingblocks/...` |
+| Decomposed export | `~/projects/scorg_tools/ships/Packages/<Ship>_LODn_TEXm/scene.json` (ws) |
 | Generated screen PNGs | `ships/Data/UI/Generated/ship/<mfr>/<Ship>/buildingblocks_canvas_*.png` (ws, refreshed by full export only) |
-| Reference screenshots | `/home/tom/projects/scorg_tools/reference/in-game/Clipper/` (ws) |
+| Reference screenshots | `~/projects/scorg_tools/reference/in-game/Clipper/` (ws) |
 | Regression manifest | `crates/starbreaker-ui/tests/fixtures/ui_ir/ui_snapshot_manifest.json` |
 | IR freeze (baselines) | `crates/starbreaker-ui/tests/fixtures/ui_ir/ui_snapshot_freeze.json` (schema: `crates/starbreaker-ui/docs/ir-freeze-schema.md`) |
 | Known outliers | `crates/starbreaker-ui/tests/fixtures/ui_ir/ui_known_outliers.json` |

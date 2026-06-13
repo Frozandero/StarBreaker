@@ -1,152 +1,18 @@
 {
   "schema_version": 1,
-  "frozen_at": "2026-06-12T20:13:33Z",
-  "approver": "tom",
-  "reason": "plan P5.1: exportNode=false subtree deactivation replaces the base_animatedelements name match. Per-identity delta: ui_target_a loses 2147483696:widget_text and ui_target_b loses 31:widget_text — both ZERO-RECT (w=0,h=0) text carriers inside exportNode=false component pairs (bed header Wallet, attract HospitalTier); neither appears in the in-game captures (medical1 header shows no wallet, medical2 top-right is MEDGELS not tier); remaining identities are draw-order index -1 shifts from the removals. Renders byte-identical: bed + end-of-bed replay vs pre-change export max abs diff 0.0.",
+  "frozen_at": "2026-06-13T00:44:15Z",
+  "approver": "owner",
+  "reason": "metadata-only re-freeze: approver normalised to 'owner' and canvas_record_path provenance made workspace-relative (no personal names / machine-specific home prefixes in repo records — owner preference, 2026-06-13); baseline content unchanged from the P5.1 freeze",
   "signature": null,
-  "manifest_path": "/home/tom/projects/scorg_tools/StarBreaker/crates/starbreaker-ui/tests/fixtures/ui_ir/ui_snapshot_manifest.json",
-  "delta": [
-    {
-      "target": "ui_target_a",
-      "identity": "2147483696:widget_text",
-      "field": "<removed>",
-      "old": "element",
-      "new": null
-    },
-    {
-      "target": "ui_target_a",
-      "identity": "2147483697:widget_text_field",
-      "field": "draw_order_index",
-      "old": 57,
-      "new": 56
-    },
-    {
-      "target": "ui_target_a",
-      "identity": "2147483698:widget_text_field",
-      "field": "draw_order_index",
-      "old": 58,
-      "new": 57
-    },
-    {
-      "target": "ui_target_a",
-      "identity": "2147483705:widget_text_field",
-      "field": "draw_order_index",
-      "old": 59,
-      "new": 58
-    },
-    {
-      "target": "ui_target_a",
-      "identity": "2147483706:widget_text_field",
-      "field": "draw_order_index",
-      "old": 60,
-      "new": 59
-    },
-    {
-      "target": "ui_target_a",
-      "identity": "2147483714:widget_text_field",
-      "field": "draw_order_index",
-      "old": 61,
-      "new": 60
-    },
-    {
-      "target": "ui_target_a",
-      "identity": "2147483715:widget_text_field",
-      "field": "draw_order_index",
-      "old": 62,
-      "new": 61
-    },
-    {
-      "target": "ui_target_a",
-      "identity": "2147483723:widget_text_field",
-      "field": "draw_order_index",
-      "old": 63,
-      "new": 62
-    },
-    {
-      "target": "ui_target_a",
-      "identity": "2147483724:widget_text_field",
-      "field": "draw_order_index",
-      "old": 64,
-      "new": 63
-    },
-    {
-      "target": "ui_target_a",
-      "identity": "4026531847:widget_custom_shape",
-      "field": "draw_order_index",
-      "old": 66,
-      "new": 65
-    },
-    {
-      "target": "ui_target_a",
-      "identity": "4026531855:widget_custom_shape",
-      "field": "draw_order_index",
-      "old": 67,
-      "new": 66
-    },
-    {
-      "target": "ui_target_b",
-      "identity": "2147483651:widget_text_field",
-      "field": "draw_order_index",
-      "old": 13,
-      "new": 12
-    },
-    {
-      "target": "ui_target_b",
-      "identity": "2147483652:widget_text_field",
-      "field": "draw_order_index",
-      "old": 14,
-      "new": 13
-    },
-    {
-      "target": "ui_target_b",
-      "identity": "2147483655:BuildingBlocks_ComponentLabelCaptionPair",
-      "field": "draw_order_index",
-      "old": 17,
-      "new": 16
-    },
-    {
-      "target": "ui_target_b",
-      "identity": "2147483657:widget_text_field",
-      "field": "draw_order_index",
-      "old": 18,
-      "new": 17
-    },
-    {
-      "target": "ui_target_b",
-      "identity": "2147483670:widget_custom_shape",
-      "field": "draw_order_index",
-      "old": 27,
-      "new": 26
-    },
-    {
-      "target": "ui_target_b",
-      "identity": "2147483672:widget_text_field",
-      "field": "draw_order_index",
-      "old": 29,
-      "new": 28
-    },
-    {
-      "target": "ui_target_b",
-      "identity": "2147483680:widget_image",
-      "field": "draw_order_index",
-      "old": 33,
-      "new": 32
-    },
-    {
-      "target": "ui_target_b",
-      "identity": "31:widget_text",
-      "field": "<removed>",
-      "old": "element",
-      "new": null
-    }
-  ],
+  "manifest_path": "crates/starbreaker-ui/tests/fixtures/ui_ir/ui_snapshot_manifest.json",
+  "delta": [],
   "targets": [
     {
       "id": "ui_target_a",
       "tier": "platinum",
       "category": "image",
       "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_i_med_medicalbed_a.png",
-      "canvas_record_path": "/home/tom/projects/scorg_tools/ships/dcb_canvas/libs/foundry/records/ui/buildingblocks/pu/medical/i_med_medicalbed_a.json",
+      "canvas_record_path": "ships/dcb_canvas/libs/foundry/records/ui/buildingblocks/pu/medical/i_med_medicalbed_a.json",
       "canvas_guid": "534bab84-299b-479a-a4af-4469df112ea7",
       "baseline_snapshot": {
         "schema_version": 2,
@@ -1323,7 +1189,7 @@
       "tier": "platinum",
       "category": "image",
       "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_i_med_medicalendofbed_a.png",
-      "canvas_record_path": "/home/tom/projects/scorg_tools/ships/dcb_canvas/libs/foundry/records/ui/buildingblocks/pu/medical/i_med_medicalendofbed_a.json",
+      "canvas_record_path": "ships/dcb_canvas/libs/foundry/records/ui/buildingblocks/pu/medical/i_med_medicalendofbed_a.json",
       "canvas_guid": "e9ad809d-ebcf-43a3-bb20-120f64556aef",
       "baseline_snapshot": {
         "schema_version": 2,
@@ -1625,7 +1491,7 @@
       "tier": "gold",
       "category": "image",
       "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_i_door_small_drak.png",
-      "canvas_record_path": "/home/tom/projects/scorg_tools/ships/dcb_canvas/libs/foundry/records/ui/buildingblocks/i_interactivescreens/i_door/i_door_small_drak.json",
+      "canvas_record_path": "ships/dcb_canvas/libs/foundry/records/ui/buildingblocks/i_interactivescreens/i_door/i_door_small_drak.json",
       "canvas_guid": "76d12163-0824-42ed-b8e1-c3a822e6185f",
       "baseline_snapshot": {
         "schema_version": 2,
@@ -1887,7 +1753,7 @@
       "tier": "platinum",
       "category": "image",
       "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_h_eng_annunciator_master_left.png",
-      "canvas_record_path": "/home/tom/projects/scorg_tools/ships/dcb_canvas/libs/foundry/records/ui/buildingblocks/ships/displays/physicalscreens/annunciator/h_eng_annunciator_master_left.json",
+      "canvas_record_path": "ships/dcb_canvas/libs/foundry/records/ui/buildingblocks/ships/displays/physicalscreens/annunciator/h_eng_annunciator_master_left.json",
       "canvas_guid": "fef71920-9e84-4e36-a7e0-d458077aad49",
       "baseline_snapshot": {
         "schema_version": 2,
@@ -2189,7 +2055,7 @@
       "tier": "platinum",
       "category": "image",
       "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_mc_s_target_master.png",
-      "canvas_record_path": "/home/tom/projects/scorg_tools/ships/dcb_canvas/libs/foundry/records/ui/buildingblocks/ships/displays/mfdscreens/mc_mfdcomponents/screens/target/mc_s_target_master.json",
+      "canvas_record_path": "ships/dcb_canvas/libs/foundry/records/ui/buildingblocks/ships/displays/mfdscreens/mc_mfdcomponents/screens/target/mc_s_target_master.json",
       "canvas_guid": "b8d2d65c-05c5-49f2-bdf5-3a722c92a3d9",
       "baseline_snapshot": {
         "schema_version": 2,

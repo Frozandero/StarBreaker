@@ -7,7 +7,7 @@ Adjudications consult this bank FIRST (`docs/ui-workflow.md` §4).
 ## Provenance
 
 - **Captures**: manual in-game screenshots in
-  `/home/tom/projects/scorg_tools/reference/in-game/Clipper/` (workspace
+  `~/projects/scorg_tools/reference/in-game/Clipper/` (workspace
   path; the `capture` field is workspace-relative). NOT rectified — all
   boxes are raw capture pixels. `Screen_Left_Lower_RTT.png` is 1600x1200
   (matches the render space); `Screen_Right_Upper_RTT.png` is **1959x1513**

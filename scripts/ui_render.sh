@@ -19,7 +19,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-SCENE="/home/tom/projects/scorg_tools/ships/Packages/DRAK Clipper_LOD1_TEX2/scene.json"
+SCENE="$HOME/projects/scorg_tools/ships/Packages/DRAK Clipper_LOD1_TEX2/scene.json"
 HELPER=""
 OUT=""
 DUMP_IR=0

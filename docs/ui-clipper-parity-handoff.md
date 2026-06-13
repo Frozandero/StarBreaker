@@ -26,16 +26,16 @@ All work is committed on `feature/ui`; tree is clean and green via
 all 5 frozen targets in the live IR guard; snapshot + visual suites; both
 freeze validators; 3d lib; font harness 26/26). Renders in this doc come from
 `./target/debug/starbreaker ui render --scene
-"/home/tom/projects/scorg_tools/ships/Packages/DRAK Clipper_LOD0_TEX0/scene.json"
+"$HOME/projects/scorg_tools/ships/Packages/DRAK Clipper_LOD0_TEX0/scene.json"
 --out-dir /tmp/... --helper Screen_Left_Lower_RTT` (debug build is fine;
 release re-exports only matter for artifact freezes). Compare with
 `python3 scripts/ui_compare.py <render> <reference> --regions power`.
 
-Reference images: `/home/tom/projects/scorg_tools/reference/in-game/Clipper/`
+Reference images: `~/projects/scorg_tools/reference/in-game/Clipper/`
 (`Screen_Left_Lower_RTT.png` power, `Screen_Right_Upper_RTT.png` target,
 `screen_16x9_a-[medical1].png`, `mesh_end_screen_plane-[medical2].png`).
 NOTE: red/white pip outlines in the power reference are mouse-hover
-artifacts — ignore (Tom's rule).
+artifacts — ignore (owner's rule).
 
 ### Landed this arc (commit order, newest last)
 
@@ -60,7 +60,7 @@ artifacts — ignore (Tom's rule).
 
 ### Gold re-freeze performed (audited)
 
-`clipper_target_master` was re-frozen (approver tom): node
+`clipper_target_master` was re-frozen (approver: owner): node
 `40:widget_custom_shape` h 0.18 → 194.4. It is the TARGET STATUS faint
 backdrop band (authored SizeY 0.18 **Percent**, alpha 0.1) that the old
 Percent→Fixed modifier conversion collapsed to a sliver — movement toward
@@ -176,7 +176,7 @@ X). NOTE: the originally-suspected ir_compose custom-shape fill gap did
 NOT materialise — once tokens flow correctly the existing fill_override
 path tints; no compose change was needed.
 
-Audited re-freezes (IR + artifacts, approver tom) with per-target pixel
+Audited re-freezes (IR + artifacts, approver: owner) with per-target pixel
 decomposition — pre-cascade renders were byte-identical to the previous
 frozen hashes: ui_target_a +196px (white X, toward reference);
 eng_annunciator +27.7k px (rounded chiclet corners + border insets, toward
@@ -219,12 +219,12 @@ target-screen chevrons; entry-driven FillColor is the engine model).
 After 1b/2 land: `bash scripts/ui_check.sh --full`; `cargo build --release
 -p starbreaker`; re-export
 (`./target/release/starbreaker entity export drak_clipper
-/home/tom/projects/scorg_tools/ships --kind decomposed` — no SC_DATA_P4K
+~/projects/scorg_tools/ships --kind decomposed` — no SC_DATA_P4K
 needed, auto-detected); final `ui_compare.py` pass vs the power reference;
 then re-run the artifact freeze if any frozen target's PNG changed (the
 2026-06-11 freeze 89d6a4d51 covers the current export).
 
-### 8. Approval-gated items (ask Tom)
+### 8. Approval-gated items (owner approval)
 
 - ~~Font baseline TSV re-capture~~ DONE (5a5b51f71): re-captured from the
   LOD1 scene, checker 26/26; the 7 baselined drifts are quoted in the
@@ -249,7 +249,7 @@ Annunciator (eng_annunciator_master_left, gold):
   brand swap (authored alpha 1.0; the texture itself is near-black warm).
   Reference background away from bloom is neutral ~(5-9) — the remaining
   brightness delta vs our (33,20,8) plate body is the in-game CRT/capture
-  side (Tom handles the CRT effect in the Blender shader).
+  side (the owner handles the CRT effect in the Blender shader).
 
 MFD body backplate (power/target/radar/all MFD content screens):
 - M_Eng_MFDContent authors background_Main (WidgetBodyBackground,
@@ -285,7 +285,7 @@ MFD body backplate (power/target/radar/all MFD content screens):
   Door artifact changed with the same rule (warm bottom haze, matches
   the door reference's warm body).
 
-**OPEN — GATED ON TOM: linear-light compositing.** The glow renders
+**OPEN — GATED ON OWNER APPROVAL: linear-light compositing.** The glow renders
 darker than the reference because the engine composites in LINEAR light
 and our renderer blends in sRGB space. Numbers: predicted linear-light
 (39,20,3)/(68,38,8) vs reference (45,25,7)/(71,48,15) at the chiclet
@@ -485,7 +485,7 @@ capture-skew-limited) — both documented in this session's analysis; defer.
 
 ### 16. MFD text size RESOLVED — host-path imageSizePercent division (2026-06-12, 15d1e3b99)
 
-Tom: "all fonts across the entire image are smaller than the reference."
+Owner: "all fonts across the entire image are smaller than the reference."
 Root cause: on the GFx-HOST path the imported fontlib glyphs are authored
 at the font record's imageSizePercent (0.75) of their em square — the
 engine compensates at draw, so EVERY size class divides by it there
@@ -508,7 +508,7 @@ Commits 5bf1d7f84 (RgbaColor guard/fixture/neutral-fallback), b09c2d98a
 docs), 07c821a83 (**the text-format route LANDED** — T3 resolved: a
 LITERAL widget match does not outrank the named-style table, only
 TEXT-FORMAT-routed FontSizes do; `__EntryFontSize` set only by the route;
-audited IR re-freeze approver tom, 6-line delta: banner Base→Bright +
+audited IR re-freeze (approver: owner), 6-line delta: banner Base→Bright +
 40.005→40.0, NO TARGET Base→Accent2 token-only), 4803d3c48
 (FIXED_BAND_HEADING_FILL RETIRED — the authored mainmenu entry sizes the
 banner; harness 26/26 zero drift).
@@ -522,7 +522,7 @@ slider width, the §12 P4 pips. The remediation backlog now lives in `docs/ui-im
 
 ### 14. USER PRIORITY ITEMS 2026-06-12 (tasks #8–#11) — DONE (see §15)
 
-Tom found hard-coded `RgbaColor { r:.., g:.., b:.. }` literals (e.g.
+The owner found hard-coded `RgbaColor { r:.., g:.., b:.. }` literals (e.g.
 `ir_compose/engine_parts/engine_02.part:725` — `r:115,g:198,b:254` bioc Base
 in a test fixture; this session added more such TEST fixtures incl.
 `r:222,g:88,b:3`). Ordered work, before continuing the power arc:
@@ -531,7 +531,7 @@ in a test fixture; this session added more such TEST fixtures incl.
    the pattern; if the ban's scope wasn't obvious, make it so).
 2. Crate-wide guard test detecting literal `RgbaColor{..}` construction in
    starbreaker-ui production code (alongside existing anti-hardcoding tests
-   / `check_ui_hardcoding.sh`); tests exempt per Tom's item 4 — but his cited
+   / `check_ui_hardcoding.sh`); tests exempt per the owner's item 4 — but his cited
    example IS in a test fixture, so clarify scope with the doc update (test
    fixtures that encode REAL palette values should derive them from game
    data too, or be clearly synthetic).

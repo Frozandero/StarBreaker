@@ -285,7 +285,7 @@ fn main() -> Result<(), String> {
         return Err("missing --query".to_string());
     };
 
-    let workspace = PathBuf::from("/home/tom/projects/scorg_tools");
+    let workspace = PathBuf::from(format!("{}/projects/scorg_tools", std::env::var("HOME").unwrap_or_default()));
     let canvas_root = workspace.join("ships/dcb_canvas/libs/foundry/records");
     let fetcher = load_canvas_index(&canvas_root)?;
     let style_fetcher = FsStyleFetcher {

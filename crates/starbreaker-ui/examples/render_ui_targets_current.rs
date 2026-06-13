@@ -341,7 +341,7 @@ fn print_layout_locations(inputs: &PipelineInputs<'_>, label: &str, query: &str)
 
 fn main() -> Result<(), String> {
     let animation_sample_percent = parse_animation_sample_percent()?;
-    let workspace = PathBuf::from("/home/tom/projects/scorg_tools");
+    let workspace = PathBuf::from(format!("{}/projects/scorg_tools", std::env::var("HOME").unwrap_or_default()));
     let canvas_root = workspace.join("ships/dcb_canvas/libs/foundry/records");
     let localization_map = load_localization_map(&workspace);
     let fetcher = load_canvas_index(&canvas_root)?;

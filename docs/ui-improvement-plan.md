@@ -2,7 +2,7 @@
 
 ## HANDOFF — start here (written 2026-06-12 for a fresh session)
 
-You are working in `/home/tom/projects/scorg_tools/StarBreaker` (branch
+You are working in `~/projects/scorg_tools/StarBreaker` (branch
 `feature/ui`), crate `starbreaker-ui`. Your job is to execute THIS plan,
 phases top-down (P0 → P6; see §Sequencing for the recommended order and
 which phases may be reordered).
@@ -21,14 +21,14 @@ Working discipline:
   P1.2") in every commit message.
 - `bash scripts/ui_check.sh` green per commit; `--full` at each phase
   boundary. Renders: `bash scripts/ui_render.sh --helper <name> --scene
-  "/home/tom/projects/scorg_tools/ships/Packages/DRAK Clipper_LOD0_TEX0/scene.json"`
+  "$HOME/projects/scorg_tools/ships/Packages/DRAK Clipper_LOD0_TEX0/scene.json"`
   (LOD0 = cockpit MFDs; default LOD1 = medical/door/annunciator).
 - A platinum/gold guard tripping is the system working — adjudicate per
   `docs/ui-workflow.md` §5 against the reference captures in
-  `/home/tom/projects/scorg_tools/reference/in-game/Clipper/`. NEVER
+  `~/projects/scorg_tools/reference/in-game/Clipper/`. NEVER
   compare against `ships/Data/UI/Generated/*.png` without a fresh export
   first (~50s; the stale-export trap is ledger item 20 — P0 makes it loud).
-- Steps marked APPROVAL-GATED stop and present deltas to Tom; everything
+- Steps marked APPROVAL-GATED stop and present deltas to the owner; everything
   else proceeds autonomously.
 - If a step's premise turns out wrong, record what was falsified against
   the checkbox (a miss is a result), fix the plan text, and continue.
@@ -38,12 +38,12 @@ Working discipline:
 EXECUTED this session: **P0 (all), P1 (all), P2 (all), P4.1, P5.1, P5.2,
 P5.4, P6 (all)** — every checkbox marked in place below with its
 findings. Tree clean, `ui_check.sh --full` ALL GREEN (fresh export +
-stamp in place). REMAINING: **P3** (approval-gated — STOP for Tom before
+stamp in place). REMAINING: **P3** (approval-gated — STOP for owner approval before
 starting; retires the text calibrations, re-freezes every text baseline),
 **P4.2–P4.4** (the selector-engine refactor — plan a dedicated session;
 the input inventory is `docs/ui-cascade-passes.md`, incl. the flagged
 root-canvas defaultStyles projection), **P5.3** (approval-gated — needs
-one capture from Tom of a screen whose slots 8/9 differ).
+one owner-supplied capture of a screen whose slots 8/9 differ).
 
 Notable session outcomes a successor should know: the staleness guard
 (P0.2) is live and WILL fire when the test binary is rebuilt >30 min
@@ -64,7 +64,7 @@ outranks the named-style table ONLY via the route — commit 07c821a83);
 the MFD host-path `imageSizePercent` division for ALL size classes
 (commit 15d1e3b99) — power/target text now matches the references; eight
 empirically-deleted hard-coded rules + three proven load-bearing (P4.4/P5
-carry the survivors); audited IR + artifact re-freezes (approver tom).
+carry the survivors); audited IR + artifact re-freezes (approver: owner).
 Arc history/diagnoses: `docs/ui-clipper-parity-handoff.md` §13–§16;
 process ledger: `docs/ui-process-improvements.md` (Part D = this plan's
 findings).
@@ -97,7 +97,7 @@ Ground rules (non-negotiable, from `docs/ui-workflow.md` +
 
 Verified facts this plan relies on (re-verify only if something fails):
 - Full Clipper export ≈ 50s: `cargo run -p starbreaker --release -- entity
-  export drak_clipper /home/tom/projects/scorg_tools/ships --kind decomposed`.
+  export drak_clipper ~/projects/scorg_tools/ships --kind decomposed`.
 - `BuildingBlocks_root.swf` is SWF v8 / AVM1: 127 `DoInitAction` tags, no
   DoABC. Extract: `./target/release/starbreaker p4k extract --output
   /tmp/bbswf --filter "**/BuildingBlocks_root.swf"`.
@@ -107,7 +107,7 @@ Verified facts this plan relies on (re-verify only if something fails):
   (`docs/ui-architecture-runbook.md` §"Why Ruffle/Flash playback is a dead
   end").
 - References are manual, skewed captures in
-  `/home/tom/projects/scorg_tools/reference/in-game/Clipper/`; there is no
+  `~/projects/scorg_tools/reference/in-game/Clipper/`; there is no
   bulk-capture option.
 
 ---
@@ -315,7 +315,7 @@ Goal: retire `TEXT_RENDER_SIZE_CALIBRATION = 1.5`,
 `LAYOUT_TEXT_MEASURE_CALIBRATION = 1.5`,
 `SWF_TEXT_RENDER_SIZE_CALIBRATION = 0.84`, the caption-pair `-8.0` and
 word-gap `0.33` (register entries carry their criteria). This arc
-re-freezes every text baseline — get Tom's approval BEFORE starting it,
+re-freezes every text baseline — get owner approval BEFORE starting it,
 and again at the freeze.
 
 - [ ] **P3.1 Kill the DejaVu fallback's reason to exist.** The TTF
@@ -333,7 +333,7 @@ and again at the freeze.
       `SB_UI_FONT_DUMP=1` on the LOD1 scene shows no DejaVu families for
       any frozen-target text; font harness
       (`scripts/font_size_check.py` via `ui_check.sh --full`) deltas are
-      presented to Tom (expected: small drifts — STOP for approval before
+      presented for owner approval (expected: small drifts — STOP for approval before
       re-capturing the TSV per `docs/ui-font-size-harness.md`).
 - [ ] **P3.2 Derive the 1.5.** With game fonts on the fallback path, the
       1.5 estimate must be re-derived or die: measure (with
@@ -361,7 +361,7 @@ and again at the freeze.
       MEDGELS→200/200 (~28px top-to-top) and T3→MEDICAL (~17px gap) from
       the measurement bank.
 - [ ] **P3.5 The audited re-freeze.** Full export; present per-target
-      deltas; `bash scripts/ui_freeze_cycle.sh --approver tom --reason
+      deltas; `bash scripts/ui_freeze_cycle.sh --approver owner --reason
       "<cite every identity>"` plus
       `bash scripts/freeze_ui_snapshot_ir.sh` if IR fields moved; both
       validators; `ui_check.sh --full`; font TSV re-capture per
@@ -438,7 +438,7 @@ surviving name-keyed rules and ledger item 17 land here.)
       the SUBTREE of any exportNode=false node, name match deleted.
       Adjudicated: medical renders byte-identical (the two dropped
       elements are zero-rect text carriers absent from both captures);
-      IR snapshot re-frozen (approver tom) with the per-identity delta;
+      IR snapshot re-frozen (approver: owner) with the per-identity delta;
       fresh-export `--full` ALL GREEN.
 - [x] (2026-06-12, commit "plan P5.2") **P5.2 Annunciator 25px frame** (`root_annunciator_items`): check
       the Phase 2 AVM1 dump first (the frame inset may be host-side like
@@ -456,20 +456,20 @@ surviving name-keyed rules and ledger item 17 land here.)
       the fallback register (it was unregistered). Rule unchanged.
 - [x] (2026-06-13, commit "plan P5.3") **P5.3 Background slot 8 vs 9** (`StyleLoader::
       parse_buildingblocks_style_record` uses slot 8 for `background`;
-      the enum names slot 9): ASK TOM for one capture of a screen whose
+      the enum names slot 9): ASK THE OWNER for one capture of a screen whose
       slots 8/9 differ visibly (drak: (20,13,5) vs (38,27,10) — any MFD
       in a dark room may discriminate). Approval-gated; do not change
       without the capture.
       RESOLVED: **slot 9** (the enum's Background; slot 8 is Disabled).
-      Tom supplied TWO dark-room captures (`Screen_Left_Lower_RTT_dark.png`
+      The owner supplied TWO dark-room captures (`Screen_Left_Lower_RTT_dark.png`
       + `_dark2.png`, with corners). Method: both hypotheses rendered;
       dark-region pairwise ratios (black-subtracted, veil bounded by the
       sharp screen-edge brightness step) favour slot 9 on 7/10 then 13/15
       clean pairs; ratio-RMS 2.3× better; response exponent ≈0.91
       (physical) vs 0.57 (contorted) for slot 8. The emission-washout
-      caveat from Tom ruled out bright-anchor fitting — dark-region
+      caveat reported by the owner ruled out bright-anchor fitting — dark-region
       ratios only. Landed TDD (slot-9 loader test), all five targets
-      re-frozen via ui_freeze_cycle (approver tom), `--full` ALL GREEN.
+      re-frozen via ui_freeze_cycle (approver: owner), `--full` ALL GREEN.
 - [x] (2026-06-12, commit "plan P5.4") **P5.4 `HOST_STAGE_SIZE` from the SWF header**: when next touching
       `crates/starbreaker-ui/src/mfd_view.rs`, plumb the host stage size
       (already parsed by `SwfAssetLibrary::stage_size` in the pipeline)
