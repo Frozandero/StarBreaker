@@ -476,6 +476,7 @@ pub fn compile_ui_ir_from_scene(
         confidence,
         1.0,
         None,
+        false,
     )
 }
 
@@ -495,6 +496,7 @@ pub fn compile_ui_ir_from_scene_with_animation_sample(
     confidence: u8,
     design_text_scale: f32,
     text_measure: Option<&dyn DrawTextMeasure>,
+    cover_fit: bool,
 ) -> UiIrDocument {
     let mut layout_scene = scene.clone();
     // Annunciator 25px edge frame — measured engine pin (fallback register).
@@ -562,6 +564,7 @@ pub fn compile_ui_ir_from_scene_with_animation_sample(
         target_size.0,
         target_size.1,
         animation_sample_percent,
+        cover_fit,
     );
 
     let has_text = scene.nodes.values().any(|n| n.text.is_some());
