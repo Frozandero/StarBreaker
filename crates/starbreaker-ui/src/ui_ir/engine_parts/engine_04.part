@@ -104,6 +104,7 @@ mod tests_d {
             100,
             1.0,
             None,
+            false,
         );
 
         let node = ir.nodes.iter().find(|node| node.name == "fingerprint_like").expect("sample node");
@@ -172,6 +173,7 @@ mod tests_d {
                 100,
                 1.0,
                 measure,
+                false,
             )
         };
 
@@ -616,7 +618,7 @@ mod tests_d {
             &scene, Some(&fetcher), "guid-mfd-sep",
             Some("BuildingBlocks_Canvas.TestMfdSeparator"), (100, 100), &defaults(),
             Some("manufacturer:drak".to_owned()), None, &[],
-            Vec::new(), Vec::new(), None, 100, scale, None,
+            Vec::new(), Vec::new(), None, 100, scale, None, false,
         );
 
         let mfd = compile(1.667);

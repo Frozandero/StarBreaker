@@ -142,16 +142,27 @@ pub struct LayoutResult {
 /// Never panics on well-formed input.  Unknown `BbValue` behaviors produce
 /// warnings and fall back to filling the parent dimension.
 pub fn layout(scene: &BbScene, target_w: u32, target_h: u32) -> LayoutResult {
-    layout_with_animation_sample(scene, target_w, target_h, None)
+    layout_with_animation_sample(scene, target_w, target_h, None, false)
 }
 
 /// Compute pixel-space rects while applying sampled animated SizeX/SizeY
 /// modifiers when `animation_sample_percent` is provided.
+///
+/// `cover_fit` selects the scale/anchor for a `UseRaw`/`Auto` canvas whose
+/// authored aspect differs from the target: `false` (default) CONTAINS — uniform
+/// `min` scale, centred (letterbox); `true` COVERS — uniform `max` scale,
+/// origin-anchored so the canvas fills the target and the trailing edge overflows
+/// and crops. The pipeline passes `true` only when a per-screen cockpit mesh
+/// aspect override is applied (the g-force / velocity ball gauges author 16:9 but
+/// their screen is square), so the square `aspectRatio` ball-area covers the
+/// screen while the readouts crop. A no-op when aspects match (cover == contain)
+/// and for `aspectOverrides*` canvases (door, annunciator), which already fill.
 pub fn layout_with_animation_sample(
     scene: &BbScene,
     target_w: u32,
     target_h: u32,
     animation_sample_percent: Option<f32>,
+    cover_fit: bool,
 ) -> LayoutResult {
     let (canvas_rect, csx, csy, canvas_scale) = if scene.canvas_size.0 > 0.0 && scene.canvas_size.1 > 0.0 {
         let sx = target_w as f32 / scene.canvas_size.0;
@@ -164,11 +175,21 @@ pub fn layout_with_animation_sample(
                 sx.min(sy),
             ),
             BbCoordinateMethod::UseRaw | BbCoordinateMethod::Auto => {
-                let canvas_scale = sx.min(sy);
+                let canvas_scale = if cover_fit { sx.max(sy) } else { sx.min(sy) };
                 let scaled_w = scene.canvas_size.0 * canvas_scale;
                 let scaled_h = scene.canvas_size.1 * canvas_scale;
-                let offset_x = ((target_w as f32 - scaled_w) * 0.5).max(0.0);
-                let offset_y = ((target_h as f32 - scaled_h) * 0.5).max(0.0);
+                // Contain centres the scaled canvas (letterbox); cover anchors it at
+                // the origin so the scaled canvas (≥ target) overflows the trailing
+                // edge and crops there, keeping the origin-authored primary widget
+                // (the gauge ball) in frame.
+                let (offset_x, offset_y) = if cover_fit {
+                    (0.0, 0.0)
+                } else {
+                    (
+                        ((target_w as f32 - scaled_w) * 0.5).max(0.0),
+                        ((target_h as f32 - scaled_h) * 0.5).max(0.0),
+                    )
+                };
                 (
                     Rect { x: offset_x, y: offset_y, w: scaled_w, h: scaled_h },
                     canvas_scale,
@@ -2174,6 +2195,46 @@ mod tests {
         assert_eq!(rect, Rect { x: 0.0, y: 0.0, w: 800.0, h: 450.0 });
     }
 
+    /// A `useRaw` 16:9 canvas in a SQUARE target LETTERBOXES (uniform contain +
+    /// centre → 1920×1080 at y=420), while the same canvas under
+    /// `AspectOverridesWidth` FILLS the target (root rect = full target; content
+    /// reflows and any overflow crops). The g-force / velocity ball gauges are
+    /// authored `useRaw` but their cockpit screen MESH is square, so the pipeline
+    /// forces `AspectOverridesWidth` when the per-screen mesh aspect is applied —
+    /// the ball fills the square instead of letterboxing and the readouts overflow
+    /// off-screen. This guards both branches of the canvas-rect rule.
+    #[test]
+    fn aspect_overrides_fills_square_target_where_useraw_letterboxes() {
+        use crate::bb_scene::{BbCoordinateMethod, BbNode, BbNodeType, BbSizing, BbTrbl, BbValue, Vec2, Vec3};
+        let mk_scene = |method: BbCoordinateMethod| {
+            let root = BbNode {
+                id: 1, parent: None, children: vec![],
+                ty: BbNodeType::WidgetCanvas, name: "root".into(),
+                style_tag_uuids: vec![], is_active: true, layer: 0, alpha: 1.0,
+                position: Vec3::default(), position_offset: Vec3::default(),
+                sizing: BbSizing { width: BbValue::Percent(1.0), height: BbValue::Percent(1.0) },
+                padding: BbTrbl::default(), margin: BbTrbl::default(),
+                pivot: Vec2::default(), anchor: Vec2::default(),
+                background: None, border: None, radial: None, text: None, icon: None,
+                raw: serde_json::Value::Null,
+            };
+            let mut nodes = BTreeMap::new();
+            nodes.insert(1, root);
+            BbScene { coordinate_method: method, canvas_size: (1920.0, 1080.0), roots: vec![1], nodes, operations: vec![] }
+        };
+        let raw = layout(&mk_scene(BbCoordinateMethod::UseRaw), 1920, 1920).rects[&1];
+        assert!(
+            (raw.h - 1080.0).abs() < 1.0 && (raw.y - 420.0).abs() < 1.0,
+            "useRaw must letterbox the 16:9 canvas in a square target, got {raw:?}"
+        );
+        let fill = layout(&mk_scene(BbCoordinateMethod::AspectOverridesWidth), 1920, 1920).rects[&1];
+        assert_eq!(
+            fill,
+            Rect { x: 0.0, y: 0.0, w: 1920.0, h: 1920.0 },
+            "AspectOverrides must fill the square target"
+        );
+    }
+
     #[test]
     fn sampled_size_animation_overrides_sizing_value() {
         use crate::bb_scene::{BbNode, BbNodeType, BbSizing, BbTrbl, BbValue, Vec2, Vec3};
@@ -2254,7 +2315,7 @@ mod tests {
         let scene = BbScene { coordinate_method: crate::bb_scene::BbCoordinateMethod::UseRaw, canvas_size: (400.0, 300.0), roots: vec![1], nodes, operations: vec![] };
 
         let static_result = layout(&scene, 400, 300);
-        let sampled_result = layout_with_animation_sample(&scene, 400, 300, Some(50.0));
+        let sampled_result = layout_with_animation_sample(&scene, 400, 300, Some(50.0), false);
         assert!((static_result.rects[&2].w - 340.0).abs() < 0.5);
         assert!((sampled_result.rects[&2].w - 334.0).abs() < 0.5);
         assert!((sampled_result.rects[&2].h - 250.5).abs() < 0.5);
@@ -2312,7 +2373,7 @@ mod tests {
         nodes.insert(1, node);
         let scene = BbScene { coordinate_method: crate::bb_scene::BbCoordinateMethod::UseRaw, canvas_size: (200.0, 100.0), roots: vec![1], nodes, operations: vec![] };
 
-        let result = layout_with_animation_sample(&scene, 200, 100, Some(50.0));
+        let result = layout_with_animation_sample(&scene, 200, 100, Some(50.0), false);
         let rect = result.rects[&1];
         assert!((rect.x - 25.0).abs() < 0.5, "expected sampled PosXOffset x 25, got {}", rect.x);
     }
@@ -2372,7 +2433,7 @@ mod tests {
         nodes.insert(1, node);
         let scene = BbScene { coordinate_method: crate::bb_scene::BbCoordinateMethod::UseRaw, canvas_size: (200.0, 100.0), roots: vec![1], nodes, operations: vec![] };
 
-        let result = layout_with_animation_sample(&scene, 200, 100, Some(50.0));
+        let result = layout_with_animation_sample(&scene, 200, 100, Some(50.0), false);
         let rect = result.rects[&1];
         // The hand-tuned 2/3 phase ratio was deleted (remediation plan
         // Phase 4 audit: no frozen pin referenced it) — additive

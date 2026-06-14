@@ -297,6 +297,11 @@ pub fn compile_ir_for_binding(inputs: &PipelineInputs<'_>) -> Result<UiIrDocumen
         .map(|candidate| candidate.path.clone());
 
     let mut effective_target_size = inputs.target_size;
+    // Set when a per-screen mesh aspect override is applied to a `useRaw` canvas
+    // whose authored aspect differs: the content COVERS the mesh-aspect target
+    // (origin-anchored) instead of letterboxing. See the `screen_aspect_w_over_h`
+    // branch below.
+    let mut cover_fit_mesh_aspect = false;
     // An MFD binding wraps a (often 16:9) content canvas in a distinct screen
     // frame; the physical screen proportions come from the frame, so derive the
     // render aspect from it and let relatively-laid-out content reflow. Scoped to
@@ -329,6 +334,16 @@ pub fn compile_ir_for_binding(inputs: &PipelineInputs<'_>) -> Result<UiIrDocumen
         let height = ((width as f32) / aspect_w_over_h).round().max(1.0) as u32;
         if width <= 8192 && height <= 8192 {
             effective_target_size = (width, height);
+            // The cockpit screen MESH aspect is the authoritative display shape. A
+            // `useRaw` canvas whose authored aspect differs from it (the g-force /
+            // velocity ball gauges author 16:9 but their screen is square) must
+            // COVER the mesh-aspect target, not letterbox back to 16:9: the square
+            // `aspectRatio` ball-area fills the screen and the trailing readouts
+            // overflow off the edge and crop — matching the in-game gauge. A no-op
+            // for aspect-matched screens (cover == contain) and for screens whose
+            // merged canvas fills via `aspectOverrides*` (door, annunciator), so the
+            // frozen interior screens are untouched.
+            cover_fit_mesh_aspect = true;
         }
     } else if let Some(swf_source) = selected_swf_source.as_deref()
         && let Ok(swf_bytes) = inputs.swf_fetcher.fetch_swf_bytes(swf_source)
@@ -406,6 +421,7 @@ pub fn compile_ir_for_binding(inputs: &PipelineInputs<'_>) -> Result<UiIrDocumen
         100,
         design_text_scale,
         text_measure.as_ref().map(|m| m as &dyn crate::ui_ir::DrawTextMeasure),
+        cover_fit_mesh_aspect,
     ));
     ir.warnings.extend(fallback_counter_warnings(
         style_manifest
