@@ -44,7 +44,17 @@
 //! selection to the C++ runtime), the static export must still pick one
 //! sub-canvas as the visible "switched-on but not interacted-with" state.
 //!
-//! Two structural patterns name the cold-default state variable(s):
+//! Three structural patterns name the cold-default state variable(s):
+//!
+//! 0. **Sole-root pattern**: the canvas's only top-level `WidgetCanvas` is the
+//!    whole screen (its content arrives via a `CanvasReferenceRecord` style
+//!    modifier, not a followed `url`). With no sibling state-canvas, a false
+//!    `Instantiated` gate would blank everything, so the root is exempted from
+//!    the false-set — the static export renders its switched-on state. The
+//!    HUD-component masters `HC_HUD_Ship_*_Master` (g-force/velocity ball,
+//!    countermeasures, bars/nums) bind the root
+//!    `Instantiated = Or(screen, FlightController/AccelerationBallEnabled)`.
+//!    See `sole_top_level_widget_canvas`.
 //!
 //! 1. **Invert-of-Or framing-widget pattern**: a framing widget (Header /
 //!    Footer / always-on sibling) gates its `Instantiated` on
@@ -332,7 +342,61 @@ pub fn instantiated_false_widgets_with_param_inputs_inherited_bindings_and_defau
             false_set.insert(widget);
         }
     }
+    // Sole-root exemption (third cold-default pattern). A canvas whose ONLY
+    // top-level `WidgetCanvas` is the screen itself has no sibling state-canvas
+    // to fall back to: deactivating it on a false `Instantiated` gate blanks the
+    // entire render. That contradicts the static-export contract — the export
+    // renders each screen's switched-on state (the same principle that drives the
+    // `default_state_is_off` fallback-canvas selection in
+    // `child_payload.rs`). The HUD-component masters `HC_HUD_Ship_*_Master`
+    // (g-force ball, velocity ball, countermeasures, the bars/nums/alerts) bind
+    // the root `Instantiated = Or(screen, FlightController/AccelerationBallEnabled)`
+    // — flight-capability flags, both false at rest — and deliver content via a
+    // `CanvasReferenceRecord` style modifier rather than a followed `url`. The
+    // discriminator vs. multi-state canvases is structural: medical
+    // (`I_Med_MedicalBed_A` / `…EndOfBed_A`) has TWO+ top-level WidgetCanvases and
+    // gates its state sub-canvases as CHILDREN, so it never qualifies and its
+    // Attract/MainMenu/HealMe cold-default selection is untouched.
+    if let Some(root) = sole_top_level_widget_canvas(record_value) {
+        false_set.remove(&root);
+    }
     false_set
+}
+
+/// Return the node id of the canvas's *sole* top-level `WidgetCanvas` — the one
+/// scene node (with no `parent` pointer) of type `WidgetCanvas` — or `None` when
+/// there are zero or more than one. A single top-level WidgetCanvas is the whole
+/// screen's content container with no sibling state alternative; the caller
+/// exempts it from `Instantiated`-gate deactivation so the static export renders
+/// its switched-on state instead of a blank. Multiple top-level WidgetCanvases
+/// indicate a mutual-exclusion state set (medical) where deactivation is correct.
+fn sole_top_level_widget_canvas(record_value: &serde_json::Value) -> Option<BbNodeId> {
+    let scene = record_value.get("scene").and_then(|v| v.as_array())?;
+    let mut sole_ptr: Option<BbNodeId> = None;
+    let mut count = 0usize;
+    for node in scene {
+        if node.get("_Type_").and_then(|v| v.as_str()) != Some("BuildingBlocks_WidgetCanvas") {
+            continue;
+        }
+        // A node is top-level when it carries no `parent` pointer.
+        let has_parent = node
+            .get("parent")
+            .and_then(|v| v.as_str())
+            .and_then(parse_points_to_ptr)
+            .is_some();
+        if has_parent {
+            continue;
+        }
+        count += 1;
+        if count > 1 {
+            return None;
+        }
+        sole_ptr = node
+            .get("_Pointer_")
+            .and_then(|v| v.as_str())
+            .and_then(parse_ptr_id);
+    }
+    sole_ptr
 }
 
 /// Resolve all boolean variable bindings available in this canvas under the

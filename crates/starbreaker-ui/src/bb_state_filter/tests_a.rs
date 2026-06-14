@@ -422,3 +422,63 @@
         );
     }
 
+    /// A canvas whose ONLY top-level scene node is a `WidgetCanvas` gated
+    /// `Instantiated = Or(stateVar, capabilityVar)` — both false at static rest —
+    /// must NOT be deactivated. It is the entire screen: its content is delivered
+    /// by a `CanvasReferenceRecord` style modifier (no `url`) and there is no
+    /// sibling state-canvas to fall back to, so deactivating it blanks the whole
+    /// render. The static export renders the screen's switched-on state (the same
+    /// principle behind the `default_state_is_off` fallback-canvas selection).
+    /// Mirrors the HUD-component masters `HC_HUD_Ship_*_Master` (g-force ball,
+    /// velocity ball, countermeasures, bars/nums/alerts), whose root canvas binds
+    /// `Instantiated = Or(screen, FlightController/AccelerationBallEnabled)`.
+    #[test]
+    fn sole_top_level_widget_canvas_is_not_deactivated() {
+        let rv = json!({
+            "_Type_": "BuildingBlocks_Canvas",
+            "staticVariables": [
+                static_var("screen", false),
+                static_var("FlightController/AccelerationBallEnabled", false),
+            ],
+            "operations": [
+                boolean_field_op(1, 8),
+                json!({
+                    "_Pointer_": "ptr:8",
+                    "_Type_": "BuildingBlocks_BindingsBooleanEvaluateOr",
+                    "inputs": ["_PointsTo_:ptr:9", "_PointsTo_:ptr:11"]
+                }),
+                variable_op(9, "screen"),
+                variable_op(11, "FlightController/AccelerationBallEnabled"),
+            ],
+            "scene": [ scene_widget(1, vec![]) ],
+        });
+        let result = instantiated_false_widgets(&rv);
+        assert!(
+            !result.contains(&1),
+            "sole top-level WidgetCanvas (the whole screen) must stay instantiated for the static export: {result:?}"
+        );
+    }
+
+    /// Guard against over-reaching: when a gated `WidgetCanvas` has a SIBLING
+    /// top-level `WidgetCanvas`, it belongs to a multi-state mutual-exclusion set
+    /// (e.g. medical's Attract / MainMenu / HealMe selection) where deactivating a
+    /// false state is correct — another sibling is the cold-default. The sole-root
+    /// exemption must NOT leak into that case, so the gated widget stays filtered.
+    #[test]
+    fn gated_widget_with_sibling_top_level_canvas_is_still_deactivated() {
+        let rv = json!({
+            "_Type_": "BuildingBlocks_Canvas",
+            "staticVariables": [ static_var("Bed/state.BaseScreens.HealMe", false) ],
+            "operations": [
+                boolean_field_op(1, 9),
+                variable_op(9, "Bed/state.BaseScreens.HealMe"),
+            ],
+            "scene": [ scene_widget(1, vec![]), scene_widget(2, vec![]) ],
+        });
+        let result = instantiated_false_widgets(&rv);
+        assert!(
+            result.contains(&1),
+            "a gated widget with a sibling top-level canvas (an alternative state) stays filtered: {result:?}"
+        );
+    }
+
