@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "frozen_at": "2026-06-14T14:15:00Z",
+  "frozen_at": "2026-06-14T18:43:21Z",
   "approver": "owner",
-  "reason": "Freeze power screen as gold + re-freeze target-master: data-driven AspectRatioToTag Content-Canvas-Scaling reflows MFD content (power cards 414->437 vs ~432 ref; flex-shrunk battery icon 53->67 vs ~69 ref). Non-MFD targets (door/annunciator/medical beds) unaffected (mfd-gated path).",
+  "reason": "MFD per-screen aspect: physical/radar render targets sized from RTT_Screen screen-mesh aspect (PCA in-plane). door 1.778->1.696 (1920x1132); annunciator L/R 4.44->5.58 (1920x344, Screen_Annunciator quad, owner-confirmed vs resized reference); annunciator_right onboarded as platinum. owner-approved.",
   "signature": null,
   "manifest_path": "crates/starbreaker-ui/tests/fixtures/ui_ir/ui_snapshot_manifest.json",
   "artifacts": [
@@ -31,9 +31,9 @@
       "tier": "gold",
       "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_i_door_small_drak.png",
       "artifact_path": "test-artifacts/ui/clipper_small_door.png",
-      "sha256": "0ea075a0fba10800339f5d7e72a28adff231b3a8a2fc4e2384f595e652d55d53",
+      "sha256": "a24b7d62eb5927d662b29754a940a1a157c6ff0a0834543c8ffe04778aa54539",
       "width": 1920,
-      "height": 1080,
+      "height": 1132,
       "channels": "srgba"
     },
     {
@@ -64,6 +64,16 @@
       "sha256": "6c9edeb71eebd33b2b1a818fcdda3e8998118f108e0459b317ae7892aae7e919",
       "width": 1600,
       "height": 1200,
+      "channels": "srgba"
+    },
+    {
+      "id": "eng_annunciator_master_right",
+      "tier": "platinum",
+      "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_h_eng_annunciator_master_right.png",
+      "artifact_path": "test-artifacts/ui/eng_annunciator_master_right.png",
+      "sha256": "98d2c02db0429936fd6fe3f382e436dbc92b8e48091650749a5b7fd500bf9d44",
+      "width": 1920,
+      "height": 432,
       "channels": "srgba"
     }
   ]

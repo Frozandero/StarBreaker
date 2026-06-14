@@ -16,6 +16,7 @@ use crate::types::UiBinding;
 
 mod canvas_fetcher;
 mod p4k_fetchers;
+pub(crate) mod screen_aspect;
 mod ship_values;
 mod style_fetcher;
 use canvas_fetcher::DatacoreCanvasFetcher;
@@ -98,6 +99,7 @@ pub fn render_ui_binding_png(
         default_screen_slot: binding.dashboard_screen_slot,
         screen_name_loc_key: binding.screen_name_loc_key.as_deref(),
         host_swf_path: binding.owner_source_file.as_deref(),
+        screen_aspect_w_over_h: binding.ui_screen_aspect_w_over_h,
     };
     let effective_guid = binding
         .content_canvas_guid
@@ -166,6 +168,7 @@ pub fn compile_ui_binding_ir_json(
         default_screen_slot: binding.dashboard_screen_slot,
         screen_name_loc_key: binding.screen_name_loc_key.as_deref(),
         host_swf_path: binding.owner_source_file.as_deref(),
+        screen_aspect_w_over_h: binding.ui_screen_aspect_w_over_h,
     };
     let effective_guid = binding
         .content_canvas_guid

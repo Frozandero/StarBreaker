@@ -156,6 +156,7 @@ fn mfd_binding<'a>(screen_name_key: Option<&'a str>) -> UiBindingView<'a> {
         default_screen_slot: None,
         screen_name_loc_key: screen_name_key,
         host_swf_path: None,
+        screen_aspect_w_over_h: None,
     }
 }
 
@@ -267,6 +268,7 @@ fn mfd_non_mfd_binding_still_uses_content_canvas() {
         default_screen_slot: None,
         screen_name_loc_key: None,
         host_swf_path: None,
+        screen_aspect_w_over_h: None,
     };
     let inputs = inputs_with_binding(&binding, &fetcher, None);
 
@@ -300,6 +302,7 @@ fn mfd_frame_render_uses_content_when_same_guid() {
         default_screen_slot: None,
         screen_name_loc_key: None,
         host_swf_path: None,
+        screen_aspect_w_over_h: None,
     };
     let inputs = inputs_with_binding(&binding, &fetcher, None);
 
@@ -398,6 +401,7 @@ fn stage_scaled_font_size(host_swf_path: Option<&str>) -> f32 {
         default_screen_slot: None,
         screen_name_loc_key: None,
         host_swf_path,
+        screen_aspect_w_over_h: None,
     };
     let inputs = PipelineInputs {
         binding: &binding,

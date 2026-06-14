@@ -272,24 +272,34 @@ pub(crate) fn load_child_payload_asset(
                 {
                     let material_path = child.material_path.as_deref().unwrap_or("");
                     let (nmc, materials) = load_nmc_and_material(p4k, geometry_path, material_path);
-                    let skeleton_source_path = resolve_geometry_files(p4k, geometry_path)
-                        .ok()
-                        .and_then(|resolved| {
-                            skeleton_source_paths(resolved.skeleton_path.as_deref(), &resolved.parts[0].path)
-                                .first()
-                                .map(|path| (*path).to_string())
+                    // UI-render-target geometry must keep real vertex positions so
+                    // each screen's physical display aspect can be measured
+                    // (ui_pipeline::screen_aspect); the empty-mesh asset shortcut
+                    // would drop them. Such geometry is rare (cockpit screens), so
+                    // only it falls through to a full mesh load — every other
+                    // cached asset keeps the fast path.
+                    if !crate::ui_pipeline::screen_aspect::materials_contain_ui_render_target(
+                        materials.as_ref(),
+                    ) {
+                        let skeleton_source_path = resolve_geometry_files(p4k, geometry_path)
+                            .ok()
+                            .and_then(|resolved| {
+                                skeleton_source_paths(resolved.skeleton_path.as_deref(), &resolved.parts[0].path)
+                                    .first()
+                                    .map(|path| (*path).to_string())
+                            });
+                        return Some(LoadedChildPayload {
+                            mesh: empty_child_mesh(),
+                            materials,
+                            textures: None,
+                            nmc,
+                            palette: None,
+                            bones: Vec::new(),
+                            geometry_path: geometry_path.to_string(),
+                            material_path: material_path.to_string(),
+                            skeleton_source_path,
                         });
-                    return Some(LoadedChildPayload {
-                        mesh: empty_child_mesh(),
-                        materials,
-                        textures: None,
-                        nmc,
-                        palette: None,
-                        bones: Vec::new(),
-                        geometry_path: geometry_path.to_string(),
-                        material_path: material_path.to_string(),
-                        skeleton_source_path,
-                    });
+                    }
                 }
             }
         }
@@ -517,6 +527,24 @@ pub(crate) fn load_child_payloads(
                         Some(h) => node_names.contains(&h.to_ascii_lowercase()),
                     });
                 }
+                // Measure each screen's physical display aspect from its
+                // render-target (`RTT_Screen`) faces on the host geometry. The
+                // UI pipeline uses it to size physical/radar render targets to
+                // the real screen shape (square gauges square, the annunciator a
+                // wide strip) instead of the shared 16:9 physical-screen canvas.
+                // `None` when the screen quad isn't on this host or not
+                // measurable; sizing then falls back to canvas/SWF.
+                for b in ui_bindings.iter_mut() {
+                    if let Some(helper) = b.helper_name.as_deref() {
+                        b.ui_screen_aspect_w_over_h =
+                            crate::ui_pipeline::screen_aspect::ui_screen_aspect(
+                                &loaded.mesh,
+                                loaded.nmc.as_ref(),
+                                loaded.materials.as_ref(),
+                                helper,
+                            );
+                    }
+                }
                 Some(crate::types::EntityPayload {
                     mesh: loaded.mesh.clone(),
                     materials: loaded.materials.clone(),
@@ -639,6 +667,7 @@ pub(crate) fn ui_binding_for_record(db: &Database, record: &Record) -> Option<Ui
                 generated_backend: None,
                 generated_provenance: None,
                 generated_confidence: None,
+                ui_screen_aspect_w_over_h: None,
             });
         }
     }
@@ -689,6 +718,7 @@ pub(crate) fn ui_binding_for_record(db: &Database, record: &Record) -> Option<Ui
                 generated_backend: None,
                 generated_provenance: None,
                 generated_confidence: None,
+                ui_screen_aspect_w_over_h: None,
             });
         }
     }
@@ -836,6 +866,7 @@ pub(crate) fn ui_binding_for_record(db: &Database, record: &Record) -> Option<Ui
         generated_backend: None,
         generated_provenance: None,
         generated_confidence: None,
+        ui_screen_aspect_w_over_h: None,
     })
 }
 

@@ -1402,6 +1402,7 @@ mod tests {
             generated_backend: None,
             generated_provenance: None,
             generated_confidence: None,
+            ui_screen_aspect_w_over_h: None,
         }
     }
 

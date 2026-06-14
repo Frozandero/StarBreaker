@@ -232,6 +232,7 @@ fn main() {
         default_screen_slot: None,
         screen_name_loc_key: None,
         host_swf_path: None,
+        screen_aspect_w_over_h: None,
     };
     let inputs = PipelineInputs {
         binding: &binding,

@@ -277,6 +277,10 @@ fn parse_ui_binding(v: &Value) -> Option<UiBinding> {
         generated_backend: opt_str("generated_backend"),
         generated_provenance: opt_str("generated_provenance"),
         generated_confidence: opt_u8("generated_confidence"),
+        ui_screen_aspect_w_over_h: obj
+            .get("ui_screen_aspect_w_over_h")
+            .and_then(|v| v.as_f64())
+            .map(|n| n as f32),
     })
 }
 

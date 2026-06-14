@@ -2068,6 +2068,7 @@ fn ui_binding_json(binding: &UiBinding) -> serde_json::Value {
         "generated_backend": binding.generated_backend,
         "generated_provenance": binding.generated_provenance,
         "generated_confidence": binding.generated_confidence,
+        "ui_screen_aspect_w_over_h": binding.ui_screen_aspect_w_over_h,
     })
 }
 
@@ -3017,6 +3018,7 @@ mod manufacturer_id_tests {
             generated_backend: None,
             generated_provenance: None,
             generated_confidence: None,
+            ui_screen_aspect_w_over_h: None,
         };
 
         assert_eq!(generated_ui_type_segment("Objects/Spaceships/Ships/DRAK/Clipper/exterior/test.cga"), "ship");

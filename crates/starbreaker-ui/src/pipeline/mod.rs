@@ -116,6 +116,15 @@ pub struct UiBindingView<'a> {
     /// stage units, so the stage→target view scale applies to text. `None` when
     /// the binding has no recorded host movie (text renders unscaled).
     pub host_swf_path: Option<&'a str>,
+    /// Physical display aspect (width / height, ≥ 1.0 for landscape) of the
+    /// cockpit screen mesh this UI renders onto, derived at export from the
+    /// render-target faces of the screen quad (`starbreaker-3d`
+    /// `ui_pipeline::screen_aspect`). For `physical`/`radar` screens this sizes
+    /// the render target to the real screen shape — square gauges render square,
+    /// the annunciator as its wide strip — instead of the shared 16:9
+    /// `M_Physical_Screen` canvas or the SWF content-bounds heuristic. `None`
+    /// keeps the prior canvas/SWF sizing; the `mfd` frame path ignores it.
+    pub screen_aspect_w_over_h: Option<f32>,
 }
 
 /// All inputs required by pipeline entrypoints.
@@ -297,9 +306,27 @@ pub fn compile_ir_for_binding(inputs: &PipelineInputs<'_>) -> Result<UiIrDocumen
     } else {
         None
     };
+    // Per-screen physical aspect from the cockpit screen mesh, for non-MFD
+    // render-to-texture screens (`physical`/`radar`). The display is mapped onto
+    // a quad whose proportions ARE the engine's render-target shape, so a square
+    // g-force gauge must render square and the annunciator as its wide strip —
+    // not the shared 16:9 `M_Physical_Screen` canvas nor the SWF content-bounds
+    // heuristic this replaces. `mfd` keeps the frame-canvas aspect above.
+    let screen_aspect_w_over_h = if matches!(b.binding_kind, Some("physical") | Some("radar")) {
+        b.screen_aspect_w_over_h.filter(|a| a.is_finite() && *a > 0.0)
+    } else {
+        None
+    };
     if let Some(aspect) = frame_aspect {
         let width = inputs.target_size.0.max(1);
         let height = ((width as f32) * aspect).round().max(1.0) as u32;
+        if width <= 8192 && height <= 8192 {
+            effective_target_size = (width, height);
+        }
+    } else if let Some(aspect_w_over_h) = screen_aspect_w_over_h {
+        // height = width / (w/h); the mesh aspect IS the physical screen shape.
+        let width = inputs.target_size.0.max(1);
+        let height = ((width as f32) / aspect_w_over_h).round().max(1.0) as u32;
         if width <= 8192 && height <= 8192 {
             effective_target_size = (width, height);
         }

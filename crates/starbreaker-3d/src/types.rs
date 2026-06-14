@@ -492,7 +492,7 @@ impl ResolvedNode {
 }
 
 /// All the data needed to add one child entity's geometry to a glTF scene.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct UiBinding {
     pub binding_kind: String,
     pub source_entity_name: String,
@@ -538,6 +538,15 @@ pub struct UiBinding {
     pub generated_backend: Option<String>,
     pub generated_provenance: Option<String>,
     pub generated_confidence: Option<u8>,
+    /// Physical display aspect (width / height, ≥ 1.0 for landscape screens) of
+    /// the cockpit screen mesh this UI renders onto, derived from the
+    /// render-target (`RTT_Screen`) faces of the `helper_name` node (see
+    /// `ui_pipeline::screen_aspect`). Drives the render-target proportions for
+    /// `physical`/`radar` screens so square gauges render square and the
+    /// annunciator as its wide strip, instead of inheriting the shared
+    /// `M_Physical_Screen` 16:9 canvas. `None` when the screen mesh is
+    /// unavailable or not measurable; sizing then falls back to canvas/SWF.
+    pub ui_screen_aspect_w_over_h: Option<f32>,
 }
 
 pub struct EntityPayload {
