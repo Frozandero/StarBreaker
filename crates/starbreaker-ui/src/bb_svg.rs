@@ -193,6 +193,61 @@ pub fn rasterize_svg_nine_slice(
     Some(out)
 }
 
+/// Parse the UNIFORM `colorstyle:` brand-palette convention from an
+/// Illustrator-exported UI SVG's path `id`s.
+///
+/// UI HUD glyph SVGs author every path with a placeholder `fill="#…"` and encode
+/// the real brand role in the path id, e.g.
+/// `id="opacity:50_colorstyle:Accent1_<hash>_"`. The engine recolours the path to
+/// the brand palette's `Accent1` at 50% alpha; the literal fill is just an Adobe
+/// export artefact. Returns `Some((role, alpha))` ONLY when every `colorstyle:`
+/// path shares ONE role (and one `opacity:`) — a single fill recolour cannot
+/// represent a multi-role SVG, so those (and non-colorstyle SVGs) return `None`
+/// and render their authored fills unchanged. `alpha` is `opacity/100` (default
+/// 1.0). The `opacity:` value is only read in the `opacity:<digits>_` id form, so
+/// a CSS `opacity:0.5` style is ignored.
+pub fn parse_uniform_colorstyle(svg_bytes: &[u8]) -> Option<(String, f32)> {
+    let text = std::str::from_utf8(svg_bytes).ok()?;
+    let mut role: Option<&str> = None;
+    for (idx, _) in text.match_indices("colorstyle:") {
+        let after = &text[idx + "colorstyle:".len()..];
+        let end = after
+            .find(|c: char| !c.is_ascii_alphanumeric())
+            .unwrap_or(after.len());
+        let candidate = &after[..end];
+        if candidate.is_empty() {
+            return None;
+        }
+        match role {
+            Some(existing) if existing != candidate => return None, // multi-role SVG
+            _ => role = Some(candidate),
+        }
+    }
+    let role = role?.to_string();
+
+    let mut opacity_pct: Option<u32> = None;
+    for (idx, _) in text.match_indices("opacity:") {
+        let after = &text[idx + "opacity:".len()..];
+        let end = after
+            .find(|c: char| !c.is_ascii_digit())
+            .unwrap_or(after.len());
+        // Only the `opacity:<digits>_` id-token form (not CSS `opacity:0.5`).
+        if end == 0 || after.as_bytes().get(end) != Some(&b'_') {
+            continue;
+        }
+        if let Ok(value) = after[..end].parse::<u32>() {
+            match opacity_pct {
+                Some(existing) if existing != value => return None, // non-uniform opacity
+                _ => opacity_pct = Some(value),
+            }
+        }
+    }
+    let alpha = opacity_pct
+        .map(|pct| (pct as f32 / 100.0).clamp(0.0, 1.0))
+        .unwrap_or(1.0);
+    Some((role, alpha))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -201,6 +256,34 @@ mod tests {
     const WHITE_SVG: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4">
         <rect width="4" height="4" fill="white"/>
     </svg>"#;
+
+    /// The HUD glyph SVG convention: placeholder fills, brand role + opacity in
+    /// the path ids. A uniform `colorstyle:Accent1` at `opacity:50` resolves to
+    /// `("Accent1", 0.5)`; a plain fill SVG and a multi-role SVG resolve to `None`.
+    #[test]
+    fn parse_uniform_colorstyle_reads_role_and_opacity() {
+        let uniform = br##"<svg xmlns="http://www.w3.org/2000/svg">
+            <path id="opacity:50_colorstyle:Accent1_00000131_" fill="#6CB8C7" d="M0 0h1v1H0z"/>
+            <path id="opacity:50_colorstyle:Accent1_00000161_" fill="#6CB8C7" d="M2 2h1v1H2z"/>
+        </svg>"##;
+        assert_eq!(parse_uniform_colorstyle(uniform), Some(("Accent1".to_string(), 0.5)));
+
+        // No colorstyle ids → render the authored fill unchanged.
+        assert_eq!(parse_uniform_colorstyle(WHITE_SVG), None);
+
+        // Multi-role SVG cannot be one fill → leave it alone.
+        let multi = br##"<svg xmlns="http://www.w3.org/2000/svg">
+            <path id="colorstyle:Accent1_a_" fill="#000" d="M0 0h1v1H0z"/>
+            <path id="colorstyle:Accent2_b_" fill="#000" d="M2 2h1v1H2z"/>
+        </svg>"##;
+        assert_eq!(parse_uniform_colorstyle(multi), None);
+
+        // colorstyle without an opacity id-token defaults to alpha 1.0.
+        let no_op = br##"<svg xmlns="http://www.w3.org/2000/svg">
+            <path id="colorstyle:Base_x_" fill="#000" d="M0 0h1v1H0z"/>
+        </svg>"##;
+        assert_eq!(parse_uniform_colorstyle(no_op), Some(("Base".to_string(), 1.0)));
+    }
 
     /// A minimal 4×4 red SVG used as a test fixture.
     const RED_SVG: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4">

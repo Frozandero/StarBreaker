@@ -276,30 +276,43 @@ fn draw_non_text_node(
         let normalised_asset_ref = UiAssetResolver::normalise_path(asset_ref);
         let iw = rect.w.round().max(1.0) as u32;
         let ih = rect.h.round().max(1.0) as u32;
-        let fill_override = custom_shape_fill_override(node, ctx).or_else(|| {
-            if normalised_asset_ref.ends_with(".svg") {
-                node.icon_tint_colour.or_else(|| {
-                    node.icon_tint_colour_token
-                        .as_deref()
-                        .and_then(|token| resolve_colour_token(ctx, token))
-                })
-            } else {
-                None
-            }
-        });
-        let resolved_image = if UiAssetResolver::is_reference_overlay(asset_ref)
-            || UiAssetResolver::is_reference_overlay(&normalised_asset_ref)
-        {
-            None
-        } else if normalised_asset_ref.ends_with(".svg") {
-            atlas
-                .fetch_raw(asset_ref)
-                .or_else(|| {
+        let is_svg = normalised_asset_ref.ends_with(".svg");
+        let is_overlay = UiAssetResolver::is_reference_overlay(asset_ref)
+            || UiAssetResolver::is_reference_overlay(&normalised_asset_ref);
+        // Fetch the SVG bytes up front so the brand `colorstyle:` recolour can read
+        // the asset's authored role before the fill_override is decided.
+        let svg_bytes: Option<Vec<u8>> = (is_svg && !is_overlay)
+            .then(|| {
+                atlas.fetch_raw(asset_ref).or_else(|| {
                     (normalised_asset_ref != asset_ref)
                         .then(|| atlas.fetch_raw(&normalised_asset_ref))
                         .flatten()
                 })
-                .and_then(|svg_bytes| rasterize_svg_for_node(node, &svg_bytes, iw, ih, fill_override))
+            })
+            .flatten();
+        let fill_override = custom_shape_fill_override(node, ctx)
+            .or_else(|| {
+                if is_svg {
+                    node.icon_tint_colour.or_else(|| {
+                        node.icon_tint_colour_token
+                            .as_deref()
+                            .and_then(|token| resolve_colour_token(ctx, token))
+                    })
+                } else {
+                    None
+                }
+            })
+            // SVG `colorstyle:` brand recolour (see `svg_colorstyle_fill_override`):
+            // HUD glyph SVGs author a placeholder fill and encode the brand role in
+            // the path ids. Lowest priority — an explicit custom-shape fill or icon
+            // tint still wins.
+            .or_else(|| svg_bytes.as_deref().and_then(|bytes| svg_colorstyle_fill_override(bytes, ctx)));
+        let resolved_image = if is_overlay {
+            None
+        } else if is_svg {
+            svg_bytes
+                .as_deref()
+                .and_then(|bytes| rasterize_svg_for_node(node, bytes, iw, ih, fill_override))
         } else {
             atlas.resolve(asset_ref, iw, ih).or_else(|| {
                 (normalised_asset_ref != asset_ref)
@@ -598,6 +611,21 @@ fn resolve_surface_colour_token(ctx: &ComposeContext<'_>, token: &str) -> Option
         "accent1" => style_colour_slot_rgba(ctx, 4),
         _ => resolve_colour_token(ctx, token),
     }
+}
+
+/// Brand `colorstyle:` recolour for an SVG asset. HUD glyph SVGs (the g-force
+/// diagram cross-line + caps, …) author every path with a placeholder `fill` and
+/// encode the real brand role in the path id (`opacity:50_colorstyle:Accent1_…`);
+/// see [`crate::bb_svg::parse_uniform_colorstyle`]. When the SVG is uniform (one
+/// role — a single fill cannot represent a multi-role SVG) the role is resolved as
+/// a SURFACE token (SVG paths are shape fills, so `Accent1` is the surface slot,
+/// matching `custom_shape_fill_override`) and the encoded opacity scales the alpha.
+/// `None` (non-colorstyle / multi-role) leaves the SVG's authored fills unchanged.
+fn svg_colorstyle_fill_override(svg_bytes: &[u8], ctx: &ComposeContext<'_>) -> Option<[f32; 4]> {
+    let (role, alpha) = crate::bb_svg::parse_uniform_colorstyle(svg_bytes)?;
+    let mut rgba = resolve_surface_colour_token(ctx, &role)?;
+    rgba[3] *= alpha;
+    Some(rgba)
 }
 
 fn style_colour_slot_rgba(ctx: &ComposeContext<'_>, index: usize) -> Option<[f32; 4]> {
