@@ -37,9 +37,12 @@ bash scripts/ui_render.sh --helper Screen_Annunciator_L [--ir] \
   [--lod 0|1] [--scene <scene.json>] [--out <dir>]
 ```
 The scene is picked automatically: `--scene` wins; else `--lod`; else derived
-from the helper — cockpit MFD `*_RTT` screens (e.g. `Screen_Left_Lower_RTT`) use
-LOD0, interior usables (medical/door/annunciator) LOD1. So the power screen no
-longer needs the long `--scene` path: `ui_render.sh --helper Screen_Left_Lower_RTT --ir`.
+from the helper — the cockpit dashboard screens use LOD0 (`*_RTT`, the HUD
+gauges `Screen_Small_Radar*` / `Screen_Central_Compass` / `Countermeasures_Screen`
+/ `screen_flight_hud*`, and `Screen_Annunciator_*` — all on the LOD0 CGA; the
+small HUD screens are CULLED in LOD1, ledger 47), the interior usables
+(medical, door) LOD1. So the power screen no longer needs the long `--scene`
+path: `ui_render.sh --helper Screen_Left_Lower_RTT --ir`.
 Raw form (when the wrapper's defaults don't fit):
 ```bash
 ./target/debug/starbreaker ui render \
@@ -179,10 +182,14 @@ faces), so the square gauges, compass and annunciator no longer render
 squashed. This needs the **LOD0** cockpit geometry (the small HUD screens
 are culled in LOD1); the freeze scripts export `--lod 0`.
 
-Scene split: **LOD0** (`DRAK Clipper_LOD0_TEX0/scene.json`) carries the
-cockpit MFD screens; **LOD1** (`DRAK Clipper_LOD1_TEX2/scene.json`) carries
-the interior usables (medical, door, annunciator…) — the font baseline and
-the four frozen interior targets need LOD1.
+Scene split: **LOD0** (`DRAK Clipper_LOD0_TEX0/scene.json`) carries the whole
+cockpit dashboard — the MFDs AND the HUD gauges + annunciator L/R (the small HUD
+screens exist ONLY here; LOD1 culls them); **LOD1**
+(`DRAK Clipper_LOD1_TEX2/scene.json`) carries the interior usables (medical,
+door) — the font baseline and the medical/door frozen targets render at LOD1,
+but the regression FREEZE exports `--lod 0` for every target (it reaches the
+cockpit screens), so the dossier "scene" column is the *replay* LOD, not the
+freeze source.
 
 ## 4. MCP tools (server `starbreakerMcp`)
 

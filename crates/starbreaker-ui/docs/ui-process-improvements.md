@@ -1315,6 +1315,17 @@ reference §6 with the None-diagnosis decode (verts=0 ⇒ LOD; verts>0 ⇒ no RT
 submesh on node).
 **Action:** [done 2026-06-14 — this retro.]
 
+### 51. `ui_render.sh` routed the HUD gauges to LOD1 (culled) — acceptance bug
+**Observed:** the retro acceptance dry-run (render a dossier screen from the docs
+alone) caught it: the wrapper's auto-LOD keyed only on `*_RTT`, so the cockpit
+HUD gauges (`Screen_Small_Radar*`, `Countermeasures_Screen`,
+`Screen_Central_Compass`, `screen_flight_hud*`, `Screen_Annunciator_*`) fell to
+LOD1 and rendered culled/16:9 — a fresh agent would inspect a blank screen.
+**Improvement:** extend the wrapper's LOD0 case to the cockpit dashboard
+families; fix the §2/§3 LOD-derivation text (the annunciator is LOD0, not LOD1).
+**Action:** [done 2026-06-14 — this retro; verified `Screen_Small_Radar2` →
+LOD0 → 1920×1920.]
+
 ### Phase J — implementation (2026-06-14, this retro)
 
 Render-neutral tooling + docs only (the screen-aspect fix + freezes went through
@@ -1326,5 +1337,7 @@ verified on a `--lod 0` export.
 2. Docs: reference §5 *screen-mesh → render aspect* (LOD0 / material_id / PCA /
    freeze-LOD), workflow §9 (verify handoff vs scene.json) + §10 LOD
    don't-retry + handoff-deletion expectation (items 47–49). [done]
+3. `ui_render.sh` cockpit-LOD0 routing + §2/§3 text (item 51 — acceptance fix).
+   [done]
 
 All Phase-J items landed; no `[planned]` remainder.
