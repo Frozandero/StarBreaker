@@ -236,6 +236,37 @@ client.
 | Pipeline stages | see `crates/starbreaker-ui/docs/ui-workflow.md` §2 table; engine code in `crates/starbreaker-ui/src/<stage>/engine_parts/*.part` |
 | Fallback register | `crates/starbreaker-ui/docs/ui-fallback-register.md` |
 
+**Screen-mesh → render aspect** (the physical/radar screen-aspect mechanism,
+`crates/starbreaker-3d/src/ui_pipeline/screen_aspect.rs`; landed `cc67d79e2`).
+A render-to-texture UI screen is displayed on a mesh quad; its proportions ARE
+the engine's render-target aspect, so the export derives each screen's aspect
+from the geometry and sizes the `physical`/`radar` target to it (`mfd` keeps the
+frame-canvas 4:3 path). Hard-won facts a fresh agent needs:
+
+- **LOD0 is required.** Plain `entity export <ship>` defaults to **LOD1**, which
+  CULLS the small cockpit HUD screens (g-force, velocity ball, countermeasures,
+  …) — their aspect then resolves to `None` and they render 16:9. The cockpit
+  UI lives at **LOD0**; export `--lod 0` (the freeze scripts already do). The
+  `SB_SCREEN_ASPECT_PROBE` (§6) flags the empty-mesh/LOD case. Watch for STALE
+  scene.json: the no-`--lod` export writes the `LOD1_TEX2` package, so the
+  `LOD0_TEX0` scene.json + shared `Generated/*.png` can be stale.
+- **Material id, not name.** The submesh `material_name` is EMPTY in the export;
+  the UI render-target is identified by `material_id` → `MtlFile` name containing
+  `RTT_Screen`/`RTT_Hud` (`RTT_Text_To_Decal` / `Glass_*_RTO` are excluded). The
+  screen quad maps to its binding via `submesh.node_parent_index` →
+  `nmc.nodes[i].name` == the binding `helper_name`.
+- **PCA in-plane, not AABB.** Screens are TILTED in the cockpit, so an
+  axis-aligned bbox collapses them (gave a false 1.96 for the 5.58 annunciator).
+  Use principal-axis (PCA) extents of the `RTT_Screen` vertices. Curved screens
+  (radar, the 81-vert MFDs) read the chord aspect (a few % low). Blender
+  ground-truth (Clipper loaded): `pts=[mw@v.co]; U,S,Vt=svd(pts-mean);
+  ext=sort((pts-mean)@Vt.T max-min)[::-1]; aspect=ext[0]/ext[1]` over the
+  object's `RTT_Screen` faces.
+- **The freeze sources from `--lod 0`** (`generate_ui_regression_artifacts.sh`),
+  so it reaches the cockpit screens regardless of a dossier row's "scene"
+  column (that column is the *replay* scene). Re-freezing one cockpit screen can
+  surface others changed at LOD0 — inspect the artifact dims before freezing.
+
 ## 6. Probe registry
 
 Env-gated diagnostics (zero cost unless set). Add new probes to this table
@@ -252,6 +283,7 @@ in the same commit that introduces them.
 | `SB_UI_FONT_DUMP=1` | `text/swf_draw` | stderr (`eprintln`) | one `FONTDUMP` line per rendered text element (see harness doc) |
 | `BB_TEXT_FORMAT_PROBE=1` | `bb_brand_apply` | stderr (`eprintln`) | per pass: `TFPROBE` = text-format-route entry applications (FontSize/FillColor on tagged textfields); `TFPROBE-NORMAL` = normal-route entries carrying FontSize (with modifiers + conditions) |
 | `BB_DRAW_RECT_PROBE=<1\|filter>` | `ir_compose` custom-shape draw | stderr (`eprintln`) | per asset draw: node name, laid-out `rect`, actual `raster` WxH, asset path (`1` = all; else a name/asset substring filter). For element width from layout, not dim pixels (ledger 45) |
+| `SB_SCREEN_ASPECT_PROBE=1` | `starbreaker-3d` `child_payload` (per-screen aspect populate) | stderr (`eprintln`) | `SCREEN_ASPECT helper=… kind=… mesh_verts=… aspect=…` per UI binding. Diagnoses the per-screen render aspect (see §5 *screen-mesh → render aspect*): `aspect=None` + `mesh_verts=0` = empty mesh (WRONG LOD — small HUD screens are culled in LOD1, re-export `--lod 0`); `None` + non-zero verts = no `RTT_Screen` submesh on the helper node. Runs on `entity export` (the populate step) |
 | `ui render --dump-ir-dir <dir>` | CLI flag | files (`*.ir.json`) | composed `*.ir.json` per helper (nodes, rects, payloads, tints). FAST IR inspection of a bound screen (~15s, matches the render) — prefer over `mfd_ir_dump` |
 
 Example: `BB_SHRINK_PROBE=1 ./target/debug/starbreaker ui render --scene

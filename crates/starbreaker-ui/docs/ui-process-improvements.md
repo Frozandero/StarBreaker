@@ -1263,3 +1263,68 @@ fixes themselves went through the arc's TDD/freeze flow above, not this retro).
    initially deferred). [done]
 
 All Phase-I items landed; no `[planned]` remainder.
+
+## Arc — step-3 per-screen aspect implementation (2026-06-14)
+
+The step-3 hand-off (above) was executed: cockpit screens now render at their
+true screen-mesh aspect (`cc67d79e2`; door + annunciator L/R re-frozen
+`404e4fa23`/freeze; hand-off doc deleted `36cd8a8b0`). Findings from the work.
+
+### 47. The default export LOD silently hid the fix → `--lod 0` + probe + docs
+**Observed:** ~6 release-rebuild+export cycles (~70s each) were burned believing
+the square HUD screens' geometry was "unreachable" — `loaded.mesh` had no
+`RTT_Screen` submesh for them. Real cause: plain `entity export` defaults to
+**LOD1**, which CULLS the small HUD screens (g-force, velocity ball, …); their
+aspect resolved to `None` and they rendered 16:9. Compounded by inspecting a
+STALE `LOD0_TEX0` scene.json while the export wrote `LOD1_TEX2`, and by the
+shared `Generated/*.png` being per-canvas + stale. `--lod 0` fixed it instantly.
+**Improvement:** durable `SB_SCREEN_ASPECT_PROBE` (flags empty-mesh/LOD), a
+reference §5 *screen-mesh → render aspect* note (LOD0 requirement + staleness
+trap + freeze-uses-`--lod 0`), and a workflow §10 don't-retry bullet.
+**Action:** [done 2026-06-14 — this retro: probe + docs.]
+
+### 48. The hand-off's root cause was wrong (DataCore research ≠ export bindings)
+**Observed:** the step-3 hand-off (from record research) asserted the square
+screens were `mfd`/4:3 sharing `M_MFD_Screen`, reusable via `aspect_tag.rs`. The
+exported `scene.json` showed them `physical` on `M_Physical_Screen` (16:9) with
+NO mfd path and radar a hardcoded 1024². Overturning this (a spike) cost real
+time before any code was written.
+**Improvement:** workflow §9 — a handoff making binding-kind/canvas/aspect
+claims MUST verify them against the exported `scene.json` `ui_bindings` first
+(the export is ground truth, not the records).
+**Action:** [done 2026-06-14 — this retro: workflow §9.]
+
+### 49. Screen geometry → aspect data model re-derived cold; AABB snippet a trap
+**Observed:** had to discover that submesh `material_name` is EMPTY in the
+export (identify the RTT material by `material_id` → `MtlFile` name), that the
+screen quad maps via `node_parent_index` → `nmc` node name == helper, and that
+the aspect must be **PCA** in-plane — the hand-off's `plane_aspect` snippet used
+an AABB, which collapsed the TILTED annunciator to 1.96 instead of 5.58.
+**Improvement:** reference §5 captures the data model + a PCA Blender snippet
+(replacing the AABB one); the mechanism lives in `screen_aspect.rs` (PCA + 5
+unit tests).
+**Action:** [done 2026-06-14 — code `cc67d79e2`; docs this retro.]
+
+### 50. Diagnosing a `None` aspect needed ad-hoc probes rebuilt 3× → durable probe
+**Observed:** temporary `eprintln` probes (mesh verts, RTT-submesh count, node
+match, result) were added/removed across several slow release cycles to find
+why the aspect was `None` (LOD culling + empty `material_name`).
+**Improvement:** `SB_SCREEN_ASPECT_PROBE=1` is now permanent in `child_payload`
+(`SCREEN_ASPECT helper=… kind=… mesh_verts=… aspect=…`), registered in
+reference §6 with the None-diagnosis decode (verts=0 ⇒ LOD; verts>0 ⇒ no RTT
+submesh on node).
+**Action:** [done 2026-06-14 — this retro.]
+
+### Phase J — implementation (2026-06-14, this retro)
+
+Render-neutral tooling + docs only (the screen-aspect fix + freezes went through
+the arc's TDD/freeze flow above — `cc67d79e2` / `404e4fa23` / `36cd8a8b0` — not
+this retro). `ui_check.sh` green after the edits; `SB_SCREEN_ASPECT_PROBE`
+verified on a `--lod 0` export.
+1. `SB_SCREEN_ASPECT_PROBE` in `child_payload` + reference §6 registry row
+   (items 47, 50). [done]
+2. Docs: reference §5 *screen-mesh → render aspect* (LOD0 / material_id / PCA /
+   freeze-LOD), workflow §9 (verify handoff vs scene.json) + §10 LOD
+   don't-retry + handoff-deletion expectation (items 47–49). [done]
+
+All Phase-J items landed; no `[planned]` remainder.

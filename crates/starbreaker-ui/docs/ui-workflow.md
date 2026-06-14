@@ -239,7 +239,16 @@ Flows (commands in the reference doc §2/§7):
 - An arc that pauses (or at any major milestone) maintains a repo handoff
   doc — pattern `docs/ui-<arc>-handoff.md` — with: landed commits, catalog
   status, next-step spec (ideally an `#[ignore]`d failing test), parked
-  work with full diagnosis, approval-gated items.
+  work with full diagnosis, approval-gated items. **Delete the handoff when
+  the work lands** (grep its name repo-wide + the docs_reference_guard list
+  in the same commit).
+- **A handoff that claims binding-kind / canvas / aspect facts MUST verify
+  them against the actual exported `scene.json` `ui_bindings`, not just
+  DataCore records.** The step-3 hand-off was researched from records and
+  asserted the square screens were `mfd`/4:3 reusing the aspect-tag path;
+  the export showed them `physical` on `M_Physical_Screen` (16:9) with no
+  mfd path, so the whole "reuse it" plan was wrong and cost a spike to
+  overturn (ledger 48). The export is the ground truth — check it first.
 - To launch fresh-context work on a screen, instantiate
   `crates/starbreaker-ui/docs/ui-matching-agent-prompt.md` with the screen
   name — the dossier (reference doc §3) supplies everything else.
@@ -310,3 +319,12 @@ Flows (commands in the reference doc §2/§7):
   moves when layout reflows). Read the laid-out rect from `ui_ir_query` /
   `--dump-ir-dir` (`computed_rect`), or `BB_DRAW_RECT_PROBE=<name|asset|1>` on a
   `ui render` for the actual raster size in the custom-shape draw path.
+- **Cockpit UI screen geometry needs `--lod 0`; LOD1 culls the small HUD
+  screens (ledger 47).** Plain `entity export <ship>` defaults to LOD1, which
+  drops g-force/velocity/countermeasures/etc. — anything keyed off their screen
+  mesh (the per-screen render aspect) silently resolves to `None`/16:9, and the
+  no-`--lod` export writes the `LOD1_TEX2` package so the `LOD0_TEX0` scene.json
+  is left stale. Don't conclude "the geometry is unreachable" from a LOD1
+  export: re-export `--lod 0`, use `SB_SCREEN_ASPECT_PROBE=1` to confirm, and
+  read the *package's own* scene.json + `<helper>_TEX0.png`. Full data model:
+  reference §5 *screen-mesh → render aspect*.

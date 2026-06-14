@@ -543,6 +543,19 @@ pub(crate) fn load_child_payloads(
                                 loaded.materials.as_ref(),
                                 helper,
                             );
+                        // SB_SCREEN_ASPECT_PROBE: per-screen aspect resolution.
+                        // `aspect=None` with `mesh_verts=0` => empty mesh (wrong
+                        // LOD: small HUD screens are culled in LOD1 — use
+                        // `--lod 0`); with non-zero verts => no RTT_Screen submesh
+                        // on the helper node (renamed material / wrong host).
+                        if std::env::var_os("SB_SCREEN_ASPECT_PROBE").is_some() {
+                            eprintln!(
+                                "SCREEN_ASPECT helper={helper} kind={} mesh_verts={} aspect={:?}",
+                                b.binding_kind,
+                                loaded.mesh.positions.len(),
+                                b.ui_screen_aspect_w_over_h,
+                            );
+                        }
                     }
                 }
                 Some(crate::types::EntityPayload {
