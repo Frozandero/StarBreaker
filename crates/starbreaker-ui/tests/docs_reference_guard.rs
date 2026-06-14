@@ -44,7 +44,6 @@ fn ui_docs_reference_existing_files() {
         "crates/starbreaker-ui/docs/ui-reference.md",
         "crates/starbreaker-ui/docs/ui-matching-agent-prompt.md",
         "crates/starbreaker-ui/docs/ui-process-retro-prompt.md",
-        "crates/starbreaker-ui/docs/ui-mfd-square-aspect-handoff.md",
     ];
     let mut missing = Vec::new();
     for doc in docs {

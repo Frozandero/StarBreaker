@@ -1238,12 +1238,14 @@ per-screen aspect sources (display-entity `aspectRatioOverride` / `screenPreset`
 auto-from-mesh), the Clipper screen→entity loadout mapping, and the mesh aspects
 were researched from scratch this arc — none of it was in the docs.
 
-**Improvement:** the mechanism + step-3 plan is captured in a hand-off
-(`ui-mfd-square-aspect-handoff.md`); the reference dossier links it and the power
-row is updated to FROZEN GOLD so the next session starts warm.
+**Improvement:** the mechanism + step-3 plan was captured in a hand-off that
+bootstrapped the next session; step 3 LANDED 2026-06-14 (`cc67d79e2`) — cockpit
+screens render at their true screen-mesh aspect — and the hand-off doc was
+deleted as complete. The reference dossier §3 now pairs every screen to its
+capture and records the power row as FROZEN GOLD.
 
-**Action:** [done 2026-06-14 — hand-off doc (commit `1d7eaffdb`) + reference
-dossier row/pointer — Phase I.]
+**Action:** [done 2026-06-14 — hand-off (commit `1d7eaffdb`) bootstrapped step 3,
+which landed `cc67d79e2`; hand-off doc removed on completion — Phase I.]
 
 ### Phase I — implementation (2026-06-14, this retro)
 
