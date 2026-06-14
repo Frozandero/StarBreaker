@@ -1180,8 +1180,10 @@ to index the library; the MCP fetcher was not.)
 exercises the same pipeline as the export; until then a §10 note warns that
 `ui_ir_query` does not exercise the aspect-tag content-scaling path.
 
-**Action:** [done 2026-06-14 §10 note; MCP fetcher fix PLANNED (needs rebuild +
-redeploy) — Phase I.]
+**Action:** [done 2026-06-14 — §10 note + MCP `P4kCanvasFetcher` now indexes
+`BuildingBlocks_AspectRatioLibrary` (`mcp/src/tools.rs`, `find_by_guid`/
+`find_by_name` search a `lookup_struct_ids` Vec); MCP rebuilt + redeployed
+(`mcp/starbreaker-mcp`). Phase I.]
 
 ### 44. Registering a NEW frozen target is an undocumented multi-step sequence
 
@@ -1242,6 +1244,7 @@ fixes themselves went through the arc's TDD/freeze flow above, not this retro).
 2. Docs: workflow §10 don't-retry entries (items 42 slow-harness, 43 ui_ir_query
    blind spot, 45 measure-via-probe); reference freeze sequence (item 44) +
    dossier power row → gold + step-3 hand-off pointer (items 44, 46). [done]
-3. Deferred (heavier, outside this render-neutral batch): MCP fetcher library
-   index (item 43), `ui_freeze_cycle` manifest-delta hint (item 44), durable
-   `BB_DRAW_RECT_PROBE` (item 45). [planned]
+3. MCP fetcher library index (item 43) — implemented + redeployed 2026-06-14
+   (was initially deferred as it needs an MCP rebuild). [done]
+4. Still deferred (heavier): `ui_freeze_cycle` manifest-delta hint (item 44),
+   durable `BB_DRAW_RECT_PROBE` (item 45). [planned]

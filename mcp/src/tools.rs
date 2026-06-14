@@ -624,45 +624,52 @@ impl starbreaker_ui::SwfFetcher for P4kSwfFetcher {
 /// Replaces `LocalUiRecordIndex` which scanned local JSON files.
 pub(crate) struct P4kCanvasFetcher {
     db: Arc<Database<'static>>,
-    canvas_struct_id: StructId,
+    /// Record families resolved by GUID/name. `BuildingBlocks_Canvas` plus the
+    /// UI-support families the canvas pipeline fetches by name — currently
+    /// `BuildingBlocks_AspectRatioLibrary` so the MFD aspect-tag content-scaling
+    /// (`AspectRatioToTag_MFD`) resolves and `ui_ir_query` exercises the same
+    /// path as the export (ledger 43; mirrors `datacore_ui_lookup_type_names`).
+    lookup_struct_ids: Vec<StructId>,
 }
 
 impl P4kCanvasFetcher {
     /// Create a new canvas fetcher from the game data.
     ///
-    /// Resolves the struct ID for `BuildingBlocks_Canvas` at
-    /// construction time so runtime lookups stay fast.
+    /// Resolves the searched struct IDs at construction time so runtime lookups
+    /// stay fast. `BuildingBlocks_Canvas` is required; the supplementary families
+    /// are best-effort (skipped if absent).
     pub(crate) fn new(data: &Arc<GameData>) -> Result<Self, String> {
         let canvas_struct_id = data
             .db
             .struct_id("BuildingBlocks_Canvas")
             .ok_or("DataCore has no BuildingBlocks_Canvas struct")?;
+        let mut lookup_struct_ids = vec![canvas_struct_id];
+        if let Some(aspect) = data.db.struct_id("BuildingBlocks_AspectRatioLibrary") {
+            lookup_struct_ids.push(aspect);
+        }
         Ok(Self {
             db: Arc::clone(&data.db),
-            canvas_struct_id,
+            lookup_struct_ids,
         })
     }
 
-    /// Search `BuildingBlocks_Canvas` records for a matching GUID.
+    /// Search the indexed record families for a matching GUID.
     fn find_by_guid(&self, guid: &str) -> Option<&starbreaker_datacore::types::Record> {
-        if let Ok(parsed) = guid.parse::<starbreaker_common::CigGuid>() {
-            return self
-                .db
-                .records_of_type(self.canvas_struct_id)
-                .find(|r| r.id == parsed);
-        }
-        // Also try raw GUID string
-        self.db
-            .records_of_type(self.canvas_struct_id)
-            .find(|r| format!("{}", r.id) == guid)
+        let parsed = guid.parse::<starbreaker_common::CigGuid>().ok();
+        self.lookup_struct_ids.iter().find_map(|sid| {
+            self.db.records_of_type(*sid).find(|r| {
+                parsed.is_some_and(|p| r.id == p) || format!("{}", r.id) == guid
+            })
+        })
     }
 
-    /// Search `BuildingBlocks_Canvas` records for a matching name substring (shortest match).
+    /// Search the indexed record families for a matching name substring (shortest match).
     fn find_by_name(&self, name: &str) -> Option<&starbreaker_datacore::types::Record> {
         let search = name.to_lowercase();
         let mut candidates: Vec<_> = self
-            .db
-            .records_of_type(self.canvas_struct_id)
+            .lookup_struct_ids
+            .iter()
+            .flat_map(|sid| self.db.records_of_type(*sid))
             .filter(|r| {
                 self.db
                     .resolve_string2(r.name_offset)
