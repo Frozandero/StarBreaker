@@ -159,9 +159,25 @@ the original.)
 | Target MFD | `Screen_Right_Upper_RTT` / LOD0 scene | `MC_S_Target_Master` | `Screen_Right_Upper_RTT.png` | `target` | GOLD `clipper_target_master` | A7 backdrop stack remainder (handoff) |
 | Medical bed | usable screen / LOD1 scene | `I_Med_MedicalBed_A` | `screen_16x9_a-[medical1].png` | — (add) | PLATINUM `ui_target_a` | handoff steps 10–13 |
 | Medical end-of-bed | usable screen / LOD1 scene | `I_Med_MedicalEndOfBed_A` | `mesh_end_screen_plane-[medical2].png` | — (add) | PLATINUM `ui_target_b` | logo −12px check (handoff) |
-| Small door | usable screen / LOD1 scene | `I_Door_Small_DRAK` | `Door-closed.png` | `door` | GOLD `clipper_small_door` | — |
-| Annunciator L | `Screen_Annunciator_L` / LOD1 scene | `H_Eng_Annunciator_Master_Left` | `Screen_Annunciator_L.png` | `annunciator` | GOLD `eng_annunciator_master_left` | — |
-| (unmapped) | `Screen_Left_Upper_RTT`, `Screen_Radar_RTT`, g-force/radar squares, `velocity_ball`, compass, flight HUDs… | — | partial references exist | — | — | map when first worked. Square/non-4:3 screens render WRONG aspect (4:3) — per-screen aspect step-3 hand-off: `crates/starbreaker-ui/docs/ui-mfd-square-aspect-handoff.md` |
+| Small door | usable screen / LOD1 scene | `I_Door_Small_DRAK` | `Door-closed.png` | `door` | GOLD `clipper_small_door` (re-frozen 2026-06-14, 1920×1132) | render aspect 1.70 from the `rtt_screen` mesh (was the 16:9 canvas) |
+| Annunciator L | `Screen_Annunciator_L` / LOD0 cockpit | `H_Eng_Annunciator_Master_Left` | `Screen_Annunciator_L.png` (resized to match) | `annunciator` | **PLATINUM `eng_annunciator_master_left`** (re-frozen 2026-06-14, 1920×344) | aspect 5.58 from the screen quad (was 4.44 SWF content-crop) |
+| Annunciator R | `Screen_Annunciator_R` / LOD0 cockpit | `H_Eng_Annunciator_Master_Right` | (mirror of L — no separate capture) | `annunciator` | **PLATINUM `eng_annunciator_master_right`** (onboarded + frozen 2026-06-14, 1920×344) | aspect 5.58 (mirror of L) |
+| G-force ball | `Screen_Small_Radar2` / LOD0 cockpit | `HC_HUD_Ship_G_Force_Ball_Master` | `g_force_ball_master.png` | — | — | aspect 1.0 (square) fixed 2026-06-14; content blank at rest |
+| Velocity ball | `Screen_Small_Radar1` / LOD0 cockpit | `HC_HUD_Ship_Velocity_Ball_Master` | `velocity_ball_master.png` | — | — | aspect 1.0 (square) fixed 2026-06-14 |
+| Countermeasures | `Countermeasures_Screen` / LOD0 cockpit | `HC_HUD_Ship_Countermeasures_Master` | `countermeasures_master.png` | — | — | aspect 1.0 (square) fixed 2026-06-14 |
+| Compass | `Screen_Central_Compass` / LOD0 cockpit | `HC_HUD_Ship_Compass_Master` | `compass_master.png` | — | — | aspect 3.27 fixed 2026-06-14 |
+| Radar | `Screen_Radar_RTT` / LOD0 cockpit | `MapDisplayMaster` | `Screen_Radar_RTT.png` (+ `mapdisplaymaster.png`) | — | — | aspect 1.23 fixed 2026-06-14 (was 1024² square); curved-chord ~5% under ref 1.29 |
+| Self MFD | `Screen_Left_Upper_RTT` / LOD0 cockpit | `MC_S_Self_Master` | `self_master.png` | — | — | mfd 4:3 frame path (unchanged) |
+| LR-indicator | `Screen_Left_Upper_RTT_Small` / LOD0 cockpit | `HC_HUD_Ship_LRInd_Master` | `lrind_master.png` | — | — | aspect 1.56 fixed 2026-06-14 |
+| Velocity num | `screen_flight_hud_left_upper` / LOD0 cockpit | `HC_HUD_Ship_Velocity_Num_Master` | `ship_velocity_num_master.png` | — | — | aspect 1.24 fixed 2026-06-14 |
+| Master-mode display | `screen_flight_hud_right_upper` / LOD0 cockpit | `HC_HUD_Ship_Master_Mode_Display_Master` | `master_mode_display_master.png` | — | — | aspect 1.24 fixed 2026-06-14 |
+| Velocity / afterburner bars | `screen_flight_hud_left` / `_right` / LOD0 cockpit | `HC_HUD_Ship_Velocity_Bar_Master` / `…_Afterburner_Bar_Master` | (no straight-on capture yet) | — | — | aspect 2.99 fixed 2026-06-14 |
+
+Per-screen render aspect (commit `cc67d79e2`, 2026-06-14): physical/radar
+screens are sized to their cockpit screen-mesh aspect (the `RTT_Screen`
+faces), so the square gauges, compass and annunciator no longer render
+squashed. This needs the **LOD0** cockpit geometry (the small HUD screens
+are culled in LOD1); the freeze scripts export `--lod 0`.
 
 Scene split: **LOD0** (`DRAK Clipper_LOD0_TEX0/scene.json`) carries the
 cockpit MFD screens; **LOD1** (`DRAK Clipper_LOD1_TEX2/scene.json`) carries

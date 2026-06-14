@@ -13,10 +13,10 @@ You are working in ~/projects/scorg_tools/StarBreaker (branch
 feature/ui), crate starbreaker-ui.
 
 Read, in order:
-1. StarBreaker/AGENTS.md
-2. crates/starbreaker-ui/AGENTS.md
-3. crates/starbreaker-ui/docs/ui-workflow.md      (the process — follow it exactly)
-4. crates/starbreaker-ui/docs/ui-reference.md     (commands, tools, data; find SCREEN in §3 dossier)
+1. @StarBreaker/AGENTS.md
+2. @StarBreaker/crates/starbreaker-ui/AGENTS.md
+3. @StarBreaker/crates/starbreaker-ui/docs/ui-workflow.md      (the process — follow it exactly)
+4. @StarBreaker/crates/starbreaker-ui/docs/ui-reference.md     (commands, tools, data; find SCREEN in §3 dossier)
 
 SCREEN=<dossier row, e.g. Screen_Left_Lower_RTT>
 REFERENCE=<optional reference-image path — overrides the dossier's, or
@@ -32,7 +32,7 @@ preset, frozen tier, open issues).
 Work: replay-render SCREEN; run scripts/ui_compare.py with the preset and
 READ the crops; build/extend the numbered diff catalog (workflow §4); then
 the TDD loop
-from crates/starbreaker-ui/docs/ui-workflow.md §3 — failing test first, one structural fix at the
+from @StarBreaker/crates/starbreaker-ui/docs/ui-workflow.md §3 — failing test first, one structural fix at the
 owning stage, scripts/ui_check.sh every cycle, re-render + compare, update
 the catalog and the arc memory/handoff. Guard trips → §5 adjudication
 (structural discriminators, never names). Baselines/outliers only via §6/§7
