@@ -47,6 +47,25 @@ Sweep these categories against what actually happened:
 6. Memory/handoff quality. Would the handoff you wrote (or inherited) have
    been enough to resume cold? What was missing after compaction? Fix the
    handoff expectations in crates/starbreaker-ui/docs/ui-workflow.md §9, not just this arc's file.
+7. Slow tooling -> profiled speedup. A diagnostic/harness/check you WAITED ON
+   repeatedly (seconds-to-minutes per run) is iteration tax, not a fixed cost —
+   profile it, don't tolerate it. Do it in this order:
+   (a) MEASURE before changing anything: count/size the inputs and time the
+       phases (add a phase banner if one is missing) so you cut the real
+       bottleneck, not the suspected one — a slow run is harness load far more
+       often than a pipeline loop (ledger 42).
+   (b) Prefer an EXISTING faster path first: an indexed MCP/DataCore tool beats
+       a mirror-walking example; tool choice beats optimisation, and the §10
+       guidance + reference tool registry should point there.
+   (c) If the slow tool must stay, cut the dominant cost: scope the work to what
+       is actually fetched (don't index the whole mirror), replace a full parse
+       with targeted field extraction, MEMOISE repeated fetches mirroring the
+       production fetcher (a hot record re-read+re-parsed per call is the usual
+       hidden cost), and parallelize.
+   (d) VERIFY by measurement AND that the output is unchanged — a speedup that
+       drifts behaviour is a regression, not a win. Worked example: ledger 42
+       (mfd_ir_dump ~94s -> ~5s: subtree index + parallel head-scan + memoising
+       fetcher).
 
 Then:
 - APPEND the findings as new numbered items to
