@@ -57,6 +57,27 @@ rm -f test-artifacts/ui/*-current.png
 echo "==> freezing artifacts"
 bash scripts/freeze_ui_regression_artifacts.sh --approver "$APPROVER" --reason "$REASON"
 
+# Guard (ledger 44): this cycle freezes IMAGE artifacts only; the IR-snapshot
+# freeze is a SEPARATE script. A manifest target with no IR-snapshot baseline
+# makes the validator below fail opaquely ("snapshot freeze ids do not match
+# manifest ids"). Detect the drift here and point at the fix.
+MISSING_SNAPSHOT=$(python3 - \
+    crates/starbreaker-ui/tests/fixtures/ui_ir/ui_snapshot_manifest.json \
+    crates/starbreaker-ui/tests/fixtures/ui_ir/ui_snapshot_freeze.json <<'PY'
+import json, sys
+def ids(path):
+    t = json.load(open(path)).get("targets", [])
+    return set(t.keys()) if isinstance(t, dict) else {x.get("id") for x in t if isinstance(x, dict)}
+print(" ".join(sorted(ids(sys.argv[1]) - ids(sys.argv[2]))))
+PY
+)
+if [[ -n "${MISSING_SNAPSHOT// }" ]]; then
+    echo "error: manifest target(s) with no IR-snapshot baseline: ${MISSING_SNAPSHOT}" >&2
+    echo "  run first:  bash scripts/freeze_ui_snapshot_ir.sh --approver ${APPROVER} --reason \"…\"" >&2
+    echo "  (and bump the count assert in tests/manifest_visual_regression.rs for a new target)" >&2
+    exit 3
+fi
+
 echo "==> validating"
 bash scripts/validate_ui_snapshot_freeze.sh
 bash scripts/validate_ui_regression_artifacts.sh

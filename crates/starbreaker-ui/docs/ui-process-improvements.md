@@ -1201,8 +1201,9 @@ the reference freeze section; note the hard-coded count bump. (Optional follow-u
 `ui_freeze_cycle` could detect a manifest-vs-snapshot id delta and tell you to run
 the snapshot freeze instead of failing opaquely.)
 
-**Action:** [done 2026-06-14 reference freeze sequence; ui_freeze_cycle auto-hint
-PLANNED — Phase I.]
+**Action:** [done 2026-06-14 — reference freeze sequence + `ui_freeze_cycle.sh`
+pre-check that names any manifest target lacking an IR-snapshot baseline and
+points at `freeze_ui_snapshot_ir.sh` (exits before the opaque validator). Phase I.]
 
 ### 45. Dim (alpha-0.2) glyph width is not measurable from the PNG
 
@@ -1218,8 +1219,10 @@ one build via an env factor.
 throwaway `BB_ICON_PROBE2` made durable) so element width is read from layout, not
 scraped from dim pixels; a §10 note steers future measuring to the probe.
 
-**Action:** [done 2026-06-14 §10 note; durable `BB_DRAW_RECT_PROBE` PLANNED —
-Phase I.]
+**Action:** [done 2026-06-14 — §10 note + durable env-gated `BB_DRAW_RECT_PROBE`
+in the custom-shape draw path (`ir_compose/.../engine_01.part`); verified
+`shape_BatteryIcon rect=(76,909,69,80)` — the icon's laid-out width is 69px,
+matching the reference. Phase I.]
 
 ### 46. The aspect-tag / content-scaling engine model was re-derived cold
 
@@ -1244,7 +1247,10 @@ fixes themselves went through the arc's TDD/freeze flow above, not this retro).
 2. Docs: workflow §10 don't-retry entries (items 42 slow-harness, 43 ui_ir_query
    blind spot, 45 measure-via-probe); reference freeze sequence (item 44) +
    dossier power row → gold + step-3 hand-off pointer (items 44, 46). [done]
-3. MCP fetcher library index (item 43) — implemented + redeployed 2026-06-14
-   (was initially deferred as it needs an MCP rebuild). [done]
-4. Still deferred (heavier): `ui_freeze_cycle` manifest-delta hint (item 44),
-   durable `BB_DRAW_RECT_PROBE` (item 45). [planned]
+3. MCP fetcher library index (item 43) — implemented + redeployed 2026-06-14;
+   verified `ui_ir_query` now returns the power cards at 438px (was 399px). [done]
+4. `ui_freeze_cycle` manifest-delta pre-check (item 44) + durable
+   `BB_DRAW_RECT_PROBE` (item 45) — implemented + verified 2026-06-14 (both were
+   initially deferred). [done]
+
+All Phase-I items landed; no `[planned]` remainder.

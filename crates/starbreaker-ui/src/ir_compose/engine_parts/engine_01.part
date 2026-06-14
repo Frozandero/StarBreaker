@@ -308,6 +308,25 @@ fn draw_non_text_node(
             })
         };
         if let Some(mut img) = resolved_image {
+            // Draw-rect probe (ledger 45): at-rest cards render at low alpha
+            // (battery card = 0.2 "depleted"), so element width must be read from
+            // the LAID-OUT draw rect, not pixel-scraped from a dim PNG. Gated by
+            // `BB_DRAW_RECT_PROBE`: `1` prints every asset draw, any other value is
+            // a case-insensitive substring filter on the node name / asset path.
+            // Render-neutral (stderr only when the var is set).
+            if let Ok(probe) = std::env::var("BB_DRAW_RECT_PROBE") {
+                let probe_lc = probe.to_ascii_lowercase();
+                if probe == "1"
+                    || node.name.to_ascii_lowercase().contains(&probe_lc)
+                    || normalised_asset_ref.to_ascii_lowercase().contains(&probe_lc)
+                {
+                    eprintln!(
+                        "BB_DRAW_RECT_PROBE name={} rect=({:.0},{:.0},{:.0},{:.0}) raster={}x{} asset={}",
+                        node.name, rect.x, rect.y, rect.w, rect.h,
+                        img.width(), img.height(), normalised_asset_ref,
+                    );
+                }
+            }
             let is_nine_slice_custom_shape = node
                 .custom_shape
                 .as_ref()
