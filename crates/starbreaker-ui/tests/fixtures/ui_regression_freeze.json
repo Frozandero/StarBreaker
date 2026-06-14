@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "frozen_at": "2026-06-14T18:43:21Z",
+  "frozen_at": "2026-06-14T23:44:04Z",
   "approver": "owner",
-  "reason": "MFD per-screen aspect: physical/radar render targets sized from RTT_Screen screen-mesh aspect (PCA in-plane). door 1.778->1.696 (1920x1132); annunciator L/R 4.44->5.58 (1920x344, Screen_Annunciator quad, owner-confirmed vs resized reference); annunciator_right onboarded as platinum. owner-approved.",
+  "reason": "annunciator artifact baseline stale at 4.44/432; re-freeze to screen-mesh aspect 5.58/344 (landed cc67d79e2; IR snapshot already 344). No other target changed (0.0000% diff).",
   "signature": null,
   "manifest_path": "crates/starbreaker-ui/tests/fixtures/ui_ir/ui_snapshot_manifest.json",
   "artifacts": [
@@ -41,9 +41,9 @@
       "tier": "platinum",
       "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_h_eng_annunciator_master_left.png",
       "artifact_path": "test-artifacts/ui/eng_annunciator_master_left.png",
-      "sha256": "a32f7fd78fe1c6fa40cebd39fad3d5cb37045dfdc83c6b1644b78f45e79b540d",
+      "sha256": "35f873eea4d1ac51f1dc007504bd83effc0569a0df106fdde9b4a5dd9f73e9b6",
       "width": 1920,
-      "height": 432,
+      "height": 344,
       "channels": "srgba"
     },
     {
@@ -71,9 +71,9 @@
       "tier": "platinum",
       "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_h_eng_annunciator_master_right.png",
       "artifact_path": "test-artifacts/ui/eng_annunciator_master_right.png",
-      "sha256": "98d2c02db0429936fd6fe3f382e436dbc92b8e48091650749a5b7fd500bf9d44",
+      "sha256": "c0854e8b29ce58a4c6fb479ac39c350a99ecbf4e149359e9a829950f31b9f468",
       "width": 1920,
-      "height": 432,
+      "height": 344,
       "channels": "srgba"
     }
   ]
