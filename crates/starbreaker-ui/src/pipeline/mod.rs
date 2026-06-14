@@ -550,8 +550,27 @@ fn apply_mfd_content_canvas_scaling(
     // The engine's rule: the content canvas width = `SizeX × its own height`
     // (`WidthBehavior = PercentOfY`). The two-pass layout resolves the cross-axis
     // (height) first, so this is faithful and does not couple width→width.
+    //
+    // `mfd_view` sets the slot height to the host-inset FRACTION (the bottom 44px
+    // chrome is cut from the hosted view), but the engine sizes the content
+    // canvas width against the FULL content height. Divide SizeX by that fraction
+    // so the PercentOfY basis is the full height — otherwise the cards land ~6%
+    // narrow (414 vs the ~432 reference) and the flex-shrunk battery icon is
+    // squashed with them (53 vs ~69px).
+    // The engine sizes the content canvas width = SizeX × the content canvas's
+    // own height. `mfd_view` set the slot height to the host-VIEW inset (the
+    // bottom 44px chrome cut from the hosted view), but the content canvas the
+    // rule targets spans ~95% of the frame height (slightly taller than the
+    // hosted view — it runs behind the footer chrome). Scale SizeX by that
+    // content-height fraction so the PercentOfY basis matches: this lands the
+    // cards at ~437px (≈ the in-game ~432) and, via the mixed-row flex shrink,
+    // the BATTERY icon at ~69px wide — both measured against the in-game power
+    // reference. (`MFD_CONTENT_HEIGHT_FRACTION` is a measured constant in the
+    // same family as the host inset; the in-game content height is not in the
+    // authored data.)
+    const MFD_CONTENT_HEIGHT_FRACTION: f32 = 0.95;
     slot.sizing.width = BbValue::Other {
-        value: scaling.size_x,
+        value: scaling.size_x / MFD_CONTENT_HEIGHT_FRACTION,
         behavior: "PercentOfY".to_string(),
     };
 }
