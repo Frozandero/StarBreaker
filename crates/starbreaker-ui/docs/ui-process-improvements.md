@@ -1137,3 +1137,111 @@ freeze/baseline touched). `ui_check.sh` green after each.
   style_provenance`. [done — commit `e788b1470`; probe §6, IR field §7; verified
   80 genuine fields on the power render, e.g. `PipBox_Fill BackgroundColor =
   s_drak_hud/PipBox_Fill_Unpowered`.]
+
+## Arc — MFD aspect / content-scaling + step-3 hand-off (2026-06-14)
+
+Power-screen card width + battery icon (landed/frozen: commits `1177002ff`,
+`58e5b574b`, `d50afa34f`) via the data-driven AspectRatioToTag → "Content Canvas
+Scaling" mechanism; step-3 (square-screen aspect) scoped + handed off. The retro
+findings below are the friction THIS arc paid for.
+
+### 42. A slow diagnostic harness read as an infinite loop → near-reverted a correct fix
+
+**Observed:** the single biggest time-sink of the arc. `mfd_ir_dump` takes ~94s
+because its `Fs` fetcher walks + parses the ENTIRE decompiled record mirror at
+startup before compiling anything. With no progress output, a run sat at ~99% CPU
+/ ~198MB for >60s and I read it as an infinite LAYOUT loop from the new
+`PercentOfY` content width — killed it repeatedly, tried three "fixes" for a
+non-existent cycle, and almost shelved the (correct) change as unshippable. Ground
+truth came only from timing a run to completion (94s, exit 0) and from the real
+export path (`ui render` / `entity export`, DataCore fetcher) rendering the same
+screen in **9s**. There was never a loop.
+
+**Improvement:** `mfd_ir_dump` prints a startup banner (record count + mirror
+load time) and the IR compile time, so slow≠hang is unmistakable; a §10
+don't-retry entry codifies "high CPU/RSS on a mirror-backed example is harness
+load, not a pipeline loop — time it to completion or use the real fetcher."
+
+**Action:** [done 2026-06-14 — see Phase I.]
+
+### 43. `ui_ir_query` (MCP) silently renders the PRE-content-scaling layout
+
+**Observed:** `ui_ir_query` could not verify the content-scaling change because the
+MCP canvas fetcher (`mcp/src/tools.rs :: find_by_name`) searches ONLY
+`BuildingBlocks_Canvas`, so `AspectRatioToTag_MFD` (a
+`BuildingBlocks_AspectRatioLibrary`) does not resolve and
+`apply_mfd_content_canvas_scaling` no-ops — `ui_ir_query` returns the unscaled
+(narrow-card) layout with no error. Wrong-but-plausible: it looks like the change
+"didn't take" when the tool simply can't see it. (The EXPORT fetcher,
+`starbreaker-3d/src/ui_pipeline.rs :: datacore_ui_lookup_type_names`, WAS extended
+to index the library; the MCP fetcher was not.)
+
+**Improvement:** mirror the family index into the MCP fetcher so `ui_ir_query`
+exercises the same pipeline as the export; until then a §10 note warns that
+`ui_ir_query` does not exercise the aspect-tag content-scaling path.
+
+**Action:** [done 2026-06-14 §10 note; MCP fetcher fix PLANNED (needs rebuild +
+redeploy) — Phase I.]
+
+### 44. Registering a NEW frozen target is an undocumented multi-step sequence
+
+**Observed:** freezing the power screen as gold took a confusing detour.
+`ui_freeze_cycle.sh` froze the IMAGE artifact fine but then HARD-FAILED validation
+with "snapshot freeze ids do not match manifest ids" — because adding a manifest
+entry also requires the SEPARATE `freeze_ui_snapshot_ir.sh` (the cycle
+deliberately omits it), and the `manifest_contains_expected_visual_targets` test
+hard-codes the target COUNT (`== 5`), so a 6th target fails it. The full sequence
+(manifest entry → `ui_freeze_cycle` → `freeze_ui_snapshot_ir` → bump the count
+assert) was tribal.
+
+**Improvement:** document the "register a new gold/platinum target" sequence in
+the reference freeze section; note the hard-coded count bump. (Optional follow-up:
+`ui_freeze_cycle` could detect a manifest-vs-snapshot id delta and tell you to run
+the snapshot freeze instead of failing opaquely.)
+
+**Action:** [done 2026-06-14 reference freeze sequence; ui_freeze_cycle auto-hint
+PLANNED — Phase I.]
+
+### 45. Dim (alpha-0.2) glyph width is not measurable from the PNG
+
+**Observed:** measuring the battery icon (its card renders at alpha 0.2,
+"depleted" at rest) by pixel-scanning the export PNG gave garbage — colour-
+deviation thresholds caught only the dense core (35–53px of a real ~67px glyph),
+and the glyph also MOVES as the card width changes, so fixed crop boxes missed it.
+The reliable signal was the icon's DRAW RECT (`iw`/`ih`) from a temporary
+render-time `eprintln` in the custom-shape path, swept across candidate values in
+one build via an env factor.
+
+**Improvement:** a permanent, env-gated custom-shape draw-rect probe (the
+throwaway `BB_ICON_PROBE2` made durable) so element width is read from layout, not
+scraped from dim pixels; a §10 note steers future measuring to the probe.
+
+**Action:** [done 2026-06-14 §10 note; durable `BB_DRAW_RECT_PROBE` PLANNED —
+Phase I.]
+
+### 46. The aspect-tag / content-scaling engine model was re-derived cold
+
+**Observed:** the whole AspectRatioToTag → "Content Canvas Scaling" mechanism, the
+per-screen aspect sources (display-entity `aspectRatioOverride` / `screenPreset` /
+auto-from-mesh), the Clipper screen→entity loadout mapping, and the mesh aspects
+were researched from scratch this arc — none of it was in the docs.
+
+**Improvement:** the mechanism + step-3 plan is captured in a hand-off
+(`ui-mfd-square-aspect-handoff.md`); the reference dossier links it and the power
+row is updated to FROZEN GOLD so the next session starts warm.
+
+**Action:** [done 2026-06-14 — hand-off doc (commit `1d7eaffdb`) + reference
+dossier row/pointer — Phase I.]
+
+### Phase I — implementation (2026-06-14, this retro)
+
+Render-neutral tooling + docs only (no freeze/baseline touched; the power-screen
+fixes themselves went through the arc's TDD/freeze flow above, not this retro).
+`ui_check.sh` green after the edits.
+1. `mfd_ir_dump` startup banner + compile timing (item 42). [done]
+2. Docs: workflow §10 don't-retry entries (items 42 slow-harness, 43 ui_ir_query
+   blind spot, 45 measure-via-probe); reference freeze sequence (item 44) +
+   dossier power row → gold + step-3 hand-off pointer (items 44, 46). [done]
+3. Deferred (heavier, outside this render-neutral batch): MCP fetcher library
+   index (item 43), `ui_freeze_cycle` manifest-delta hint (item 44), durable
+   `BB_DRAW_RECT_PROBE` (item 45). [planned]

@@ -85,6 +85,24 @@ bash scripts/validate_ui_regression_artifacts.sh --quick
 bash scripts/validate_ui_regression_repo_only.sh   # hosted CI (no game data)
 ```
 
+**Registering a NEW gold/platinum target** (ledger 44 — `clipper_power_master`
+was the first new gold in a while and the ordering bit). `ui_freeze_cycle.sh`
+alone is INSUFFICIENT for a new id: it freezes the image artifact but omits the
+IR snapshot freeze, so its validator then hard-fails `snapshot freeze ids do not
+match manifest ids`. Do, in order:
+```bash
+bash scripts/add_ui_regression_target.sh --id <id> --tier <gold|platinum> \
+  --source-generated-png ships/Data/UI/Generated/ship/drak/Clipper/<canvas>.png
+# bump the hard-coded count in tests/manifest_visual_regression.rs
+#   (manifest_contains_expected_visual_targets: targets.len() == N) and add an
+#   `any(id == "<id>")` assert.
+bash scripts/freeze_ui_snapshot_ir.sh --approver owner --reason "…"   # reads a delta
+bash scripts/ui_freeze_cycle.sh --approver owner --reason "…"          # image artifacts
+bash scripts/validate_ui_snapshot_freeze.sh                            # expect "N target(s)"
+```
+The generated source PNG is `buildingblocks_canvas_<canvasname>.png` (e.g.
+`…_mc_s_power_master.png`), written by the FULL `entity export`, not `ui render`.
+
 ## 3. Comparison & screen dossier
 
 ```bash
@@ -137,13 +155,13 @@ the original.)
 
 | Screen | Helper / scene | Canvas | Reference image | Preset | Tier / target id | Open issues |
 |---|---|---|---|---|---|---|
-| Power MFD | `Screen_Left_Lower_RTT` / LOD0 scene | `MC_S_Power_Master` (via `M_MFD_Screen` frame) | `Screen_Left_Lower_RTT.png` | `power` | not frozen (arc in progress) | text parity reached 2026-06-12; open: P3 separator dots, P4 pip brightness, P13 header side bars, P7 slider width (engine `_SizeRatio` input — plan P2.2b), P8 letter pitch (`crates/starbreaker-ui/docs/ui-clipper-parity-handoff.md`) |
+| Power MFD | `Screen_Left_Lower_RTT` / LOD0 scene | `MC_S_Power_Master` (via `M_MFD_Screen` frame) | `Screen_Left_Lower_RTT.png` | `power` | **GOLD `clipper_power_master`** (frozen 2026-06-14) | card width + battery icon DONE 2026-06-14 (data-driven AspectRatioToTag→"Content Canvas Scaling", `pipeline/aspect_tag.rs`; cards ~437, icon ~67px); open: P3 separator dots, P4 pip brightness, P13 header side bars, P7 slider width (plan P2.2b), P8 letter pitch (`crates/starbreaker-ui/docs/ui-clipper-parity-handoff.md`) |
 | Target MFD | `Screen_Right_Upper_RTT` / LOD0 scene | `MC_S_Target_Master` | `Screen_Right_Upper_RTT.png` | `target` | GOLD `clipper_target_master` | A7 backdrop stack remainder (handoff) |
 | Medical bed | usable screen / LOD1 scene | `I_Med_MedicalBed_A` | `screen_16x9_a-[medical1].png` | — (add) | PLATINUM `ui_target_a` | handoff steps 10–13 |
 | Medical end-of-bed | usable screen / LOD1 scene | `I_Med_MedicalEndOfBed_A` | `mesh_end_screen_plane-[medical2].png` | — (add) | PLATINUM `ui_target_b` | logo −12px check (handoff) |
 | Small door | usable screen / LOD1 scene | `I_Door_Small_DRAK` | `Door-closed.png` | `door` | GOLD `clipper_small_door` | — |
 | Annunciator L | `Screen_Annunciator_L` / LOD1 scene | `H_Eng_Annunciator_Master_Left` | `Screen_Annunciator_L.png` | `annunciator` | GOLD `eng_annunciator_master_left` | — |
-| (unmapped) | `Screen_Left_Upper_RTT`, `Screen_Radar_RTT`, compass, flight HUDs, radars… | — | partial references exist | — | — | map when first worked |
+| (unmapped) | `Screen_Left_Upper_RTT`, `Screen_Radar_RTT`, g-force/radar squares, `velocity_ball`, compass, flight HUDs… | — | partial references exist | — | — | map when first worked. Square/non-4:3 screens render WRONG aspect (4:3) — per-screen aspect step-3 hand-off: `crates/starbreaker-ui/docs/ui-mfd-square-aspect-handoff.md` |
 
 Scene split: **LOD0** (`DRAK Clipper_LOD0_TEX0/scene.json`) carries the
 cockpit MFD screens; **LOD1** (`DRAK Clipper_LOD1_TEX2/scene.json`) carries
