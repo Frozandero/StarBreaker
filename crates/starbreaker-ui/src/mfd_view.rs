@@ -158,6 +158,17 @@ fn set_canvas_url(canvas_urls: &mut Vec<CanvasUrl>, node: BbNodeId, url: &str) {
     }
 }
 
+/// The landscape (full-width) content-view slot node, identified the same way
+/// [`apply_bound_mfd_view`] does (the `landscapecanvasguid` `CanvasReferenceRecord`
+/// binding). `None` when the frame lacks the landscape/portrait view wiring.
+///
+/// Exposed so the pipeline can apply the data-driven aspect-tag "Content Canvas
+/// Scaling" width to this exact node (the engine's `bd1ebe5c` content canvas)
+/// after resolution, replacing the measured host inset on the width axis.
+pub(crate) fn landscape_slot_id(scene: &BbScene) -> Option<BbNodeId> {
+    mfd_view_slots(scene).map(|slots| slots.landscape)
+}
+
 /// Identify the landscape/portrait MFD content slots from the frame's
 /// `CanvasReferenceRecord` field bindings (`landscapecanvasguid` /
 /// `portraitcanvasguid`). Returns `None` unless both are present.

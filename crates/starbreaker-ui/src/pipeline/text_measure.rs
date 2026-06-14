@@ -49,6 +49,12 @@ impl DrawTextMeasure for SwfDrawTextMeasure<'_> {
         let mut lines = 0usize;
         for line in text.split('\n') {
             lines += 1;
+            // ADVANCE (pen-travel) width — the horizontal space the text needs to
+            // lay out on ONE line. The box must hold this: the wrap pass measures
+            // in advances, so a box sized to the narrower ink extent makes
+            // multi-token values ("2 / 16", "/ 0") wrap at their space. Icon
+            // headroom comes from the separator footprint, not from squeezing the
+            // title box (crates/starbreaker-ui/docs/ui-clipper-parity-handoff.md).
             if let Some(line_width) = self.renderer.measure_swf_advance_width(
                 line,
                 selection.font,

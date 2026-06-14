@@ -2056,38 +2056,58 @@ fn apply_flex_no_grow_shrink(
     if container_scrollable || wrap_enabled || shrink_avail <= 0.0 || total_main <= shrink_avail {
         return total_main;
     }
-    let all_items_flex_managed = sizes.iter().all(|(child_id, _, _, _)| {
+    let is_shrinkable = |child_id: &BbNodeId| {
         scene.nodes.get(child_id).is_some_and(|node| {
             main_axis_flex_managed(node, is_row)
                 || zero_auto_text_backed(*child_id, node, scene, is_row)
         })
-    });
-    if !all_items_flex_managed {
-        return total_main;
-    }
+    };
     let spacing_total = item_spacing * (sizes.len().saturating_sub(1) as f32);
-    let items_main = total_main - spacing_total;
-    let target_items = (shrink_avail - spacing_total).max(0.0);
-    if items_main <= 0.0 || target_items >= items_main {
+    // Split the row into flex-managed (shrinkable) and intrinsic
+    // (non-shrinkable, e.g. an Auto-width title) children. The intrinsic ones
+    // keep their measured size; the shrinkable ones (a card's icon + separator)
+    // compress to fit the space the title leaves — this squashes the battery
+    // icon so the longer BATTERY title fits the fixed-width header, matching the
+    // engine. When every child is shrinkable this reduces to the old uniform
+    // scale (intrinsic_main = 0); when none is (the medical footer's None-
+    // authored pairs arrive as Auto 64 LIVE) the row is left untouched.
+    let mut shrinkable_main = 0.0f32;
+    let mut intrinsic_main = 0.0f32;
+    for (child_id, w, h, _) in sizes.iter() {
+        let main = if is_row { *w } else { *h };
+        if is_shrinkable(child_id) {
+            shrinkable_main += main;
+        } else {
+            intrinsic_main += main;
+        }
+    }
+    if shrinkable_main <= 0.0 {
         return total_main;
     }
-    let scale = target_items / items_main;
+    let target_shrinkable = (shrink_avail - spacing_total - intrinsic_main).max(0.0);
+    if target_shrinkable >= shrinkable_main {
+        return total_main;
+    }
+    let scale = target_shrinkable / shrinkable_main;
     if std::env::var("BB_SHRINK_PROBE").as_deref() == Ok("1") {
         for (child_id, w, h, _) in sizes.iter() {
             let node = scene.nodes.get(child_id);
             eprintln!(
-                "BB_SHRINK_PROBE: scale={scale} is_row={is_row} child={child_id} name={:?} ty={:?} main_sizing={:?} w={w} h={h}",
+                "BB_SHRINK_PROBE: scale={scale} is_row={is_row} child={child_id} name={:?} ty={:?} shrinkable={} main_sizing={:?} w={w} h={h}",
                 node.map(|n| n.name.as_str()),
                 node.map(|n| &n.ty),
+                is_shrinkable(child_id),
                 node.map(|n| if is_row { &n.sizing.width } else { &n.sizing.height }),
             );
         }
     }
-    for (_, w, h, _) in sizes.iter_mut() {
-        if is_row {
-            *w *= scale;
-        } else {
-            *h *= scale;
+    for (child_id, w, h, _) in sizes.iter_mut() {
+        if is_shrinkable(child_id) {
+            if is_row {
+                *w *= scale;
+            } else {
+                *h *= scale;
+            }
         }
     }
     sizes

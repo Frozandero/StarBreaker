@@ -863,11 +863,11 @@ fn rasterize_svg_for_node(
     // icon box — while plain custom shapes keep the nine-slice/stretch
     // pipeline (the medical menu cards' thin edge-line svgs stretch to full
     // card height in-game despite the same authored Contain).
-    // The `icon` framework tag marks icon-ROLE custom shapes (the power
-    // screen's authored system/card glyphs) — same aspect-preserved rendering
-    // as expanded icon-widget instances. The tag must be the node's OWN
-    // (authored/implicit-host), not inherited: plain shapes inside icon-
-    // tagged containers keep the stretch pipeline.
+    // Only the EXPANDED icon-widget instances (framework tag
+    // `icon-element-instance`) render aspect-preserved. Authored own-`icon`
+    // card/system glyphs (the battery/output card icons) are squashed to their
+    // box in-game — the battery glyph fills its flex-shrunk slot at the box
+    // aspect, not the SVG's — so they keep the nine-slice/stretch pipeline.
     let is_icon_element_instance = node
         .resolved_style_tags
         .iter()
@@ -875,12 +875,6 @@ fn rasterize_svg_for_node(
             tag.tag_name
                 .as_deref()
                 .is_some_and(|name| name.eq_ignore_ascii_case("icon-element-instance"))
-        })
-        || node.resolved_style_tags.iter().any(|tag| {
-            tag.tag_name
-                .as_deref()
-                .is_some_and(|name| name.eq_ignore_ascii_case("icon"))
-                && node.style_tag_uuids.iter().any(|own| own == &tag.uuid)
         });
     if (node.custom_shape.is_none() || is_icon_element_instance)
         && node

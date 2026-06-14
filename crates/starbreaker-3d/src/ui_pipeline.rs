@@ -33,6 +33,10 @@ pub(super) fn datacore_ui_lookup_type_names() -> &'static [&'static str] {
         "BuildingBlocks_FontStyle",
         "BuildingBlocks_Timeline",
         "TagDatabase",
+        // MFD responsive layout: the aspect→tag library (e.g.
+        // `AspectRatioToTag_MFD`) the pipeline reads to map a screen aspect to a
+        // "Content Canvas Scaling" layout tag.
+        "BuildingBlocks_AspectRatioLibrary",
     ]
 }
 

@@ -17,6 +17,7 @@ use crate::style::{ManufacturerStyle, StyleLoader};
 use crate::ui_ir::{UiIrDocument, UiIrTextPayload, UiRendererHint};
 
 mod asset_manifest;
+mod aspect_tag;
 mod canvas_aspect;
 mod host_stage;
 mod style_projection;
@@ -332,6 +333,17 @@ pub fn compile_ir_for_binding(inputs: &PipelineInputs<'_>) -> Result<UiIrDocumen
         }
     }
 
+    // Data-driven MFD responsive layout: the engine maps the physical screen
+    // aspect (from the frame canvas) to a layout tag and, on a 4:3/16:9/1:1
+    // match, widens the content view to `SizeX × height` ("Content Canvas
+    // Scaling" embeddedStyle). The content-view slot is the tagged content
+    // canvas, so widening it reflows the cards to their in-game width instead of
+    // the measured host-inset width. Scoped to the MFD frame path; a no-op when
+    // the screen has no matching aspect tag or content-scaling style.
+    if use_frame_canvas && let Some(aspect_hw) = frame_aspect {
+        apply_mfd_content_canvas_scaling(&mut scene, aspect_hw, &raw_root_json, inputs.canvas_fetcher);
+    }
+
     let asset_manifest = timed("manifest", || build_asset_reference_manifest(&scene, inputs.asset_fetcher));
 
     // Textfield font sizes are host-stage units on the MFD frame path; see
@@ -489,6 +501,126 @@ pub fn render_for_binding_ir(inputs: &PipelineInputs<'_>) -> Result<Vec<u8>, UiE
 /// Main entrypoint for rendering a UI binding to PNG bytes.
 pub fn render_for_binding(inputs: &PipelineInputs<'_>) -> Result<Vec<u8>, UiError> {
     render_for_binding_ir(inputs)
+}
+
+/// Apply the engine's data-driven MFD "Content Canvas Scaling" to the content
+/// view: map the screen aspect (frame canvas height/width) to a layout tag via
+/// the `AspectRatioToTag_MFD` library, find that tag's `SizeX` (`PercentOfY`) in
+/// any resolved canvas's "Content Canvas Scaling" `embeddedStyle`, and set the
+/// landscape content-view slot's width to `SizeX × height`. This is the
+/// responsive rule the engine applies at runtime (the slot is the content
+/// canvas the rule targets), replacing the measured host inset on the WIDTH axis
+/// (height keeps its inset). No-op when any datum is absent — the slot then
+/// keeps its host-inset width, so non-MFD and unmatched screens are unchanged.
+fn apply_mfd_content_canvas_scaling(
+    scene: &mut crate::bb_scene::BbScene,
+    frame_aspect_h_over_w: f32,
+    frame_json: &serde_json::Value,
+    fetcher: &dyn CanvasFetcher,
+) {
+    use crate::bb_scene::BbValue;
+    if frame_aspect_h_over_w <= 0.0 || !frame_aspect_h_over_w.is_finite() {
+        return;
+    }
+    let aspect_w_over_h = 1.0 / frame_aspect_h_over_w;
+    // The MFD aspect→tag library is read for its authored ratios + tag refs (the
+    // values come from DataCore, not source): MFD screens use the `_MFD` variant.
+    let Ok(library) = fetcher.fetch_canvas_by_path("AspectRatioToTag_MFD") else {
+        return;
+    };
+    let Some(tag_id) = aspect_tag::nearest_aspect_tag(&library, aspect_w_over_h) else {
+        return;
+    };
+    // The "Content Canvas Scaling" embeddedStyle lives in the content-frame
+    // canvas the frame embeds via a `canvas:` URL (not a guid sub-reference), so
+    // walk the frame's canvas-reference graph (BFS, bounded) and match the entry
+    // by STRUCTURE — no record-name gating.
+    let Some(scaling) = find_content_scaling(frame_json, &tag_id, fetcher) else {
+        return;
+    };
+    if !scaling.behavior_is_percent_of_y || scaling.size_x <= 0.0 {
+        return;
+    }
+    let Some(slot_id) = crate::mfd_view::landscape_slot_id(scene) else {
+        return;
+    };
+    let Some(slot) = scene.nodes.get_mut(&slot_id) else {
+        return;
+    };
+    // The engine's rule: the content canvas width = `SizeX × its own height`
+    // (`WidthBehavior = PercentOfY`). The two-pass layout resolves the cross-axis
+    // (height) first, so this is faithful and does not couple width→width.
+    slot.sizing.width = BbValue::Other {
+        value: scaling.size_x,
+        behavior: "PercentOfY".to_string(),
+    };
+}
+
+/// BFS the canvas-reference graph rooted at `frame_json` for the first canvas
+/// carrying a "Content Canvas Scaling" entry for `tag_id`. Bounded by a visited
+/// set and a fetch cap so a malformed/cyclic graph can't run away.
+fn find_content_scaling(
+    frame_json: &serde_json::Value,
+    tag_id: &str,
+    fetcher: &dyn CanvasFetcher,
+) -> Option<aspect_tag::ContentScalingWidth> {
+    use std::collections::{HashSet, VecDeque};
+    let mut visited: HashSet<String> = HashSet::new();
+    let mut queue: VecDeque<String> = VecDeque::new();
+    collect_canvas_references(frame_json, &mut queue);
+    // The content frame is a direct `canvas:` embed of the MFD frame, so the
+    // match is found within a hop or two; cap fetches so a wide reference graph
+    // can't turn this into a deep crawl.
+    let mut fetch_budget = 64usize;
+    while let Some(reference) = queue.pop_front() {
+        if !visited.insert(reference.clone()) {
+            continue;
+        }
+        if fetch_budget == 0 {
+            break;
+        }
+        fetch_budget -= 1;
+        let Ok(record) = fetcher.fetch_canvas_by_path(&reference) else {
+            continue;
+        };
+        if let Some(scaling) = aspect_tag::content_scaling_width(&record, tag_id) {
+            return Some(scaling);
+        }
+        collect_canvas_references(&record, &mut queue);
+    }
+    None
+}
+
+/// Collect canvas record references from a record JSON into `out`: the `canvas:`
+/// URL fields that embed a sub-canvas (file-URL or record-name form) and any
+/// `BuildingBlocks_Canvas.*` record-ref strings. References are normalised to
+/// record names via [`extract_record_name`].
+fn collect_canvas_references(json: &serde_json::Value, out: &mut std::collections::VecDeque<String>) {
+    match json {
+        serde_json::Value::Array(items) => {
+            for item in items {
+                collect_canvas_references(item, out);
+            }
+        }
+        serde_json::Value::Object(map) => {
+            for (key, value) in map {
+                // Follow only `canvas:` sub-canvas embeds — the structural canvas
+                // tree (m_eng_mfdcontent is referenced this way, as a file-URL,
+                // not a guid sub-record). Following every `BuildingBlocks_Canvas.`
+                // record-ref string instead explodes the crawl (icons, widgets…).
+                if key == "canvas"
+                    && let Some(s) = value.as_str()
+                    && !s.is_empty()
+                    && s != "null"
+                {
+                    out.push_back(extract_record_name(s));
+                } else {
+                    collect_canvas_references(value, out);
+                }
+            }
+        }
+        _ => {}
+    }
 }
 
 pub(super) fn fallback_counter_warnings<'a>(
