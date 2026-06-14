@@ -235,7 +235,8 @@ in the same commit that introduces them.
 | `SB_SHIP_VALUES_DUMP=1` | `starbreaker-3d` `ship_values` | stderr (`eprintln`) | every derived registry path = value at export/replay |
 | `SB_UI_FONT_DUMP=1` | `text/swf_draw` | stderr (`eprintln`) | one `FONTDUMP` line per rendered text element (see harness doc) |
 | `BB_TEXT_FORMAT_PROBE=1` | `bb_brand_apply` | stderr (`eprintln`) | per pass: `TFPROBE` = text-format-route entry applications (FontSize/FillColor on tagged textfields); `TFPROBE-NORMAL` = normal-route entries carrying FontSize (with modifiers + conditions) |
-| `ui render --dump-ir-dir <dir>` | CLI flag | files (`*.ir.json`) | composed `*.ir.json` per helper (nodes, rects, payloads, tints) |
+| `BB_DRAW_RECT_PROBE=<1\|filter>` | `ir_compose` custom-shape draw | stderr (`eprintln`) | per asset draw: node name, laid-out `rect`, actual `raster` WxH, asset path (`1` = all; else a name/asset substring filter). For element width from layout, not dim pixels (ledger 45) |
+| `ui render --dump-ir-dir <dir>` | CLI flag | files (`*.ir.json`) | composed `*.ir.json` per helper (nodes, rects, payloads, tints). FAST IR inspection of a bound screen (~15s, matches the render) — prefer over `mfd_ir_dump` |
 
 Example: `BB_SHRINK_PROBE=1 ./target/debug/starbreaker ui render --scene
 "<scene>" --out-dir /tmp/x --helper Screen_Left_Lower_RTT 2>&1 | grep PROBE`.
@@ -249,7 +250,7 @@ Example: `BB_SHRINK_PROBE=1 ./target/debug/starbreaker ui render --scene
 | `python3 scripts/ui_ir_query.py children <ir.json> <node_id> [--depth N] [--fields a.b,c]` | descendant subtree (rect, `right`=x+w, is_active, non-Visible overflow) — the mirror of `tree`, for clip/overflow tracing |
 | `python3 scripts/ui_measure.py <image> --box x0,y0,x1,y1 [--ir <ir.json> --node <id>] [--delta N] [--anchor … --anchor-rgb …]` | glyph-run cap heights (contamination-flagged) + colour ratios with `feature_width` (warns when ≤4px that a thin feature on a RECTIFIED capture has a smeared hue — measure colour on the ORIGINAL) + optional additive-haze correction (JSON to stdout) |
 | `ui_stage_diff <canvas.json> [WxH] [--records-root <dir>] [--filter <substr>]` | parse-only vs full-resolve layout diff; flags first name-matched divergence (cracks "which stage broke the geometry") |
-| `mfd_ir_dump <canvas-guid> <content-guid> [name-filter] [WxH]` | framed MFD IR dump from the record mirror (filter = lowercase name substring) |
+| `mfd_ir_dump <canvas-guid> <content-guid> [name-filter] [WxH]` | framed MFD IR dump from the LOCAL record mirror — the no-P4K/no-MCP fallback (~5s: indexes only the UI subtrees + caches the parsed TagDatabase; prints index/compile timing). When P4K/MCP is available prefer `ui_ir_query` (canvas pair) or `ui render --dump-ir-dir` (bound screen). NOTE: uses anim sample 0; `ui render` uses 50 (the render), so a few state-dependent rects differ |
 | `query_ui_layout --canvas-guid <guid> --query <pattern>` | per-node layout/draw/text rects + drawn glyph bounds |
 | `bb_layout_wireframe <fixture.json> <out.png> [--merge]` | wireframe overlay of layout rects |
 | `phase5_certification_dashboard` | representative-family certification table (CI) |

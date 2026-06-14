@@ -12,23 +12,59 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use rayon::prelude::*;
 use starbreaker_ui::pipeline::AssetFetcher;
 use starbreaker_ui::{
     CanvasFetcher, PipelineInputs, StyleFetcher, SwfFetcher, UiBindingView, UiError,
 };
 
-struct Fs(HashMap<String, PathBuf>);
+struct Fs {
+    map: HashMap<String, PathBuf>,
+    /// Parsed-record cache keyed by file path. The compile re-fetches the 6.2 MB
+    /// `TagDatabase` thousands of times during tag resolution; without a cache the
+    /// `Fs` fetcher re-reads + re-parses it each time, dwarfing everything else
+    /// (ledger 42). Caching + the shared-`Rc` path mirror the export's DataCore
+    /// fetcher so repeated fetches are a refcount bump.
+    cache: std::cell::RefCell<HashMap<PathBuf, std::rc::Rc<serde_json::Value>>>,
+}
+impl Fs {
+    fn new(map: HashMap<String, PathBuf>) -> Self {
+        Self {
+            map,
+            cache: std::cell::RefCell::new(HashMap::new()),
+        }
+    }
+    fn fetch_rc(&self, key: &str) -> Result<std::rc::Rc<serde_json::Value>, UiError> {
+        let p = self
+            .map
+            .get(&key.to_ascii_lowercase())
+            .ok_or_else(|| UiError::RenderError(format!("missing {key}")))?
+            .clone();
+        if let Some(v) = self.cache.borrow().get(&p) {
+            return Ok(std::rc::Rc::clone(v));
+        }
+        let value: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&p).unwrap_or_default())
+                .map_err(|e| UiError::RenderError(format!("parse {}: {e}", p.display())))?;
+        let rc = std::rc::Rc::new(value);
+        self.cache.borrow_mut().insert(p, std::rc::Rc::clone(&rc));
+        Ok(rc)
+    }
+}
 impl CanvasFetcher for Fs {
     fn fetch_canvas_json(&self, guid: &str) -> Result<serde_json::Value, UiError> {
-        let key = guid.to_ascii_lowercase();
-        let p = self
-            .0
-            .get(&key)
-            .ok_or_else(|| UiError::RenderError(format!("missing {guid}")))?;
-        Ok(serde_json::from_str(&std::fs::read_to_string(p).unwrap()).unwrap())
+        self.fetch_rc(guid).map(|rc| (*rc).clone())
     }
     fn fetch_canvas_by_name(&self, name: &str) -> Result<serde_json::Value, UiError> {
         self.fetch_canvas_json(name)
+    }
+    fn fetch_canvas_by_path_shared(
+        &self,
+        path_or_name: &str,
+    ) -> Result<std::rc::Rc<serde_json::Value>, UiError> {
+        // Return the cached Rc directly (no deep clone) — the hot path for tag
+        // resolution, mirroring the DataCore fetcher.
+        self.fetch_rc(&starbreaker_ui::pipeline::extract_record_name(path_or_name))
     }
 }
 struct NoSwf;
@@ -66,6 +102,32 @@ fn collect(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
+/// Read the first `n` bytes of `p` as a lossy string. Record header fields
+/// (`_RecordId_`, `_RecordName_`) sit at the very top of every record, so a head
+/// read avoids pulling multi-MB bodies into memory just to index by name/guid.
+fn read_head(p: &Path, n: usize) -> String {
+    use std::io::Read;
+    let Ok(mut f) = std::fs::File::open(p) else {
+        return String::new();
+    };
+    let mut buf = vec![0u8; n];
+    let read = f.read(&mut buf).unwrap_or(0);
+    buf.truncate(read);
+    String::from_utf8_lossy(&buf).into_owned()
+}
+
+/// Extract a top-level JSON string value, `"<field>": "value"` -> `value`.
+/// Record id/name values contain no escaped quotes, so a plain quote scan is
+/// sufficient (and far cheaper than a full serde parse).
+fn extract_json_string_field(s: &str, field: &str) -> Option<String> {
+    let key = format!("\"{field}\"");
+    let after_key = &s[s.find(&key)? + key.len()..];
+    let after_colon = &after_key[after_key.find(':')? + 1..];
+    let after_open_quote = &after_colon[after_colon.find('"')? + 1..];
+    let end = after_open_quote.find('"')?;
+    Some(after_open_quote[..end].to_string())
+}
+
 /// Minimal stderr logger so library `log::` probes (e.g. `BB_A3_STYLE_PROBE`)
 /// are visible from this debug helper. Enabled via `MFD_IR_DUMP_LOG=1`.
 struct StderrLogger;
@@ -91,41 +153,63 @@ fn main() {
         .join("../../../ships/dcb_canvas/libs/foundry/records")
         .canonicalize()
         .expect("record mirror at ../ships/dcb_canvas/libs/foundry/records");
-    // The Fs fetcher parses the WHOLE record mirror up front (~thousands of
-    // files, tens of seconds). Announce it so a slow startup is never mistaken
-    // for a pipeline hang (ledger 42: a 94s run was misread as an infinite
-    // layout loop). The real export path (`starbreaker ui render`) is ~9s.
+    // Index ONLY the UI-support subtrees the canvas fetcher resolves against
+    // (ledger 42): mfd_ir_dump fetches canvases / styles / fonts / timelines /
+    // tags / screen presets by guid/name/stem, all of which live under these
+    // dirs. Nothing under entities/, contracts/, loadouts/ etc. is ever fetched,
+    // so skipping the rest of the 60k-file / 3 GB mirror is ~10x fewer files and
+    // avoids the multi-MB loadout/contract records. Prefer the indexed tools for
+    // routine work — `starbreaker ui render --dump-ir-dir` (bound screens) or the
+    // `ui_ir_query` MCP tool (ad-hoc canvas pairs); this example is the no-P4K /
+    // no-MCP fallback.
     let load_start = std::time::Instant::now();
     let mut files = Vec::new();
-    collect(&root, &mut files);
+    for sub in ["ui", "tagdatabase", "scitemdisplayscreenpreset"] {
+        collect(&root.join(sub), &mut files);
+    }
     eprintln!(
-        "mfd_ir_dump: loading {} record-mirror files (one-time ~minute; this is harness load, NOT a pipeline loop)…",
+        "mfd_ir_dump: indexing {} UI-support record files (parallel head-scan, a few seconds; harness load, NOT a pipeline loop)…",
         files.len()
     );
+    // Build the name/id/stem -> path index from each file's HEAD only:
+    // `_RecordId_` and `_RecordName_` sit at the top of every record, so a
+    // head-scan + string extract avoids a full serde parse of multi-hundred-KB
+    // canvases. Parsed in parallel.
+    let parsed: Vec<(PathBuf, Option<String>, Option<String>)> = files
+        .par_iter()
+        .map(|p| {
+            let head = read_head(p, 8192);
+            (
+                p.clone(),
+                extract_json_string_field(&head, "_RecordId_"),
+                extract_json_string_field(&head, "_RecordName_"),
+            )
+        })
+        .collect();
     let mut map = HashMap::new();
+    // Stems are the low-priority fallback (first occurrence wins).
     for p in &files {
-        if let Ok(j) = serde_json::from_str::<serde_json::Value>(
-            &std::fs::read_to_string(p).unwrap_or_default(),
-        ) {
-            if let Some(id) = j.get("_RecordId_").and_then(|v| v.as_str()) {
-                map.insert(id.to_ascii_lowercase(), p.clone());
-            }
-            if let Some(n) = j.get("_RecordName_").and_then(|v| v.as_str()) {
-                map.insert(n.to_ascii_lowercase(), p.clone());
-                map.insert(
-                    n.strip_prefix("BuildingBlocks_Canvas.")
-                        .unwrap_or(n)
-                        .to_ascii_lowercase(),
-                    p.clone(),
-                );
-            }
-            if let Some(stem) = p.file_stem().and_then(|s| s.to_str()) {
-                map.entry(stem.to_ascii_lowercase()).or_insert_with(|| p.clone());
-            }
+        if let Some(stem) = p.file_stem().and_then(|s| s.to_str()) {
+            map.entry(stem.to_ascii_lowercase()).or_insert_with(|| p.clone());
+        }
+    }
+    // GUID + record name (and the BuildingBlocks_Canvas.-stripped name) override.
+    for (p, id, name) in &parsed {
+        if let Some(id) = id {
+            map.insert(id.to_ascii_lowercase(), p.clone());
+        }
+        if let Some(n) = name {
+            map.insert(n.to_ascii_lowercase(), p.clone());
+            map.insert(
+                n.strip_prefix("BuildingBlocks_Canvas.")
+                    .unwrap_or(n)
+                    .to_ascii_lowercase(),
+                p.clone(),
+            );
         }
     }
     eprintln!(
-        "mfd_ir_dump: mirror loaded ({} keys) in {:.1}s; compiling IR…",
+        "mfd_ir_dump: indexed ({} keys) in {:.1}s; compiling IR…",
         map.len(),
         load_start.elapsed().as_secs_f32()
     );
@@ -137,7 +221,7 @@ fn main() {
         .split_once('x')
         .and_then(|(a, b)| Some((a.parse().ok()?, b.parse().ok()?)))
         .unwrap_or((1600, 1200));
-    let fetcher = Fs(map);
+    let fetcher = Fs::new(map);
     let binding = UiBindingView {
         canvas_guid: Some(&canvas),
         content_canvas_guid: Some(&content),

@@ -289,21 +289,24 @@ Flows (commands in the reference doc §2/§7):
   Accent2; the crisp original is unambiguously red). Rectify for POSITION;
   judge a thin feature's COLOUR on the CRISP ORIGINAL. `ui_measure.py` warns
   when `feature_width ≤ 4`.
-- **A slow mirror-backed example is HARNESS LOAD, not a pipeline loop
-  (ledger 42).** `mfd_ir_dump` parses the entire decompiled record mirror at
-  startup (~94s, ~99% CPU / ~198MB) BEFORE compiling — it now prints a
-  load/compile banner. Do NOT read sustained CPU/RSS on it as an infinite
-  layout loop and start reverting: time the run to completion, or use the real
-  export path (`starbreaker ui render --helper <name> …`, DataCore fetcher,
-  ~9s/screen). `PercentOfY` content width does NOT cycle.
-- **`ui_ir_query` does NOT exercise the aspect-tag content-scaling
-  (ledger 43).** The MCP canvas fetcher resolves `BuildingBlocks_Canvas` only,
-  so `AspectRatioToTag_MFD` doesn't resolve and `apply_mfd_content_canvas_scaling`
-  no-ops there — `ui_ir_query` returns the PRE-scaling (narrow-card) layout with
-  no error. To verify MFD content-scaling / aspect changes, render via
-  `starbreaker ui render` (export DataCore fetcher) and measure, not `ui_ir_query`.
+- **Use the INDEXED tools for IR inspection; don't mistake slowness for a loop
+  (ledger 42).** Fast paths: `ui_ir_query` (MCP — ad-hoc canvas pair → rects +
+  tags + tokens, ~1s) and `starbreaker ui render --helper <name> --dump-ir-dir
+  <dir>` (bound screen → `*.ir.json` with `computed_rect`, ~15s, *matches the
+  actual render*). `mfd_ir_dump` (the no-P4K/no-MCP fallback) is now ~5s too
+  (indexes only the UI subtrees + caches the parsed `TagDatabase`; it prints
+  index/compile timing). It WAS ~94s when it parsed the whole 60k-file mirror —
+  if you ever see sustained CPU/RSS, time the run to completion, don't read it as
+  a layout loop and start reverting. `PercentOfY` content width does NOT cycle.
+- **`ui_ir_query` DOES exercise the aspect-tag content-scaling (ledger 43,
+  reversed).** The MCP canvas fetcher now indexes `BuildingBlocks_AspectRatioLibrary`,
+  so `AspectRatioToTag_MFD` resolves and `apply_mfd_content_canvas_scaling` fires
+  — `ui_ir_query` returns the scaled layout (power cards 438px, matching the
+  export). It is the fastest way to verify MFD content-scaling / aspect changes.
+  (Requires the redeployed MCP binary; restart the client after an MCP rebuild.)
 - **Measure element width from the DRAW RECT, not dim pixels (ledger 45).**
   At-rest cards render at low alpha (the battery card is 0.2 "depleted"), so
   pixel-scanning the export PNG catches only a glyph's dense core (and the glyph
-  moves when layout reflows). Read the laid-out rect from a render-time probe
-  in the custom-shape draw path instead of scraping the image.
+  moves when layout reflows). Read the laid-out rect from `ui_ir_query` /
+  `--dump-ir-dir` (`computed_rect`), or `BB_DRAW_RECT_PROBE=<name|asset|1>` on a
+  `ui render` for the actual raster size in the custom-shape draw path.

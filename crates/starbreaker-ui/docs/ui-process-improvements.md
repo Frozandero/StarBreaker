@@ -1162,7 +1162,14 @@ load time) and the IR compile time, so slow≠hang is unmistakable; a §10
 don't-retry entry codifies "high CPU/RSS on a mirror-backed example is harness
 load, not a pipeline loop — time it to completion or use the real fetcher."
 
-**Action:** [done 2026-06-14 — see Phase I.]
+**Action:** [done 2026-06-14 — banner (Phase I). SPEEDUP follow-up 2026-06-14:
+`mfd_ir_dump` ~94s→**5s** — index only the UI subtrees (`ui/`, `tagdatabase/`,
+`scitemdisplayscreenpreset/`: 60k→5.7k files), parallel head-scan for
+`_RecordId_`/`_RecordName_` (index 90s→0.0s), and a memoising `Fs` fetcher with a
+shared-`Rc` path (the uncached 6.2MB TagDatabase re-parse was the compile cost:
+~2min→4.1s). Docs steer routine IR inspection to the indexed tools (`ui_ir_query`,
+`ui render --dump-ir-dir`); mfd_ir_dump is the no-P4K/no-MCP fallback. rayon added
+as a dev-dependency.]
 
 ### 43. `ui_ir_query` (MCP) silently renders the PRE-content-scaling layout
 
