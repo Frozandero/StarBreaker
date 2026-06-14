@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "frozen_at": "2026-06-13T01:42:33Z",
+  "frozen_at": "2026-06-14T14:15:00Z",
   "approver": "owner",
-  "reason": "plan P3.5: text-calibration arc artifact re-freeze. Changed pixels confined to the reference-adjudicated caption pairs: ui_target_a (bed) 0.44% of pixels — MEDGELS pair top-to-top 28->29 (capture 29, exact) and PATIENT NAME pair 1010->1004 (capture 1004, exact; outlier graduated); ui_target_b (eob) 0.15% — MEDGELS pair top-to-top 28->29 (capture 29), meter 86->84 (capture 84, exact), label 36->37 (within 1px of prior). clipper_small_door / eng_annunciator_master_left / clipper_target_master byte-identical (max abs diff 0.0). Constants retired per the register: the 1.5 TTF pair (em model), 0.84+0.33 inline pair (advance-at-draw-size), -8 caption handoff (pure line-box stack); one new registered pin (right-anchored pair top padding) preserving the med2-rect compensation.",
+  "reason": "Freeze power screen as gold + re-freeze target-master: data-driven AspectRatioToTag Content-Canvas-Scaling reflows MFD content (power cards 414->437 vs ~432 ref; flex-shrunk battery icon 53->67 vs ~69 ref). Non-MFD targets (door/annunciator/medical beds) unaffected (mfd-gated path).",
   "signature": null,
   "manifest_path": "crates/starbreaker-ui/tests/fixtures/ui_ir/ui_snapshot_manifest.json",
   "artifacts": [
@@ -51,7 +51,17 @@
       "tier": "platinum",
       "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_mc_s_target_master.png",
       "artifact_path": "test-artifacts/ui/clipper_target_master.png",
-      "sha256": "2bdac58fd59cc63b8f0297d7cae41ab766ce1112b6079c68deacbc9e4d559654",
+      "sha256": "fe614f702fd2022c038723dd30fced2d2628b2ea44e2bb77ad80979dae249740",
+      "width": 1600,
+      "height": 1200,
+      "channels": "srgba"
+    },
+    {
+      "id": "clipper_power_master",
+      "tier": "gold",
+      "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_mc_s_power_master.png",
+      "artifact_path": "test-artifacts/ui/clipper_power_master.png",
+      "sha256": "6c9edeb71eebd33b2b1a818fcdda3e8998118f108e0459b317ae7892aae7e919",
       "width": 1600,
       "height": 1200,
       "channels": "srgba"

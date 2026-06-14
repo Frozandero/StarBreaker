@@ -131,7 +131,7 @@ fn manifest_snapshot_runner_preflight() {
 #[test]
 fn manifest_contains_expected_visual_targets() {
     let manifest = snapshot_manifest();
-    assert_eq!(manifest.targets.len(), 5, "expected five manifest targets");
+    assert_eq!(manifest.targets.len(), 6, "expected six manifest targets");
     assert!(
         manifest
             .targets
@@ -145,6 +145,13 @@ fn manifest_contains_expected_visual_targets() {
             .iter()
             .any(|target| target.id == "clipper_target_master"),
         "target screen should be in gold/platinum manifest set"
+    );
+    assert!(
+        manifest
+            .targets
+            .iter()
+            .any(|target| target.id == "clipper_power_master"),
+        "power screen should be in the gold manifest set"
     );
 }
 

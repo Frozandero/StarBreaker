@@ -70,6 +70,20 @@
         "w": 1,
         "h": 1
       }
+    },
+    {
+      "id": "clipper_power_master",
+      "category": "image",
+      "baseline_path": "clipper_power_master.baseline",
+      "current_path": "clipper_power_master.current",
+      "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_mc_s_power_master.png",
+      "tier": "gold",
+      "roi": {
+        "x": 0,
+        "y": 0,
+        "w": 1,
+        "h": 1
+      }
     }
   ]
 }
