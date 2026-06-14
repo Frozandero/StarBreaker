@@ -91,8 +91,17 @@ fn main() {
         .join("../../../ships/dcb_canvas/libs/foundry/records")
         .canonicalize()
         .expect("record mirror at ../ships/dcb_canvas/libs/foundry/records");
+    // The Fs fetcher parses the WHOLE record mirror up front (~thousands of
+    // files, tens of seconds). Announce it so a slow startup is never mistaken
+    // for a pipeline hang (ledger 42: a 94s run was misread as an infinite
+    // layout loop). The real export path (`starbreaker ui render`) is ~9s.
+    let load_start = std::time::Instant::now();
     let mut files = Vec::new();
     collect(&root, &mut files);
+    eprintln!(
+        "mfd_ir_dump: loading {} record-mirror files (one-time ~minute; this is harness load, NOT a pipeline loop)…",
+        files.len()
+    );
     let mut map = HashMap::new();
     for p in &files {
         if let Ok(j) = serde_json::from_str::<serde_json::Value>(
@@ -115,6 +124,11 @@ fn main() {
             }
         }
     }
+    eprintln!(
+        "mfd_ir_dump: mirror loaded ({} keys) in {:.1}s; compiling IR…",
+        map.len(),
+        load_start.elapsed().as_secs_f32()
+    );
     let canvas = std::env::args().nth(1).expect("canvas guid/name");
     let content = std::env::args().nth(2).expect("content guid/name");
     let filter = std::env::args().nth(3).unwrap_or_default().to_ascii_lowercase();
@@ -148,7 +162,12 @@ fn main() {
         loc_fetcher: None,
         derived_values: None,
     };
+    let compile_start = std::time::Instant::now();
     let ir = starbreaker_ui::compile_ir_for_binding(&inputs).expect("compile");
+    eprintln!(
+        "mfd_ir_dump: IR compiled in {:.1}s",
+        compile_start.elapsed().as_secs_f32()
+    );
     println!("nodes: {}", ir.nodes.len());
     for n in &ir.nodes {
         if !filter.is_empty() && !n.name.to_ascii_lowercase().contains(&filter) {
