@@ -18,6 +18,15 @@ findings land here in two states, with a lifecycle:
   Clipper) and that surfaced 8 issues — all fixed (see Change log). The recurring
   class was "agent shortcuts the discipline" (presume / batch / estimate-defer),
   now consolidated into `SKILL.md`'s **Operating posture** section.
+- **Freeze gate held on the first full real arc (2026-06-15, g-force/velocity
+  ball to platinum).** The agent stopped at the freeze checkpoint, presented the
+  per-identity deltas, and the owner explicitly authorised the re-freezes — the
+  one invariant gate worked as designed, not just by assumption. The end-of-arc
+  retrospective also fired on BOTH destinations: the skill finding → Open
+  recommendations (now applied), and process/tool/doc findings →
+  `crates/starbreaker-ui/docs/ui-process-improvements.md` ledger items 52–55 +
+  `scripts/ui_gauge_measure.py` (committed `0daf35e8e`). The self-improvement
+  loop is validated end-to-end.
 - **Recommended later validation** (lower priority now, given real use):
   1. **Compliance dry-run (cheap).** Dispatch a fresh subagent with
      "Drake Clipper / Screen_Right_Upper_RTT" and confirm, from the skill + docs
@@ -44,21 +53,6 @@ findings land here in two states, with a lifecycle:
   deferred to avoid churn while the skill is still settling.
 - **Multi-ship generalization unverified** (see Known assumptions) — exercise
   when a second `reference/in-game/` folder exists.
-- **Don't inherit prior "faithful / owner-confirmed / not-flagged" verdicts as
-  settled (2026-06-15 g-force arc).** The opening catalog UNDER-called the screen
-  because it carried the dossier/memory's verdicts forward — "cardinal markers are
-  owner-confirmed circles", residuals "not owner-flagged" — and so missed the
-  marker-position desync, the at-rest "0" readout, and the right-edge line. The
-  user materially expanded the catalog at the confirmation gate (which worked —
-  the gate is the backstop). SKILL.md already says prior open issues "seed but do
-  not replace this pass"; this is the sharper variant: a prior arc's *resolved /
-  acceptable* verdicts are HINTS to re-verify at high zoom against the reference,
-  not conclusions to inherit (the owner's view can evolve, and earlier passes may
-  have under-scrutinized). Consider a catalog-phase line: re-derive each region's
-  verdict from the reference even when memory marks it faithful, and high-zoom the
-  small features (a circle vs squircle, a 57px marker offset) the naked side-by-
-  side hides. Decide whether this needs its own SKILL.md clause or is covered by
-  the existing "look again / measure when unsure".
 
 ## Known assumptions & risks
 
@@ -203,3 +197,14 @@ under **Open recommendations** above.
   Final-parity `AskUserQuestion` gate (accept vs another pass). Updated the
   checkpoints table/bullet (fully-auto Final parity is now "re-review → fix until
   clean", not "report only"), the loop closing line, and added two red-flag rows.
+- **2026-06-15 (inherit-verdicts clause; applied from Open recommendations).**
+  The g-force arc's retro found the opening catalog UNDER-called the screen by
+  carrying prior "faithful / owner-confirmed / not-flagged" verdicts forward
+  (missed marker desync, at-rest "0", right-edge line; the user expanded the
+  catalog at the confirmation gate — backstop worked). Applied to the catalog
+  phase: "**Inherited verdicts are hints, not conclusions**" — re-derive each
+  region from the reference at high zoom (small features hide in a naked
+  side-by-side), with the scoping refinement that a frozen-baseline or
+  registered-known-outlier region routes any re-opened verdict through the
+  §5/§6/§7 audited flow, not a silent fix (so it doesn't collide with
+  settled-numbers-are-lookups / frozen-baseline discipline). Added a red-flag row.

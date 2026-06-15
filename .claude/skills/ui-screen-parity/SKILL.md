@@ -122,9 +122,20 @@ in the dossier, adding its row is part of the work.
 
 ## Build & confirm the diff catalog (before any fixing — both modes)
 
-Do this once at arc start, after the required reads — whether the screen is fresh
-or has been worked before (a prior arc's open issues/handoff seed the catalog but
-do NOT replace this pass):
+Do this once at arc start, after the required reads, whether the screen is fresh
+or has been worked before.
+
+**Inherited verdicts are hints, not conclusions.** A prior arc's open issues, or a
+dossier/memory/handoff label of "faithful / owner-confirmed / not flagged", SEEDS
+this pass but never replaces it — such a label is a prior judgment that may have
+under-scrutinized, or that the owner's view has since outgrown. Re-derive each
+region's verdict from the reference at high zoom (small features — circle vs
+squircle, a few-dozen-px marker offset — hide in a naked side-by-side). For a
+region under a frozen baseline or a registered known-outlier, route any re-opened
+verdict through the §5/§6/§7 audited flow (adjudicate → re-freeze / known-outlier),
+not a silent fix.
+
+Steps:
 
 1. **Render + compare, build the catalog.** Use the loop's render + compare
    commands below; build the numbered diff catalog (region | difference |
@@ -346,6 +357,7 @@ needed is a doc bug — fix it before closing.
 | "I see a square / it's shifted left" (first glance) | Look AGAIN before cataloguing — first-glance shape/count/offset reads are the ones that turn out wrong. Measure if unsure. |
 | "Only the foreground widgets differ" | Check the background/backplate layer too — stretch, scale, aspect, alignment, crop. It's the commonly-missed layer and it skews everything on top. |
 | "The findings look right, start fixing" | First self-verify (look again + background), then confirm the catalog with the user via `AskUserQuestion`. Both modes, every arc. |
+| "Memory says this region is faithful/owner-confirmed — skip it" | Inherited verdicts are hints, not conclusions. Re-derive each region from the reference at high zoom; the owner's view evolves and earlier passes under-scrutinize. Frozen/outlier regions route through §5/§6/§7. |
 | "Freeze it so the guard passes" | Freezing a wrong value enshrines the miss. Fix the cause or register a §6 outlier. Freezing is a STOP for approval. |
 | "Only one ship folder, so I'll presume it" | Always confirm SHIP via `AskUserQuestion`. One populated folder — or the ship the session was already on — is not a licence to auto-select. |
 | "We picked the ship/screen earlier, reuse it" | Every run starts cold. Ask SHIP, SCREEN, REFERENCE, and SCOPE fresh via `AskUserQuestion`; a choice from earlier in the session or a prior arc is never carried over silently. |
