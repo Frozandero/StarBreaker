@@ -48,30 +48,8 @@ findings land here in two states, with a lifecycle:
 - **Nothing consumes this file.** Open recommendations accumulate but no step
   reads them back. Decide a trigger — e.g. a `writing-skills` session on this
   skill (or arc start) skims the open items first.
-- **Red-flag table length.** Now ~13 rows with near-duplicates; the new
-  Operating-posture principle may let several be merged. Optional cleanup,
-  deferred to avoid churn while the skill is still settling.
 - **Multi-ship generalization unverified** (see Known assumptions) — exercise
   when a second `reference/in-game/` folder exists.
-- **`--helper` ≠ reference stem (2026-06-15, velocity-num arc).** The skill's
-  worked example and the gather-inputs step say "the chosen SCREEN is
-  simultaneously the dossier row, the render `--helper`, and the reference file
-  stem." That held for the target/power examples but NOT for velocity-num: the
-  reference stem is `ship_velocity_num_master` while the render `--helper` is
-  `screen_flight_hud_left_upper` (the dossier's Helper column). I had to read the
-  dossier to get the right helper. Recommend softening the wording: the render
-  `--helper` comes from the dossier's **Helper/scene column**, which is usually
-  but not always the reference file stem — when they differ, the dossier is
-  authoritative. (Low risk; wording only.)
-- **Partial-parity terminal state is fine, but call it out (2026-06-15).** The
-  velocity-num arc landed real structural+content wins yet two diffs (an
-  unimplemented engine unit-suffix table; an undecoded HUD content-view zoom) are
-  genuine engine-mechanism blockers that BOUND achievable parity this arc — the
-  correct terminal state is "deferred with proof," not "clean." The skill already
-  permits this (defer-on-proven-blocker), but a one-line acknowledgement that some
-  screens have intrinsic mechanism-blockers (so the closing review ends
-  deferred-not-clean) would reassure a fully-automated run it isn't failing to
-  converge. (Optional.)
 
 ## Known assumptions & risks
 
@@ -227,3 +205,25 @@ under **Open recommendations** above.
   registered-known-outlier region routes any re-opened verdict through the
   §5/§6/§7 audited flow, not a silent fix (so it doesn't collide with
   settled-numbers-are-lookups / frozen-baseline discipline). Added a red-flag row.
+- **2026-06-15 (fix-before-retro + raised blocker bar; velocity-num arc).** A run
+  fixed several issues, then identified more but ran the retro instead of fixing
+  them — deferring on "not in the canvas data / undecoded this arc," which is
+  under-research. Changes: (1) raised the PROVEN-blocker bar in *Default to
+  fixing* — "demonstrated absent" now means searching the whole decodable surface
+  (DataCore / P4K / localization tables, not just canvas JSON) AND showing the
+  value isn't derivable from a decoded mechanism (screen-mesh/aspect for a
+  content-view sub-rect; enum→localization for a unit suffix); "frozen-family
+  risk" is a §5 discriminator task, not an auto-defer. (2) Closing re-review now
+  states the retro is the LAST step, never a substitute for fixing a fixable diff;
+  any late-found issue is fixed in the loop first. (3) Applied the two velocity-num
+  Open recs: `--helper` comes from the dossier's Helper column (not always the
+  reference stem — fixed step 2 + the render bullet), and a proven-blocked
+  remainder is now an explicit valid terminal ("deferred with proof, not clean")
+  so a fully-automated run STOPS instead of looping forever. Added two red-flag rows.
+- **2026-06-15 (red-flag table consolidation).** The table had grown to 24 rows
+  with near-duplicates. Merged to 14 along the Operating-posture categories (ASK
+  inputs / MEASURE judgments / DO the work / GATE) with no specific catch lost:
+  input presume/reuse/skip-confirm → one row; first-glance + background → one;
+  root-cause + which-item-next → one; blast-radius + own-change + undecoded-defer
+  → one; the three freeze rows → one; catalog-resolved + fixes-done +
+  found-more-issues → one. Cleared the matching Open recommendation.

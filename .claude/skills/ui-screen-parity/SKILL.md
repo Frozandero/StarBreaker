@@ -86,8 +86,11 @@ share one prompt.
    not listed (no capture yet → adding its dossier row is part of the work). If
    the folder holds more screens than the tool's 4-option limit, show the full
    list in the message and offer the most relevant candidates + "Other". The
-   chosen SCREEN is simultaneously the dossier row, the render `--helper`, and
-   the reference file stem.
+   chosen SCREEN is the reference file stem and the dossier row; the render
+   `--helper` comes from the dossier's **Helper/scene column**, which is usually
+   — but NOT always — the same name (e.g. velocity-num: stem
+   `ship_velocity_num_master`, helper `screen_flight_hud_left_upper`). When they
+   differ the dossier is authoritative — read it for the helper.
 3. **REFERENCE — resolve, show, then CONFIRM via `AskUserQuestion` (hard stop).**
    **Only after SCREEN (step 2) is answered**, list files in the ship folder
    matching that CHOSEN screen — never a presumed/default screen. Prefer the
@@ -163,8 +166,10 @@ retrospective (below) as a todo so it is never dropped.**
 
 Replay-render → compare → catalog → TDD fix → check → re-render. Per cycle:
 
-- **Render:** `bash scripts/ui_render.sh --helper <SCREEN> [--ir]` (cockpit/HUD
-  screens need LOD0 — the wrapper picks it; ledger 47).
+- **Render:** `bash scripts/ui_render.sh --helper <helper> [--ir]` — `<helper>` is
+  the dossier's Helper/scene column for SCREEN (usually but not always the
+  reference stem; see step 2). Cockpit/HUD screens need LOD0 — the wrapper picks
+  it; ledger 47.
 - **Compare:** `python3 scripts/ui_compare.py <render> <reference> --regions
   <preset> [--stats]` and **READ every crop with vision**. Rectify for POSITION
   via `corners.json`; judge a **thin feature's COLOUR on the crisp original**
@@ -205,10 +210,20 @@ a genuinely large change, write a short plan in the arc memory/handoff (affected
 identities, sequence, the single rule) and execute it. **Making the change is
 autonomous — only the resulting baseline FREEZE is gated** (a wide change that
 moves many frozen baselines toward the reference is the workflow §5 "baseline is
-wrong → re-freeze" path; present that delta at the freeze gate). Defer ONLY on a
-PROVEN concrete blocker (a data signal you demonstrated absent, a dependency on
-un-landed work) and record that proof, not a guess. Effort or risk alone never
-justifies deferral.
+wrong → re-freeze" path; present that delta at the freeze gate).
+
+Defer ONLY on a PROVEN concrete blocker — and "proven" is a high bar. "A data
+signal you demonstrated absent" means you searched the WHOLE decodable surface
+(DataCore records, P4K assets, the localization/text tables — not just the canvas
+JSON) AND showed the value isn't DERIVABLE from an already-decoded mechanism
+(e.g. a screen's content-view sub-rect/zoom from the screen-mesh/aspect data; a
+unit suffix from the engine's enum→localization table). **"Not in the canvas
+data" or "undecoded this arc" is UNDER-RESEARCH, not proof** — fan that search
+across read-only subagents and exhaust it first. A "frozen-family risk" is
+likewise a §5 task: find the structural discriminator separating this screen from
+the frozen family and scope the fix by it; only if no discriminator exists is it
+a real blocker. Record the exhausted-search proof, not a guess. Effort, risk, or
+"undecoded" alone never justifies deferral.
 
 ## Use subagents for read-only research (never for builds)
 
@@ -297,8 +312,20 @@ exactly as the opening *Build & confirm the diff catalog* phase did:
    present it via `AskUserQuestion` ("parity acceptable" vs "another pass", with
    free-text comments); "another pass" resumes fixing, then re-reviews again.
 
-Only once the closing re-review is clean (or its remainder is proven
-deferred/blocked) does the arc proceed to the retrospective.
+**The retrospective is the LAST step, never a substitute for fixing.** Any issue
+the closing re-review surfaces is fixed in the loop FIRST — including issues found
+late or while fixing others. Do NOT enter the retro to "wrap up" with a
+fixable-but-unfixed diff open; that is the exact failure this guards against. The
+arc proceeds to the retro only once the closing re-review is **clean, or every
+remaining diff carries an exhausted-search proven blocker** (see *Default to
+fixing* for what "proven" requires).
+
+A proven-blocked remainder IS a valid terminal state — "deferred with proof, not
+clean": some screens have intrinsic engine-mechanism limits (an undecoded value
+you exhausted the search for, a frozen-family risk with no structural
+discriminator) that bound achievable parity this arc. A fully-automated run STOPS
+there — it has converged to the achievable parity — it does not loop forever
+trying to fix the unfixable.
 
 ## Self-improve every arc: the retrospective (MANDATORY closing step)
 
@@ -354,23 +381,15 @@ needed is a doc bug — fix it before closing.
 |---|---|
 | "Just hard-code this one value/offset" | Banned, even in fixtures/fallbacks. Find the structural cause. |
 | "Render differs from ref, so the render is wrong" | Captures have bloom/skew/resolution/hover artifacts. Compare structurally. |
-| "I see a square / it's shifted left" (first glance) | Look AGAIN before cataloguing — first-glance shape/count/offset reads are the ones that turn out wrong. Measure if unsure. |
-| "Only the foreground widgets differ" | Check the background/backplate layer too — stretch, scale, aspect, alignment, crop. It's the commonly-missed layer and it skews everything on top. |
-| "The findings look right, start fixing" | First self-verify (look again + background), then confirm the catalog with the user via `AskUserQuestion`. Both modes, every arc. |
+| "First glance: a square / shifted left / only the foreground's off" | Look AGAIN before cataloguing (shape/count/offset misreads are the wrong ones — measure if unsure) AND check the background/backplate layer (stretch/scale/aspect/align/crop — the commonly-missed layer that skews everything on top). |
 | "Memory says this region is faithful/owner-confirmed — skip it" | Inherited verdicts are hints, not conclusions. Re-derive each region from the reference at high zoom; the owner's view evolves and earlier passes under-scrutinize. Frozen/outlier regions route through §5/§6/§7. |
-| "Freeze it so the guard passes" | Freezing a wrong value enshrines the miss. Fix the cause or register a §6 outlier. Freezing is a STOP for approval. |
-| "Only one ship folder, so I'll presume it" | Always confirm SHIP via `AskUserQuestion`. One populated folder — or the ship the session was already on — is not a licence to auto-select. |
-| "We picked the ship/screen earlier, reuse it" | Every run starts cold. Ask SHIP, SCREEN, REFERENCE, and SCOPE fresh via `AskUserQuestion`; a choice from earlier in the session or a prior arc is never carried over silently. |
-| "Skip the reference confirmation, it's obvious" | Mandatory stop. The wrong reference wastes the whole arc. |
-| "Batch the screen + reference questions to save a round-trip" | They're dependent — REFERENCE options come from the SCREEN answer. Ask sequentially; batching offers the reference for a presumed screen, not the chosen one. |
+| "The findings look right, start fixing" | First self-verify (look again + background), then confirm the catalog with the user via `AskUserQuestion`. Both modes, every arc. |
+| "I'll presume/reuse the ship, screen, or reference" | Every run starts COLD — ask SHIP, SCREEN, REFERENCE, SCOPE fresh via `AskUserQuestion` (even with one folder; never reuse a prior choice or skip the reference confirmation). |
+| "Batch the screen + reference questions to save a round-trip" | They're dependent — REFERENCE options come from the SCREEN answer. Ask sequentially; batching offers the reference for a presumed screen. |
 | "The skill summary is enough" | Read ui-workflow.md + ui-reference.md. They are the authority; this skill only orchestrates. |
-| "I'll freeze without asking to save a round-trip" | Freezing a baseline is ALWAYS gated, in BOTH modes — show the delta and ask via `AskUserQuestion`. (Commits are gated in semi-automated; automatic in fully automated.) |
-| "Fully automated, so I'll auto-freeze too" | No. Fully automated drops only the commit and final-parity gates; the freeze gate always stays. |
-| "They'll obviously say yes, I'll just do it" | Ask anyway via `AskUserQuestion` at an active checkpoint. A presumed approval is not an approval. |
-| "Which catalog item should I fix next?" | Never ask. Order by priority (workflow §4) and work top-down; only the active checkpoints interrupt. |
-| "I found the root cause — should I fix it?" | Just fix it. Applying a structural fix is the loop's work, not a gate. Only freeze/commit/final can interrupt. |
-| "Large blast radius / many frozen nodes — defer it" | Size/risk is not a blocker; it's a cue to research + plan, then fix. MEASURE the real impact with the disable→adjudicate audit + `ui_check.sh --full`; defer only on a PROVEN blocker. |
-| "This deserves its own deliberate change later" | If it's the right fix, do it now: research, plan if large, execute. The change is autonomous; only the freeze is gated. |
+| "I found the root cause / know the next item — let me ask first" | Just do it. Applying a structural fix and pulling the next-priority item are the loop's work, not checkpoints. Only the active checkpoints interrupt. |
+| "Large blast radius / deserves its own change / undecoded this arc — defer it" | Size/risk/"undecoded" is not a blocker — research then fix. MEASURE impact with disable→adjudicate + `ui_check.sh --full`; for "missing data" search the whole decodable surface (DataCore/P4K/localization) and check it isn't derivable from a decoded mechanism (fan across subagents); frozen-family risk = find the §5 discriminator. Defer only on an exhausted-search PROVEN blocker. |
 | "Spin up parallel agents to build/render faster" | Builds share the cargo target and race. Only READ-ONLY research parallelizes; builds/renders/tests/fixes/freezes stay sequential in the main agent. |
-| "Catalog's resolved — run the retro" | First do the Closing re-review: re-render + re-compare against the reference like the start (self-verify + background). Fully automated keeps fixing until clean. THEN the retro. |
-| "Fixes are done — the arc's complete" | Not complete until the closing re-review is clean (or proven deferred) AND the retrospective runs (mandatory, both modes). Track it as a TodoWrite item from arc start; don't close with it open. |
+| "Freeze it to pass the guard / I'll freeze without asking / fully-auto so auto-freeze" | Freezing a baseline is ALWAYS gated in BOTH modes (show the per-identity delta, ask via `AskUserQuestion`). Never auto-approve, and never freeze a wrong value to silence a guard — fix the cause or register a §6 outlier. |
+| "They'll obviously say yes, I'll just do it" | Ask anyway via `AskUserQuestion` at an active checkpoint. A presumed approval is not an approval. |
+| "Catalog's resolved / found more issues — run the retro" | The retro is the LAST step, never a substitute for fixing. Fix fixable diffs in the loop first, then the Closing re-review (re-render + re-compare like the start; fully-auto keeps fixing until clean or proven-blocked), THEN the retro. Not complete until the re-review is clean/proven-deferred AND the retro runs (track as a TodoWrite item from arc start). |
