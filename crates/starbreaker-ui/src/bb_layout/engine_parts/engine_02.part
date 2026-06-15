@@ -2058,8 +2058,9 @@ fn apply_flex_no_grow_shrink(
     }
     let is_shrinkable = |child_id: &BbNodeId| {
         scene.nodes.get(child_id).is_some_and(|node| {
-            main_axis_flex_managed(node, is_row)
-                || zero_auto_text_backed(*child_id, node, scene, is_row)
+            !flex_shrink_disabled(node)
+                && (main_axis_flex_managed(node, is_row)
+                    || zero_auto_text_backed(*child_id, node, scene, is_row))
         })
     };
     let spacing_total = item_spacing * (sizes.len().saturating_sub(1) as f32);
@@ -2135,6 +2136,21 @@ fn zero_auto_text_backed(
         BbValue::Other { value, behavior } if behavior == "Auto" && *value == 0.0
     );
     zero_auto && auto_text_intrinsic_main(node_id, scene, 1.0, is_row).is_some()
+}
+
+/// A flex item with an explicit `shrinkProportion` of 0 must NOT shrink
+/// (CSS flex-shrink: 0): it keeps its base size and the row/column overflows.
+/// The g-force / velocity ball authors its square `card_BallArea` (PercentOfY
+/// width) and the overflowing `card_Readouts` both at shrinkProportion 0, so
+/// the readouts crop while the ball stays square. Absent or non-zero
+/// shrinkProportion keeps the existing (shrinkable) behaviour — this only
+/// removes a node from the shrink set when the author explicitly froze it.
+fn flex_shrink_disabled(node: &crate::bb_scene::BbNode) -> bool {
+    node.raw
+        .get("layoutPolicyItem")
+        .and_then(|item| item.get("shrinkProportion"))
+        .and_then(|value| value.as_f64())
+        .is_some_and(|proportion| proportion == 0.0)
 }
 
 /// A child participates in flex main-axis sizing when its authored sizing is
@@ -2724,6 +2740,60 @@ mod flex_shrink_tests {
             offline.y + offline.h <= 227.5,
             "rows fit the container, bottom {}",
             offline.y + offline.h
+        );
+    }
+
+    /// A flex item with an explicit `shrinkProportion` of 0 must NOT shrink (CSS
+    /// flex-shrink: 0): it keeps its base size and the row overflows. The g-force
+    /// / velocity ball's `card_BallArea` is authored SQUARE (width = PercentOfY =
+    /// its own height) with shrinkProportion 0, alongside a `card_Readouts` that
+    /// also authors shrinkProportion 0 and is meant to OVERFLOW/crop (the gauge has
+    /// no separate num screen). Honouring shrinkProportion keeps the ball SQUARE;
+    /// without it the row (ball + readouts) overflowed the 16:9 canvas and the
+    /// shrink narrowed the ball below square — the squashed g-force cross.
+    #[test]
+    fn flex_shrink_proportion_zero_keeps_ball_square() {
+        let canvas = serde_json::json!({
+            "_RecordValue_": {
+                "_Type_": "BuildingBlocks_Canvas",
+                "size": {"x": 1280.0, "y": 720.0},
+                "coordinateMethod": "useRaw",
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "base_Root", "isActive": true,
+                     "layoutPolicy": {"_Type_": "BuildingBlocks_FlexContainer",
+                                      "direction": "Row", "axisJustification": "Start",
+                                      "crossAxisJustification": "Center"},
+                     "sizing": {"width": {"value": 1.0, "behavior": "Percent"},
+                                "height": {"value": 1.0, "behavior": "Percent"}}},
+                    {"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "card_BallArea", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "layoutPolicyItem": {"_Type_": "BuildingBlocks_FlexItem",
+                                          "growProportion": 0.0, "shrinkProportion": 0.0},
+                     "sizing": {"width": {"value": 1.0, "behavior": "PercentOfY"},
+                                "height": {"value": 1.0, "behavior": "Percent"}}},
+                    {"_Pointer_": "ptr:3", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "card_Readouts", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "layoutPolicyItem": {"_Type_": "BuildingBlocks_FlexItem",
+                                          "growProportion": 0.0, "shrinkProportion": 0.0},
+                     "sizing": {"width": {"value": 1.5, "behavior": "PercentOfY"},
+                                "height": {"value": 0.6, "behavior": "Percent"}}}
+                ],
+                "operations": []
+            }
+        });
+        let scene = parse_bb_canvas(&canvas).expect("fixture parses");
+        let result = layout(&scene, 1280, 720);
+        let ball = result.rects[&2];
+        assert!(
+            (ball.w - ball.h).abs() < 1.0,
+            "card_BallArea (shrinkProportion 0) must stay square, got {}x{}",
+            ball.w, ball.h
+        );
+        assert!(
+            (ball.w - 720.0).abs() < 1.0,
+            "card_BallArea keeps its base square width (720), got {}",
+            ball.w
         );
     }
 
