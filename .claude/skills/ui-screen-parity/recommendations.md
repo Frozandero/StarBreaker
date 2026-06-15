@@ -237,3 +237,28 @@ under **Open recommendations** above.
   root-cause + which-item-next → one; blast-radius + own-change + undecoded-defer
   → one; the three freeze rows → one; catalog-resolved + fixes-done +
   found-more-issues → one. Cleared the matching Open recommendation.
+- **2026-06-15 (`--full` needs-fresh-export caveat; velocity-num arc, ledger 56).**
+  `ui_check.sh --full` does not re-export, so running it against stale Generated
+  PNGs trips the staleness guard and reads as breakage. Added a short "(after a
+  fresh export)" / "(re-export first — `--full` does not re-export; ledger 56)"
+  caveat to the two inline `--full` mentions (Operating posture MEASURE bullet +
+  *Default to fixing*). Authoritative detail stays in `ui-reference.md` §1/§2,
+  which the arc fixed.
+- **2026-06-15 (major-item blocker gate + verifiable proof; compass arc, owner
+  decisions).** The agent self-certified the compass live-ticks as a PROVEN
+  blocker ("engine C++ only, exhausted the data") — 3rd recurrence (cf. font,
+  ledger 60); the owner's manual press found it one `search_records("vehiclehud")`
+  away (`SVehicleHudParams.compassTape`, ledger 66). Applied (owner chose "surface
+  to user, both modes"): (1) a new **Major-item blocker** checkpoint — a
+  dominant-item give-up is gated in BOTH modes (present evidence trail → "Accept
+  as blocked? / Research further"), like a freeze, never self-certified; (2)
+  *Default to fixing* raised — "engine C++ only" is rejected as unfalsifiable;
+  a blocker needs a VERIFIABLE evidence trail (records/greps/probes + empty
+  results, not an assertion); search the record FAMILIES (`*Params`/`*HudParams`),
+  not just the feature keyword; run a find-it-or-prove-absence subagent first;
+  (3) closing-re-review terminal note + two red-flag rows. Cleared the families
+  Open rec.
+- **2026-06-15 (diagnose-vs-land boundary; compass arc, owner decision).** Owner
+  chose "investigate + characterizing failing test pre-gate; land the source fix
+  only after the catalog gate (commit always waits)." Stated in *Build & confirm
+  the diff catalog* + a red-flag row. Cleared the Open rec.

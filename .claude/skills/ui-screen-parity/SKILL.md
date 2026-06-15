@@ -40,8 +40,8 @@ guess for an ask or a measurement. Default behaviour by category:
   prior-arc state; never pre-compute one question's options from a guessed
   earlier answer.
 - **Technical judgments → MEASURE.** Blast radius, "is this a blocker?", root
-  cause, colour/position: prove it with the probes, `ui_check.sh --full`, and
-  the disable→adjudicate audit. Never estimate-then-defer. Visual findings must
+  cause, colour/position: prove it with the probes, `ui_check.sh --full` (after a
+  fresh export), and the disable→adjudicate audit. Never estimate-then-defer. Visual findings must
   survive a SECOND look (guard square-vs-circle misreads, miscounts, wrong offset
   direction) and must include the background/backplate layer (stretch,
   alignment), not just foreground widgets.
@@ -159,6 +159,13 @@ Steps:
    "Other" choice). Do NOT start fixing until confirmed — this gate runs in BOTH
    modes (semi- and fully automated).
 
+**Diagnose freely, but don't LAND a fix pre-gate.** Investigating/root-causing —
+including writing the characterizing FAILING TEST — is catalog-building and fine
+before the gate. But do NOT land a source FIX until the catalog is confirmed (and
+the commit always waits for the commit gate): the gate exists so the user can
+correct WHAT's wrong before source changes accrue. After the gate, the loop
+applies fixes directly (no per-fix permission — see *The autonomous loop*).
+
 ## The autonomous loop (workflow §3–§4)
 
 **Track the arc with TodoWrite from the start — include the mandatory closing
@@ -204,8 +211,9 @@ blocker — it is a signal to RESEARCH and PLAN, then fix within this arc (fan t
 read-only research across subagents — see *Use subagents for read-only
 research*). De-risk
 a wide change empirically: run the disable→adjudicate audit (workflow §5) and
-`bash scripts/ui_check.sh --full` so the frozen pins MEASURE the real blast
-radius instead of you estimating it; find the one structural discriminator; for
+`bash scripts/ui_check.sh --full` (re-export first — `--full` does not re-export;
+ledger 56) so the frozen pins MEASURE the real blast radius instead of you
+estimating it; find the one structural discriminator; for
 a genuinely large change, write a short plan in the arc memory/handoff (affected
 identities, sequence, the single rule) and execute it. **Making the change is
 autonomous — only the resulting baseline FREEZE is gated** (a wide change that
@@ -219,7 +227,22 @@ JSON) AND showed the value isn't DERIVABLE from an already-decoded mechanism
 (e.g. a screen's content-view sub-rect/zoom from the screen-mesh/aspect data; a
 unit suffix from the engine's enum→localization table). **"Not in the canvas
 data" or "undecoded this arc" is UNDER-RESEARCH, not proof** — fan that search
-across read-only subagents and exhaust it first. A "frozen-family risk" is
+across read-only subagents and exhaust it first. **"It's engine C++ only / it's
+in the engine" is NOT a valid basis**: you cannot read the C++, so it can never
+demonstrate absence, and projection / spacing / interval / FOV configs are
+frequently authored in records or assets — keep searching the data and deriving.
+Search the plausible STRUCT/record FAMILIES, not just the feature keyword — a
+config value lives in a `*Params` / `*Global` / `*HudParams` struct (the compass
+tick range/major/subTicks was in `SVehicleHudParams.compassTape`, one
+`search_records("vehiclehud")` away, while `search_records("compass")` returned
+only UI canvases; ledger 66). A blocker claim must carry a VERIFIABLE EVIDENCE
+TRAIL — the exact record names
+and grep/probe patterns you ran and the empty results they returned, not a
+summary assertion like "I exhausted canvas JSON, DataCore, P4K"; if you can't show
+the trail, you haven't proven it. Before declaring a MAJOR/dominant item blocked,
+dispatch a dedicated "find-it-or-prove-absence" research subagent, then surface
+the blocker + trail to the user for confirmation (Checkpoints) — major-item
+blockers are never self-certified. A "frozen-family risk" is
 likewise a §5 task: find the structural discriminator separating this screen from
 the frozen family and scope the fix by it; only if no discriminator exists is it
 a real blocker. Record the exhausted-search proof, not a guess. Effort, risk, or
@@ -264,6 +287,7 @@ presumed "yes"; never perform the action before the answer comes back.
 | Reference selection (launch) | ask | ask |
 | Diff-catalog confirmation (launch) | ask | ask |
 | **Baseline freeze / re-freeze** | **gate** | **gate** |
+| **Major-item blocker (give up on a dominant item)** | **gate** | **gate** |
 | Git commit | gate | auto, no gate |
 | Final parity (closing re-review) | gate | re-review → fix until clean |
 
@@ -271,6 +295,13 @@ presumed "yes"; never perform the action before the answer comes back.
   per-identity delta, then ask via `AskUserQuestion` ("Freeze these N
   identities?" → "Freeze" / "Don't freeze"). Never auto-approve, never freeze a
   value you can't explain.
+- **Major-item blocker — ALWAYS gated, both modes.** Before accepting that a
+  MAJOR/dominant item (one that bounds achievable parity — a whole region
+  empty/wrong, a dominant element) is a PROVEN blocker, present the evidence trail
+  (see *Default to fixing*) and ask via `AskUserQuestion` ("Accept as blocked?" →
+  "Accept" / "Research further"). Giving up on a major item is consequential —
+  like a freeze; it is never self-certified. (Minor residuals deferred with proof
+  don't need this gate.)
 - **Git commit** — semi-automated: show the diff/summary, ask "Commit this?" →
   "Commit" / "Not yet", commit only on yes. Fully automated: commit autonomously
   per coherent fix (message cites the catalog item), no question.
@@ -323,9 +354,10 @@ fixing* for what "proven" requires).
 A proven-blocked remainder IS a valid terminal state — "deferred with proof, not
 clean": some screens have intrinsic engine-mechanism limits (an undecoded value
 you exhausted the search for, a frozen-family risk with no structural
-discriminator) that bound achievable parity this arc. A fully-automated run STOPS
-there — it has converged to the achievable parity — it does not loop forever
-trying to fix the unfixable.
+discriminator) that bound achievable parity this arc. A MAJOR/dominant blocked
+item is surfaced for user confirmation first (Checkpoints), never self-accepted;
+once confirmed, a fully-automated run STOPS there — it has converged to the
+achievable parity — it does not loop forever trying to fix the unfixable.
 
 ## Self-improve every arc: the retrospective (MANDATORY closing step)
 
@@ -393,3 +425,5 @@ needed is a doc bug — fix it before closing.
 | "Freeze it to pass the guard / I'll freeze without asking / fully-auto so auto-freeze" | Freezing a baseline is ALWAYS gated in BOTH modes (show the per-identity delta, ask via `AskUserQuestion`). Never auto-approve, and never freeze a wrong value to silence a guard — fix the cause or register a §6 outlier. |
 | "They'll obviously say yes, I'll just do it" | Ask anyway via `AskUserQuestion` at an active checkpoint. A presumed approval is not an approval. |
 | "Catalog's resolved / found more issues — run the retro" | The retro is the LAST step, never a substitute for fixing. Fix fixable diffs in the loop first, then the Closing re-review (re-render + re-compare like the start; fully-auto keeps fixing until clean or proven-blocked), THEN the retro. Not complete until the re-review is clean/proven-deferred AND the retro runs (track as a TodoWrite item from arc start). |
+| "It's engine C++ only / I exhausted the data — blocked" | Show the trail or it isn't proven: exact records/greps/probes + their empty results, not an assertion. Search the record FAMILIES (`*Params`/`*HudParams`), not just the feature keyword (the compass ticks were in `SVehicleHudParams`). "Engine C++ only" is unfalsifiable — never a valid basis. Run a find-it-or-prove-absence subagent; a MAJOR-item blocker is confirmed by the user (both modes), never self-certified. |
+| "Root cause's obvious — land the fix before the catalog gate" | Pre-gate you investigate and write the characterizing failing test, but DON'T land a source fix until the catalog is confirmed. After the gate the loop fixes directly. |
