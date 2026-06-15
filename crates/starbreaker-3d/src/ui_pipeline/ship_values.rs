@@ -46,6 +46,12 @@ const OVERHEAT_HEADROOM_K: f64 = 68.0;
 /// Overheat threshold fallback when a pool's items carry no temperature
 /// model (matches the small-component `overheatTemperature` family).
 const OVERHEAT_TEMP_K: f64 = 372.0;
+/// At-rest compass heading (degrees). The flight controller is not simulated in
+/// a static export, so the cockpit compass shows the neutral forward heading
+/// (0° = North) — the same at-rest principle as the velocity / g-force = 0 pins,
+/// NOT a value copied from the reference capture (the reference is a live in-flight
+/// heading). Every projection number comes from `SVehicleHudParams.compassTape`.
+const COMPASS_AT_REST_HEADING_DEG: f64 = 0.0;
 
 /// Per-export UI values derived from the root vehicle's DataCore records.
 pub struct UiShipData {
@@ -71,28 +77,47 @@ impl UiShipData {
         let Some(vehicle_json) = record_json(db, record) else {
             return Self::none();
         };
+        let mut overrides: HashMap<String, UiValue> = HashMap::new();
+
+        // Power-management screen values, only when the vehicle has power pools.
         let pools = power_pools_from_vehicle(&vehicle_json);
-        if pools.is_empty() {
+        if !pools.is_empty() {
+            // Top-level fitted items (controllers, shields, plants …), each
+            // materialised once: dynamic pools consume their power units.
+            let tree = resolve_loadout_indexed(&idx, record);
+            let mut item_cache: HashMap<String, Option<Json>> = HashMap::new();
+            let mut fitted_items: Vec<Json> = Vec::new();
+            for child in &tree.root.children {
+                let entry = item_cache
+                    .entry(child.entity_name.to_ascii_lowercase())
+                    .or_insert_with(|| record_json(db, &child.record));
+                if let Some(json) = entry.clone() {
+                    fitted_items.push(json);
+                }
+            }
+            let pool_defaults = pool_defaults_from_global(db);
+            let pool_icons = pool_icons_from_global(db);
+            overrides.extend(derive_power_paths(
+                &pools,
+                &fitted_items,
+                &pool_defaults,
+                &pool_icons,
+            ));
+        }
+
+        // Cockpit compass tape: the heading-tick array (`FlightController/Compass/
+        // Ticks`) is engine-runtime data the flight HUD fills live. The static
+        // export has no flight controller, so derive the AT-REST tick set from the
+        // global vehicle-HUD params (visible degree range / major increment /
+        // sub-ticks) at the neutral forward heading — same at-rest principle as the
+        // velocity / g-force = 0 pins. Overrides the static `…/Ticks = 0` fallback.
+        if let Some(tape) = compass_tape_from_global(db) {
+            overrides.extend(derive_compass_ticks(&tape, COMPASS_AT_REST_HEADING_DEG));
+        }
+
+        if overrides.is_empty() {
             return Self::none();
         }
-
-        // Top-level fitted items (controllers, shields, plants …), each
-        // materialised once: dynamic pools consume their power units.
-        let tree = resolve_loadout_indexed(&idx, record);
-        let mut item_cache: HashMap<String, Option<Json>> = HashMap::new();
-        let mut fitted_items: Vec<Json> = Vec::new();
-        for child in &tree.root.children {
-            let entry = item_cache
-                .entry(child.entity_name.to_ascii_lowercase())
-                .or_insert_with(|| record_json(db, &child.record));
-            if let Some(json) = entry.clone() {
-                fitted_items.push(json);
-            }
-        }
-
-        let pool_defaults = pool_defaults_from_global(db);
-        let pool_icons = pool_icons_from_global(db);
-        let overrides = derive_power_paths(&pools, &fitted_items, &pool_defaults, &pool_icons);
         if std::env::var("SB_SHIP_VALUES_DUMP").as_deref() == Ok("1") {
             let mut entries: Vec<_> = overrides.iter().collect();
             entries.sort_by(|a, b| a.0.cmp(b.0));
@@ -235,6 +260,73 @@ fn pool_defaults_from_global(db: &Database<'_>) -> PoolDefaults {
         engines: field("poolDefaultEngines", 0.5),
         shields: field("poolDefaultShields", 0.5),
     }
+}
+
+/// Cockpit compass "tape" projection, from `SVehicleHudParams.compassTape`.
+/// `range` is the visible window in degrees (±range/2 about the heading);
+/// `main_tick_increment` the spacing between LABELLED major ticks; `sub_ticks`
+/// the number of sub-divisions per major interval (minor tick spacing =
+/// `main_tick_increment / sub_ticks`). For the default HUD: 90° / 20° / 4 →
+/// labelled ticks every 20°, minor ticks every 5° (verified against the
+/// in-game `compass_master.png`: majors 20° apart, minors 5° apart).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct CompassTape {
+    pub range_deg: f64,
+    pub main_tick_increment_deg: f64,
+    pub sub_ticks: u32,
+}
+
+fn compass_tape_from_global(db: &Database<'_>) -> Option<CompassTape> {
+    let si = db.struct_id("SVehicleHudParams")?;
+    let json = db
+        .records_of_type(si)
+        .next()
+        .and_then(|record| record_json(db, record))?;
+    let tape = json
+        .get("_RecordValue_")
+        .unwrap_or(&json)
+        .get("compassTape")?;
+    Some(CompassTape {
+        range_deg: tape.get("range")?.as_f64()?,
+        main_tick_increment_deg: tape.get("mainTickIncrement")?.as_f64()?,
+        sub_ticks: tape.get("subTicks")?.as_u64()? as u32,
+    })
+}
+
+/// Build the at-rest compass `FlightController/Compass/Ticks` entry array from
+/// the `compassTape` projection at `heading_deg`. Each engine tick entry carries
+/// `anchor` (0..1 position across the strip), `maintick` (labelled-major flag),
+/// and `value` (the degree shown). The materialised `WidgetList` reads the count
+/// at the array path and each entry's fields at `…/Ticks/[000j]/<field>`.
+pub(crate) fn derive_compass_ticks(tape: &CompassTape, heading_deg: f64) -> HashMap<String, UiValue> {
+    let mut paths: HashMap<String, UiValue> = HashMap::new();
+    if !(tape.range_deg > 0.0) || !(tape.main_tick_increment_deg > 0.0) || tape.sub_ticks == 0 {
+        return paths;
+    }
+    let minor_deg = tape.main_tick_increment_deg / tape.sub_ticks as f64;
+    let half = tape.range_deg / 2.0;
+    let main_int = tape.main_tick_increment_deg.round() as i64;
+    let base = "FlightController/Compass/Ticks";
+    // Ticks fall on multiples of `minor_deg`; emit those inside the visible
+    // window [heading-half, heading+half], left (low degree) to right (high).
+    let first_k = ((heading_deg - half) / minor_deg).ceil() as i64;
+    let last_k = ((heading_deg + half) / minor_deg).floor() as i64;
+    let mut entry: i64 = 0;
+    for k in first_k..=last_k {
+        let degree = k as f64 * minor_deg;
+        let anchor = 0.5 + (degree - heading_deg) / tape.range_deg;
+        let degree_int = degree.round() as i64;
+        let is_main = main_int != 0 && degree_int.rem_euclid(main_int) == 0;
+        let value = degree_int.rem_euclid(360);
+        paths.insert(format!("{base}/[{entry:04}]/anchor"), UiValue::Float(anchor));
+        paths.insert(format!("{base}/[{entry:04}]/maintick"), UiValue::Bool(is_main));
+        paths.insert(format!("{base}/[{entry:04}]/value"), UiValue::Int(value));
+        entry += 1;
+    }
+    // The count the WidgetList reads at the array path (overrides the static
+    // `…/Ticks = 0` empty-at-rest fallback for vehicles whose HUD params resolve).
+    paths.insert(base.to_string(), UiValue::Int(entry));
+    paths
 }
 
 /// Canonical display order of the power-screen system list: the engine

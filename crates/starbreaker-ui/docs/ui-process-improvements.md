@@ -1587,11 +1587,40 @@ read a 0-byte file as a hang. (Same lesson as ledger 42 "slowness ≠ a loop", a
 buffered output.)
 **Action:** reference §1 buffered-output note [done — this retro].
 
+### 66. "Compass live ticks = proven blocker" was UNDER-RESEARCH — the config was one DataCore search away
+**Observed (compass arc, 2026-06-15):** I declared the compass tick/label data a
+PROVEN blocker — "the projection config (FOV/spacing/intervals) is engine C++ only;
+searched canvas JSON, DataCore records, P4K config; reproducing it needs measuring
+off the reference = banned hard-coding." The owner pushed "do more research"; a
+deeper DataCore search found `SVehicleHudParams.VehicleHudDefault.compassTape`
+(`hudparams/vehiclehuddefault.xml`): `range=90`° / `mainTickIncrement=20`° /
+`subTicks=4` — the EXACT projection model, matching the reference (majors 20° apart,
+minors 5°, FOV≈90°). My "search" had only tried `search_records("compass")` (→ UI
+canvases) and `("ifcs")` (→ flight-control); I never searched the HUD-params family
+(`search_records("vehiclehud")` → the record immediately). The blocker was a
+not-exhaustive search dressed as a proof. Resolved by DERIVING the at-rest tick
+array from `compassTape` at heading 0 (`ship_values.rs::derive_compass_ticks`) —
+fully data-driven, no hard-coding.
+**Improvement:** this is the THIRD arc where "not in the data / undecoded = blocked"
+was actually under-research (cf. ledger 60 velocity-num font, and the m/s SIUnit
+loc-family). Reinforced the *Default to fixing* bar in the skill: a "demonstrated
+absent" proof must name the record FAMILIES searched (not just keyword "X"); for a
+config value, search the params/global record types (`*Params`, `*Global`,
+`hudparams/…`), not only the feature name. Before declaring an engine value
+underivable, run `search_records` across the plausible STRUCT families
+(`SVehicleHudParams`-style), not one keyword.
+**Action:** skill *Default to fixing* / red-flag reinforcement (recommendations.md);
+dossier + registry-notes + memory overturned the wrong "blocker" verdict; derivation
+landed in the loop (`ship_values.rs`). [done — this retro]
+
 ### Phase N — implementation (2026-06-15, compass arc retro)
-Docs only; the arc's render fixes (`a47759308` rendererType:None background,
-`d83bdcf27` empty compass tick list) landed in the loop. No render-behaviour change in
-this phase. `ui_check.sh` green.
+The arc's render fixes landed in the loop: `a47759308` (rendererType:None
+background), `d83bdcf27` (empty-compass arrayVariable resolution), and the
+compass-tick DERIVATION in `ship_values.rs` (item 66, overturning the wrong
+blocker). Retro docs:
 1. Reference §6/§7: over-painter probe one-liner (item 63). [done]
 2. Architecture runbook: `rendererType:"None"` non-rendering rule (item 63). [done]
 3. Workflow §10: namespace-less multi-segment engine-state list bullet (item 64);
    reference §1 buffered-output note (item 65). [done]
+4. Item 66 (under-research blocker) — dossier/registry-notes/memory corrected;
+   skill *Default to fixing* search-the-record-families reinforcement. [done]

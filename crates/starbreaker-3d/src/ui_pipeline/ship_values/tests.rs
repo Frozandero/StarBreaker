@@ -286,3 +286,44 @@ fn gauge_scale_tracks_item_overheat_threshold() {
         "shield scale matches the reference-calibrated 372+68"
     );
 }
+
+#[test]
+fn compass_ticks_derive_from_tape_at_rest_heading() {
+    // Default HUD compassTape: 90° window, labelled every 20°, 4 sub-ticks
+    // (minor every 5°). At the neutral 0° heading the visible window is
+    // [-45°, +45°] → 19 ticks at 5° spacing.
+    let tape = CompassTape { range_deg: 90.0, main_tick_increment_deg: 20.0, sub_ticks: 4 };
+    let paths = derive_compass_ticks(&tape, 0.0);
+    let base = "FlightController/Compass/Ticks";
+
+    assert_eq!(paths.get(base), Some(&UiValue::Int(19)), "count = window/minor + 1");
+
+    // Entry 0 = leftmost tick at -45° → anchor 0.0, value 315, minor.
+    assert_eq!(paths.get(&format!("{base}/[0000]/anchor")), Some(&UiValue::Float(0.0)));
+    assert_eq!(paths.get(&format!("{base}/[0000]/value")), Some(&UiValue::Int(315)));
+    assert_eq!(paths.get(&format!("{base}/[0000]/maintick")), Some(&UiValue::Bool(false)));
+
+    // Centre entry (index 9) = 0° → anchor 0.5, value 0, labelled major.
+    assert_eq!(paths.get(&format!("{base}/[0009]/anchor")), Some(&UiValue::Float(0.5)));
+    assert_eq!(paths.get(&format!("{base}/[0009]/value")), Some(&UiValue::Int(0)));
+    assert_eq!(paths.get(&format!("{base}/[0009]/maintick")), Some(&UiValue::Bool(true)));
+
+    // Rightmost entry (index 18) = +45° → anchor 1.0, value 45, minor.
+    assert_eq!(paths.get(&format!("{base}/[0018]/anchor")), Some(&UiValue::Float(1.0)));
+    assert_eq!(paths.get(&format!("{base}/[0018]/value")), Some(&UiValue::Int(45)));
+
+    // A negative-wrap major: -40° → value 320, labelled.
+    assert_eq!(paths.get(&format!("{base}/[0001]/value")), Some(&UiValue::Int(320)));
+    assert_eq!(paths.get(&format!("{base}/[0001]/maintick")), Some(&UiValue::Bool(true)));
+    // A minor between majors: index 2 = -35° → value 325, minor.
+    assert_eq!(paths.get(&format!("{base}/[0002]/value")), Some(&UiValue::Int(325)));
+    assert_eq!(paths.get(&format!("{base}/[0002]/maintick")), Some(&UiValue::Bool(false)));
+}
+
+#[test]
+fn compass_ticks_empty_for_degenerate_tape() {
+    let tape = CompassTape { range_deg: 0.0, main_tick_increment_deg: 20.0, sub_ticks: 4 };
+    assert!(derive_compass_ticks(&tape, 0.0).is_empty());
+    let tape = CompassTape { range_deg: 90.0, main_tick_increment_deg: 20.0, sub_ticks: 0 };
+    assert!(derive_compass_ticks(&tape, 0.0).is_empty());
+}
