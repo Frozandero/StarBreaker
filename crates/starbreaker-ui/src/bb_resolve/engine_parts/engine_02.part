@@ -2158,14 +2158,17 @@ mod tests_e {
     }
 
 
-    /// `defaultStyles.entries` are EDITOR-TIME defaults and must NOT apply at
-    /// runtime: the annunciator's defaultStyles `CornerRadius` (radius 30)
+    /// `defaultStyles.entries` are EDITOR-TIME defaults that a RESOLVING brand
+    /// supersedes: the annunciator's defaultStyles `CornerRadius` (radius 30)
     /// would round the chiclet frames the in-game reference shows square, and
-    /// the power `System Icon Color` (absent from drak's brand container)
-    /// would tint the system icons the reference shows white.
-    #[test]
-    fn default_styles_entries_do_not_apply_at_runtime() {
-        let root = serde_json::json!({
+    /// the power `System Icon Color` (absent from drak's brand container) would
+    /// tint the system icons the reference shows white — but BOTH canvases
+    /// resolve a matching brand (drak), which is what suppresses their
+    /// defaultStyles. Model that faithfully: a matching brand present →
+    /// defaultStyles NOT applied. (The no-brand-match FALLBACK — where
+    /// defaultStyles DO become the runtime look — is the companion test below.)
+    fn default_styles_base_canvas(brand_styles: serde_json::Value) -> serde_json::Value {
+        serde_json::json!({
             "_RecordName_": "BuildingBlocks_Canvas.DefaultStylesBase",
             "_RecordValue_": {
                 "size": {"x": 100.0, "y": 100.0},
@@ -2202,7 +2205,7 @@ mod tests_e {
                         }
                     ]
                 },
-                "brandStyles": [],
+                "brandStyles": brand_styles,
                 "scene": [
                     {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
                      "name": "root", "isActive": true},
@@ -2216,9 +2219,21 @@ mod tests_e {
                 ],
                 "operations": []
             }
-        });
+        })
+    }
 
-        let scene = resolve_canvas_graph(&root, None, &|p| Err(format!("no fetch: {p}")))
+    #[test]
+    fn default_styles_suppressed_when_a_brand_resolves() {
+        // A matching `s_drak` brand resolves for a `drak` ship — exactly the
+        // power/annunciator situation. defaultStyles stay editor-time; the
+        // System Icon Color must NOT tint the icon.
+        let root = default_styles_base_canvas(serde_json::json!([
+            {
+                "brandIdentifier": "file://libs/foundry/records/ui/buildingblocks/brands/s_drak.json",
+                "entries": []
+            }
+        ]));
+        let scene = resolve_canvas_graph(&root, Some("drak"), &|p| Err(format!("no fetch: {p}")))
             .expect("resolve");
         let icon = scene
             .nodes
@@ -2227,8 +2242,35 @@ mod tests_e {
             .expect("icon node");
         assert!(
             icon.raw.get("FillColorToken").is_none(),
-            "defaultStyles entries are editor defaults — never applied at runtime, got {:?}",
+            "a resolving brand suppresses defaultStyles — got {:?}",
             icon.raw.get("FillColorToken")
+        );
+    }
+
+    /// The no-brand-match FALLBACK: when no `brandStyles[]` entry matches the
+    /// ship manufacturer, `defaultStyles.entries` become the runtime brand-tier
+    /// look (the DRAK velocity-num SCREEN readout sizing). Here the only
+    /// declared brand is `s_grey_hud`, which a `drak` ship does not match, so
+    /// the System Icon Color defaultStyle now applies.
+    #[test]
+    fn default_styles_apply_as_fallback_when_no_brand_matches() {
+        let root = default_styles_base_canvas(serde_json::json!([
+            {
+                "brandIdentifier": "file://libs/foundry/records/ui/buildingblocks/styles/s_grey_hud.json",
+                "entries": []
+            }
+        ]));
+        let scene = resolve_canvas_graph(&root, Some("drak"), &|p| Err(format!("no fetch: {p}")))
+            .expect("resolve");
+        let icon = scene
+            .nodes
+            .values()
+            .find(|n| n.name == "shape_Icon")
+            .expect("icon node");
+        assert_eq!(
+            icon.raw.get("FillColorToken").and_then(|v| v.as_str()),
+            Some("Accent2"),
+            "no brand matched → defaultStyles apply as the runtime fallback"
         );
     }
 

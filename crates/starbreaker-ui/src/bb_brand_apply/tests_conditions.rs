@@ -557,12 +557,15 @@ fn parent_wrapped_entry_does_not_match_non_textfield_via_text_format() {
     assert!(node.raw.get("FontSize").is_none(), "WidgetImage must not take the text-format route");
 }
 
-/// A `Type(...)` selector inside the Parent wrapper blocks the text-format
-/// route: the implicit text child is not a widget (the MFD footer's
-/// `Type(Text)` entries do not restyle the screen-name WidgetTextField in the
-/// in-game reference).
+/// A `Type(Text)` selector INSIDE a `Parent(...)`-wrapped entry styles the
+/// text format: a WidgetTextField renders its text via an implicit text-format
+/// CHILD that is itself a `Text` node, so `Type(Text)` matches that child. DRAK
+/// velocity-num authors its readouts as `Type(Text) + Parent[(Not)Tag(fontnumber)]`
+/// → FontSize 500/420 (verified against the in-game `ship_velocity_num_master`
+/// reference: cap heights 21%/16% of screen height). The `Parent` wrapper is
+/// the "this field's text" anchor; see the Ancestor counterexample below.
 #[test]
-fn parent_wrapped_entry_with_type_condition_does_not_style_text_format() {
+fn parent_wrapped_type_text_entry_styles_text_format() {
     let mut scene = make_test_scene();
     {
         let node = scene.nodes.get_mut(&1).unwrap();
@@ -593,5 +596,74 @@ fn parent_wrapped_entry_with_type_condition_does_not_style_text_format() {
     };
     apply_brand_modifiers(&mut scene, &brand, None);
     let node = scene.nodes.get(&1).unwrap();
-    assert!(node.raw.get("FontSize").is_none(), "Type selectors target widgets, not the text format");
+    assert_eq!(
+        node.raw.get("FontSize").and_then(|v| v.as_f64()),
+        Some(40.0),
+        "Type(Text) inside a Parent wrapper sizes the field's text format (velocity-num readouts)"
+    );
+}
+
+/// The DISCRIMINATOR for the MFD-footer counterexample: a `Type(Text)` selector
+/// wrapped by `Ancestor(...)` (NOT `Parent`) does NOT style a WidgetTextField's
+/// text format — it targets a real `WidgetText` widget via the normal route.
+/// The MFD footer's `SelectedName`/`UnSelectedName` entries are
+/// `Type(Text) + Ancestor[(Not)Tag(selected)]` and must NOT restyle the
+/// screen-name WidgetTextField (its colour/tracking come from the brand H1
+/// table in the in-game reference). Only a direct `Parent` wrapper anchors the
+/// text-format route.
+#[test]
+fn ancestor_wrapped_type_text_entry_does_not_style_text_format() {
+    let mut scene = make_test_scene();
+    // node 1 = the screen-name WidgetTextField (untagged); its ancestor (node 2)
+    // carries the "selected" tag, so the Ancestor condition is genuinely
+    // satisfied — the entry is rejected by the missing Parent wrapper, not by a
+    // failed tag test.
+    let mut parent = scene.nodes.get(&1).cloned().unwrap();
+    parent.id = 2;
+    parent.name = "header".to_string();
+    parent.parent = None;
+    parent.children = vec![1];
+    parent.ty = BbNodeType::DisplayWidget;
+    parent.style_tag_uuids = vec!["tag-uuid-1".to_string()];
+    parent.raw = json!({});
+    scene.nodes.insert(2, parent);
+    {
+        let node = scene.nodes.get_mut(&1).unwrap();
+        node.ty = BbNodeType::WidgetTextField;
+        node.parent = Some(2);
+        node.style_tag_uuids = vec![];
+    }
+    scene.roots = vec![2];
+    let entry = json!({
+        "conditionsList": [
+            {
+                "conditions": [
+                    {
+                        "_Type_": "BuildingBlocks_StyleSelectorConditionType", "type": "Text"
+                    },
+                    {
+                        "_Type_": "BuildingBlocks_StyleSelectorConditionAncestor",
+                        "breakConditions": [],
+                        "conditions": [
+                            {"_Type_": "BuildingBlocks_StyleSelectorConditionTag", "tag": {"_RecordId_": "tag-uuid-1"}}
+                        ]
+                    }
+                ]
+            }
+        ],
+        "modifiers": [
+            {"_Type_": "BuildingBlocks_FieldModifierNumber", "field": "FontSize", "value": 40.0}
+        ]
+    });
+    let brand = BrandStyle {
+        identifier: "s_test_hud".to_string(),
+        entries: std::slice::from_ref(&entry),
+        raw: &json!({}),
+    };
+    apply_brand_modifiers(&mut scene, &brand, None);
+    let node = scene.nodes.get(&1).unwrap();
+    assert!(
+        node.raw.get("FontSize").is_none(),
+        "Ancestor-wrapped Type(Text) targets a WidgetText widget, not the field's text format (MFD footer)"
+    );
 }

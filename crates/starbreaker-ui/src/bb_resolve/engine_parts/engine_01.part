@@ -920,10 +920,12 @@ fn brand_palette_record(
 /// Apply the canvas's style cascade to the resolved scene.
 ///
 /// Priority (lowest first): the canvas-level `style` record link, then
-/// sharedStyles, then the selected brand's `brandStyles[]` entries, then the
-/// canvas's own embeddedStyles. Verified against the medical (s_bioc style link
-/// under shared) and MFD footer (s_drak_hud brand over the generic shared
-/// `ScreenNameBackground`) references.
+/// sharedStyles, then the selected brand's `brandStyles[]` entries (or, when no
+/// brand matches the ship manufacturer, the canvas's `defaultStyles.entries` as
+/// the brand-tier fallback), then the canvas's own embeddedStyles. Verified
+/// against the medical (s_bioc style link under shared), MFD footer (s_drak_hud
+/// brand over the generic shared `ScreenNameBackground`) and DRAK velocity-num
+/// SCREEN (defaultStyles fallback — no drak brand declared) references.
 #[allow(clippy::too_many_arguments)]
 fn apply_canvas_style_cascade(
     scene: &mut BbScene,
@@ -978,15 +980,17 @@ fn apply_canvas_style_cascade(
         .map(|b| b.raw)
         .unwrap_or(palette_source.unwrap_or(record_value));
     let shared_chrome = brand_palette_record.as_ref().unwrap_or(shared_fills);
-    // `defaultStyles.entries` are EDITOR-TIME defaults, never applied at
-    // runtime. The evidence: the annunciator's `CornerRadius` (radius 30)
-    // lives ONLY there and the in-game chiclet frames are square; the power
-    // `System Icon Color` exists in defaultStyles + misc/orig brand
-    // containers but NOT drak's, and the in-game drak system icons render
-    // the SVGs' own white. Runtime styling = sharedStyles < brand <
-    // embedded < inline (a previous cascade-BASE application of
-    // defaultStyles rounded the chiclets and tinted the white icons —
-    // both away from the reference).
+    // `defaultStyles.entries` are EDITOR-TIME defaults whenever a brand
+    // RESOLVES — the brand supersedes them. The evidence: the annunciator's
+    // `CornerRadius` (radius 30) lives ONLY there and the in-game chiclet
+    // frames are square; the power `System Icon Color` exists in defaultStyles
+    // + misc/orig brand containers but NOT drak's, and the in-game drak system
+    // icons render the SVGs' own white. Both of those canvases DO resolve a
+    // matching brand, so defaultStyles stay editor-time for them. ONLY when no
+    // brand matches the ship manufacturer do `defaultStyles.entries` become the
+    // runtime brand-tier look (the no-match fallback applied below — the drak
+    // velocity-num SCREEN readouts). Runtime styling = sharedStyles < brand
+    // (or, no-brand-match, defaultStyles) < embedded < inline.
     apply_shared_styles(scene, record_value, shared_fills, shared_chrome, fetch_by_path, loc_fetcher);
     if let Some(brand_style) = brand_style.as_ref() {
         let palette = brand_palette_record.as_ref().unwrap_or(brand_style.raw);
@@ -1001,6 +1005,36 @@ fn apply_canvas_style_cascade(
                 entries: filtered.as_slice(),
                 scope: crate::bb_style_engine::SheetScope::Scene,
             }],
+            loc_fetcher,
+        );
+    } else if let Some(entries) = record_value
+        .get("defaultStyles")
+        .and_then(|d| d.get("entries"))
+        .and_then(|v| v.as_array())
+        .filter(|e| !e.is_empty())
+    {
+        // No `brandStyles[]` entry matches the ship manufacturer → fall back to
+        // `defaultStyles.entries`, the canvas's brand-agnostic look (the Pass-1
+        // canvas-reference rule above: "when no brand matches, defaultStyles are
+        // used at every level"). The DRAK velocity-num SCREEN variant declares
+        // only an `s_grey_hud` brand (grey-HUD ships); a drak ship matches none,
+        // so its readout sizing (FontSize 420/500 + white StrokeColor) comes
+        // from defaultStyles — applied at the BRAND tier so the textfield
+        // text-format route reaches the `Type(Text)+Parent[…]` readout entries.
+        // This does NOT resurrect the editor-time-default counterexamples (the
+        // annunciator's `CornerRadius` and power's `System Icon Color`): those
+        // canvases DO resolve a matching brand, so this fallback never fires for
+        // them. The brand-agnostic palette is the canvas's own.
+        let palette = palette_source.unwrap_or(record_value);
+        let filtered = filter_pending(entries);
+        crate::bb_style_engine::apply(
+            scene,
+            &[crate::bb_style_engine::StyleSheet::uniform(
+                crate::bb_style_engine::Tier::Brand,
+                "defaultStyles",
+                palette,
+                filtered.as_slice(),
+            )],
             loc_fetcher,
         );
     }

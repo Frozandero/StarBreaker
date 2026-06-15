@@ -331,6 +331,29 @@ mod tests {
     }
 
     #[test]
+    fn test_resolve_brand_style_sole_nonmatching_entry_is_none() {
+        // A HUD canvas that declares only `s_grey_hud` (the grey-HUD ship look)
+        // does NOT resolve a brand for a `drak` ship: drak has no matching
+        // brandStyles entry. The variant's no-brand-match look comes from its
+        // `defaultStyles` instead (applied as a fallback in the resolve cascade,
+        // see `apply_canvas_style_cascade`), NOT by mis-applying the grey-HUD
+        // brand. Keeps the drak velocity-num readouts white, not grey-HUD green.
+        let record = json!({
+            "_RecordName_": "HC_HUD_Ship_Velocity_Num_Master",
+            "brandStyles": [
+                {
+                    "brandIdentifier": "file://libs/foundry/records/ui/buildingblocks/styles/s_grey_hud.json",
+                    "entries": [
+                        {"modifiers": [{"field": "FontSize", "value": 500.0}]}
+                    ]
+                }
+            ]
+        });
+        let record_value = record.get("_RecordValue_").unwrap_or(&record);
+        assert!(resolve_brand_style(record_value, Some("drak"), None).is_none());
+    }
+
+    #[test]
     fn test_brand_identifier_basename() {
         let entry = json!({
             "brandIdentifier": "file://libs/foundry/records/ui/buildingblocks/brands/s_drak.json"
