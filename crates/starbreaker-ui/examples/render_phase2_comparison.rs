@@ -104,6 +104,7 @@ fn synthetic_hybrid_document() -> UiIrDocument {
             corner_radius: None,
             background_fill_alpha: None,
             background_fill_colour_token: Some("Accent2".to_string()),
+            circle_fill_colour_token: None,
             style_provenance: None,
             colour_overlay_enabled: false,
             segmented_fill: None,
