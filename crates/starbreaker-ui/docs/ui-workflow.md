@@ -344,3 +344,12 @@ Flows (commands in the reference doc §2/§7):
   AND it has no code path your change touched (no full-circle node, no cover-fit,
   `BB_SHRINK_PROBE` shows no relevant shrink), it's a stale artifact — re-freeze to
   sync (owner-gated, §7), don't chase a phantom root cause.
+- **Do NOT broaden `ir_compose` `center_anchored_heading` to centre text (ledger
+  59).** That rule centres a label anchored `anchorToParent` 0.5/0.5 inside a
+  `0,0`-anchored field, gated to `label_style=="Heading1"`. Dropping the Heading1
+  gate to centre another readout (e.g. the velocity-num HUD, Heading2) REGRESSES the
+  medical-bed (`ui_target_a`) titles/descriptions — they share the identical anchor
+  pattern but render LEFT (owner-caught, 1.5%). Centring is NOT purely anchor-driven;
+  the Heading1 gate is load-bearing. Centre stacked readouts via `bb_layout` CARD
+  cross-axis content-fit + `crossAxisJustification=Center` (scoped to centred
+  columns, which no frozen screen has), NOT the text-draw rule.

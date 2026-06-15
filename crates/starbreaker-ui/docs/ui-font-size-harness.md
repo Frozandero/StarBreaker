@@ -47,10 +47,16 @@ unless `SB_UI_FONT_DUMP` is set.
 ### Dump line format
 
 ```
-FONTDUMP \t canvas \t node \t font \t size_px \t visible_px \t em \t text
+FONTDUMP \t canvas \t node \t font \t size_px \t visible_px \t units_per_em \t width_px \t text
 ```
 
 - `size_px` — the size handed to the rasteriser (after IR + render-side scaling).
+- `visible_px` — rendered cap band height (max glyph ink height); a DASH/`-`
+  placeholder measures only a few px here even at a large `size_px`.
+- `units_per_em` — the font's own em units (Slug fonts report e.g. 21560); a
+  per-font constant, NOT a position — do not misread it as a draw coordinate.
+- `width_px` — widest rendered line in px (the value to compare against the
+  reference text-block width).
 - `visible_px` — **the held invariant**: the actual rendered glyph cap height in
   image pixels (`glyph_bbox × size_px / units_per_em`). This folds in *every*
   render-side factor (calibration, em choice, glyph metrics), so matching it

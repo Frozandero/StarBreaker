@@ -180,6 +180,48 @@ def ratios_of(r, g, b):
     return {"g_over_r": round(g / r, 4), "b_over_r": round(b / r, 4)}
 
 
+def text_bands(image_path, thr_frac=0.62, min_row_px=3, gap=6):
+    """Locate the bright text on a (text-only) screen and report its geometry.
+
+    No box needed — finds the brightest pixels (> thr_frac of the image max
+    luminance), then reports the text bbox + horizontal centre and the per-LINE
+    cap-height bands as a PERCENT of image height. The percent is resolution-
+    independent, so a render band can be compared directly with a reference band
+    to expose a font-scale gap (the velocity-num HUD measured 1.9% vs the
+    reference 20.6%/16.2% — ~7x too small).
+    """
+    import numpy as np
+    im = np.asarray(Image.open(image_path).convert("L")).astype(float)
+    h, w = im.shape
+    thr = im.max() * thr_frac
+    mask = im > thr
+    ys, xs = np.where(mask)
+    out = {"image": image_path, "size": [int(w), int(h)],
+           "bright_threshold": round(float(thr), 1), "text_pixels": int(len(xs))}
+    if len(xs) == 0:
+        return out
+    out["bbox"] = [int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max())]
+    out["centre_x"] = int((int(xs.min()) + int(xs.max())) // 2)
+    out["centre_x_frac"] = round((int(xs.min()) + int(xs.max())) / 2 / w, 4)
+    rowsum = mask.sum(1)
+    rows = [y for y in range(h) if rowsum[y] > min_row_px]
+    bands = []
+    if rows:
+        start = prev = rows[0]
+        for y in rows[1:]:
+            if y - prev > gap:
+                bands.append((start, prev))
+                start = y
+            prev = y
+        bands.append((start, prev))
+    out["lines"] = [
+        {"y0": int(a), "y1": int(b), "height_px": int(b - a + 1),
+         "height_pct_of_h": round(100 * (b - a + 1) / h, 2)}
+        for (a, b) in bands
+    ]
+    return out
+
+
 def main():
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -192,7 +234,25 @@ def main():
                         help="bright threshold above the box's median luminance")
     parser.add_argument("--anchor", help="x0,y0,x1,y1 anchor region for haze calibration")
     parser.add_argument("--anchor-rgb", help="r,g,b TRUE colour of the anchor region")
+    parser.add_argument("--text-bands", action="store_true",
+                        help="text-screen mode: bright-text bbox + centre-x + per-line "
+                             "band heights as %% of image height (no box needed)")
+    parser.add_argument("--ref", help="reference image to compare --text-bands against")
     args = parser.parse_args()
+
+    if args.text_bands:
+        out = text_bands(args.image)
+        if args.ref:
+            ref = text_bands(args.ref)
+            out["reference"] = ref
+            rl, fl = out.get("lines"), ref.get("lines")
+            if rl and fl:
+                r_mean = sum(l["height_pct_of_h"] for l in rl) / len(rl)
+                f_mean = sum(l["height_pct_of_h"] for l in fl) / len(fl)
+                out["size_ratio_render_over_ref"] = round(r_mean / f_mean, 3) if f_mean else None
+        json.dump(out, sys.stdout, indent=2)
+        print()
+        return
 
     if args.box:
         box = parse_box(args.box)

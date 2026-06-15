@@ -1407,3 +1407,74 @@ stay byte-identical to the frozen MFD baselines (`69bb4ffb0`, scoped `e27368f41`
    stale-local-artifact note (item 53, both in §10). [done]
 3. Code fixes (items 52/54/55) landed during the arc (commits cited above); this phase
    is tooling + docs only and does not alter render behaviour.
+
+## Arc — velocity-num HUD parity (2026-06-15)
+
+### 56. `ui_check.sh --full` does NOT re-export → STALE-EXPORT failure reads as breakage
+**Observed:** after a code change I ran `ui_check.sh --full` to measure the blast
+radius on the frozen baselines. It failed with `STALE EXPORT: Generated PNGs
+predate the current build` — the export-coupled visual guard compares
+`ships/Data/UI/Generated/*.png`, which `--full` does NOT refresh, so it fails the
+P0.2 staleness guard until you manually re-export. Reference §1 describes `--full`
+as running "those export-coupled visual guards **authoritatively**", which reads as
+"it exports first" — it does not. Cost a full cycle + a grep through
+`generate_ui_regression_artifacts.sh` to recover the canonical export invocation
+(`entity export drak_clipper <ws>/ships --kind decomposed --lod 0 --mip 0
+--materials all` — note `--lod 0`, or the cockpit HUD screens are culled).
+**Improvement:** reference §1 — state that `--full` requires a FRESH export first
+and give the exact command inline; reference §2 — promote the canonical guard-export
+command (with `--lod 0 --mip 0 --materials all`) as "the export the visual guard
+compares against", not buried in the freeze script.
+**Action:** doc fix [done — this retro].
+
+### 57. `FONTDUMP` column doc was stale (missing `width_px`) → misread a font's em as a position
+**Observed:** chasing the blank render I read a `FONTDUMP` line `… 52.00 3.91
+21560.0 18.21 -` and briefly read `21560.0` as an off-screen draw coordinate. The
+emitter (`swf_draw.rs`) actually prints `size_px visible_px units_per_em width_px
+text` (21560 = the Slug font's em units), but `ui-font-size-harness.md` documented
+the columns as `… size_px visible_px em text` — missing `width_px`. Reading the
+emitter settled it, but the doc drift cost a wrong first hypothesis.
+**Improvement:** `ui-font-size-harness.md` — fix the FONTDUMP column list to
+`FONTDUMP \t canvas \t node \t font \t size_px \t visible_px \t units_per_em \t
+width_px \t text` (matches the `eprintln!` in `swf_draw.rs`).
+**Action:** doc fix [done — this retro].
+
+### 58. Text-screen position/size diagnosis re-typed >3× → `ui_measure.py --text-bands`
+**Observed:** diagnosing a text-only screen (is it blank? where do the glyphs land?
+what size vs the reference?) I hand-wrote the same numpy three times: the bright-
+pixel bbox + centre-x of the rendered text, and the per-line cap-height BANDS as a
+PERCENT of screen height for render vs reference (the measurement that proved the
+velocity-num font is ~7× under the reference — 1.9% vs 20.6%/16.2%). Generic across
+every text/readout screen, none of it covered by `ui_gauge_measure.py` (circular
+gauges) or the per-box `ui_measure.py` crop mode.
+**Improvement:** `ui_measure.py --text-bands <image> [--ref <reference>]` — emits the
+bright-text bbox + centre-x and the per-line band heights as % of image height (and
+a render-vs-ref ratio when `--ref` is given). Reuse for any text-screen parity.
+**Action:** tool added [done — this retro]; reference §7 row [done].
+
+### 59. Centring an anchored label via the text-draw rule is a CROSS-SCREEN trap (regressed medical)
+**Observed:** to centre the velocity-num readouts I broadened `ir_compose`'s
+`center_anchored_heading` from `label_style=="Heading1"` to ANY style (the rule
+keys on label `anchorToParent` 0.5/0.5 + node anchor/pivot 0,0). It REGRESSED the
+medical-bed (`ui_target_a`) titles/descriptions by 1.5% — they share the identical
+anchor pattern but must render LEFT. The owner caught it live; the `--full` visual
+guard had already flagged it. The Heading1 gate is load-bearing: centring is NOT
+purely anchor-driven. The correct fix centred the readout via `bb_layout` CARD
+cross-axis content-fit + `crossAxisJustification=Center` (scoped to center columns,
+which no frozen screen has), leaving the text-draw rule untouched.
+**Improvement:** workflow §10 don't-retry bullet — do NOT broaden
+`center_anchored_heading` (the anchored-label text-draw centring) to non-Heading1;
+the medical title/desc share the anchor pattern and stay left. Centre stacked
+readouts via center-column card cross-fit instead.
+**Action:** doc bullet [done — this retro]; the trap is also in the dossier
+velocity-num row and [[velocity-num-hud-parity]].
+
+### Phase L — implementation (2026-06-15, this retro)
+1. `scripts/ui_measure.py --text-bands` (item 58) — added + verify-on-write run;
+   reference §7 row. [done]
+2. Docs: reference §1 `--full` needs-fresh-export note + §2 canonical guard-export
+   command (item 56); `ui-font-size-harness.md` FONTDUMP columns (item 57); workflow
+   §10 don't-broaden-center_anchored_heading bullet (item 59). [done]
+3. Render-behaviour code fixes (registry pins `1f25845d2`, centred-column content-fit
+   `0cdf6d526`) landed during the arc; this phase is tooling + docs only and does not
+   alter render behaviour.

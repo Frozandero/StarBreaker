@@ -15,10 +15,21 @@ bash scripts/ui_check.sh         # TDD tier: examples compile + the WHOLE ui sui
                                  #   (lib + every integration target; the two
                                  #   export-coupled visual guards skipped)
 bash scripts/ui_check.sh --full  # boundary tier: + those export-coupled visual
-                                 #   guards run authoritatively, freeze+artifact
-                                 #   validators, 3d lib, font harness
+                                 #   guards, freeze+artifact validators, 3d lib,
+                                 #   font harness
 cargo test --workspace           # everything (slow)
 ```
+**`--full` does NOT re-export.** The export-coupled visual guards compare
+`ships/Data/UI/Generated/*.png`, which only refresh on a full export — run one
+FIRST or `--full` fails the staleness guard (`STALE EXPORT: Generated PNGs
+predate the current build`), which looks like breakage but is the P0.2 guard
+working. Re-export with the canonical guard command (§2) before `--full`:
+```bash
+cargo build --release -p starbreaker && \
+./target/release/starbreaker entity export drak_clipper "$HOME/projects/scorg_tools/ships" \
+  --kind decomposed --lod 0 --mip 0 --materials all
+```
+`--lod 0` is REQUIRED (LOD1 culls the cockpit HUD screens, §5).
 
 Individual suites for targeted debugging:
 `cargo test -p starbreaker-ui --lib [filter]`, `--test manifest_live_ir_guard`,
@@ -304,6 +315,7 @@ Example: `BB_SHRINK_PROBE=1 ./target/debug/starbreaker ui render --scene
 | `python3 scripts/ui_ir_query.py tree <ir.json> <node_id>` | ancestor chain for one node with rect, authored_size, anchor/pivot, padding, margin |
 | `python3 scripts/ui_ir_query.py children <ir.json> <node_id> [--depth N] [--fields a.b,c]` | descendant subtree (rect, `right`=x+w, is_active, non-Visible overflow) — the mirror of `tree`, for clip/overflow tracing |
 | `python3 scripts/ui_measure.py <image> --box x0,y0,x1,y1 [--ir <ir.json> --node <id>] [--delta N] [--anchor … --anchor-rgb …]` | glyph-run cap heights (contamination-flagged) + colour ratios with `feature_width` (warns when ≤4px that a thin feature on a RECTIFIED capture has a smeared hue — measure colour on the ORIGINAL) + optional additive-haze correction (JSON to stdout) |
+| `python3 scripts/ui_measure.py --text-bands <image> [--ref <reference>]` | text-SCREEN mode (no box): bright-text bbox + `centre_x_frac` (is it centred?) + per-line cap-height bands as % of image height; with `--ref` adds `size_ratio_render_over_ref` (the resolution-independent font-scale gap — velocity-num measured 0.11 = render ~9× too small). For diagnosing blank/mispositioned/mis-sized text readouts |
 | `python3 scripts/ui_gauge_measure.py <render> [reference] [--montage out.png]` | circular HUD-gauge geometry (g-force/velocity ball, countermeasures, radar): centre-dot offset + circularity (circle vs squircle), cross-arm V/H symmetry, per-cardinal ring perp-offset + radius fraction (JSON), and a centre-aligned render\|reference montage. Use abs paths — a relative `ships/…` resolves to the STALE `StarBreaker/ships/` copy. Caveat: a cardinal window can catch an adjacent diagonal marker (the cross V/H band metric is robust) |
 | `ui_stage_diff <canvas.json> [WxH] [--records-root <dir>] [--filter <substr>]` | parse-only vs full-resolve layout diff; flags first name-matched divergence (cracks "which stage broke the geometry") |
 | `mfd_ir_dump <canvas-guid> <content-guid> [name-filter] [WxH]` | framed MFD IR dump from the LOCAL record mirror — the no-P4K/no-MCP fallback (~5s: indexes only the UI subtrees + caches the parsed TagDatabase; prints index/compile timing). When P4K/MCP is available prefer `ui_ir_query` (canvas pair) or `ui render --dump-ir-dir` (bound screen). NOTE: uses anim sample 0; `ui render` uses 50 (the render), so a few state-dependent rects differ |

@@ -53,6 +53,25 @@ findings land here in two states, with a lifecycle:
   deferred to avoid churn while the skill is still settling.
 - **Multi-ship generalization unverified** (see Known assumptions) — exercise
   when a second `reference/in-game/` folder exists.
+- **`--helper` ≠ reference stem (2026-06-15, velocity-num arc).** The skill's
+  worked example and the gather-inputs step say "the chosen SCREEN is
+  simultaneously the dossier row, the render `--helper`, and the reference file
+  stem." That held for the target/power examples but NOT for velocity-num: the
+  reference stem is `ship_velocity_num_master` while the render `--helper` is
+  `screen_flight_hud_left_upper` (the dossier's Helper column). I had to read the
+  dossier to get the right helper. Recommend softening the wording: the render
+  `--helper` comes from the dossier's **Helper/scene column**, which is usually
+  but not always the reference file stem — when they differ, the dossier is
+  authoritative. (Low risk; wording only.)
+- **Partial-parity terminal state is fine, but call it out (2026-06-15).** The
+  velocity-num arc landed real structural+content wins yet two diffs (an
+  unimplemented engine unit-suffix table; an undecoded HUD content-view zoom) are
+  genuine engine-mechanism blockers that BOUND achievable parity this arc — the
+  correct terminal state is "deferred with proof," not "clean." The skill already
+  permits this (defer-on-proven-blocker), but a one-line acknowledgement that some
+  screens have intrinsic mechanism-blockers (so the closing review ends
+  deferred-not-clean) would reassure a fully-automated run it isn't failing to
+  converge. (Optional.)
 
 ## Known assumptions & risks
 
