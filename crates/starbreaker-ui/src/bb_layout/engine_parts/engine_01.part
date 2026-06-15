@@ -303,22 +303,25 @@ fn cover_fit_recentre(
         })
         .map(|(_, r)| *r);
     let Some(ball) = ball_area else { return };
-    // Centre the ball-area in the viewport. The full-bleed background
+    // Centre the ball-area in the viewport, but ONLY on an axis where the
+    // cover-scaled canvas OVERFLOWS the target — that is the gauge case (the
+    // useRaw canvas is scaled wider/taller than the square screen mesh, so its
+    // origin-anchored layout must shift to frame the ball). When the canvas
+    // exactly fills the target on an axis there is nothing to re-frame, so that
+    // axis must NOT shift: aspectOverrides screens (door, annunciator) lay their
+    // canvas out at the full target and would otherwise have their content
+    // re-centred and pushed off-place. The full-bleed background
     // (`cover_fit_full_bleed_to_viewport`, applied immediately after) fills the
-    // viewport independently, so centring never exposes a gap at a leading edge —
-    // the only constraint is to keep the ball-area itself on-screen. When the
-    // ball-area is narrower than the target it centres (the background fills the
-    // margins); when it is as wide as / wider than the target the bounds collapse
-    // to the cover position (pin so the ball still covers the screen). This
-    // replaces the prior origin-clamp that left the g-force ball ~63px left.
+    // viewport independently, so centring never exposes a gap at a leading edge;
+    // the only constraint is to keep the ball-area itself on-screen.
     let centre_shift = |target: f32, pos: f32, size: f32| -> f32 {
         let want = target * 0.5 - (pos + size * 0.5);
         let a = -pos; // ball leading edge at viewport origin
         let b = target - size - pos; // ball trailing edge at viewport end
         want.clamp(a.min(b), a.max(b))
     };
-    let dx = centre_shift(target_w, ball.x, ball.w);
-    let dy = centre_shift(target_h, ball.y, ball.h);
+    let dx = if canvas_w > target_w + 0.5 { centre_shift(target_w, ball.x, ball.w) } else { 0.0 };
+    let dy = if canvas_h > target_h + 0.5 { centre_shift(target_h, ball.y, ball.h) } else { 0.0 };
     if dx != 0.0 || dy != 0.0 {
         for r in rects.values_mut() {
             r.x += dx;
@@ -2394,6 +2397,27 @@ mod tests {
             (ball.x + ball.w * 0.5 - 960.0).abs() <= 1.0,
             "left ball-area must centre, got {ball:?}"
         );
+    }
+
+    /// An aspectOverrides screen (door / annunciator) lays its canvas out at the
+    /// FULL target (canvas == target on both axes), so there is no overflow to
+    /// re-frame: cover_fit_recentre must be a NO-OP. Centring its largest content
+    /// node would push the door/annunciator content off-place (a regression the
+    /// whole-image visual guard caught). Only an axis whose cover-scaled canvas
+    /// exceeds the target shifts.
+    #[test]
+    fn cover_fit_recentre_full_target_canvas_does_not_shift() {
+        let mut rects: BTreeMap<BbNodeId, Rect> = BTreeMap::new();
+        // canvas == target (aspectOverrides fill): no overflow on either axis.
+        rects.insert(1, Rect { x: 0.0, y: 0.0, w: 1920.0, h: 1132.0 });
+        // a localised content node, NOT centred (a header strip near the top).
+        rects.insert(2, Rect { x: 0.0, y: 0.0, w: 1920.0, h: 200.0 });
+        cover_fit_recentre(&mut rects, |_| true, 1920.0, 1132.0, 1920.0, 1132.0);
+        assert_eq!(
+            rects[&2].y, 0.0,
+            "full-target (aspectOverrides) canvas must not be re-centred vertically"
+        );
+        assert_eq!(rects[&2].x, 0.0, "nor horizontally");
     }
 
     #[test]

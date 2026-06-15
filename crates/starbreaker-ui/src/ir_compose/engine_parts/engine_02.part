@@ -2587,25 +2587,39 @@ fn rounded_rect_path(rect: TskRect, radius: f32) -> Option<tiny_skia::Path> {
     let w = rect.width();
     let h = rect.height();
 
-    // Corner arcs use CUBIC Beziers with the standard 90°-arc constant
-    // (k = 4/3·tan(π/8) ≈ 0.5523). A quadratic Bezier is a poor quarter-circle
-    // approximation that bulges toward the corner, so a full-radius rounded rect
-    // (r == half-size) rendered as a squircle instead of a circle — the g-force /
-    // velocity centre dot (114.86² node, corner_radius 100 clamped to half-size)
-    // showed as a rounded square. Cubic corners are accurate to <0.03% of r.
-    const ARC_K: f32 = 0.552_284_75;
-    let c = r * ARC_K;
-
     let mut pb = PathBuilder::new();
-    pb.move_to(x + r, y);
-    pb.line_to(x + w - r, y);
-    pb.cubic_to(x + w - r + c, y, x + w, y + r - c, x + w, y + r); // top-right
-    pb.line_to(x + w, y + h - r);
-    pb.cubic_to(x + w, y + h - r + c, x + w - r + c, y + h, x + w - r, y + h); // bottom-right
-    pb.line_to(x + r, y + h);
-    pb.cubic_to(x + r - c, y + h, x, y + h - r + c, x, y + h - r); // bottom-left
-    pb.line_to(x, y + r);
-    pb.cubic_to(x, y + r - c, x + r - c, y, x + r, y); // top-left
+    // A FULL ellipse/circle — the corner radius consumes both half-extents — must
+    // use CUBIC corner arcs (standard 90°-arc constant k = 4/3·tan(π/8) ≈ 0.5523,
+    // accurate to <0.03% of r). A quadratic Bezier bulges toward the corner, so a
+    // full-radius rounded rect rendered as a squircle, not a circle — the g-force
+    // / velocity centre dot (114.86² node, corner_radius 100 clamped to half-size)
+    // showed as a rounded square. PARTIAL rounded corners keep the quadratic arc:
+    // the deviation there is sub-pixel (the cards/borders on the frozen MFD
+    // baselines) and quadratics are what those baselines were frozen with.
+    let is_full_ellipse = r >= w * 0.5 - 0.5 && r >= h * 0.5 - 0.5;
+    if is_full_ellipse {
+        const ARC_K: f32 = 0.552_284_75;
+        let c = r * ARC_K;
+        pb.move_to(x + r, y);
+        pb.line_to(x + w - r, y);
+        pb.cubic_to(x + w - r + c, y, x + w, y + r - c, x + w, y + r); // top-right
+        pb.line_to(x + w, y + h - r);
+        pb.cubic_to(x + w, y + h - r + c, x + w - r + c, y + h, x + w - r, y + h); // bottom-right
+        pb.line_to(x + r, y + h);
+        pb.cubic_to(x + r - c, y + h, x, y + h - r + c, x, y + h - r); // bottom-left
+        pb.line_to(x, y + r);
+        pb.cubic_to(x, y + r - c, x + r - c, y, x + r, y); // top-left
+    } else {
+        pb.move_to(x + r, y);
+        pb.line_to(x + w - r, y);
+        pb.quad_to(x + w, y, x + w, y + r);
+        pb.line_to(x + w, y + h - r);
+        pb.quad_to(x + w, y + h, x + w - r, y + h);
+        pb.line_to(x + r, y + h);
+        pb.quad_to(x, y + h, x, y + h - r);
+        pb.line_to(x, y + r);
+        pb.quad_to(x, y, x + r, y);
+    }
     pb.close();
     pb.finish()
 }
