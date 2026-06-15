@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "frozen_at": "2026-06-14T23:44:04Z",
+  "frozen_at": "2026-06-15T10:43:12Z",
   "approver": "owner",
-  "reason": "annunciator artifact baseline stale at 4.44/432; re-freeze to screen-mesh aspect 5.58/344 (landed cc67d79e2; IR snapshot already 344). No other target changed (0.0000% diff).",
+  "reason": "Onboard g-force + velocity ball platinum artifacts (centred square cross, circular centre dot, symmetric markers, at-rest LIMIT '0' hidden). Re-froze clipper_power_master (1.38%) and clipper_target_master (<0.5%): PRE-EXISTING stale local artifacts whose PNGs predate the current render (the emissions-header text top); IR snapshots unchanged so no geometry change this arc, current renders verified vs references, owner confirmed power looks better. door/annunciator L+R/medical a+b byte-identical.",
   "signature": null,
   "manifest_path": "crates/starbreaker-ui/tests/fixtures/ui_ir/ui_snapshot_manifest.json",
   "artifacts": [
@@ -51,7 +51,7 @@
       "tier": "platinum",
       "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_mc_s_target_master.png",
       "artifact_path": "test-artifacts/ui/clipper_target_master.png",
-      "sha256": "fe614f702fd2022c038723dd30fced2d2628b2ea44e2bb77ad80979dae249740",
+      "sha256": "0b841c997df7a8601efc81cfe5f16c67774f9ffb47074f7cf450087775abbed6",
       "width": 1600,
       "height": 1200,
       "channels": "srgba"
@@ -61,7 +61,7 @@
       "tier": "gold",
       "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_mc_s_power_master.png",
       "artifact_path": "test-artifacts/ui/clipper_power_master.png",
-      "sha256": "6c9edeb71eebd33b2b1a818fcdda3e8998118f108e0459b317ae7892aae7e919",
+      "sha256": "925071862bc74cb34f7d04ecdc1976417493590f0aecb9a41648893c5f287341",
       "width": 1600,
       "height": 1200,
       "channels": "srgba"
@@ -74,6 +74,26 @@
       "sha256": "c0854e8b29ce58a4c6fb479ac39c350a99ecbf4e149359e9a829950f31b9f468",
       "width": 1920,
       "height": 344,
+      "channels": "srgba"
+    },
+    {
+      "id": "clipper_g_force_ball_master",
+      "tier": "platinum",
+      "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_hc_hud_ship_g_force_ball_master.png",
+      "artifact_path": "test-artifacts/ui/clipper_g_force_ball_master.png",
+      "sha256": "4de54e492d7a16237109b81004a7c93a2bbf962f018b889b9e6ea05cb1daa20d",
+      "width": 1920,
+      "height": 1920,
+      "channels": "srgba"
+    },
+    {
+      "id": "clipper_velocity_ball_master",
+      "tier": "platinum",
+      "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_hc_hud_ship_velocity_ball_master.png",
+      "artifact_path": "test-artifacts/ui/clipper_velocity_ball_master.png",
+      "sha256": "0ba0960a1ec796f98b383e52dad465fa0ff80f17b442e6011f635502c92dae22",
+      "width": 1920,
+      "height": 1920,
       "channels": "srgba"
     }
   ]
