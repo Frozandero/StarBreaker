@@ -398,13 +398,8 @@ fn draw_non_text_node(
         draw_ir_border(pixmap, rect, border, node.alpha, ctx, node.corner_radius);
     }
 
-    if let Some(stroke_colour) = node.stroke_colour
-        && node.stroke_extent.unwrap_or(0.0) > 0.0
-        && !node
-            .custom_shape
-            .as_ref()
-            .and_then(|shape| shape.render_shape)
-            .unwrap_or(false)
+    if node_draws_rect_stroke(node)
+        && let Some(stroke_colour) = node.stroke_colour
     {
         draw_rect_stroke_ts(
             pixmap,
@@ -414,6 +409,24 @@ fn draw_non_text_node(
             node.alpha,
         );
     }
+}
+
+/// Whether a node draws a rectangle stroke around its rect (the box outline for
+/// shape/separator widgets). Requires a `stroke_colour`, a positive
+/// `stroke_extent`, and that the node is neither a `render_shape` custom shape
+/// (which strokes its own path) NOR a `WidgetTextField`: a text field's
+/// `StrokeColor` is its GLYPH outline drawn via the text path, not a box around
+/// the field rect (the DRAK velocity-num readouts author a white ~0.64α text
+/// StrokeColor that must outline the digits, not box them).
+fn node_draws_rect_stroke(node: &UiIrNode) -> bool {
+    node.stroke_colour.is_some()
+        && node.stroke_extent.unwrap_or(0.0) > 0.0
+        && !node
+            .custom_shape
+            .as_ref()
+            .and_then(|shape| shape.render_shape)
+            .unwrap_or(false)
+        && !node.node_type.eq_ignore_ascii_case("widget_text_field")
 }
 
 fn border_uses_colour_tokens(border: &UiIrBorder) -> bool {

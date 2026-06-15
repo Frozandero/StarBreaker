@@ -1647,6 +1647,34 @@ mod tests_c {
         assert!(border[0] > 200 && border[1] > 200, "border pixel should be yellow-ish");
     }
 
+    /// A `WidgetTextField`'s `StrokeColor` is its glyph outline, NOT a box around
+    /// the field rect — `node_draws_rect_stroke` must exclude text fields so the
+    /// DRAK velocity-num readouts (white ~0.64α text StrokeColor) don't render a
+    /// box outline around "0m/s"/"0.0 G". Other stroked widgets still box.
+    #[test]
+    fn text_field_stroke_does_not_draw_rect_box() {
+        let document: UiIrDocument = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/ui_ir/expected_testroot_ir.json"
+        ))
+        .expect("golden fixture should parse");
+        let mut node = document.nodes[0].clone();
+        node.stroke_colour = Some([1.0, 1.0, 1.0, 0.643]);
+        node.stroke_extent = Some(2.0);
+        node.custom_shape = None;
+
+        node.node_type = "widget_text_field".to_string();
+        assert!(
+            !node_draws_rect_stroke(&node),
+            "a text field's StrokeColor is a glyph outline, not a box border"
+        );
+
+        node.node_type = "display_widget".to_string();
+        assert!(
+            node_draws_rect_stroke(&node),
+            "a non-text stroked widget still draws its rect box"
+        );
+    }
+
     /// A node whose fill extends past its `clip_rect` (the scroll view's
     /// partially visible column) must paint inside the clip and leave the
     /// outside untouched.
