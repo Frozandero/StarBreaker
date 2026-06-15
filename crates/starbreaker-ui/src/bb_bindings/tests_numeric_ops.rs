@@ -346,3 +346,70 @@ fn boolean_param_takes_registry_value_by_name_over_editor_default() {
         "registry at-rest value wins over the editor default"
     );
 }
+
+/// A widget size driven by a live engine `Variable` (the velocity ball's
+/// `SizeY = |flightcontroller/linearvelocity/ratio/z| / 2`) is recognised as
+/// engine-driven, so its at-rest `0` is a genuine collapse — distinct from the
+/// power-pip's `1/MaxPipList` (a divide-by-zero of an unwired component
+/// parameter) and a direct unwired `ComponentParameter` default, which are
+/// half-resolved placeholders that must keep their authored size.
+#[test]
+fn engine_variable_size_source_distinguishes_genuine_zero_from_placeholder() {
+    // velocity: Div(amount=2, input = NumberFromBoolean(inputFalse = velocity var)).
+    let velocity = serde_json::json!([
+        {"_Type_": "BuildingBlocks_BindingsNumberField",
+         "widget": "_PointsTo_:ptr:12", "field": "SizeY", "input": "_PointsTo_:ptr:13"},
+        {"_Pointer_": "ptr:13", "_Type_": "BuildingBlocks_BindingsNumberArithmatic",
+         "type": "Div", "amount": 2.0, "input": "_PointsTo_:ptr:25", "inputB": null},
+        {"_Pointer_": "ptr:25", "_Type_": "BuildingBlocks_BindingsNumberFromBoolean",
+         "isTrue": 0.0, "isFalse": 1.0, "inputTrue": "_PointsTo_:ptr:17", "inputFalse": "_PointsTo_:ptr:14",
+         "input": "_PointsTo_:ptr:15"},
+        {"_Pointer_": "ptr:17", "_Type_": "BuildingBlocks_BindingsNumberArithmatic",
+         "type": "Mul", "amount": -1.0, "input": "_PointsTo_:ptr:14", "inputB": null},
+        {"_Pointer_": "ptr:15", "_Type_": "BuildingBlocks_BindingsBooleanFromNumber",
+         "type": "Less", "number": 0.0, "input": "_PointsTo_:ptr:14", "inputB": null},
+        {"_Pointer_": "ptr:14", "_Type_": "BuildingBlocks_BindingsNumberVariable",
+         "path": [], "binding": "flightcontroller/linearvelocity/ratio/z", "inheritsNamespace": true}
+    ]);
+    let resolver = resolver_for(velocity);
+    let empty = DefaultValueRegistry::default();
+    assert_eq!(
+        resolver.resolve_field_number(12, "SizeY", &empty),
+        Some(0.0),
+        "at rest |0|/2 = 0"
+    );
+    assert!(
+        resolver.field_value_source_is_engine_variable(12, "SizeY", &empty),
+        "the size flows from the velocity engine Variable: a genuine collapse"
+    );
+
+    // pip: Div(amount=1, input=null, inputB = unwired MaxPipList ComponentParameter) → 1/0.
+    let pip = serde_json::json!([
+        {"_Type_": "BuildingBlocks_BindingsNumberField",
+         "widget": "_PointsTo_:ptr:2", "field": "SizeY", "input": "_PointsTo_:ptr:82"},
+        {"_Pointer_": "ptr:82", "_Type_": "BuildingBlocks_BindingsNumberArithmatic",
+         "type": "Div", "amount": 1.0, "input": null, "inputB": "_PointsTo_:ptr:62"},
+        {"_Pointer_": "ptr:62", "_Type_": "BuildingBlocks_BindingsNumberFromInteger",
+         "asSeconds": false, "input": "_PointsTo_:ptr:61"},
+        {"_Pointer_": "ptr:61", "_Type_": "BuildingBlocks_BindingsIntegerComponentParameter",
+         "name": "Max pipList", "parameter": "ParamInput2", "defaultValue": 0}
+    ]);
+    let resolver = resolver_for(pip);
+    assert!(
+        !resolver.field_value_source_is_engine_variable(2, "SizeY", &empty),
+        "1/MaxPipList is a divide-by-zero of an unwired parameter: a placeholder, not engine-driven"
+    );
+
+    // direct unwired component parameter size (widget-standard expansion icon).
+    let param = serde_json::json!([
+        {"_Type_": "BuildingBlocks_BindingsNumberField",
+         "widget": "_PointsTo_:ptr:3", "field": "SizeX", "input": "_PointsTo_:ptr:90"},
+        {"_Pointer_": "ptr:90", "_Type_": "BuildingBlocks_BindingsNumberComponentParameter",
+         "name": "Icon size", "parameter": "ParamInput0", "defaultValue": 0.0}
+    ]);
+    let resolver = resolver_for(param);
+    assert!(
+        !resolver.field_value_source_is_engine_variable(3, "SizeX", &empty),
+        "an unwired component parameter is not engine-driven"
+    );
+}

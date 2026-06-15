@@ -133,6 +133,116 @@ impl BindingResolver {
         }
     }
 
+    /// Whether a widget field's at-rest VALUE flows from a live engine
+    /// `Bindings*Variable` (an external telemetry binding such as
+    /// `flightcontroller/linearvelocity/ratio/z`) rather than an unwired
+    /// component parameter or a divide-by-zero artifact.
+    ///
+    /// Path-sensitive: boolean-gated `NumberFromBoolean` / `IntegerFromBoolean`
+    /// nodes follow only the branch their at-rest selector takes, and a `Div`
+    /// by (near-)zero is treated as data-absent (`false`). So the power-pip's
+    /// `1/MaxPipList` and the widget-standard icons' unwired `ParamInput` sizes
+    /// stay placeholders while the velocity ball's `|velocity|/2` is recognised
+    /// as a genuine engine-driven value. Used by
+    /// `resolve_geometry_fields_into_scene` to decide whether a resolved size of
+    /// `0` is a real at-rest collapse (apply) or a half-resolved editor
+    /// placeholder (keep the authored size).
+    pub(super) fn field_value_source_is_engine_variable(
+        &self,
+        node_id: BbNodeId,
+        field: &str,
+        defaults: &DefaultValueRegistry,
+    ) -> bool {
+        let Some(input_ptrs) = self
+            .widget_field_to_input_ptrs
+            .get(&(node_id, field.to_string()))
+        else {
+            return false;
+        };
+        input_ptrs.iter().any(|&ptr| {
+            let mut seen = std::collections::HashSet::new();
+            self.ptr_source_is_engine_variable(ptr, defaults, &mut seen)
+        })
+    }
+
+    fn ptr_source_is_engine_variable(
+        &self,
+        ptr: BbNodeId,
+        defaults: &DefaultValueRegistry,
+        seen: &mut std::collections::HashSet<BbNodeId>,
+    ) -> bool {
+        if !seen.insert(ptr) {
+            return false;
+        }
+        let result = self.ptr_source_is_engine_variable_inner(ptr, defaults, seen);
+        seen.remove(&ptr);
+        result
+    }
+
+    fn ptr_source_is_engine_variable_inner(
+        &self,
+        ptr: BbNodeId,
+        defaults: &DefaultValueRegistry,
+        seen: &mut std::collections::HashSet<BbNodeId>,
+    ) -> bool {
+        let Some(op) = self.ptr_to_op.get(&ptr) else {
+            return false;
+        };
+        let ty = op.get("_Type_").and_then(|v| v.as_str()).unwrap_or("");
+        let follow = |key: &str, seen: &mut std::collections::HashSet<BbNodeId>| -> bool {
+            op.get(key)
+                .and_then(|v| v.as_str())
+                .and_then(parse_points_to_or_ptr_str)
+                .is_some_and(|p| self.ptr_source_is_engine_variable(p, defaults, seen))
+        };
+        match ty {
+            "BuildingBlocks_BindingsNumberVariable"
+            | "BuildingBlocks_BindingsIntegerVariable" => {
+                // A live engine telemetry binding (non-empty path); component
+                // parameters carry no path and fall through to `false`.
+                self.ptr_to_path.get(&ptr).is_some_and(|p| !p.is_empty())
+            }
+            "BuildingBlocks_BindingsNumberFromInteger"
+            | "BuildingBlocks_BindingsNumberRound"
+            | "BuildingBlocks_BindingsNumberClamp"
+            | "BuildingBlocks_BindingsNumberFromIntegerSwitch" => follow("input", seen),
+            "BuildingBlocks_BindingsNumberFromBoolean"
+            | "BuildingBlocks_BindingsIntegerFromBoolean" => {
+                let mut seen_bool = std::collections::HashSet::new();
+                let enabled = op
+                    .get("input")
+                    .and_then(|v| v.as_str())
+                    .and_then(parse_points_to_or_ptr_str)
+                    .and_then(|p| self.eval_bool_ptr(p, defaults, &mut seen_bool))
+                    .unwrap_or(false);
+                follow(if enabled { "inputTrue" } else { "inputFalse" }, seen)
+            }
+            "BuildingBlocks_BindingsNumberArithmatic"
+            | "BuildingBlocks_BindingsIntegerArithmatic" => {
+                if op.get("type").and_then(|v| v.as_str()) == Some("Div") {
+                    // A divide-by-zero divisor is data-absent (the pip's
+                    // `1/MaxPipList`), not a genuine engine value.
+                    let amount = op.get("amount").and_then(|v| v.as_f64()).unwrap_or(1.0);
+                    let mut seen_div = std::collections::HashSet::new();
+                    let divisor = op
+                        .get("inputB")
+                        .and_then(|v| v.as_str())
+                        .and_then(parse_points_to_or_ptr_str)
+                        .and_then(|p| self.eval_number_ptr(p, defaults, &mut seen_div))
+                        .unwrap_or(amount);
+                    if divisor.abs() <= f64::EPSILON {
+                        return false;
+                    }
+                }
+                follow("input", seen)
+                    || follow("inputB", seen)
+                    || follow("inputL", seen)
+                    || follow("inputR", seen)
+            }
+            _ => false,
+        }
+    }
+
     pub(super) fn eval_number_ptr(
         &self,
         ptr: BbNodeId,

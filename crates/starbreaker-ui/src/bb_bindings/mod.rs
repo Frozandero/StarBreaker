@@ -198,11 +198,18 @@ pub fn resolve_geometry_fields_into_scene(
             let Some(value) = resolver.resolve_field_number(node_id, field, defaults) else {
                 continue;
             };
-            // A non-positive size is a half-resolved chain (an unwired
-            // component parameter's default 0, a guarded divide-by-zero):
-            // keep the authored sizing rather than collapsing the widget
-            // (widget-standard expansion icons size from ParamInputs).
-            if !value.is_finite() || value <= 0.0 {
+            // A non-positive size is normally a half-resolved chain (an unwired
+            // component parameter's default 0, a guarded divide-by-zero): keep
+            // the authored sizing rather than collapsing the widget (the
+            // widget-standard expansion icons size from ParamInputs; the
+            // power-pip from `1/MaxPipList`). The exception is a size driven by
+            // a live engine `Variable` (the velocity ball's `SizeY =
+            // |linearvelocity/ratio/z|/2`): there a `0` is the genuine at-rest
+            // collapse, so the vector bar shrinks to the centre as it does
+            // in-engine.
+            let engine_driven =
+                resolver.field_value_source_is_engine_variable(node_id, field, defaults);
+            if !value.is_finite() || (value <= 0.0 && !engine_driven) {
                 continue;
             }
             let Some(node) = scene.nodes.get_mut(&node_id) else {
