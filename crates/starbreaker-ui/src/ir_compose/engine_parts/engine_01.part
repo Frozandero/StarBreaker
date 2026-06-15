@@ -200,7 +200,7 @@ fn draw_non_text_node(
         .eq_ignore_ascii_case("BuildingBlocks_WidgetCircle")
         || node.node_type.eq_ignore_ascii_case("widget_circle")
     {
-        draw_widget_circle(node, pixmap, tsk_rect);
+        draw_widget_circle(ctx, node, pixmap, tsk_rect);
         return;
     }
 
@@ -2433,11 +2433,18 @@ fn draw_border_side(pixmap: &mut Pixmap, rect: Rect, colour: Option<[f32; 4]>, a
     fill_rect_ts(pixmap, tsk_rect, colour, alpha);
 }
 
-fn draw_widget_circle(node: &UiIrNode, pixmap: &mut Pixmap, rect: TskRect) {
+fn draw_widget_circle(ctx: &ComposeContext<'_>, node: &UiIrNode, pixmap: &mut Pixmap, rect: TskRect) {
+    // Solid fill (`doFill` circles — the g-force ball's `circle_Cap*` dots) from
+    // the `fillColor` surface token; the outline stroke (rings) is unchanged.
+    let fill_colour = node
+        .circle_fill_colour_token
+        .as_deref()
+        .and_then(|token| resolve_surface_colour_token(ctx, token))
+        .filter(|colour| colour[3] > 0.005);
     let stroke_colour = node.stroke_colour.or(node.background_fill_colour);
-    let Some(stroke_colour) = stroke_colour else {
+    if fill_colour.is_none() && stroke_colour.is_none() {
         return;
-    };
+    }
 
     let cx = rect.x() + rect.width() * 0.5;
     let cy = rect.y() + rect.height() * 0.5;
@@ -2446,21 +2453,37 @@ fn draw_widget_circle(node: &UiIrNode, pixmap: &mut Pixmap, rect: TskRect) {
         return;
     }
 
-    let mut pb = PathBuilder::new();
-    pb.push_circle(cx, cy, radius - 0.5);
-    let Some(path) = pb.finish() else {
-        return;
-    };
+    if let Some(fill) = fill_colour {
+        let mut pb = PathBuilder::new();
+        pb.push_circle(cx, cy, radius);
+        if let Some(path) = pb.finish() {
+            let mut paint = Paint::default();
+            paint.set_color(to_skia_color(fill, node.alpha));
+            paint.anti_alias = true;
+            pixmap.as_mut().fill_path(
+                &path,
+                &paint,
+                tiny_skia::FillRule::Winding,
+                Transform::identity(),
+                None,
+            );
+        }
+    }
 
-    let mut paint = Paint::default();
-    paint.set_color(to_skia_color(stroke_colour, node.alpha));
-    paint.anti_alias = true;
-
-    let mut stroke = Stroke::default();
-    stroke.width = node.stroke_extent.unwrap_or(1.5).max(0.5);
-    pixmap
-        .as_mut()
-        .stroke_path(&path, &paint, &stroke, Transform::identity(), None);
+    if let Some(stroke_colour) = stroke_colour {
+        let mut pb = PathBuilder::new();
+        pb.push_circle(cx, cy, radius - 0.5);
+        if let Some(path) = pb.finish() {
+            let mut paint = Paint::default();
+            paint.set_color(to_skia_color(stroke_colour, node.alpha));
+            paint.anti_alias = true;
+            let mut stroke = Stroke::default();
+            stroke.width = node.stroke_extent.unwrap_or(1.5).max(0.5);
+            pixmap
+                .as_mut()
+                .stroke_path(&path, &paint, &stroke, Transform::identity(), None);
+        }
+    }
 }
 
 fn draw_widget_separator(

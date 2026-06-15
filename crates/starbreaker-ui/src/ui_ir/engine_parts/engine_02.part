@@ -102,6 +102,28 @@ fn polygon_from_raw(node: &crate::bb_scene::BbNode) -> Option<UiIrPolygon> {
     })
 }
 
+/// `WidgetCircle` solid fill: its `fillColor` ColorStyle token + alpha, captured
+/// ONLY when `doFill` is EXPLICITLY true (the g-force ball's `circle_Cap*` solid
+/// dots — `fillColor: { color: "Base" }`, `doFill: true`). `doFill` defaults to
+/// false here so outline-only circles (the rings, drawn via stroke) are left
+/// untouched; the renderer fills the circle with this surface token when present.
+fn circle_fill_token_from_raw(node: &crate::bb_scene::BbNode) -> Option<String> {
+    if !matches!(&node.ty, crate::bb_scene::BbNodeType::Other(kind)
+        if kind.eq_ignore_ascii_case("BuildingBlocks_WidgetCircle"))
+    {
+        return None;
+    }
+    let raw = &node.raw;
+    if !raw.get("doFill").and_then(|v| v.as_bool()).unwrap_or(false) {
+        return None;
+    }
+    raw.get("fillColor")
+        .and_then(|c| c.get("color"))
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
+}
+
 fn segmented_fill_from_raw(node: &crate::bb_scene::BbNode) -> Option<UiIrSegmentedFill> {
     let raw = &node.raw;
     let segmented_raw = raw.get("segmentedFill");

@@ -82,6 +82,14 @@ pub struct UiIrNode {
     pub background_fill_alpha: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub background_fill_colour_token: Option<String>,
+    /// `WidgetCircle` solid fill: the `fillColor` ColorStyle token, set ONLY when
+    /// `doFill` is true (the g-force ball's solid `circle_Cap*` dots). The
+    /// `WidgetCircle` draw path returns early before the generic background-fill
+    /// block, so this is its own surface-token fill (resolved at compose, like the
+    /// other surface tokens, scaled by node alpha); `doFill: false` circles leave
+    /// it `None` and keep stroking their outline.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub circle_fill_colour_token: Option<String>,
     /// Debug-only (`SB_UI_STYLE_PROVENANCE=1`): per colour / visibility field,
     /// the cascade `pass/entry` that WON it
     /// (`{"BackgroundColor": "mfd_g_emissions/New Style"}`). Always None in
@@ -1238,6 +1246,7 @@ fn build_ui_ir_nodes(
         let allow_background_fill = node_background_enabled(node);
         let background_fill_colour_token = background_fill_colour_token_from_raw(&node.raw, allow_background_fill, allow_background_fill);
         let background_fill_alpha = background_fill_alpha_from_raw(&node.raw, allow_background_fill, allow_background_fill);
+        let circle_fill_token = circle_fill_token_from_raw(node);
         let mut background_fill_colour = allow_background_fill
             .then(|| {
                 node.background
@@ -1322,6 +1331,7 @@ fn build_ui_ir_nodes(
             corner_radius: node_corner_radius(node),
             background_fill_alpha,
             background_fill_colour_token,
+            circle_fill_colour_token: circle_fill_token,
             style_provenance: style_provenance_from_raw(node),
             segmented_fill: segmented_fill_from_raw(node),
             polygon: polygon_from_raw(node),

@@ -959,6 +959,7 @@ mod tests_e {
                 corner_radius: None,
                 background_fill_alpha: None,
                 background_fill_colour_token: None,
+                circle_fill_colour_token: None,
                 style_provenance: None,
                 segmented_fill: None,
             polygon: None,
