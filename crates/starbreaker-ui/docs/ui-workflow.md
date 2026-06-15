@@ -366,3 +366,24 @@ Flows (commands in the reference doc §2/§7):
   the Heading1 gate is load-bearing. Centre stacked readouts via `bb_layout` CARD
   cross-axis content-fit + `crossAxisJustification=Center` (scoped to centred
   columns, which no frozen screen has), NOT the text-draw rule.
+- **White / wrong colour where a BACKGROUND should be = an OVER-PAINTER, not a
+  missing asset (ledger 63).** The compass rendered a white sheet over its dark
+  vignette; the texture was drawing fine (full-screen raster, correct `.dds`) —
+  an authored `CanvasProxyRoot` with `rendererType:"None"` + `background.enable`
+  white was painting OVER it. A node with `rendererType:"None"` is a non-rendering
+  proxy/group (engine paints nothing for it; only `"Flash"` nodes draw their
+  background — `node_background_enabled` enforces this). Before theorising about
+  texture load/fit, dump EVERY node's fill: `python3 scripts/ui_ir_query.py query
+  <ir.json> '.*' --fields background_fill_colour,stroke_colour`. A fill that can't
+  come from the suspect texture's value range (white over a ≤50-valued vignette)
+  proves a later element overpaints it.
+- **A namespace-less `arrayVariable` that is a MULTI-segment path is an engine-state
+  reference, not a relative name (ledger 64).** `apply_array_variable_lists` skipped
+  namespace-less relative `arrayVariable`s, so a top-level engine list
+  (`FlightController/Compass/Ticks`) left its lone authored child — a per-entry CLONE
+  template — rendering as a stray item. A path with `/` (`A/B/C`) is an absolute
+  engine-state ref (the authored leading slash is inconsistent across the data);
+  resolve it directly and pin its at-rest count in the registry (compass `=0` →
+  template deactivates = faithful empty list). A BARE single-segment name (power outer
+  `pipList`) is UI-local and still needs a namespace — the discriminator that keeps the
+  power pip stacks byte-identical.

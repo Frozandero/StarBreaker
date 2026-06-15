@@ -315,6 +315,16 @@ added the engine note at the end):
   Clipper's DRAK brand and authors NO separator colour — the Accent1/visibility
   separator entries live in `s_argo_hud`/`s_grin_hud` (other brands, never
   selected for the Clipper), so the authored node colour is the only red source.
+- **`rendererType:"None"` nodes paint NOTHING (2026-06-15, ledger item 63).** A
+  `BuildingBlocks_DisplayWidget` with `rendererType:"None"` is a non-rendering
+  proxy/group: the engine draws no background/svg/fill for it even when
+  `background.enable=true` with a colour. Only nodes with a primitive renderer
+  (`rendererType:"Flash"` — solid-fill rects, text fields, images) draw their
+  authored background. `node_background_enabled` (ui_ir `engine_01.part`) returns
+  false for an EXPLICIT `"None"`; an absent rendererType keeps the normal rules.
+  Motivating case: the compass `CanvasProxyRoot` (None) authored an enabled white
+  background that painted an opaque sheet over the dark `DRAK_Background_compass`
+  vignette until this gate landed (`a47759308`).
 
 ## Reference-capture measurement methodology
 

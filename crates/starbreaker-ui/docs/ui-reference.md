@@ -31,6 +31,13 @@ cargo build --release -p starbreaker && \
 ```
 `--lod 0` is REQUIRED (LOD1 culls the cockpit HUD screens, §5).
 
+**Buffered output (ledger 65):** when `ui_check.sh` / `--full` / `entity export`
+output is REDIRECTED to a file (e.g. run in the background), the battery flushes
+only at process EXIT — the file stays 0 bytes for minutes. Don't read that silence
+as a hang/stall: wait on the process exit (the background-task completion
+notification, or an `until <exit-status>; do sleep N; done` loop), not on
+incremental lines in the file.
+
 Individual suites for targeted debugging:
 `cargo test -p starbreaker-ui --lib [filter]`, `--test manifest_live_ir_guard`,
 `--test line_count_guard`, `--test manifest_snapshot_regression`,
@@ -311,7 +318,7 @@ Example: `BB_SHRINK_PROBE=1 ./target/debug/starbreaker ui render --scene
 
 | Example | Use |
 |---|---|
-| `python3 scripts/ui_ir_query.py query <ir.json> <regex> [--fields a.b,c]` | list IR nodes whose name or text matches the regex: id, parent, type, rect, is_active + dotted-path extras (input: `ui render --dump-ir-dir` output) |
+| `python3 scripts/ui_ir_query.py query <ir.json> <regex> [--fields a.b,c]` | list IR nodes whose name or text matches the regex: id, parent, type, rect, is_active + dotted-path extras (input: `ui render --dump-ir-dir` output). **Over-painter probe (ledger 63):** `query <ir.json> '.*' --fields background_fill_colour,stroke_colour` flat-lists EVERY node's fill/stroke — the fast way to find which node paints a wrong colour over the background (the compass white sheet was `CanvasProxyRoot` fill `[1,1,1,1]`) |
 | `python3 scripts/ui_ir_query.py tree <ir.json> <node_id>` | ancestor chain for one node with rect, authored_size, anchor/pivot, padding, margin |
 | `python3 scripts/ui_ir_query.py children <ir.json> <node_id> [--depth N] [--fields a.b,c]` | descendant subtree (rect, `right`=x+w, is_active, non-Visible overflow) — the mirror of `tree`, for clip/overflow tracing |
 | `python3 scripts/ui_measure.py <image> --box x0,y0,x1,y1 [--ir <ir.json> --node <id>] [--delta N] [--anchor … --anchor-rgb …]` | glyph-run cap heights (contamination-flagged) + colour ratios with `feature_width` (warns when ≤4px that a thin feature on a RECTIFIED capture has a smeared hue — measure colour on the ORIGINAL) + optional additive-haze correction (JSON to stdout) |

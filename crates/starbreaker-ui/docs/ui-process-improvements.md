@@ -1535,3 +1535,63 @@ green per commit.
 3. Docs: workflow §10 read-the-authored-FontSize-first bullet (item 60); dossier
    velocity-num row updated (font/colour/boxes landed, GOLD onboarded, background =
    capture characteristic). [done]
+
+### 63. "White where nothing should draw" is an OVER-PAINTER, not a missing asset — dump every node's fill first
+**Observed (compass arc, 2026-06-15):** the compass rendered a white sheet over the
+top ~75%. The first instinct ("the dark `DRAK_Background_compass` texture failed to
+load / is mis-fit") was wrong — the draw-rect probe showed it rasterising at the full
+`(0,0,1920,587)` with the correct `.dds`. The white was a DIFFERENT node painting OVER
+it: `CanvasProxyRoot`, an authored `rendererType:"None"` DisplayWidget with
+`background.enable=true` white, covering exactly the canvas-visible region. Since the
+texture max value is ~50, white (255) provably could not come from it — the over-painter
+was findable in one query. I lost time theorising about texture fit before dumping fills.
+**Engine fact:** a node with `rendererType:"None"` is a non-rendering proxy/group — the
+engine paints nothing for it; only `"Flash"` nodes draw their `background`/svg. Fixed in
+`node_background_enabled` (`a47759308`).
+**Improvement:** (a) workflow §10 don't-retry bullet — white/wrong-colour where a
+background should be is almost always an OVER-PAINTER; dump EVERY node's fill with
+`python3 scripts/ui_ir_query.py query <ir.json> '.*' --fields background_fill_colour,stroke_colour`
+(verified: it flat-lists all nodes incl. the flat `nodes[]` dump IR) BEFORE theorising
+about asset load/fit. A fill that can't come from the suspect texture's value range
+proves a later element is painting over it. (b) Record the `rendererType:"None"` =
+non-rendering rule in the architecture runbook engine-models section.
+**Action:** docs below [done — this retro]; unit test
+`compile_ir_does_not_draw_background_on_renderertype_none_container` guards it.
+
+### 64. Top-level (namespace-less) engine-state `arrayVariable` lists were skipped → stray template item at rest
+**Observed (compass arc):** `apply_array_variable_lists` resolves a relative
+`arrayVariable` only under a list namespace; a namespace-less one returned `None`
+(skip), leaving the list's lone authored child — a per-entry CLONE template — rendering
+as a stray item. The compass `list_Ticks` (`FlightController/Compass/Ticks`) hit this:
+a stray orange tick at the strip edge. Many HUD lists are namespace-less engine-state
+paths (`WeaponController/Countermeasures/Launchers`, `FlightController/ScmTicks`, …).
+**Improvement:** a namespace-less arrayVariable that is a MULTI-segment path (`A/B/C`)
+is an absolute engine-state reference (the authored leading slash is inconsistent across
+the data) — resolve it directly; a BARE single-segment name (the power outer `pipList`)
+is UI-local and still needs a namespace (the structural discriminator that kept the
+power pip stacks byte-identical, confirmed by `--full`). The registry then pins the
+at-rest count (compass `=0`, provenance-noted) so the template deactivates: the faithful
+empty list. Recorded in workflow §10 + reference glossary so the next HUD-list arc
+doesn't re-derive it.
+**Action:** `apply_array_variable_lists` (`d83bdcf27`) + registry pin + docs [done].
+
+### 65. `ui_check.sh` / `entity export` redirected output is FULLY BUFFERED — silence ≠ hang
+**Observed (compass arc):** running `ui_check.sh --full` and the export in the
+background, the output file stayed 0 bytes until the very end, so progress-polling
+(`tail`/`grep` the file) showed nothing for minutes — easy to misread as a stalled/hung
+run and kill it. The whole battery flushes only at process exit when stdout is a file.
+**Improvement:** reference §1 note — when `ui_check.sh`/`--full`/`export` output is
+redirected to a file, it is fully buffered (no incremental lines); wait on process
+EXIT (the background-task completion notification or an `until` exit-status loop), do not
+read a 0-byte file as a hang. (Same lesson as ledger 42 "slowness ≠ a loop", applied to
+buffered output.)
+**Action:** reference §1 buffered-output note [done — this retro].
+
+### Phase N — implementation (2026-06-15, compass arc retro)
+Docs only; the arc's render fixes (`a47759308` rendererType:None background,
+`d83bdcf27` empty compass tick list) landed in the loop. No render-behaviour change in
+this phase. `ui_check.sh` green.
+1. Reference §6/§7: over-painter probe one-liner (item 63). [done]
+2. Architecture runbook: `rendererType:"None"` non-rendering rule (item 63). [done]
+3. Workflow §10: namespace-less multi-segment engine-state list bullet (item 64);
+   reference §1 buffered-output note (item 65). [done]
