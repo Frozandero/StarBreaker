@@ -267,18 +267,19 @@ pub fn layout_with_animation_sample(
 }
 
 /// Translate all laid-out `rects` so the gauge BALL-AREA is centred in the
-/// `target`, clamped so the scaled `canvas` still COVERS the target (no
-/// background gaps at the leading edges).
+/// `target`, clamped only so the ball-area stays on-screen (coverage of the
+/// viewport is the full-bleed background's job, snapped right after by
+/// `cover_fit_full_bleed_to_viewport`, so centring exposes no gap).
 ///
 /// The covered canvas is laid out origin-anchored, so its trailing edge overflows
 /// the target. The ball-area is the largest LOCALISED node — the largest active
-/// rect that does NOT span the full canvas (which excludes the full-bleed
-/// background image and the content root). It is the primary gauge content and is
-/// larger than the readouts panel, so centring on it frames the ball while the
-/// readouts overflow and crop. Position-independent: the g-force ball-area sits at
-/// canvas-LEFT, the velocity ball's at canvas-RIGHT (mirrored), but both centre.
-/// Keyed on relative size + full-canvas span, never a node name. No-op when no
-/// localised node exists.
+/// rect that does NOT span the full canvas (`canvas_w`/`canvas_h`; this excludes
+/// the full-bleed background image and the content root). It is the primary gauge
+/// content and is larger than the readouts panel, so centring on it frames the
+/// ball while the readouts overflow and crop. Position-independent: the g-force
+/// ball-area sits at canvas-LEFT, the velocity ball's at canvas-RIGHT (mirrored),
+/// but both centre. Keyed on relative size + full-canvas span, never a node name.
+/// No-op when no localised node exists.
 fn cover_fit_recentre(
     rects: &mut BTreeMap<BbNodeId, Rect>,
     is_active: impl Fn(BbNodeId) -> bool,
@@ -302,10 +303,22 @@ fn cover_fit_recentre(
         })
         .map(|(_, r)| *r);
     let Some(ball) = ball_area else { return };
-    // Clamp keeps the scaled canvas covering the target: it may only shift toward
-    // the overflow side, never past the origin (which would expose a gap).
-    let dx = (target_w * 0.5 - (ball.x + ball.w * 0.5)).clamp((target_w - canvas_w).min(0.0), 0.0);
-    let dy = (target_h * 0.5 - (ball.y + ball.h * 0.5)).clamp((target_h - canvas_h).min(0.0), 0.0);
+    // Centre the ball-area in the viewport. The full-bleed background
+    // (`cover_fit_full_bleed_to_viewport`, applied immediately after) fills the
+    // viewport independently, so centring never exposes a gap at a leading edge —
+    // the only constraint is to keep the ball-area itself on-screen. When the
+    // ball-area is narrower than the target it centres (the background fills the
+    // margins); when it is as wide as / wider than the target the bounds collapse
+    // to the cover position (pin so the ball still covers the screen). This
+    // replaces the prior origin-clamp that left the g-force ball ~63px left.
+    let centre_shift = |target: f32, pos: f32, size: f32| -> f32 {
+        let want = target * 0.5 - (pos + size * 0.5);
+        let a = -pos; // ball leading edge at viewport origin
+        let b = target - size - pos; // ball trailing edge at viewport end
+        want.clamp(a.min(b), a.max(b))
+    };
+    let dx = centre_shift(target_w, ball.x, ball.w);
+    let dy = centre_shift(target_h, ball.y, ball.h);
     if dx != 0.0 || dy != 0.0 {
         for r in rects.values_mut() {
             r.x += dx;
@@ -2359,21 +2372,28 @@ mod tests {
         assert!(rects[&1].x <= 0.0 && rects[&1].x + 3413.0 >= 1920.0, "canvas must still cover target");
     }
 
-    /// Control (the MIRROR — g-force): a ball-area at canvas-LEFT (and NOT square —
-    /// 1795×1920, the horizontal layout constrains its width) wants a POSITIVE shift
-    /// toward centre, but that would gap the left edge, so the clamp pins it to the
-    /// origin. Proves the rule is size-based (not square-based, which previously
-    /// mis-picked the coincidentally-square readouts container) and generic for both
-    /// mirrored layouts.
+    /// The MIRROR — g-force: a ball-area at canvas-LEFT (and NOT square —
+    /// 1795×1920, the horizontal layout constrains its width) wants a POSITIVE
+    /// shift toward centre. The full-bleed background (snapped to the viewport by
+    /// `cover_fit_full_bleed_to_viewport`, applied right after) fills the screen
+    /// independently, so centring the ball-area exposes no gap — it CENTRES
+    /// (the in-game g-force ball is centred; it rendered ~63px left before this).
+    /// Clamped only to keep the ball-area on-screen. Proves the rule is size-based
+    /// (not square-based, which previously mis-picked the coincidentally-square
+    /// readouts container) and generic for both mirrored layouts.
     #[test]
-    fn cover_fit_recentre_left_ball_clamps_to_origin() {
+    fn cover_fit_recentre_left_ball_centres() {
         let mut rects: BTreeMap<BbNodeId, Rect> = BTreeMap::new();
         rects.insert(1, Rect { x: 0.0, y: 0.0, w: 3413.0, h: 1920.0 });
-        // non-square ball-area at canvas-left (centre x = 897), largest localised.
+        // non-square ball-area at canvas-left (centre x = 897.5), largest localised.
         rects.insert(2, Rect { x: 0.0, y: 0.0, w: 1795.0, h: 1920.0 });
         rects.insert(3, Rect { x: 1795.0, y: 384.0, w: 1615.0, h: 1152.0 });
         cover_fit_recentre(&mut rects, |_| true, 1920.0, 1920.0, 3413.0, 1920.0);
-        assert_eq!(rects[&2].x, 0.0, "left ball-area clamps to origin (a right shift would gap)");
+        let ball = rects[&2];
+        assert!(
+            (ball.x + ball.w * 0.5 - 960.0).abs() <= 1.0,
+            "left ball-area must centre, got {ball:?}"
+        );
     }
 
     #[test]
