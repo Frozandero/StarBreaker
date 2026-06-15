@@ -1478,3 +1478,60 @@ velocity-num row and [[velocity-num-hud-parity]].
 3. Render-behaviour code fixes (registry pins `1f25845d2`, centred-column content-fit
    `0cdf6d526`) landed during the arc; this phase is tooling + docs only and does not
    alter render behaviour.
+
+### 60. "Undecoded per-screen text-scale blocker" was UNDER-RESEARCH — the authored FontSize was in the data
+**Observed (velocity-num arc, 2026-06-15):** the prior arc deferred the ~9× font gap
+as a PROVEN blocker — "no data-derived scale reaches 6×, per-screen canvas→screen
+text-scale model undecoded, and the frozen annunciator counterexample rules out a
+global scale." The whole framing was wrong: it was NEVER a scale problem. The DRAK
+velocity SCREEN variant (`drak_hc_hud_cutlass_velocity_num`, the `(Screen)` variant
+the Clipper instantiates) authors FontSize **500/420** directly; the render fell back
+to the Heading2 standard (52) because those authored sizes weren't being APPLIED (two
+upstream gaps: the no-brand-match `defaultStyles` fallback, and the text-format route
+rejecting `Type(Text)+Parent[…]`). `SB_UI_FONT_DUMP` showed 52 (effective), and the
+authored 500/420 was one grep away in the instantiated variant record. The "blocker"
+was a paper estimate that never checked the authored value reached the node.
+**Improvement:** workflow §10 don't-retry bullet — font reads wrong → read the
+INSTANTIATED variant's authored FontSize FIRST (find it via the rendered node names;
+`SB_UI_FONT_DUMP` = effective, `BB_A3_STYLE_PROBE`/`BB_TEXT_FORMAT_PROBE` = which
+entries matched). A "no derivable scale" conclusion is valid only after confirming the
+authored size is reaching the node. Generalises the skill's "undecoded = under-research,
+not a proven blocker" rule to the font path.
+**Action:** workflow §10 bullet [done — this retro]; dossier velocity-num row +
+[[velocity-num-hud-parity]] updated to overturn the wrong diagnosis. Code fixes
+`6c1343abf`/`c7931fb4b` landed during the arc.
+
+### 61. `check_ui_hardcoding.sh` silently stopped guarding — targets renamed to directories
+**Observed:** the guard greps `ir_compose.rs` / `compose.rs` / `ui_ir.rs`, all
+decomposed into `<dir>/` long ago. `rg` printed "No such file or directory" to stderr
+and returned non-zero (= "marker not found"), so every check on those files PASSED
+VACUOUSLY — a re-introduced hard-code in the decomposed dirs would sail through. A
+guard that can't find its target is worse than no guard (false assurance).
+**Improvement:** resolve `<file>.rs` → its `<dir>/` and search recursively; a target
+that resolves to NEITHER a file nor a dir is now a LOUD failure (silent-failure →
+loud), so the next rename can't quietly disable a check.
+**Action:** `scripts/check_ui_hardcoding.sh` fixed + re-run clean (no stderr IO
+errors) [done — this retro].
+
+### 62. `ui_freeze_cycle.sh` exported without `--lod 0` — would cull cockpit HUD screens on re-freeze
+**Observed:** onboarding the (cockpit) velocity-num target, `ui_freeze_cycle.sh`'s
+export line lacked `--lod 0`, while `generate_ui_regression_artifacts.sh` and the
+canonical guard-export both use it. LOD1 CULLS the small HUD screens (ledger 47), so a
+re-freeze of any cockpit target run through `ui_freeze_cycle` (without `--skip-export`)
+would have frozen a stale/missing PNG. The §7 onboard flow happens to use the `generate`
+script, so this was a latent trap, not hit this arc — but a future cockpit re-freeze via
+`ui_freeze_cycle` would silently regress.
+**Improvement:** `ui_freeze_cycle.sh` export now matches the canonical guard-export
+(`--lod 0 --mip 0 --materials all`) with an inline comment citing the LOD-cull reason.
+**Action:** `scripts/ui_freeze_cycle.sh` fixed [done — this retro].
+
+### Phase M — implementation (2026-06-15, velocity-num arc retro)
+Tooling + docs only; no render-behaviour change (the arc's render fixes `6c1343abf`/
+`c7931fb4b` and the gold onboarding `a91cec377` landed in the loop). `ui_check.sh`
+green per commit.
+1. `scripts/check_ui_hardcoding.sh` — decomposed-dir resolution + loud-on-missing
+   (item 61). [done]
+2. `scripts/ui_freeze_cycle.sh` — `--lod 0` export (item 62). [done]
+3. Docs: workflow §10 read-the-authored-FontSize-first bullet (item 60); dossier
+   velocity-num row updated (font/colour/boxes landed, GOLD onboarded, background =
+   capture characteristic). [done]

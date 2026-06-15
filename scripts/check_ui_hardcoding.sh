@@ -27,9 +27,25 @@ failed=0
 for check in "${checks[@]}"; do
   file="${check%%::*}"
   marker="${check##*::}"
-  if rg --fixed-strings --line-number -- "$marker" "$file" >/dev/null; then
-    echo "Hardcoding marker found: $marker in $file"
-    rg --fixed-strings --line-number -- "$marker" "$file" || true
+  # The monolithic ir_compose.rs / compose.rs / ui_ir.rs were decomposed into
+  # directories; resolve `<file>.rs` to its `<dir>/` and search recursively.
+  # A target that resolves to NEITHER a file nor a dir is a LOUD failure: a
+  # silently-missing path means the guard checks nothing and a re-introduced
+  # hard-code would pass unnoticed (the exact rot this guard exists to stop).
+  target="$file"
+  if [[ ! -e "$target" ]]; then
+    dir="${file%.rs}"
+    if [[ -d "$dir" ]]; then
+      target="$dir"
+    else
+      echo "ERROR: hardcoding-guard target missing: '$file' (no '$dir/' either) — the guard is not checking '$marker'; fix the path after a rename/decompose." >&2
+      failed=1
+      continue
+    fi
+  fi
+  if rg --fixed-strings --line-number -- "$marker" "$target" >/dev/null; then
+    echo "Hardcoding marker found: $marker in $target"
+    rg --fixed-strings --line-number -- "$marker" "$target" || true
     failed=1
   fi
 done

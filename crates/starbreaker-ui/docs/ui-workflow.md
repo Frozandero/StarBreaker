@@ -276,6 +276,19 @@ Flows (commands in the reference doc §2/§7):
 - **Column-wide intrinsic text sizing**: medical baselines pin the
   fill/auto_main placement for non-zero Auto hints in columns; only
   Auto == 0.0 (pure content hint) is in scope for column intrinsics.
+- **Font reads TOO SMALL/BIG? read the INSTANTIATED variant's authored FontSize
+  FIRST — before theorising about a per-screen scale model (ledger 60).** The
+  velocity-num readouts rendered ~9× small and were deferred a whole arc as "no
+  data-derived scale reaches 6× — per-screen text-scale model undecoded, blocked by
+  the annunciator counterexample." That was UNDER-RESEARCH: never a scale problem.
+  The DRAK velocity SCREEN variant authors FontSize **500/420** directly; they
+  weren't being APPLIED (the no-brand-match `defaultStyles` fallback + the
+  text-format `Type(Text)` gap). `SB_UI_FONT_DUMP` shows the EFFECTIVE size (52 =
+  the Heading2 fallback), `BB_A3_STYLE_PROBE`/`BB_TEXT_FORMAT_PROBE` show which
+  entries matched (none here), and the authored size is grep-able in the variant
+  record (find the instantiated variant via the rendered node names — the master
+  selects it by tag). A "no derivable scale" conclusion is valid ONLY after
+  confirming the authored size is reaching the node.
 - **Text-size calibration constants are RETIRED — do not reintroduce.**
   The 0.98 all-caps reduction (2026-06), then the `1.5` TTF draw/measure
   pair, the `0.84` SWF calibration, the `0.33` inline word-gap and the

@@ -42,8 +42,14 @@ echo "==> cargo build --release"
 cargo build --release
 
 if [[ "$SKIP_EXPORT" -eq 0 ]]; then
-    echo "==> full export (drak_clipper; PNGs land near the END of the run)"
-    ./target/release/starbreaker entity export drak_clipper "$EXPORT_ROOT" --kind decomposed
+    echo "==> full export (drak_clipper, --lod 0; PNGs land near the END of the run)"
+    # --lod 0 is REQUIRED: LOD1 CULLS the small cockpit HUD screens (g-force,
+    # velocity ball/num, countermeasures, …), so a re-freeze of any of them off a
+    # plain (LOD1) export would freeze a stale/missing PNG. Matches the canonical
+    # guard-export and generate_ui_regression_artifacts.sh (reference §1/§5, ledger
+    # 47/62).
+    ./target/release/starbreaker entity export drak_clipper "$EXPORT_ROOT" \
+        --kind decomposed --lod 0 --mip 0 --materials all
 else
     echo "==> export SKIPPED (--skip-export)"
 fi
