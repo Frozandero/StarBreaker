@@ -61,6 +61,7 @@ fn minimal_node(
         alpha: 1.0,
         anchor: [0.5, 0.5],
         pivot: [0.5, 0.5],
+        rotation_deg: None,
         authored_position: [0.0, 0.0],
         authored_size: [
             UiIrValue::Fixed { value: rect.2 },

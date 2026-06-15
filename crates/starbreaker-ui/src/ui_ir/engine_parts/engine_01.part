@@ -64,6 +64,12 @@ pub struct UiIrNode {
     pub alpha: f32,
     pub anchor: [f32; 2],
     pub pivot: [f32; 2],
+    /// In-plane rotation in degrees (`orientation.z + orientationOffset.z`),
+    /// applied around the node's `pivot` at draw time. `None`/0 = no rotation.
+    /// The velocity/g-force ball caps author `orientation.z = 90` on the
+    /// left/right chevrons to point them outward.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rotation_deg: Option<f32>,
     pub authored_position: [f32; 2],
     pub authored_size: [UiIrValue; 2],
     pub padding: [f32; 4],
@@ -1260,6 +1266,22 @@ fn build_ui_ir_nodes(
         {
             background_fill_colour = None;
         }
+        // Colour-overlay identity default: a render-shape LEAF whose colour
+        // overlay is enabled but carries NO colour (authored or brand) renders
+        // WHITE — the overlay's multiplicative identity — not transparent. This
+        // draws the velocity / g-force ball's centre dot (a `base_Diagram`
+        // rounded shape: `background.enable` + `svgFill.renderShape` +
+        // `enableColorOverlay`, every colour null, no `svgPath`). White here is
+        // the overlay identity (like alpha 1.0), not a palette value. Gated to
+        // leaves so layout-container backgrounds that share the null-overlay
+        // shape stay transparent.
+        if background_fill_colour.is_none()
+            && background_fill_colour_token.is_none()
+            && node.children.is_empty()
+            && is_untinted_overlay_render_shape(&node.raw)
+        {
+            background_fill_colour = Some([1.0, 1.0, 1.0, 1.0]);
+        }
         let colour_blend_mode = separator_colour_blend_mode_from_raw(node).or_else(|| {
             background_colour_blend_mode_from_raw(node, background_fill_colour_token.as_deref(), allow_background_fill)
         })
@@ -1302,6 +1324,7 @@ fn build_ui_ir_nodes(
             alpha,
             anchor: [node.anchor.x, node.anchor.y],
             pivot: [node.pivot.x, node.pivot.y],
+            rotation_deg: node_rotation_deg_from_raw(&node.raw),
             authored_position: [node.position.x, node.position.y],
             authored_size: [
                 convert_bb_value(&node.sizing.width),
@@ -1997,6 +2020,58 @@ fn custom_shape_colour_blend_mode_from_style_tags(
             _ => None,
         }
     })
+}
+
+/// The centre-dot signature: an enabled `background` with a null colour AND an
+/// `svgFill.renderShape` colour overlay that is enabled with a null colour and
+/// an empty `svgPath`. Such a shape has no colour from any source, so the
+/// engine's colour overlay renders it at its identity — white. (Verified to
+/// match nothing in any frozen target; in the ball canvases only the centre dot
+/// has it.)
+fn is_untinted_overlay_render_shape(raw: &serde_json::Value) -> bool {
+    let bg = raw.get("background");
+    let bg_enabled = bg
+        .and_then(|b| b.get("enable"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let bg_colour_null = bg
+        .and_then(|b| b.get("color"))
+        .map(|c| c.is_null())
+        .unwrap_or(true);
+    let sf = raw.get("svgFill");
+    let render_shape = sf
+        .and_then(|s| s.get("renderShape"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let overlay = sf
+        .and_then(|s| s.get("enableColorOverlay"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let sf_colour_null = sf
+        .and_then(|s| s.get("color"))
+        .map(|c| c.is_null())
+        .unwrap_or(true);
+    let svg_path_empty = sf
+        .and_then(|s| s.get("svgPath"))
+        .and_then(|v| v.as_str())
+        .map(|p| p.is_empty())
+        .unwrap_or(true);
+    bg_enabled && bg_colour_null && render_shape && overlay && sf_colour_null && svg_path_empty
+}
+
+/// The node's in-plane rotation in degrees: `orientation.z + orientationOffset.z`.
+/// Returns `None` when the total is ~0 (the common no-rotation case) so the IR
+/// stays clean. Applied around the node's pivot at draw time — the velocity /
+/// g-force ball caps author `orientation.z = 90` on the left/right chevrons.
+fn node_rotation_deg_from_raw(raw: &serde_json::Value) -> Option<f32> {
+    let axis_z = |key: &str| {
+        raw.get(key)
+            .and_then(|o| o.get("z"))
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0)
+    };
+    let total = (axis_z("orientation") + axis_z("orientationOffset")) as f32;
+    (total.abs() > f32::EPSILON).then_some(total)
 }
 
 fn colour_style_alpha(value: &serde_json::Value) -> Option<f32> {

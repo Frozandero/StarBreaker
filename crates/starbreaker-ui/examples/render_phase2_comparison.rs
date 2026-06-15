@@ -90,6 +90,7 @@ fn synthetic_hybrid_document() -> UiIrDocument {
             alpha: 1.0,
             anchor: [0.0, 0.0],
             pivot: [0.0, 0.0],
+            rotation_deg: None,
             authored_position: [12.0, 10.0],
             authored_size: [
                 UiIrValue::Fixed { value: 96.0 },

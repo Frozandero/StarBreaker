@@ -17,6 +17,7 @@ pub(super) fn base_node(id: u32, layer: i32) -> UiIrNode {
         alpha: 1.0,
         anchor: [0.0, 0.0],
         pivot: [0.0, 0.0],
+        rotation_deg: None,
         authored_position: [0.0, 0.0],
         authored_size: [UiIrValue::Fixed { value: 100.0 }, UiIrValue::Fixed { value: 40.0 }],
         padding: [0.0; 4],
