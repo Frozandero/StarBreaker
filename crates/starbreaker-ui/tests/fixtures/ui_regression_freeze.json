@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "frozen_at": "2026-06-15T10:43:12Z",
+  "frozen_at": "2026-06-15T15:29:17Z",
   "approver": "owner",
-  "reason": "Onboard g-force + velocity ball platinum artifacts (centred square cross, circular centre dot, symmetric markers, at-rest LIMIT '0' hidden). Re-froze clipper_power_master (1.38%) and clipper_target_master (<0.5%): PRE-EXISTING stale local artifacts whose PNGs predate the current render (the emissions-header text top); IR snapshots unchanged so no geometry change this arc, current renders verified vs references, owner confirmed power looks better. door/annunciator L+R/medical a+b byte-identical.",
+  "reason": "Onboard clipper_velocity_num_master gold: text-faithful velocity-num readouts (0m/s / 0.0 G), defaultStyles no-brand-match fallback + text-format Type(Text) sizing, glyph-stroke not box (6c1343abf, c7931fb4b); background = emissive-screen capture characteristic",
   "signature": null,
   "manifest_path": "crates/starbreaker-ui/tests/fixtures/ui_ir/ui_snapshot_manifest.json",
   "artifacts": [
@@ -94,6 +94,16 @@
       "sha256": "0ba0960a1ec796f98b383e52dad465fa0ff80f17b442e6011f635502c92dae22",
       "width": 1920,
       "height": 1920,
+      "channels": "srgba"
+    },
+    {
+      "id": "clipper_velocity_num_master",
+      "tier": "gold",
+      "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_hc_hud_ship_velocity_num_master.png",
+      "artifact_path": "test-artifacts/ui/clipper_velocity_num_master.png",
+      "sha256": "ca10a145c8a06cc81bb3c78f6e19724e693cee1fd4da574ed845890416e4a9e6",
+      "width": 1920,
+      "height": 1554,
       "channels": "srgba"
     }
   ]
