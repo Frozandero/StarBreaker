@@ -248,6 +248,127 @@ pub fn parse_uniform_colorstyle(svg_bytes: &[u8]) -> Option<(String, f32)> {
     Some((role, alpha))
 }
 
+/// Recolour every `colorstyle:` path of a HUD glyph SVG to its brand palette
+/// role at the path's own id-encoded opacity, returning rewritten SVG bytes.
+///
+/// Adobe-exported HUD SVGs encode a PER-PATH brand role and opacity in each
+/// element id (`id="opacity:70_colorstyle:Critical_<hash>_"`) over an arbitrary
+/// placeholder `fill="#…"`. The engine recolours each path independently to its
+/// role colour. Unlike the single whole-image [`rasterize_svg`] `fill_override`,
+/// this represents SVGs whose paths carry DIFFERENT roles or DIFFERENT opacities
+/// — the velocity cross-line (`Accent1` at 85/50) and cross-cap (`Critical` at
+/// 100/70), which [`parse_uniform_colorstyle`] rejects. `resolve(role)` returns
+/// the brand RGBA in `0.0..=1.0`; its alpha multiplies the path opacity into
+/// `fill-opacity`. A path whose role does not resolve keeps its authored fill.
+/// Returns `None` when no `colorstyle:` path was recoloured (a plain SVG, or one
+/// whose roles all fail to resolve, is left untouched and rasterised as authored).
+pub fn recolour_colorstyle_svg(
+    svg_bytes: &[u8],
+    resolve: impl Fn(&str) -> Option<[f32; 4]>,
+) -> Option<Vec<u8>> {
+    let text = std::str::from_utf8(svg_bytes).ok()?;
+    if !text.contains("colorstyle:") {
+        return None;
+    }
+    let mut out = String::with_capacity(text.len() + 64);
+    let mut cursor = 0usize;
+    let mut recoloured_any = false;
+    while let Some(rel_lt) = text[cursor..].find('<') {
+        let lt = cursor + rel_lt;
+        let gt = match text[lt..].find('>') {
+            Some(rel) => lt + rel + 1,
+            None => break,
+        };
+        let tag = &text[lt..gt];
+        out.push_str(&text[cursor..lt]);
+        match colorstyle_role_opacity(tag).and_then(|(role, op)| resolve(&role).map(|rgba| (rgba, op))) {
+            Some((rgba, op_pct)) => {
+                out.push_str(&rewrite_tag_fill(tag, rgba, op_pct));
+                recoloured_any = true;
+            }
+            None => out.push_str(tag),
+        }
+        cursor = gt;
+    }
+    out.push_str(&text[cursor..]);
+    recoloured_any.then(|| out.into_bytes())
+}
+
+/// Extract `(role, opacity_pct)` from a single element tag's `colorstyle:` /
+/// `opacity:<digits>_` id tokens. `opacity` defaults to 100 when absent.
+fn colorstyle_role_opacity(tag: &str) -> Option<(String, u32)> {
+    let idx = tag.find("colorstyle:")?;
+    let after = &tag[idx + "colorstyle:".len()..];
+    let end = after
+        .find(|c: char| !c.is_ascii_alphanumeric())
+        .unwrap_or(after.len());
+    let role = &after[..end];
+    if role.is_empty() {
+        return None;
+    }
+    // The id token form `opacity:<digits>_` (not a CSS `opacity:0.5` style).
+    let opacity_pct = tag
+        .match_indices("opacity:")
+        .find_map(|(i, _)| {
+            let a = &tag[i + "opacity:".len()..];
+            let e = a.find(|c: char| !c.is_ascii_digit()).unwrap_or(a.len());
+            (e > 0 && a.as_bytes().get(e) == Some(&b'_'))
+                .then(|| a[..e].parse::<u32>().ok())
+                .flatten()
+        })
+        .unwrap_or(100);
+    Some((role.to_string(), opacity_pct))
+}
+
+/// Rewrite a single element tag's `fill` to `rgba`'s hex and its `fill-opacity`
+/// to `(op_pct/100) × rgba_alpha`, inserting either attribute if absent.
+fn rewrite_tag_fill(tag: &str, rgba: [f32; 4], op_pct: u32) -> String {
+    let hex = format!(
+        "#{:02X}{:02X}{:02X}",
+        (rgba[0].clamp(0.0, 1.0) * 255.0).round() as u8,
+        (rgba[1].clamp(0.0, 1.0) * 255.0).round() as u8,
+        (rgba[2].clamp(0.0, 1.0) * 255.0).round() as u8,
+    );
+    let alpha = trim_float((op_pct as f32 / 100.0 * rgba[3].clamp(0.0, 1.0)).clamp(0.0, 1.0));
+
+    let mut result = tag.to_string();
+    match find_attr_value_span(&result, "fill") {
+        Some((s, e)) => result.replace_range(s..e, &hex),
+        None => inject_attr(&mut result, &format!("fill=\"{hex}\"")),
+    }
+    match find_attr_value_span(&result, "fill-opacity") {
+        Some((s, e)) => result.replace_range(s..e, &alpha),
+        None => inject_attr(&mut result, &format!("fill-opacity=\"{alpha}\"")),
+    }
+    result
+}
+
+/// Span of an attribute's value between the quotes, e.g. `fill="#abc"` → the
+/// `#abc` range. Matches ` name="` (leading space) so `fill` never matches a
+/// `fill-opacity` / `fill-rule` attribute.
+fn find_attr_value_span(tag: &str, name: &str) -> Option<(usize, usize)> {
+    let needle = format!(" {name}=\"");
+    let i = tag.find(&needle)?;
+    let val_start = i + needle.len();
+    let val_end = tag[val_start..].find('"')? + val_start;
+    Some((val_start, val_end))
+}
+
+/// Insert ` attr` just before a tag's closing `/>` or `>`.
+fn inject_attr(tag: &mut String, attr: &str) {
+    let at = tag
+        .rfind("/>")
+        .or_else(|| tag.rfind('>'))
+        .unwrap_or(tag.len());
+    tag.insert_str(at, &format!(" {attr}"));
+}
+
+/// Format a `0.0..=1.0` float as a compact SVG attribute value (`1`, `0.85`).
+fn trim_float(v: f32) -> String {
+    let s = format!("{v:.3}");
+    s.trim_end_matches('0').trim_end_matches('.').to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -382,6 +503,68 @@ mod tests {
         assert!(img.get_pixel(3, 5).0[3] > 0, "left preserved band should keep its original x");
         assert_eq!(img.get_pixel(12, 5).0[3], 0, "center stretch should not move left line inward");
         assert!(img.get_pixel(36, 5).0[3] > 0, "right preserved band should stay near target edge");
+    }
+
+    /// Per-path recolour: a cross-cap-style SVG with a UNIFORM role (Critical)
+    /// but MIXED opacity (100/70) — which `parse_uniform_colorstyle` rejects —
+    /// must still recolour every path to the resolved role colour at its own
+    /// id-encoded opacity, replacing the Adobe placeholder fills.
+    #[test]
+    fn recolour_colorstyle_svg_recolours_each_path_by_role_and_opacity() {
+        let svg = br##"<svg xmlns="http://www.w3.org/2000/svg">
+            <path id="opacity:100_colorstyle:Critical_a_" fill="#6CB8C7" d="M0 0h1v1H0z"/>
+            <polygon id="opacity:70_colorstyle:Critical_b_" fill="#C70050" points="0,0 1,0 1,1"/>
+        </svg>"##;
+        let out = recolour_colorstyle_svg(svg, |role| {
+            (role == "Critical").then_some([240.0 / 255.0, 120.0 / 255.0, 16.0 / 255.0, 1.0])
+        })
+        .expect("a colorstyle SVG should be recoloured");
+        let text = String::from_utf8(out).unwrap();
+        assert!(
+            !text.contains("#6CB8C7") && !text.contains("#C70050"),
+            "placeholder fills should be replaced: {text}"
+        );
+        assert_eq!(text.matches("#F07810").count(), 2, "both paths recoloured: {text}");
+        assert!(text.contains("fill-opacity=\"1\""), "opacity 100 -> 1: {text}");
+        assert!(text.contains("fill-opacity=\"0.7\""), "opacity 70 -> 0.7: {text}");
+    }
+
+    /// Mixed-ROLE recolour: a cross-line path (Accent1) and a cap path (Critical)
+    /// in one SVG each resolve to their OWN role colour — the case a single
+    /// whole-image fill_override cannot represent.
+    #[test]
+    fn recolour_colorstyle_svg_resolves_each_role_independently() {
+        let svg = br##"<svg xmlns="http://www.w3.org/2000/svg">
+            <path id="opacity:85_colorstyle:Accent1_a_" fill="#6CB8C7" d="M0 0h1v1H0z"/>
+            <path id="opacity:70_colorstyle:Critical_b_" fill="#6CB8C7" d="M2 2h1v1H2z"/>
+        </svg>"##;
+        let out = recolour_colorstyle_svg(svg, |role| match role {
+            "Accent1" => Some([1.0, 0.0, 0.0, 1.0]),
+            "Critical" => Some([0.0, 1.0, 0.0, 1.0]),
+            _ => None,
+        })
+        .expect("a colorstyle SVG should be recoloured");
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains("#FF0000"), "Accent1 path -> red: {text}");
+        assert!(text.contains("#00FF00"), "Critical path -> green: {text}");
+        assert!(text.contains("fill-opacity=\"0.85\""), "Accent1 opacity 85: {text}");
+    }
+
+    /// A plain SVG (no `colorstyle:` ids) is left untouched so its authored fills
+    /// render unchanged.
+    #[test]
+    fn recolour_colorstyle_svg_leaves_plain_svg_untouched() {
+        assert!(recolour_colorstyle_svg(WHITE_SVG, |_| Some([1.0, 0.0, 0.0, 1.0])).is_none());
+    }
+
+    /// When no path's role resolves (unknown brand role), nothing is rewritten
+    /// and the caller keeps the authored fills.
+    #[test]
+    fn recolour_colorstyle_svg_returns_none_when_no_role_resolves() {
+        let svg = br##"<svg xmlns="http://www.w3.org/2000/svg">
+            <path id="colorstyle:Accent1_a_" fill="#6CB8C7" d="M0 0h1v1H0z"/>
+        </svg>"##;
+        assert!(recolour_colorstyle_svg(svg, |_| None).is_none());
     }
 
     #[test]

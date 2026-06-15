@@ -290,28 +290,43 @@ fn draw_non_text_node(
                 })
             })
             .flatten();
-        let fill_override = custom_shape_fill_override(node, ctx)
-            .or_else(|| {
-                if is_svg {
-                    node.icon_tint_colour.or_else(|| {
-                        node.icon_tint_colour_token
-                            .as_deref()
-                            .and_then(|token| resolve_colour_token(ctx, token))
+        let explicit_override = custom_shape_fill_override(node, ctx).or_else(|| {
+            if is_svg {
+                node.icon_tint_colour.or_else(|| {
+                    node.icon_tint_colour_token
+                        .as_deref()
+                        .and_then(|token| resolve_colour_token(ctx, token))
+                })
+            } else {
+                None
+            }
+        });
+        // SVG `colorstyle:` brand recolour. HUD glyph SVGs author placeholder
+        // fills and encode the brand role + opacity in the path ids. A UNIFORM
+        // (one role, one opacity) SVG resolves to a single whole-image overlay
+        // (`svg_colorstyle_fill_override`); a non-uniform / multi-role SVG —
+        // the velocity cross-line (`Accent1` at 85/50) and cross-cap (`Critical`
+        // at 100/70) — is recoloured PER PATH in the bytes (`recolour_colorstyle_svg`)
+        // since one overlay cannot represent per-path opacity. Both are lowest
+        // priority: an explicit custom-shape fill or icon tint still wins.
+        let uniform_colorstyle = (explicit_override.is_none())
+            .then(|| svg_bytes.as_deref().and_then(|bytes| svg_colorstyle_fill_override(bytes, ctx)))
+            .flatten();
+        let fill_override = explicit_override.or(uniform_colorstyle);
+        let recoloured_svg: Option<Vec<u8>> = (fill_override.is_none())
+            .then(|| {
+                svg_bytes.as_deref().and_then(|bytes| {
+                    crate::bb_svg::recolour_colorstyle_svg(bytes, |role| {
+                        resolve_surface_colour_token(ctx, role)
                     })
-                } else {
-                    None
-                }
+                })
             })
-            // SVG `colorstyle:` brand recolour (see `svg_colorstyle_fill_override`):
-            // HUD glyph SVGs author a placeholder fill and encode the brand role in
-            // the path ids. Lowest priority — an explicit custom-shape fill or icon
-            // tint still wins.
-            .or_else(|| svg_bytes.as_deref().and_then(|bytes| svg_colorstyle_fill_override(bytes, ctx)));
+            .flatten();
+        let effective_svg_bytes = recoloured_svg.as_deref().or(svg_bytes.as_deref());
         let resolved_image = if is_overlay {
             None
         } else if is_svg {
-            svg_bytes
-                .as_deref()
+            effective_svg_bytes
                 .and_then(|bytes| rasterize_svg_for_node(node, bytes, iw, ih, fill_override))
         } else {
             atlas.resolve(asset_ref, iw, ih).or_else(|| {
