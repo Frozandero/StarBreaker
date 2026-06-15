@@ -148,15 +148,16 @@ pub fn layout(scene: &BbScene, target_w: u32, target_h: u32) -> LayoutResult {
 /// Compute pixel-space rects while applying sampled animated SizeX/SizeY
 /// modifiers when `animation_sample_percent` is provided.
 ///
-/// `cover_fit` selects the scale/anchor for a `UseRaw`/`Auto` canvas whose
-/// authored aspect differs from the target: `false` (default) CONTAINS — uniform
-/// `min` scale, centred (letterbox); `true` COVERS — uniform `max` scale,
-/// origin-anchored so the canvas fills the target and the trailing edge overflows
-/// and crops. The pipeline passes `true` only when a per-screen cockpit mesh
-/// aspect override is applied (the g-force / velocity ball gauges author 16:9 but
-/// their screen is square), so the square `aspectRatio` ball-area covers the
-/// screen while the readouts crop. A no-op when aspects match (cover == contain)
-/// and for `aspectOverrides*` canvases (door, annunciator), which already fill.
+/// `cover_fit` selects the scale/anchor for a `UseRaw` canvas whose authored
+/// aspect differs from the target: `false` (default) CONTAINS — uniform `min`
+/// scale, centred (letterbox); `true` COVERS — uniform `max` scale, origin-anchored
+/// so the canvas fills the target and the trailing edge overflows and crops. The
+/// pipeline passes `true` only when a per-screen cockpit mesh aspect override is
+/// applied (the g-force / velocity ball gauges author 16:9 but their screen is
+/// square), so the square `aspectRatio` ball-area covers the screen while the
+/// readouts crop. A no-op when aspects match (cover == contain) and for
+/// `aspectOverrides*` / `auto` canvases, which FILL the target (non-uniform `sx`/
+/// `sy`) regardless of `cover_fit` — the compass authors `auto` on its wide screen.
 pub fn layout_with_animation_sample(
     scene: &BbScene,
     target_w: u32,
@@ -168,13 +169,21 @@ pub fn layout_with_animation_sample(
         let sx = target_w as f32 / scene.canvas_size.0;
         let sy = target_h as f32 / scene.canvas_size.1;
         match scene.coordinate_method {
-            BbCoordinateMethod::AspectOverridesWidth | BbCoordinateMethod::AspectOverridesHeight => (
+            // `auto` fills the target like `aspectOverrides*` (non-uniform `sx`/`sy`,
+            // root = full target) — NOT the uniform contain/cover of `useRaw`. The
+            // compass authors `auto` on a wide screen with a 16:9 canvas; without
+            // filling, its bottom-anchored tick band overflows the shorter target and
+            // crops off-screen. No frozen cockpit screen is `auto` (they are `useRaw`
+            // / `aspectOverridesWidth`), so this only changes the compass.
+            BbCoordinateMethod::AspectOverridesWidth
+            | BbCoordinateMethod::AspectOverridesHeight
+            | BbCoordinateMethod::Auto => (
                 Rect { x: 0.0, y: 0.0, w: target_w as f32, h: target_h as f32 },
                 sx,
                 sy,
                 sx.min(sy),
             ),
-            BbCoordinateMethod::UseRaw | BbCoordinateMethod::Auto => {
+            BbCoordinateMethod::UseRaw => {
                 let canvas_scale = if cover_fit { sx.max(sy) } else { sx.min(sy) };
                 let scaled_w = scene.canvas_size.0 * canvas_scale;
                 let scaled_h = scene.canvas_size.1 * canvas_scale;
@@ -2396,6 +2405,46 @@ mod tests {
             fill,
             Rect { x: 0.0, y: 0.0, w: 1920.0, h: 1920.0 },
             "AspectOverrides must fill the square target"
+        );
+    }
+
+    /// `coordinateMethod: "auto"` FILLS the target (non-uniform, like
+    /// `aspectOverrides*`), NOT the uniform contain/cover of `useRaw`. The Clipper
+    /// compass authors `auto` on a WIDE (3.27) screen with a 16:9 canvas; under the
+    /// `useRaw` uniform fit the 1080-tall canvas overflows the 587 target and its
+    /// bottom-anchored tick band falls off-screen, whereas `auto` fills the target
+    /// so the ticks span the width and fit the height. No frozen cockpit screen is
+    /// `auto` (they are `useRaw` / `aspectOverridesWidth`), so this is compass-only.
+    #[test]
+    fn auto_coordinate_method_fills_target_unlike_useraw() {
+        use crate::bb_scene::{BbCoordinateMethod, BbNode, BbNodeType, BbSizing, BbTrbl, BbValue, Vec2, Vec3};
+        let mk_scene = |method: BbCoordinateMethod| {
+            let root = BbNode {
+                id: 1, parent: None, children: vec![],
+                ty: BbNodeType::WidgetCanvas, name: "root".into(),
+                style_tag_uuids: vec![], is_active: true, layer: 0, alpha: 1.0,
+                position: Vec3::default(), position_offset: Vec3::default(),
+                sizing: BbSizing { width: BbValue::Percent(1.0), height: BbValue::Percent(1.0) },
+                padding: BbTrbl::default(), margin: BbTrbl::default(),
+                pivot: Vec2::default(), anchor: Vec2::default(),
+                background: None, border: None, radial: None, text: None, icon: None,
+                raw: serde_json::Value::Null,
+            };
+            let mut nodes = BTreeMap::new();
+            nodes.insert(1, root);
+            BbScene { coordinate_method: method, canvas_size: (1920.0, 1080.0), roots: vec![1], nodes, operations: vec![] }
+        };
+        // Compass strip: a 16:9 canvas in a wide 1920×587 target.
+        let auto = layout(&mk_scene(BbCoordinateMethod::Auto), 1920, 587).rects[&1];
+        assert_eq!(
+            auto,
+            Rect { x: 0.0, y: 0.0, w: 1920.0, h: 587.0 },
+            "auto must FILL the wide target, got {auto:?}"
+        );
+        let raw = layout(&mk_scene(BbCoordinateMethod::UseRaw), 1920, 587).rects[&1];
+        assert!(
+            raw.w < 1100.0 && raw.x > 1.0,
+            "useRaw must letterbox (uniform contain), not fill, got {raw:?}"
         );
     }
 
