@@ -1340,15 +1340,60 @@ fn layout_flex_no_grow_children(
                 // Text-backed Auto ZERO-hint (value 0.0 = pure content hint)
                 // children in a COLUMN stack at measured text heights — the
                 // emissions Numbers Container stacks emitted above ambient.
-                // Scoped to 0.0 only: the medical platinum pins the fill
-                // placement for NON-zero Auto hints in columns (a column-wide
-                // intrinsic drifted the medical header h 78→18, y +27).
+                // Scoped to 0.0 only by default: the medical platinum pins the
+                // fill placement for NON-zero Auto hints in columns (a
+                // column-wide intrinsic drifted the medical header h 78→18,
+                // y +27). The CENTER-justified case is carved out below.
+                h = intrinsic;
+                auto_main = false;
+            } else if !is_row
+                && axis_just.eq_ignore_ascii_case("Center")
+                && matches!(
+                    node.sizing.height,
+                    BbValue::Other { value, ref behavior } if behavior == "Auto" && value > 1.0
+                )
+                && let Some(intrinsic) =
+                    auto_text_intrinsic_main(child_id, scene, csy, false)
+            {
+                // Text-backed NON-ZERO Auto-hint (>1.0) children in a
+                // CENTER-justified column fit their measured TEXT content, like
+                // the 0.0 pure-hint case above. The velocity-num HUD
+                // (HC_HUD_Ship_Velocity_Num_Master) stacks two such WidgetCards
+                // — each wrapping one readout text field ("0m/s", "0.0 G") — in
+                // a Column(axisJustification=Center); the fill placement made
+                // both cards full-canvas height and overlapping, dumping the
+                // glyphs in the top-left corner. Scoped to axisJustification ==
+                // Center so the medical header (its column is NOT center-
+                // justified) keeps the fill its platinum pins (workflow §10).
                 h = intrinsic;
                 auto_main = false;
             } else if is_row {
                 w = 0.0;
             } else {
                 h = 0.0;
+            }
+        }
+        // Cross-axis content-fit for a CENTER-justified column's Auto text card:
+        // shrink the snug box on the cross axis (width in a column) too, so the
+        // crossAxisJustification placement below centres it. Without this the
+        // velocity-num readout cards stay full-canvas-wide and their left-aligned
+        // glyphs render at the (off-screen) left edge even after the main-axis
+        // fit stacks them. Same axisJustification == Center scope as the
+        // main-axis intrinsic above, so no frozen screen is reached.
+        if axis_just.eq_ignore_ascii_case("Center") {
+            let cross_is_nonzero_auto = if is_row {
+                matches!(node.sizing.height, BbValue::Other { value, ref behavior } if behavior == "Auto" && value > 1.0)
+            } else {
+                matches!(node.sizing.width, BbValue::Other { value, ref behavior } if behavior == "Auto" && value > 1.0)
+            };
+            if cross_is_nonzero_auto {
+                if is_row {
+                    if let Some(intrinsic) = auto_text_intrinsic_main(child_id, scene, csy, false) {
+                        h = intrinsic;
+                    }
+                } else if let Some(intrinsic) = auto_text_intrinsic_main(child_id, scene, csx, true) {
+                    w = intrinsic;
+                }
             }
         }
         if (node.anchor.x >= 0.99 && node.pivot.x >= 0.99) || right_edge_auto_hint {
