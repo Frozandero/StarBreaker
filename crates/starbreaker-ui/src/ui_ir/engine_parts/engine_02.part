@@ -732,6 +732,25 @@ fn auto_font_size_enabled(raw: &serde_json::Value) -> bool {
         .unwrap_or(false)
 }
 
+/// True when a text field is a HEIGHT-DRIVEN label: its HEIGHT is a `Percent` of
+/// the parent AND its WIDTH is `PercentOfY` (derived FROM that height). Such a
+/// field's whole box is defined by its height, so the engine sizes the glyph to
+/// fill it rather than falling back to the named-style table default. The compass
+/// tick labels are the case (`width: 10 PercentOfY`, `height: 0.8`, no FontSize) —
+/// they fill the tick. A field with a Percent height but a normal (Percent /
+/// Fixed) width is a width-laid-out label that keeps its named-style size (the
+/// medical-bed `ui_target_a` titles: Percent height, NOT PercentOfY width → their
+/// frozen 25/30/60 sizes are preserved).
+fn text_field_sizes_font_to_relative_height(node: &crate::bb_scene::BbNode) -> bool {
+    use crate::bb_scene::BbValue;
+    matches!(node.ty, BbNodeType::WidgetTextField | BbNodeType::WidgetText)
+        && matches!(node.sizing.height, BbValue::Percent(_))
+        && matches!(
+            node.sizing.width,
+            BbValue::Other { ref behavior, .. } if behavior.eq_ignore_ascii_case("PercentOfY")
+        )
+}
+
 
 /// The heading→`Base` semantic guesses that used to live here were DELETED
 /// 2026-06-12: with the text-format style route landed, every frozen pin's
@@ -1067,7 +1086,7 @@ fn resolve_effective_font_size(
     node_id: BbNodeId,
     node: &crate::bb_scene::BbNode,
     text: &crate::bb_scene::BbText,
-    _node_rect_h: f32,
+    node_rect_h: f32,
     _resolved_text: Option<&str>,
     scene: &BbScene,
     binding_resolver: &BindingResolver,
@@ -1135,6 +1154,18 @@ fn resolve_effective_font_size(
         && let Some(raw_font_size) = font_size_from_raw(node)
     {
         return (scale_design_font_value(raw_font_size, design_text_scale), true);
+    }
+
+    // A text field that authors a RELATIVE (Percent) HEIGHT with no explicit,
+    // bound, inline, or entry FontSize sizes its glyph to fill that authored field
+    // height — the engine sizes the text TO the box it was given, rather than the
+    // named-style table default. The compass tick labels author `height: 0.8` (of
+    // the tick) and no FontSize: they fill the tick (cap ≈ 19% of the strip), not
+    // the Heading1 standard's 60 (cap ≈ 6%). The field rect is already in target
+    // pixels, so it is NOT multiplied by `design_text_scale`. Scoped to Percent
+    // heights so fixed/auto/content-sized fields keep their named-style size.
+    if text_field_sizes_font_to_relative_height(node) && node_rect_h > 1.0 {
+        return (UiIrValue::Fixed { value: node_rect_h }, false);
     }
 
     // Engine-faithful default: a styled textfield renders at its named style's
