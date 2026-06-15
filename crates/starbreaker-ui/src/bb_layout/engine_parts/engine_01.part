@@ -253,6 +253,14 @@ pub fn layout_with_animation_sample(
             canvas_rect.w,
             canvas_rect.h,
         );
+        cover_fit_full_bleed_to_viewport(
+            &mut rects,
+            scene,
+            target_w as f32,
+            target_h as f32,
+            canvas_rect.w,
+            canvas_rect.h,
+        );
     }
 
     LayoutResult { canvas, rects, draw_order, canvas_scale }
@@ -302,6 +310,40 @@ fn cover_fit_recentre(
         for r in rects.values_mut() {
             r.x += dx;
             r.y += dy;
+        }
+    }
+}
+
+/// Snap a cover-fit screen's full-bleed background IMAGE to the visible
+/// viewport `(0,0,target)`.
+///
+/// The covered canvas is laid out wider than the square screen mesh, so a
+/// full-canvas background image (`WidgetImage` with an `imagePath`) ends up
+/// spanning the off-screen canvas — its square texture stretched to the
+/// canvas's 16:9 rect with its bright centre pushed outside the viewport (the
+/// velocity/g-force ball's green glow rendered off to one side). The background
+/// is a leaf (no children to carry), so snapping its rect to the visible
+/// viewport un-stretches it and centres its bright middle on the screen.
+/// Containers (laid out absolutely via their children) and localised content
+/// are untouched. Keyed on full-canvas span + an image path, never a name.
+fn cover_fit_full_bleed_to_viewport(
+    rects: &mut BTreeMap<BbNodeId, Rect>,
+    scene: &BbScene,
+    target_w: f32,
+    target_h: f32,
+    canvas_w: f32,
+    canvas_h: f32,
+) {
+    for (id, r) in rects.iter_mut() {
+        let Some(node) = scene.nodes.get(id) else { continue };
+        let renders_image = node
+            .raw
+            .get("imagePath")
+            .and_then(|v| v.as_str())
+            .is_some_and(|s| !s.is_empty());
+        let spans_canvas = r.w >= 0.95 * canvas_w && r.h >= 0.95 * canvas_h;
+        if node.is_active && node.children.is_empty() && renders_image && spans_canvas {
+            *r = Rect { x: 0.0, y: 0.0, w: target_w, h: target_h };
         }
     }
 }
