@@ -27,6 +27,16 @@ findings land here in two states, with a lifecycle:
   `crates/starbreaker-ui/docs/ui-process-improvements.md` ledger items 52–55 +
   `scripts/ui_gauge_measure.py` (committed `0daf35e8e`). The self-improvement
   loop is validated end-to-end.
+- **"Inherited verdicts are hints" / "undecoded = under-research" rules were
+  DECISIVE (2026-06-15, velocity-num → gold).** The dossier + memory recorded the
+  ~9× font gap as a PROVEN blocker ("per-screen text-scale model undecoded, blocked
+  by the annunciator counterexample"). Re-deriving from the reference (per the
+  skill's mandate) overturned it: never a scale problem — the variant authors
+  FontSize 500/420, they weren't being applied. Fixed structurally (`6c1343abf`/
+  `c7931fb4b`) + onboarded gold (`a91cec377`) in the same arc. The canonical case the
+  red-flag row "undecoded → research then fix" guards against, now proven on a real
+  wrongly-deferred item — the existing rules did exactly their job, no skill change
+  needed. (Process/tool findings → ledger items 60–62.)
 - **Recommended later validation** (lower priority now, given real use):
   1. **Compliance dry-run (cheap).** Dispatch a fresh subagent with
      "Drake Clipper / Screen_Right_Upper_RTT" and confirm, from the skill + docs
