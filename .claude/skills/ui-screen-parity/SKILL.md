@@ -179,8 +179,8 @@ deferred, or blocked, take the next-highest open item yourself — **in automati
 mode, do not ask the user which to tackle next.** Don't stop the loop until
 every catalog item is fixed, explicitly deferred with a reason, or a concrete
 blocker is proven; the only interruptions are the active checkpoints below.
-Resolving the catalog ends the loop, not the arc — the mandatory retrospective
-(below) is the final step in every mode.
+Resolving the catalog ends the loop, not the arc — a closing re-review and then
+the mandatory retrospective (below) are the final steps in every mode.
 
 **Default to fixing, not deferring.** "Large blast radius," "touches many frozen
 nodes," "deserves its own deliberate change," or any size/risk estimate is NOT a
@@ -239,7 +239,7 @@ presumed "yes"; never perform the action before the answer comes back.
 | Diff-catalog confirmation (launch) | ask | ask |
 | **Baseline freeze / re-freeze** | **gate** | **gate** |
 | Git commit | gate | auto, no gate |
-| Final parity | gate | report only |
+| Final parity (closing re-review) | gate | re-review → fix until clean |
 
 - **Freeze is ALWAYS gated, in both modes** — §6/§7 are APPROVAL-GATED. Show the
   per-identity delta, then ask via `AskUserQuestion` ("Freeze these N
@@ -248,9 +248,11 @@ presumed "yes"; never perform the action before the answer comes back.
 - **Git commit** — semi-automated: show the diff/summary, ask "Commit this?" →
   "Commit" / "Not yet", commit only on yes. Fully automated: commit autonomously
   per coherent fix (message cites the catalog item), no question.
-- **Final parity** — semi-automated: show the final render + compare, ask
-  whether parity is acceptable or another pass is wanted. Fully automated:
-  present the final render + compare as a report and finish (no gate).
+- **Final parity** — driven by the **Closing re-review** (below). Semi-automated:
+  present that fresh re-review and ask whether parity is acceptable or another
+  pass is wanted (another pass → resume fixing, then re-review again). Fully
+  automated: the re-review keeps fixing until the screen is clean or the
+  remainder is proven deferred/blocked, then finishes (no gate).
 - **Reference selection** — the launch questions (steps 1–4), both modes.
 
 ## Strict rules (workflow §1 — non-negotiable)
@@ -266,6 +268,26 @@ presumed "yes"; never perform the action before the answer comes back.
   baselines move only through the audited freeze flow or a §6 known-outlier.
 - 3000-line cap; remove no-effect experiments immediately (revert + record what
   was falsified); verify-on-write any doc command line you add.
+
+## Closing re-review (before the retrospective — both modes)
+
+When the catalog is resolved, do NOT trust it is done — re-evaluate from scratch,
+exactly as the opening *Build & confirm the diff catalog* phase did:
+
+1. **Re-render the screen fresh** and **re-run compare + self-verify** against the
+   reference: look AGAIN (guard shape/count/offset misreads), and re-check the
+   BACKGROUND/backplate layer (stretch, alignment). Build a fresh diff catalog of
+   what REMAINS — including anything the fixes introduced or missed.
+2. **Fully automated:** if any fixable difference remains, feed it back into the
+   loop and FIX it; repeat re-render → re-review → fix until the screen is clean —
+   every difference fixed or carrying a PROVEN deferral/blocker (size/risk is not
+   a deferral; freeze stays gated). Do not finish while fixable diffs remain.
+3. **Semi-automated:** this fresh re-review IS the Final-parity checkpoint —
+   present it via `AskUserQuestion` ("parity acceptable" vs "another pass", with
+   free-text comments); "another pass" resumes fixing, then re-reviews again.
+
+Only once the closing re-review is clean (or its remainder is proven
+deferred/blocked) does the arc proceed to the retrospective.
 
 ## Self-improve every arc: the retrospective (MANDATORY closing step)
 
@@ -338,4 +360,5 @@ needed is a doc bug — fix it before closing.
 | "Large blast radius / many frozen nodes — defer it" | Size/risk is not a blocker; it's a cue to research + plan, then fix. MEASURE the real impact with the disable→adjudicate audit + `ui_check.sh --full`; defer only on a PROVEN blocker. |
 | "This deserves its own deliberate change later" | If it's the right fix, do it now: research, plan if large, execute. The change is autonomous; only the freeze is gated. |
 | "Spin up parallel agents to build/render faster" | Builds share the cargo target and race. Only READ-ONLY research parallelizes; builds/renders/tests/fixes/freezes stay sequential in the main agent. |
-| "Fixes are done — the arc's complete" | Not complete until the retrospective runs (mandatory, both modes). Track it as a TodoWrite item from arc start; don't close with it open. |
+| "Catalog's resolved — run the retro" | First do the Closing re-review: re-render + re-compare against the reference like the start (self-verify + background). Fully automated keeps fixing until clean. THEN the retro. |
+| "Fixes are done — the arc's complete" | Not complete until the closing re-review is clean (or proven deferred) AND the retrospective runs (mandatory, both modes). Track it as a TodoWrite item from arc start; don't close with it open. |

@@ -179,3 +179,12 @@ under **Open recommendations** above.
   Added a launch checkpoint row, an Operating-posture MEASURE clause, a loop
   Compare-bullet note (same checks on newly-surfaced diffs; re-confirm only on
   material change), and three red-flag rows.
+- **2026-06-15 (closing re-review).** Added a mandatory closing re-review before
+  the retrospective (both modes): re-render fresh + re-compare/self-verify
+  against the reference exactly as the opening catalog phase (look-again +
+  background layer), building a fresh catalog of what remains. Fully automated
+  feeds remaining fixable diffs back into the loop and repeats until clean (or
+  proven deferred/blocked); semi-automated surfaces the fresh re-review at the
+  Final-parity `AskUserQuestion` gate (accept vs another pass). Updated the
+  checkpoints table/bullet (fully-auto Final parity is now "re-review → fix until
+  clean", not "report only"), the loop closing line, and added two red-flag rows.
