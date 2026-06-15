@@ -79,8 +79,14 @@ impl BindingResolver {
                 Some(format_number_places(value, n_places, trailing))
             }
             "BuildingBlocks_BindingsLocalizedSIUnitFromNumber" => {
-                // SI magnitude prefix at `nPlaces` decimals — the emissions
-                // header's "3.5K" (3500). Below 1000 the plain number renders.
+                // Formatted number + the localized SI unit symbol. Two engine knobs:
+                //   `forcedSIPrefix` — "Unit" pins the BASE unit (no magnitude
+                //     prefix); the auto modes (e.g. "INVALID") scale to K/M/G by
+                //     magnitude (the emissions header's "3.5K", 3500).
+                //   `unitSuffix` — the quantity enum (Speed/Distance/...). The unit
+                //     symbol is its localization entry `text_ui_SIUnit_<suffix>`
+                //     (Speed → "m/s"); "None" appends nothing (the g-force readout,
+                //     whose "G" comes from a later LocalizationCombine).
                 let mut seen_num = std::collections::HashSet::new();
                 let value = op
                     .get("input")
@@ -88,17 +94,29 @@ impl BindingResolver {
                     .and_then(parse_points_to_or_ptr_str)
                     .and_then(|p| self.eval_number_ptr(p, defaults, &mut seen_num))?;
                 let n_places = op.get("nPlaces").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-                let magnitude = value.abs();
-                let (scaled, prefix) = if magnitude >= 1_000_000_000.0 {
-                    (value / 1_000_000_000.0, "G")
-                } else if magnitude >= 1_000_000.0 {
-                    (value / 1_000_000.0, "M")
-                } else if magnitude >= 1_000.0 {
-                    (value / 1_000.0, "K")
-                } else {
+                let forced_prefix = op.get("forcedSIPrefix").and_then(|v| v.as_str()).unwrap_or("");
+                let (scaled, prefix) = if forced_prefix.eq_ignore_ascii_case("Unit") {
                     (value, "")
+                } else {
+                    let magnitude = value.abs();
+                    if magnitude >= 1_000_000_000.0 {
+                        (value / 1_000_000_000.0, "G")
+                    } else if magnitude >= 1_000_000.0 {
+                        (value / 1_000_000.0, "M")
+                    } else if magnitude >= 1_000.0 {
+                        (value / 1_000.0, "K")
+                    } else {
+                        (value, "")
+                    }
                 };
-                Some(format!("{}{prefix}", format_number_places(scaled, n_places, true)))
+                let number = format!("{}{prefix}", format_number_places(scaled, n_places, true));
+                let unit = match op.get("unitSuffix").and_then(|v| v.as_str()) {
+                    Some(suffix) if !suffix.eq_ignore_ascii_case("None") => defaults
+                        .lookup_localization(&format!("text_ui_SIUnit_{suffix}"))
+                        .unwrap_or_default(),
+                    _ => "",
+                };
+                Some(format!("{number}{unit}"))
             }
             "BuildingBlocks_BindingsLocalizationFromIntegerSwitch" => {
                 let input = self.eval_integer_ptr_from_field(op.get("input").and_then(|v| v.as_str()), defaults, seen)?;

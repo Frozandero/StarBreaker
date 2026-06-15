@@ -178,3 +178,60 @@ fn resolver() -> BindingResolver {
         assert_eq!(result.text, "NO TARGET");
     }
 
+    /// `LocalizedSIUnitFromNumber` with a real `unitSuffix` appends the localized
+    /// SI unit symbol (`text_ui_SIUnit_<suffix>`): the velocity-num HUD readout
+    /// renders "0m/s", not the bare "0". `forcedSIPrefix=Unit` pins the base unit.
+    #[test]
+    fn si_unit_speed_appends_localized_unit_symbol() {
+        let mut r = resolver();
+        r.ptr_to_op.insert(7, json!({"_Type_": "_SynthNumberParam_", "resolvedNumber": 0.0}));
+        r.ptr_to_op.insert(24, json!({
+            "_Type_": "BuildingBlocks_BindingsLocalizedSIUnitFromNumber",
+            "nPlaces": 0,
+            "unitSuffix": "Speed",
+            "forcedSIPrefix": "Unit",
+            "input": "_PointsTo_:ptr:7"
+        }));
+        let mut defaults = DefaultValueRegistry::default();
+        // The live global.ini supplies this at runtime; the test mirrors it.
+        defaults.merge_localization([("text_ui_siunit_speed".to_string(), "m/s".to_string())].into());
+        let out = r.eval_localized_ptr(24, &defaults, &mut std::collections::HashSet::new());
+        assert_eq!(out.as_deref(), Some("0m/s"));
+    }
+
+    /// `unitSuffix=None` adds no unit (the g-force readout, whose "G" comes from a
+    /// later `LocalizationCombine`): the SIUnit op stays the bare formatted number.
+    #[test]
+    fn si_unit_none_suffix_adds_no_unit() {
+        let mut r = resolver();
+        r.ptr_to_op.insert(7, json!({"_Type_": "_SynthNumberParam_", "resolvedNumber": 0.0}));
+        r.ptr_to_op.insert(13, json!({
+            "_Type_": "BuildingBlocks_BindingsLocalizedSIUnitFromNumber",
+            "nPlaces": 1,
+            "unitSuffix": "None",
+            "forcedSIPrefix": "Unit",
+            "input": "_PointsTo_:ptr:7"
+        }));
+        let defaults = DefaultValueRegistry::default();
+        let out = r.eval_localized_ptr(13, &defaults, &mut std::collections::HashSet::new());
+        assert_eq!(out.as_deref(), Some("0.0"));
+    }
+
+    /// `forcedSIPrefix` other than `Unit` keeps the magnitude prefix (the emissions
+    /// "3.5K"); a non-None suffix is appended after it.
+    #[test]
+    fn si_unit_auto_prefix_keeps_magnitude_scaling() {
+        let mut r = resolver();
+        r.ptr_to_op.insert(7, json!({"_Type_": "_SynthNumberParam_", "resolvedNumber": 3500.0}));
+        r.ptr_to_op.insert(9, json!({
+            "_Type_": "BuildingBlocks_BindingsLocalizedSIUnitFromNumber",
+            "nPlaces": 1,
+            "unitSuffix": "None",
+            "forcedSIPrefix": "INVALID",
+            "input": "_PointsTo_:ptr:7"
+        }));
+        let defaults = DefaultValueRegistry::default();
+        let out = r.eval_localized_ptr(9, &defaults, &mut std::collections::HashSet::new());
+        assert_eq!(out.as_deref(), Some("3.5K"));
+    }
+
