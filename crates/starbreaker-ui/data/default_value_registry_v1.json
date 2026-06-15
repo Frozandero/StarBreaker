@@ -124,7 +124,8 @@
     "piplist/[0006]/piplinkamount": 1,
     "piplist/[0006]/ispoweredoff": false,
     "iscast": false,
-    "/AnnunciatorProvider/Issues/[0008]/Severity": 5
+    "/AnnunciatorProvider/Issues/[0008]/Severity": 5,
+    "FlightController/AccelerationLimiterRatio": 1.0
   },
   "localization": {
     "hud_notarget": "NO TARGET",
