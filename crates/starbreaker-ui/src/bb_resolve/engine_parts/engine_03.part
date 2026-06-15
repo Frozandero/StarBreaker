@@ -1966,7 +1966,19 @@ fn apply_array_variable_lists(
             let path = if let Some(absolute) = array_var.strip_prefix('/') {
                 absolute.to_owned()
             } else if namespace.is_empty() {
-                return None;
+                // A namespace-less arrayVariable that is a MULTI-SEGMENT path
+                // (e.g. the compass `FlightController/Compass/Ticks`) is an
+                // absolute engine-state reference — the authored leading slash is
+                // inconsistent across the data (cf. `/resourcenetworkUi/…`). Resolve
+                // it directly; the registry pins the at-rest count (0 for the
+                // compass, whose ticks the flight controller pushes live). A BARE
+                // single-segment name (the power outer `pipList`, `itemList`) is
+                // UI-local and genuinely needs a list namespace, so it stays skipped.
+                if array_var.contains('/') {
+                    array_var.to_owned()
+                } else {
+                    return None;
+                }
             } else {
                 format!("{namespace}/{array_var}")
             };

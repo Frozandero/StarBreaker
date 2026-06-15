@@ -301,6 +301,80 @@ mod tests_array_list {
             .collect();
         assert_eq!(templates, vec![false], "zero count: template deactivates, no clones");
     }
+
+    /// A TOP-LEVEL list (empty namespace) whose `arrayVariable` is a multi-segment
+    /// engine-state path (e.g. the compass `FlightController/Compass/Ticks`)
+    /// resolves its count directly from that path — the authored value is an
+    /// absolute engine reference, not a namespace-relative name. At static rest the
+    /// flight controller pushes no ticks, so the registry pins count 0 and the lone
+    /// authored template (a per-entry clone template, not a standalone item)
+    /// deactivates: the faithful empty compass. A BARE single-segment name
+    /// ("itemList") at empty namespace stays UI-local and is left untouched.
+    fn top_level_engine_list_canvas(array_var: &str) -> serde_json::Value {
+        serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.Test_TopLevelEngineList",
+            "_RecordId_": "00000000-0000-0000-0000-0000000a000c",
+            "_RecordValue_": {
+                "_Type_": "BuildingBlocks_Canvas",
+                "size": {"_Type_": "Vec3", "x": 100.0, "y": 100.0, "z": 0.0},
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "root", "isActive": true},
+                    {"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_WidgetList",
+                     "name": "list_engine", "parent": "_PointsTo_:ptr:1", "isActive": true,
+                     "arrayVariable": array_var},
+                    {"_Pointer_": "ptr:3", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "tick_template", "parent": "_PointsTo_:ptr:2", "isActive": true}
+                ],
+                "operations": []
+            }
+        })
+    }
+
+    #[test]
+    fn top_level_engine_state_array_list_resolves_count_from_path() {
+        let resolve = |array_var: &str, defaults: &DefaultValueRegistry| {
+            let scene = resolve_canvas_graph_with_defaults(
+                &top_level_engine_list_canvas(array_var),
+                Some("drak"),
+                &|p| Err(format!("no record for '{p}'")),
+                None,
+                None,
+                defaults,
+            )
+            .expect("resolve");
+            scene
+                .nodes
+                .values()
+                .find(|n| n.name == "tick_template")
+                .map(|n| n.is_active)
+                .expect("template node")
+        };
+
+        // Multi-segment engine-state path pinned to 0 → template deactivates.
+        let mut zero = DefaultValueRegistry::default();
+        zero.insert_path("FlightController/Compass/Ticks", crate::canvas::Value::Int(0));
+        assert!(
+            !resolve("FlightController/Compass/Ticks", &zero),
+            "engine-state list pinned 0 at static rest: template deactivates"
+        );
+
+        // Same path with no pin → still skipped (template stays as authored).
+        let empty = DefaultValueRegistry::default();
+        assert!(
+            resolve("FlightController/Compass/Ticks", &empty),
+            "no registry count: engine-state list template stays as authored"
+        );
+
+        // A BARE single-segment name is UI-local: even a same-named pin must NOT
+        // resolve it at empty namespace (guards the power outer `pipList`).
+        let mut bare = DefaultValueRegistry::default();
+        bare.insert_path("itemlist", crate::canvas::Value::Int(0));
+        assert!(
+            resolve("itemList", &bare),
+            "bare single-segment name needs a namespace: untouched at top level"
+        );
+    }
 }
 
 // Tests for multi-hop component-parameter relays (part_06's dynamic param
