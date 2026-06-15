@@ -2540,6 +2540,39 @@ mod tests_e {
             "expected text-band placement to avoid fallback drawn-bounds padding"
         );
     }
+
+    /// `rounded_rect_path` must render a CIRCLE (not a squircle) when the corner
+    /// radius reaches half the size — the g-force / velocity centre dot is exactly
+    /// this (a 114.86² node with corner_radius 100, clamped to half-size). The
+    /// prior quadratic-Bezier corners bulged toward the corners, rendering a
+    /// rounded square ~8% larger in area than a circle (the owner flagged the
+    /// g-force centre dot as a rounded square). Cubic-Bezier corners with the
+    /// standard 90°-arc constant bring it to a true circle.
+    #[test]
+    fn rounded_rect_full_radius_renders_a_circle() {
+        let n = 120u32;
+        let rect = TskRect::from_xywh(0.0, 0.0, n as f32, n as f32).expect("rect");
+        let path = rounded_rect_path(rect, n as f32 * 0.5).expect("path");
+        let mut pm = tiny_skia::Pixmap::new(n, n).expect("pixmap");
+        let mut paint = tiny_skia::Paint::default();
+        paint.set_color(tiny_skia::Color::WHITE);
+        paint.anti_alias = true;
+        pm.as_mut().fill_path(
+            &path,
+            &paint,
+            tiny_skia::FillRule::Winding,
+            tiny_skia::Transform::identity(),
+            None,
+        );
+        let opaque = pm.pixels().iter().filter(|p| p.alpha() > 128).count() as f32;
+        let circle = std::f32::consts::PI * (n as f32 * 0.5).powi(2);
+        let ratio = opaque / circle;
+        assert!(
+            ratio < 1.04,
+            "full-radius rounded rect must render ~circular: filled {opaque:.0}px vs circle \
+             {circle:.0}px (ratio {ratio:.3}); ratio >1.04 means a squircle (a square is 1.27)"
+        );
+    }
 }
 
 // Rounded border chrome: the generic border renderer strokes a rounded-rect
@@ -2554,16 +2587,25 @@ fn rounded_rect_path(rect: TskRect, radius: f32) -> Option<tiny_skia::Path> {
     let w = rect.width();
     let h = rect.height();
 
+    // Corner arcs use CUBIC Beziers with the standard 90°-arc constant
+    // (k = 4/3·tan(π/8) ≈ 0.5523). A quadratic Bezier is a poor quarter-circle
+    // approximation that bulges toward the corner, so a full-radius rounded rect
+    // (r == half-size) rendered as a squircle instead of a circle — the g-force /
+    // velocity centre dot (114.86² node, corner_radius 100 clamped to half-size)
+    // showed as a rounded square. Cubic corners are accurate to <0.03% of r.
+    const ARC_K: f32 = 0.552_284_75;
+    let c = r * ARC_K;
+
     let mut pb = PathBuilder::new();
     pb.move_to(x + r, y);
     pb.line_to(x + w - r, y);
-    pb.quad_to(x + w, y, x + w, y + r);
+    pb.cubic_to(x + w - r + c, y, x + w, y + r - c, x + w, y + r); // top-right
     pb.line_to(x + w, y + h - r);
-    pb.quad_to(x + w, y + h, x + w - r, y + h);
+    pb.cubic_to(x + w, y + h - r + c, x + w - r + c, y + h, x + w - r, y + h); // bottom-right
     pb.line_to(x + r, y + h);
-    pb.quad_to(x, y + h, x, y + h - r);
+    pb.cubic_to(x + r - c, y + h, x, y + h - r + c, x, y + h - r); // bottom-left
     pb.line_to(x, y + r);
-    pb.quad_to(x, y, x + r, y);
+    pb.cubic_to(x, y + r - c, x + r - c, y, x + r, y); // top-left
     pb.close();
     pb.finish()
 }
