@@ -1993,6 +1993,92 @@ mod tests_c {
     }
 
     #[test]
+    fn compile_ir_does_not_draw_background_on_renderertype_none_container() {
+        // A DisplayWidget with `rendererType: "None"` is a non-rendering proxy /
+        // group node (e.g. the compass `CanvasProxyRoot`). Even when it authors an
+        // ENABLED white background, the engine never paints it — only nodes with a
+        // primitive renderer (`rendererType: "Flash"`, like the compass centre line
+        // and tick shapes) draw their background. Without this gate the compass
+        // screen rendered an opaque white sheet over its dark vignette.
+        let canvas = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.TestRendererTypeNoneBackground",
+            "_RecordValue_": {
+                "size": {"x": 100, "y": 100},
+                "scene": [
+                    {
+                        "_Pointer_": "ptr:1",
+                        "_Type_": "BuildingBlocks_DisplayWidget",
+                        "name": "proxy_root",
+                        "isActive": true,
+                        "rendererType": "None",
+                        "background": {
+                            "enable": true,
+                            "color": {
+                                "_Type_": "BuildingBlocks_ColorSolid",
+                                "color": {"_Type_": "SRGBA8", "r": 255, "g": 255, "b": 255, "a": 255}
+                            }
+                        },
+                        "size": {
+                            "width": {"behavior": "Fixed", "value": 80.0},
+                            "height": {"behavior": "Fixed", "value": 80.0}
+                        }
+                    },
+                    {
+                        "_Pointer_": "ptr:2",
+                        "_Type_": "BuildingBlocks_DisplayWidget",
+                        "name": "flash_line",
+                        "isActive": true,
+                        "rendererType": "Flash",
+                        "background": {
+                            "enable": true,
+                            "color": {
+                                "_Type_": "BuildingBlocks_ColorSolid",
+                                "color": {"_Type_": "SRGBA8", "r": 255, "g": 255, "b": 255, "a": 255}
+                            }
+                        },
+                        "size": {
+                            "width": {"behavior": "Fixed", "value": 10.0},
+                            "height": {"behavior": "Fixed", "value": 80.0}
+                        }
+                    }
+                ],
+                "operations": []
+            }
+        });
+
+        let scene = crate::bb_scene::parse_bb_canvas(&canvas).expect("scene parse");
+        let ir = compile_ui_ir_from_scene(
+            &scene,
+            None,
+            "guid-renderertype-none-background",
+            Some("BuildingBlocks_Canvas.TestRendererTypeNoneBackground"),
+            (100, 100),
+            &defaults(),
+            None,
+            None,
+            &[],
+            Vec::new(),
+            Vec::new(),
+            100,
+        );
+
+        let proxy = ir.nodes.iter().find(|node| node.name == "proxy_root").expect("proxy node");
+        assert_eq!(
+            proxy.background_fill_colour, None,
+            "rendererType:None container must not paint its background (was {:?})",
+            proxy.background_fill_colour
+        );
+        assert_eq!(proxy.background_fill_colour_token, None);
+
+        let flash = ir.nodes.iter().find(|node| node.name == "flash_line").expect("flash node");
+        assert_eq!(
+            flash.background_fill_colour,
+            Some([1.0, 1.0, 1.0, 1.0]),
+            "rendererType:Flash node keeps its authored white background"
+        );
+    }
+
+    #[test]
     fn compile_ir_draws_explicit_background_color_on_disabled_base_background() {
         let canvas = serde_json::json!({
             "_RecordName_": "BuildingBlocks_Canvas.TestExplicitBackgroundColor",

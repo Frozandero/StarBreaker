@@ -2116,6 +2116,21 @@ fn background_fill_alpha_from_raw(
 /// shared `UnSelectedName` entry yet draws no bar in-game). Container widgets
 /// are enabled by a supplied colour (`raw_background_enabled`).
 fn node_background_enabled(node: &crate::bb_scene::BbNode) -> bool {
+    // A node with `rendererType: "None"` is a non-rendering proxy / group widget
+    // (e.g. the compass `CanvasProxyRoot`): the engine paints nothing for it, even
+    // when `background.enable` is authored true with a colour. Only nodes carrying
+    // a primitive renderer (`rendererType: "Flash"` — the compass centre line, tick
+    // shapes, etc.) draw their authored background. Without this gate `CanvasProxyRoot`
+    // rendered an opaque white sheet over the dark compass vignette. Only an EXPLICIT
+    // "None" suppresses; an absent rendererType keeps the normal background rules.
+    if node
+        .raw
+        .get("rendererType")
+        .and_then(|value| value.as_str())
+        .is_some_and(|kind| kind.eq_ignore_ascii_case("None"))
+    {
+        return false;
+    }
     if matches!(node.ty, BbNodeType::WidgetTextField | BbNodeType::WidgetText) {
         let explicit = node
             .raw
