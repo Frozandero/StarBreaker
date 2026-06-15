@@ -1341,3 +1341,69 @@ verified on a `--lod 0` export.
    [done]
 
 All Phase-J items landed; no `[planned]` remainder.
+
+## Arc — g-force / velocity ball parity to platinum (2026-06-15)
+
+### 52. `cover_fit_recentre` drift is INVISIBLE to the TDD-tier guards — only `--full` catches it
+**Observed:** relaxing the `cover_fit_recentre` clamp (to centre the g-force ball,
+which the origin-clamp left ~63px left) silently shifted the aspectOverrides
+door + annunciator too — they get `cover_fit=true` from the screen-mesh override,
+and with `canvas==target` the OLD clamp collapsed to a no-op while the relaxed one
+centred their largest content node (whole-image guard: door 56.9%, annunc 43-57%).
+The fast `ui_check` (IR snapshot + live-IR guards) PASSED — the snapshot freeze
+pipeline does not apply `cover_fit`, so any post-layout rect shift in
+`cover_fit_recentre` is invisible to it. Cost a full release+export+`--full` cycle
+to discover, and a second to confirm the fix.
+**Improvement:** (a) scoped `cover_fit_recentre` to shift ONLY on an axis where the
+cover-scaled canvas OVERFLOWS the target, so aspectOverrides screens (canvas==target)
+are inherently a no-op (code, `e27368f41`); (b) workflow §10 don't-retry bullet:
+anything touching `cover_fit_recentre` / `bb_layout` post-layout rect shifts needs a
+`--full` re-export+visual guard — the TDD tier will not see it.
+**Action:** code fix landed; doc bullet [done — this retro].
+
+### 53. Stale LOCAL visual artifacts masquerade as a regression
+**Observed:** the `--full` guard flagged `clipper_power_master` (1.38%) and
+`clipper_target_master` (<0.5%) — neither touched by this arc. Burned time proving
+it: their IR snapshots were unchanged, neither has a full-circle node (cubic) nor a
+cover-fit path, and `BB_SHRINK_PROBE` showed the shrinkProportion fix doesn't fire
+on them. The diff was a ~2px emissions-header text-top shift baked into the
+*untracked* `test-artifacts/ui/*.png`, which only refresh on freeze, so they had
+drifted from the current render (and from the already-approved IR snapshot, which
+doesn't capture those text nodes).
+**Improvement:** workflow §10 note — a visual-guard failure on a screen your change
+provably can't reach (IR snapshot unchanged + no relevant code path, confirmed with
+the disable→adjudicate discriminators + `BB_SHRINK_PROBE`) is a STALE LOCAL
+artifact, not a regression; re-freeze to sync (owner-gated), don't hunt a phantom
+root cause.
+**Action:** doc note [done — this retro].
+
+### 54. Circular-gauge geometry re-measured with one-off numpy >2x → `ui_gauge_measure.py`
+**Observed:** the arc hand-wrote ≥5 throwaway numpy snippets — centre-dot position +
+circularity (circle vs squircle), cardinal-ring 2D centroids + on-axis perpendicular
+offsets, cross-arm V/H symmetry, and a centre-aligned render|reference montage — all
+generic across the circular HUD gauges.
+**Improvement:** `scripts/ui_gauge_measure.py <render> [reference] [--montage out]`
+emits all of these as JSON (white-dot offset+circularity, cross V/H, per-cardinal
+perp offset + radius fraction) plus the centre-aligned montage. Caveat in its
+docstring: the per-cardinal window can catch an adjacent diagonal marker (the cross
+V/H band metric is the robust one).
+**Action:** tool added [done — this retro]; reference §7 row [done].
+
+### 55. Full-circle corner radius rendered a SQUIRCLE (quadratic corner arcs)
+**Observed:** `rounded_rect_path` used quadratic Bezier corner arcs, which bulge
+toward the corner; a full-radius rect (the centre dot, corner_radius 100 clamped to
+half of a 114.86² node) therefore filled ~8% more than a circle — a visible rounded
+square the owner flagged. Only a circularity-ratio measurement (not eyeballing)
+separated it cleanly.
+**Improvement:** cubic corner arcs (k≈0.5523) for FULL ellipses only (radius consumes
+both half-extents), gated so partial card/border corners keep the quadratic path and
+stay byte-identical to the frozen MFD baselines (`69bb4ffb0`, scoped `e27368f41`).
+**Action:** code fix landed; recorded here.
+
+### Phase K — implementation (2026-06-15, this retro)
+1. `scripts/ui_gauge_measure.py` (item 54) — added + verify-on-write run; reference §7
+   diagnostics row. [done]
+2. Docs: workflow §10 `cover_fit_recentre` `--full` bullet (item 52) + workflow §10
+   stale-local-artifact note (item 53, both in §10). [done]
+3. Code fixes (items 52/54/55) landed during the arc (commits cited above); this phase
+   is tooling + docs only and does not alter render behaviour.

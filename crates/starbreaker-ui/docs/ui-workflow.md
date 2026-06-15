@@ -328,3 +328,19 @@ Flows (commands in the reference doc §2/§7):
   export: re-export `--lod 0`, use `SB_SCREEN_ASPECT_PROBE=1` to confirm, and
   read the *package's own* scene.json + `<helper>_TEX0.png`. Full data model:
   reference §5 *screen-mesh → render aspect*.
+- **`cover_fit_recentre` / post-layout rect shifts are INVISIBLE to the TDD-tier
+  guards — re-run `--full` (ledger 52).** The IR-snapshot freeze pipeline does not
+  apply `cover_fit`, so a change to `cover_fit_recentre` (or any `bb_layout`
+  post-layout translate) does NOT move the snapshot and `ui_check` stays green
+  while the EXPORT render shifts. It also reaches every `cover_fit=true` screen —
+  including the aspectOverrides door/annunciator (their `canvas==target`, so the
+  shift must be gated to axes where the canvas OVERFLOWS the target, else their
+  content moves). After touching it, re-export + `ui_check --full` (the whole-image
+  guard is the only one that sees it).
+- **A `--full` visual-guard failure on a screen your change can't reach = a STALE
+  LOCAL artifact, not a regression (ledger 53).** `test-artifacts/ui/*.png` are
+  untracked and refresh only on freeze, so they drift from the current render
+  (e.g. a prior text-top change). If the failing screen's IR snapshot is unchanged
+  AND it has no code path your change touched (no full-circle node, no cover-fit,
+  `BB_SHRINK_PROBE` shows no relevant shrink), it's a stale artifact — re-freeze to
+  sync (owner-gated, §7), don't chase a phantom root cause.

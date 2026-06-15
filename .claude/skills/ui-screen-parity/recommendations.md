@@ -44,6 +44,21 @@ findings land here in two states, with a lifecycle:
   deferred to avoid churn while the skill is still settling.
 - **Multi-ship generalization unverified** (see Known assumptions) — exercise
   when a second `reference/in-game/` folder exists.
+- **Don't inherit prior "faithful / owner-confirmed / not-flagged" verdicts as
+  settled (2026-06-15 g-force arc).** The opening catalog UNDER-called the screen
+  because it carried the dossier/memory's verdicts forward — "cardinal markers are
+  owner-confirmed circles", residuals "not owner-flagged" — and so missed the
+  marker-position desync, the at-rest "0" readout, and the right-edge line. The
+  user materially expanded the catalog at the confirmation gate (which worked —
+  the gate is the backstop). SKILL.md already says prior open issues "seed but do
+  not replace this pass"; this is the sharper variant: a prior arc's *resolved /
+  acceptable* verdicts are HINTS to re-verify at high zoom against the reference,
+  not conclusions to inherit (the owner's view can evolve, and earlier passes may
+  have under-scrutinized). Consider a catalog-phase line: re-derive each region's
+  verdict from the reference even when memory marks it faithful, and high-zoom the
+  small features (a circle vs squircle, a 57px marker offset) the naked side-by-
+  side hides. Decide whether this needs its own SKILL.md clause or is covered by
+  the existing "look again / measure when unsure".
 
 ## Known assumptions & risks
 
