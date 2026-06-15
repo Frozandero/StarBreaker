@@ -9,7 +9,8 @@ mcp/starbreaker-mcp
 research/
 test-artifacts/
 docs-local/
-.claude/
+.claude/*
+!.claude/skills/
 ships/
 .vscode/
 __pycache__/
