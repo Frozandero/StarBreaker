@@ -71,6 +71,23 @@ findings land here in two states, with a lifecycle:
   note in the autonomous-loop / VFL guidance: "showing the user iterative renders →
   unique filename each time; a 'looks identical' report on a changed file = viewer
   cache, confirm with the printed md5, don't re-tune blind."
+- **"Whack-a-mole scoping" is a proven-blocker signal; converge instead of
+  threading ever-narrower scopes** (master-mode arc 2026-06-16). The font-size and
+  colour fixes each regressed a DIFFERENT frozen `auto` canvas (target master, then
+  compass); every attempt to scope around it (`auto` → `HC_HUD+auto` → tag-match)
+  just regressed the next frozen sibling, because master-mode and the frozen
+  HC_HUD/MC_S `auto` `Heading1` screens are structurally identical but want opposite
+  size/colour. When a candidate fix regresses a frozen baseline AND the obvious
+  structural discriminator (the one that should separate this screen from the frozen
+  family) is FALSIFIED by measurement, that is the proven blocker — stop iterating
+  scopings. Consider a SKILL.md "Default to fixing" note: "if scoping a fix to dodge
+  a frozen regression keeps regressing the NEXT frozen sibling (each scope reveals
+  another), the no-discriminator blocker is proven — surface it, don't keep
+  narrowing." Pairs with ledger 75 (auto-canvas font/colour render drift is
+  whole-image-only — run `--full` before judging an `auto`/HC_HUD experiment clean;
+  `ui_check` live-IR misses it). Note also: I showed the user an iterative render via
+  the FIXED `ui_render.sh` path — the existing unique-filename rec above applies and
+  was not yet followed.
 
 ## Known assumptions & risks
 
