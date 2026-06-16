@@ -50,24 +50,27 @@ pub fn parse_skin_positioned(mesh_data: &[u8], nmc_data: &[u8]) -> Result<Mesh, 
 /// triangles begin** (so the renderer can draw them at a reduced alpha).
 ///
 /// Mirrors the engine's SELF-STATUS shield render (`UIHoloVehicle_Config`:
-/// `shieldProxyModel` = the `shield_pane.cgf` curved unit pane, placed around
-/// the hull). The decoded `shield_pane` is FLAT in its local X-Y plane (width
-/// X, height Y) with a shallow dome bulging along +Z (its normal). Each of the
-/// 4 faces stands the pane up (width → horizontal tangent, height → world up,
-/// dome → outward), then rotates it about the vertical axis by 0/90/180/270°
-/// so the faces are identical and the rear is the front rotated 180°.
+/// `shieldProxyModel` = the generic `shield_pane.cgf`, `shieldDistance` = how
+/// much of the shield box the hull fills). The decoded `shield_pane` is FLAT in
+/// its local X-Y plane (width X, height Y) with a shallow dome bulging along +Z
+/// (its normal). Each of the 4 faces stands the pane up (width → horizontal
+/// tangent, height → world up, dome → outward), then rotates it about the
+/// vertical axis by 0/90/180/270° so the faces are identical and the rear is
+/// the front rotated 180°.
 ///
-/// Layout (X = hull length, Y = width, Z = height):
-/// * The 4 faces form a SQUARE box of half-side `off = half_larger + margin`,
-///   where `half_larger` is the larger horizontal half-extent and
-///   `margin = shield_distance × (full larger dimension)` (e.g. `0.15` = a 15%
-///   gap between the hull's outer bound and the shield — no intersection).
-/// * Each pane spans only `SPAN_FRAC` of the square side, centred, so adjacent
-///   faces leave a gap at the corners (4 distinct faces, not a closed box).
-/// * Wall height = `HEIGHT_MULT × hull height`, centred on the hull centre line
-///   (50% above / 50% below).
+/// Layout is derived ENTIRELY from the hull bounding box + `shield_distance`
+/// (no invented per-screen constants); X = hull length, Y = width, Z = height:
+/// * Each wall is sized to the hull's SILHOUETTE on its face — front/rear walls
+///   span the hull width (Y) × height (Z); port/starboard span the hull length
+///   (X) × height (Z). The box is therefore PROPORTIONED to the hull, not a
+///   forced square.
+/// * Each wall sits at `hull_half × (1 + shield_distance)` along its outward
+///   normal — i.e. `shield_distance` (e.g. 0.85) is the gap beyond the hull as
+///   a fraction of that half-extent, so the box is markedly larger than the
+///   hull. The hull-silhouette-sized wall is narrower than the (larger) box
+///   face, so the margin appears as a GAP at every corner.
 /// The engine derives exact faces from the ship's shield component; this is the
-/// generic UI-proxy approximation.
+/// generic UI-proxy approximation the MFD hologram uses.
 pub fn with_shield_panes(mut ship: Mesh, pane: &Mesh, shield_distance: f32) -> (Mesh, usize) {
     let ship_index_count = ship.indices.len();
     if pane.positions.is_empty() || ship.positions.is_empty() {
@@ -95,31 +98,33 @@ pub fn with_shield_panes(mut ship: Mesh, pane: &Mesh, shield_distance: f32) -> (
     let pane_w = (phi[0] - plo[0]).max(1e-4); // local x extent (width)
     let pane_h = (phi[1] - plo[1]).max(1e-4); // local y extent (height)
 
-    // Square box half-side and 15%-style margin off the larger horizontal dim.
-    let half_larger = half[0].max(half[1]);
-    let margin = shield_distance.max(0.0) * 2.0 * half_larger;
-    let off = half_larger + margin; // square half-side (pane rim offset)
-    const SPAN_FRAC: f32 = 0.8; // face spans 80% of the side → corner gaps
-    const HEIGHT_MULT: f32 = 2.0; // wall = 2× hull height, centred
-
-    let full_span = SPAN_FRAC * 2.0 * off; // pane width in world units
-    let wall_height = HEIGHT_MULT * 2.0 * half[2];
-    let scale_w = full_span / pane_w; // local x (width) → world tangent span
+    // `shieldDistance` = the gap beyond the hull as a fraction of the half-
+    // extent; the box face along each axis sits at hull_half × (1 + sd).
+    let sd = shield_distance.clamp(0.0, 5.0);
+    // Each wall covers the hull silhouette on its face (height = hull height).
+    let wall_height = 2.0 * half[2];
     let scale_h = wall_height / pane_h; // local y (height) → world up
-    // Keep the dome's native curvature proportion relative to width (so the
-    // spherical cap isn't flattened or exaggerated — the warp came from scaling
-    // the tiny depth axis to fill the height).
-    let scale_d = scale_w;
 
     // Combined rotation R(θ) = Rz(θ)·R0, where R0 stands the pane up (local
     // width→world +Y, height→world +Z, dome/normal→world +X) and Rz(θ) spins it
-    // about the vertical axis. Outward normal n(θ) = (cosθ, sinθ, 0).
+    // about the vertical axis. Outward normal n(θ) = (cosθ, sinθ, 0): quarters
+    // 0/2 face ±X (normal axis X, tangent Y), 1/3 face ±Y (normal Y, tangent X).
     for quarter in 0..4 {
         let theta = std::f32::consts::FRAC_PI_2 * quarter as f32;
         let (s, co) = theta.sin_cos();
+        let on_x = quarter % 2 == 0;
+        let normal_half = if on_x { half[0] } else { half[1] };
+        let tangent_half = if on_x { half[1] } else { half[0] };
+        let offset = normal_half * (1.0 + sd); // box-face distance along the normal
+        let wall_width = 2.0 * tangent_half; // hull silhouette span
+        let scale_w = wall_width / pane_w; // local x (width) → world tangent
+        // Keep the dome's native curvature proportion relative to width (so the
+        // spherical cap isn't flattened or exaggerated — the earlier warp came
+        // from scaling the tiny depth axis to fill the height).
+        let scale_d = scale_w;
         // R rows (see doc): [[-s,0,co],[co,0,s],[0,1,0]].
         let r = [[-s, 0.0, co], [co, 0.0, s], [0.0, 1.0, 0.0]];
-        let centre = [c[0] + off * co, c[1] + off * s, c[2]];
+        let centre = [c[0] + offset * co, c[1] + offset * s, c[2]];
         let base = ship.positions.len() as u32;
         for p in &pane.positions {
             // Scale in pane-local space; shift the dome so its rim (z_min) sits
@@ -423,13 +428,14 @@ mod nmc_flatten_tests {
         }
     }
 
-    /// The 4 shield panes form a SQUARE box clear of the hull (15% margin off
-    /// the larger horizontal dimension), 2× the hull height centred on it, with
-    /// a corner gap, and the returned boundary marks the first shield triangle.
-    /// Guards the pane-axis fix (the pane is flat in X-Y, dome along +Z — a
-    /// previous version mis-took it as flat in Y-Z and warped the faces).
+    /// The 4 shield panes form a box PROPORTIONED to the hull (front/rear walls
+    /// span the hull width, port/starboard span the hull length — NOT a square),
+    /// each wall at `hull_half / shieldDistance` (hull fills `shieldDistance` of
+    /// the box → corner gaps), sized to the hull silhouette, clear of the hull.
+    /// Guards both the pane-axis fix (flat X-Y, dome +Z) and the data-grounded
+    /// (bbox + shieldDistance) placement that replaced the invented square box.
     #[test]
-    fn shield_panes_form_square_box_clear_of_hull() {
+    fn shield_panes_form_proportioned_box_clear_of_hull() {
         // Hull bbox ±(10, 5, 2): half = (10, 5, 2), centred at the origin.
         let ship = bare_mesh(vec![[-10.0, -5.0, -2.0], [10.0, 5.0, 2.0], [0.0, 0.0, 0.0]], vec![0, 1, 2]);
         // Flat unit pane in X-Y (width 1, height 1) with a +Z dome (rim at z=0).
@@ -437,28 +443,42 @@ mod nmc_flatten_tests {
             vec![[-0.5, -0.5, 0.0], [0.5, -0.5, 0.0], [0.5, 0.5, 0.1], [-0.5, 0.5, 0.1]],
             vec![0, 1, 2, 0, 2, 3],
         );
-        let (merged, boundary) = with_shield_panes(ship, &pane, 0.15);
+        let sd = 0.85_f32;
+        let (merged, boundary) = with_shield_panes(ship, &pane, sd);
 
         // Shield triangles begin right after the hull indices; 4 faces appended.
         assert_eq!(boundary, 3, "boundary = original hull index count");
         assert_eq!(merged.positions.len(), 3 + 4 * 4, "4 faces × 4 pane verts");
         assert_eq!(merged.indices.len(), 3 + 4 * 6, "4 faces × 6 pane indices");
 
-        // half_larger = 10, margin = 0.15 × 2 × 10 = 3 → square half-side off = 13.
-        let off = 13.0_f32;
-        let shield = &merged.positions[3..];
-        // No intersection: every shield vert sits at/beyond the box rim
-        // (max(|x|,|y|) ≥ off), clearing the hull (horizontal extent ±10).
-        for p in shield {
-            let reach = p[0].abs().max(p[1].abs());
-            assert!(reach >= off - 1e-3, "shield vert {p:?} intrudes inside the box (reach {reach})");
-        }
-        // Corner gap: the first face's (+X) tangential (Y) span stays inside the
-        // square half-side, so adjacent faces don't meet at the corners.
-        let max_tangent = merged.positions[3..7].iter().map(|p| p[1].abs()).fold(0.0, f32::max);
-        assert!(max_tangent < off, "corner gap: +X face Y-span {max_tangent} < off {off}");
-        // Wall height = 2× hull height (=8) centred on z=0 → half-height ~4.
-        let max_z = shield.iter().map(|p| p[2].abs()).fold(0.0, f32::max);
-        assert!((max_z - 4.0).abs() < 1e-2, "wall half-height ~4, got {max_z}");
+        // Front wall (+X, quarter 0 = verts[3..7]): rim at half_x×(1+sd), spans
+        // the hull WIDTH (2 × half_y = 10) along Y.
+        let front = &merged.positions[3..7];
+        let front_rim = front.iter().map(|p| p[0]).fold(f32::MAX, f32::min);
+        assert!((front_rim - 10.0 * (1.0 + sd)).abs() < 0.2, "front rim at half_x×(1+sd), got {front_rim}");
+        assert!(front_rim > 10.0, "front wall clears the hull (x > 10)");
+        let front_w = span(front, 1);
+        assert!((front_w - 10.0).abs() < 0.1, "front wall width = hull width (2×5), got {front_w}");
+
+        // Port wall (+Y, quarter 1 = verts[7..11]): rim at half_y×(1+sd), spans
+        // the hull LENGTH (2 × half_x = 20) along X.
+        let port = &merged.positions[7..11];
+        let port_rim = port.iter().map(|p| p[1]).fold(f32::MAX, f32::min);
+        assert!((port_rim - 5.0 * (1.0 + sd)).abs() < 0.2, "port rim at half_y×(1+sd), got {port_rim}");
+        assert!(port_rim > 5.0, "port wall clears the hull (y > 5)");
+        let port_w = span(port, 0);
+        assert!((port_w - 20.0).abs() < 0.1, "port wall width = hull length (2×10), got {port_w}");
+
+        // PROPORTIONED, not square: the two wall widths differ.
+        assert!((front_w - port_w).abs() > 1.0, "box is proportioned to the hull, not square");
+        // Wall height = hull height (2 × half_z = 4) centred on z=0 → ±2.
+        let max_z = merged.positions[3..].iter().map(|p| p[2].abs()).fold(0.0, f32::max);
+        assert!((max_z - 2.0).abs() < 1e-2, "wall half-height = hull half-height ~2, got {max_z}");
+    }
+
+    fn span(verts: &[[f32; 3]], axis: usize) -> f32 {
+        let mn = verts.iter().map(|p| p[axis]).fold(f32::MAX, f32::min);
+        let mx = verts.iter().map(|p| p[axis]).fold(f32::MIN, f32::max);
+        mx - mn
     }
 }

@@ -47,26 +47,34 @@ impl P4kHologramFetcher<'_> {
         Some(datacore_path_to_p4k(&geom_path))
     }
 
-    /// Resolve and decode the generic shield-face proxy mesh
-    /// (`UIHoloVehicle_Config.shieldProxyModel`, a curved unit pane shared by
-    /// every ship's SELF-STATUS hologram). Returns `None` if the config record
-    /// or its asset is unavailable. Data-driven: the path comes from DataCore,
-    /// not a hard-coded asset reference.
-    fn shield_pane_mesh(&self) -> Option<crate::Mesh> {
+    /// Resolve the generic shield-face proxy mesh + its placement distance from
+    /// the global `UIHoloVehicle_Config` record: `shieldProxyModel` (a curved
+    /// unit pane shared by every ship's SELF-STATUS hologram) and
+    /// `shieldDistance` (the fraction of the shield box the hull fills). Returns
+    /// `None` if the config record or its asset is unavailable. Fully
+    /// data-driven — both the asset path and the distance come from DataCore,
+    /// not hard-coded values.
+    fn shield_proxy(&self) -> Option<(crate::Mesh, f32)> {
         let record = self.db.records_by_type_name("UIHoloVehicle_Config").next()?;
-        let compiled = self
+        let model_path = self
             .db
             .compile_path::<String>(record.struct_id(), "shieldProxyModel")
             .ok()?;
-        let proxy = self.db.query_single::<String>(&compiled, record).ok()??;
+        let proxy = self.db.query_single::<String>(&model_path, record).ok()??;
+        let dist_path = self
+            .db
+            .compile_path::<f32>(record.struct_id(), "shieldDistance")
+            .ok()?;
+        let shield_distance = self.db.query_single::<f32>(&dist_path, record).ok()??;
         let p4k_path = datacore_path_to_p4k(&proxy);
         let companion = format!("{p4k_path}m");
-        match (self.p4k.read_file(&companion), self.p4k.read_file(&p4k_path)) {
-            (Ok(verts), Ok(primary)) => crate::parse_skin_positioned(&verts, &primary).ok(),
-            (Ok(verts), Err(_)) => crate::parse_skin(&verts).ok(),
-            (Err(_), Ok(primary)) => crate::parse_skin(&primary).ok(),
-            (Err(_), Err(_)) => None,
-        }
+        let mesh = match (self.p4k.read_file(&companion), self.p4k.read_file(&p4k_path)) {
+            (Ok(verts), Ok(primary)) => crate::parse_skin_positioned(&verts, &primary).ok()?,
+            (Ok(verts), Err(_)) => crate::parse_skin(&verts).ok()?,
+            (Err(_), Ok(primary)) => crate::parse_skin(&primary).ok()?,
+            (Err(_), Err(_)) => return None,
+        };
+        Some((mesh, shield_distance))
     }
 }
 
@@ -92,18 +100,16 @@ impl HologramFetcher for P4kHologramFetcher<'_> {
         if mesh.positions.is_empty() || mesh.indices.len() < 3 {
             return None;
         }
-        // Wrap the hull in 4 shield faces forming a square box around it (15%
-        // margin off the larger horizontal dimension, 2× the hull height,
-        // gaps at the corners). The proxy mesh is data-driven; the margin and
-        // alpha scale are SELF-STATUS framing choices, like the camera angles
-        // below. `shield_index_start` marks where the shield triangles begin so
-        // the renderer can fade them relative to the hull.
-        const SELF_STATUS_SHIELD_MARGIN_FRAC: f32 = 0.15;
+        // Wrap the hull in 4 shield faces forming a box PROPORTIONED to the
+        // hull, placed via the data-driven `shieldDistance` (the hull fills that
+        // fraction of the box → natural corner gaps). The proxy mesh + distance
+        // both come from `UIHoloVehicle_Config`; only the fainter alpha is a
+        // SELF-STATUS framing choice. `shield_index_start` marks where the
+        // shield triangles begin so the renderer can fade them vs the hull.
         const SELF_STATUS_SHIELD_ALPHA_SCALE: f32 = 0.5;
-        let shield_index_start = match self.shield_pane_mesh() {
-            Some(pane) if !pane.positions.is_empty() => {
-                let (merged, boundary) =
-                    crate::with_shield_panes(mesh, &pane, SELF_STATUS_SHIELD_MARGIN_FRAC);
+        let shield_index_start = match self.shield_proxy() {
+            Some((pane, shield_distance)) if !pane.positions.is_empty() => {
+                let (merged, boundary) = crate::with_shield_panes(mesh, &pane, shield_distance);
                 mesh = merged;
                 Some(boundary)
             }
@@ -118,7 +124,9 @@ impl HologramFetcher for P4kHologramFetcher<'_> {
         // reference, not a layout fudge.
         const SELF_STATUS_YAW_DEG: f32 = 0.0;
         const SELF_STATUS_TILT_BACK_DEG: f32 = -30.0;
-        const SELF_STATUS_FIT: f32 = 0.5;
+        // The whole hologram (hull + shield box) fills the WidgetRuntimeImage
+        // rect (down to just above the footer), leaving a thin margin.
+        const SELF_STATUS_FIT: f32 = 0.95;
         // Filled, shaded faces only (no wireframe) with a strong perspective so
         // the flat hull reads as an angled 3D hologram rather than a top-down
         // silhouette.
