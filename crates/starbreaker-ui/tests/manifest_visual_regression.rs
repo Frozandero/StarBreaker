@@ -131,7 +131,14 @@ fn manifest_snapshot_runner_preflight() {
 #[test]
 fn manifest_contains_expected_visual_targets() {
     let manifest = snapshot_manifest();
-    assert_eq!(manifest.targets.len(), 11, "expected eleven manifest targets");
+    assert_eq!(manifest.targets.len(), 12, "expected twelve manifest targets");
+    assert!(
+        manifest
+            .targets
+            .iter()
+            .any(|target| target.id == "clipper_self_master"),
+        "self-status hologram should be in the gold manifest set"
+    );
     assert!(
         manifest
             .targets

@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "frozen_at": "2026-06-16T00:09:45Z",
+  "frozen_at": "2026-06-16T16:15:33Z",
   "approver": "owner",
-  "reason": "Onboard clipper_compass_master GOLD: compass heading labels now s_drak_hud HUD typography (audimatmono-regular/Accent2, field-height verbatim font). g-force HUD typography corrected (nodes 28/29/39 bold->regular, node 29 Bright->Accent2; off-screen at-rest readouts, visually unchanged).",
+  "reason": "Onboard clipper_self_master GOLD: origin-centred SELF-STATUS hologram framing (hull ~65% of its longest image axis, full-screen render top-to-footer, proportioned data-driven shield box bowing outward, generic across hull aspects).",
   "signature": null,
   "manifest_path": "crates/starbreaker-ui/tests/fixtures/ui_ir/ui_snapshot_manifest.json",
   "artifacts": [
@@ -114,6 +114,16 @@
       "sha256": "a1734c56d917df90e50bb999ed701bbd5aaf98851ddf7d49d67fe306a4cd1b56",
       "width": 1920,
       "height": 587,
+      "channels": "srgba"
+    },
+    {
+      "id": "clipper_self_master",
+      "tier": "gold",
+      "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_mc_s_self_master.png",
+      "artifact_path": "test-artifacts/ui/clipper_self_master.png",
+      "sha256": "b41ff9ab40cc0cb1f54ddafca0ad9c08ac3f7eb04b27ad980269873b8adf5686",
+      "width": 1600,
+      "height": 1200,
       "channels": "srgba"
     }
   ]
