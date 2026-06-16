@@ -48,7 +48,17 @@ fn main() {
                     lo[0], lo[1], lo[2], hi[0], hi[1], hi[2],
                     hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2],
                 );
-                let (merged, boundary) = starbreaker_3d::with_shield_panes(mesh, &pane, dist);
+                let hull_vtx = mesh.positions.len();
+                let (mut merged, boundary) = starbreaker_3d::with_shield_panes(mesh, &pane, dist);
+                // Simulate the SELF-STATUS shield-box scale (HOLO_SHIELD_SCALE).
+                let box_scale: f32 = env::var("HOLO_SHIELD_SCALE").ok().and_then(|s| s.parse().ok()).unwrap_or(1.0);
+                if (box_scale - 1.0).abs() > 1e-4 {
+                    for p in merged.positions.iter_mut().skip(hull_vtx) {
+                        p[0] *= box_scale;
+                        p[1] *= box_scale;
+                        p[2] *= box_scale;
+                    }
+                }
                 mesh = merged;
                 shield_index_start = Some(boundary);
             }

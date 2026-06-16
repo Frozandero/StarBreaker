@@ -131,29 +131,42 @@ pub fn render_vehicle_hologram(
         })
         .collect();
 
-    // 2. Fit to the HULL extent (the shield panes are excluded from the fit so
-    //    they frame the hull near the edges rather than shrinking it). The fit is
-    //    measured about the model ORIGIN — which projects to (0, 0) — so the hull
-    //    extent on the farther side of the origin sets the scale and `fit` is the
-    //    fraction of the frame the hull's longest axis fills.
+    // 2. Fit about the model ORIGIN (which projects to (0, 0), so the origin
+    //    lands at the image centre). Two competing constraints, take the smaller
+    //    scale of the two — this is what makes the framing GENERIC across hulls of
+    //    any aspect:
+    //      • HULL fit: the hull's longest axis fills `fit` of the frame (the
+    //        shields are excluded so they don't shrink the hull).
+    //      • BOX fit: the hull + shields must stay inside `BOX_FIT` of the frame
+    //        so the shield cage never clips — binds only when the shields would
+    //        otherwise overflow (e.g. a hull whose aspect differs from the frame).
+    //    For a hull that frames comfortably the HULL fit wins (target size); for
+    //    an awkward aspect the BOX fit wins (hull shrinks so the shields fit).
     let shield_start = params.shield_index_start.unwrap_or(usize::MAX);
     let hull_end = shield_start.min(indices.len());
-    let (mut ext_x, mut ext_y) = (1e-6_f32, 1e-6_f32);
+    let (mut hull_x, mut hull_y) = (1e-6_f32, 1e-6_f32);
+    let (mut box_x, mut box_y) = (1e-6_f32, 1e-6_f32);
+    for p in &proj {
+        box_x = box_x.max(p[0].abs());
+        box_y = box_y.max(p[1].abs());
+    }
     if hull_end >= 3 {
         for &vi in &indices[0..hull_end] {
             if let Some(p) = proj.get(vi as usize) {
-                ext_x = ext_x.max(p[0].abs());
-                ext_y = ext_y.max(p[1].abs());
+                hull_x = hull_x.max(p[0].abs());
+                hull_y = hull_y.max(p[1].abs());
             }
         }
     } else {
-        for p in &proj {
-            ext_x = ext_x.max(p[0].abs());
-            ext_y = ext_y.max(p[1].abs());
-        }
+        hull_x = box_x;
+        hull_y = box_y;
     }
     let fit = params.fit.clamp(0.05, 1.0);
-    let scale = ((width as f32 * fit * 0.5) / ext_x).min((height as f32 * fit * 0.5) / ext_y);
+    const BOX_FIT: f32 = 0.98; // shields stay within 98% of the frame (never clip)
+    let scale = ((width as f32 * fit * 0.5) / hull_x)
+        .min((height as f32 * fit * 0.5) / hull_y)
+        .min((width as f32 * BOX_FIT * 0.5) / box_x)
+        .min((height as f32 * BOX_FIT * 0.5) / box_y);
     let cx = 0.0;
     let cy_mid = 0.0;
     let half_w = width as f32 * 0.5;
