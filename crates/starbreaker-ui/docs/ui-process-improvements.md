@@ -1739,3 +1739,53 @@ the only structurally-capturable elements (the text). Re-freeze the IR snapshot 
 And ALWAYS bump the hard-coded `manifest_contains_expected_visual_targets` count
 (11→12) + add an id assertion when adding a manifest target.
 **Action:** `95a117213`; dossier self_master row + the count guard updated.
+
+### 74. Reading brand colour data: map `colorStyles` by the REAL `BB_ColorStyle` enum, and FillColor modifiers are `BuildingBlocks_FieldModifierColor` + string `field:"FillColor"`
+**Observed:** the master-mode colour diagnosis cost two detours from mis-reading the data.
+(1) Dumping a brand Style record's `colorStyles` array and LABELLING the indices
+`Base/Accent1/Accent2/…` (a guessed sequence) gave "s_drak_hud Accent2 = (255,158,57)";
+the rendered SCM was (222,88,3), so I wrongly chased an "Accent5" mismatch. The real index
+order is the `BB_ColorStyle` enum (`bb_colour_style_enum_index`): Base=0, Positive=1,
+Moderate=2, Critical=3, Accent1=4, **Accent2=5**, Bright=6, Selected=7, Disabled=8… —
+so `colorStyles[5]` IS Accent2 = (222,88,3). (2) Grepping a standard text-style entry's
+modifiers for a Fill colour by testing `field._Type_ contains "Fill"` MISSED the FillColor:
+a colour modifier is `{"_Type_":"BuildingBlocks_FieldModifierColor","field":"FillColor",
+"color":{...,"color":"Accent2"}}` — `field` is the STRING `"FillColor"`, and the role is
+under `color.color`. I concluded "H1 has no FillColor" and theorised a render-time default
+that didn't exist.
+**Improvement (doc):** when reading a brand palette, index `colorStyles` via the
+`bb_colour_style_enum_index` table (Base=0…Accent2=5…Bright=6), never a guessed
+Accent1/2/3 run. When scanning style-entry modifiers for a colour, match the STRING
+`field=="FillColor"` (`BuildingBlocks_FieldModifierColor`) and read `color.color` for the
+role — not a typed `*Fill*` `_Type_`. The MCP `ui_ir_query --fields text_style` dumps the
+RESOLVED `colour`/`colour_token` directly (it did here: `colour_token:"Accent2"`,
+`colour:[0.87,0.34,0.01]`) — prefer it over hand-parsing the palette + modifiers.
+**Action:** doc note here; no code change (the resolvers already use the correct enum).
+
+### 75. `coordinateMethod=auto` font/colour render changes are WHOLE-IMAGE-only (invisible to `ui_check` live-IR) — run `--full` before judging an auto-canvas experiment "clean"; and master-mode's text size+colour are proven frozen-family blockers
+**Observed:** the master-mode display authors `coordinateMethod=auto` with a fixed
+`Heading1`=60 text (no autoFontSize/scale/Percent-height); the reference cap is ~14%
+(icon-calibrated: the geom icon is 28%) ≈ ~340px. Two experiments to close the size and
+colour gaps each passed `ui_check` (lib + live-IR guard GREEN) but REGRESSED a different
+frozen `auto` canvas, caught only by `ui_check --full`'s whole-image guard (after a fresh
+export): (a) "auto cards fill + render-side autoFontSize" pushed SCM to ~20% but moved
+`clipper_target_master` (MC_S, also `auto`) 7.4% — the IR snapshot doesn't apply
+autoFontSize/post-layout fills (ledger 52), so live-IR stayed green; (b) gating the
+standard text colour on the entry's condition TAG (the `s_drak_hud` H1 `FillColor:Accent2`
+is conditioned on tag `c6348321fe4c`, which master-mode's `Heading1` lacks) turned SCM
+white but turned the frozen COMPASS labels white too — the compass's derived HC_HUD+`auto`
+`Heading1` labels carry non-H1 tags (`21788313`/`97f6322f`) and MUST stay Accent2-orange.
+master-mode and the compass/target/self are structurally identical (HC_HUD/MC_S `auto`
+`Heading1`, non-matching tags) but want OPPOSITE size/colour — **no clean structural
+discriminator**; the by-name colour resolution is load-bearing for the frozen screens, and
+`auto`/`HC_HUD+auto` scoping is whack-a-mole (each scope regresses another frozen baseline).
+Both are documented proven blockers (the standalone-data evidence: `coordinateMethod` per
+variant, the `colorStyles` enum, the standard entry tags).
+**Improvement (process):** (1) any change touching `coordinateMethod=auto` or HC_HUD text
+sizing/colour MUST re-export + `ui_check --full` before being called clean — `ui_check`
+alone (live-IR) misses render-only drift on sibling `auto` canvases. (2) Don't re-attempt
+the master-mode auto-font-scale or colour-tag-gating: documented proven blockers (this
+ledger + dossier) — a future fix needs a decoded engine `auto`-coordinate scale and a
+real tag/colour discriminator, not the regressing heuristics tried here.
+**Action:** experiments reverted (committed state D1/D2/D3a `--full` GREEN); dossier
+master-mode row + this ledger document the blockers.
