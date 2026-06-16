@@ -129,7 +129,8 @@
     "flightController.forwardVelocity": 0.0,
     "FlightController/ForwardBackSpeedGoal": 0.0,
     "flightcontroller.totalgforceamount": 0.0,
-    "FlightController/Compass/Ticks": 0
+    "FlightController/Compass/Ticks": 0,
+    "controllablemanager/mastermode": 2
   },
   "localization": {
     "hud_notarget": "NO TARGET",
