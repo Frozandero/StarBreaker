@@ -71,14 +71,14 @@ impl HologramFetcher for P4kHologramFetcher<'_> {
             return None;
         }
         // SELF-STATUS framing, calibrated to the in-game reference: yaw 0°
-        // (nose pointing AWAY / up the frame), tilted a gentle 20° back from
-        // top-down with perspective (nose dips away), filling roughly half the
-        // diagram area. Semi-transparent faces (low alpha) so overlapping
-        // panels read as a see-through hologram. The engine camera FOV/distance
-        // for the runtime primitive isn't decoded, so these are a view choice
-        // matched to the reference, not a layout fudge.
+        // (nose pointing AWAY / up the frame), pitched -30° so the nose dips
+        // DOWN, with perspective, filling roughly half the diagram area.
+        // Semi-transparent faces (low alpha) so overlapping panels read as a
+        // see-through hologram. The engine camera FOV/distance for the runtime
+        // primitive isn't decoded, so these are a view choice matched to the
+        // reference, not a layout fudge.
         const SELF_STATUS_YAW_DEG: f32 = 0.0;
-        const SELF_STATUS_TILT_BACK_DEG: f32 = 20.0;
+        const SELF_STATUS_TILT_BACK_DEG: f32 = -30.0;
         const SELF_STATUS_FIT: f32 = 0.5;
         // Filled, shaded faces only (no wireframe) with a strong perspective so
         // the flat hull reads as an angled 3D hologram rather than a top-down
