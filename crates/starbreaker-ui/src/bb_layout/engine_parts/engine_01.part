@@ -1359,21 +1359,33 @@ fn layout_flex_no_grow_children(
                 && axis_just.eq_ignore_ascii_case("Center")
                 && matches!(
                     node.sizing.height,
-                    BbValue::Other { value, ref behavior } if behavior == "Auto" && value > 1.0
+                    BbValue::Other { value, ref behavior }
+                        if behavior == "Auto"
+                            && (value > 1.0
+                                || (value >= 1.0 && matches!(node.ty, BbNodeType::WidgetCard)))
                 )
                 && let Some(intrinsic) =
                     auto_text_intrinsic_main(child_id, scene, csy, false)
             {
-                // Text-backed NON-ZERO Auto-hint (>1.0) children in a
-                // CENTER-justified column fit their measured TEXT content, like
-                // the 0.0 pure-hint case above. The velocity-num HUD
-                // (HC_HUD_Ship_Velocity_Num_Master) stacks two such WidgetCards
-                // — each wrapping one readout text field ("0m/s", "0.0 G") — in
-                // a Column(axisJustification=Center); the fill placement made
-                // both cards full-canvas height and overlapping, dumping the
-                // glyphs in the top-left corner. Scoped to axisJustification ==
-                // Center so the medical header (its column is NOT center-
-                // justified) keeps the fill its platinum pins (workflow §10).
+                // Text-backed Auto-hint children in a CENTER-justified column fit
+                // their measured TEXT content, like the 0.0 pure-hint case above
+                // and the (0,1.0) fraction case in `normalized_auto`. The
+                // velocity-num HUD (HC_HUD_Ship_Velocity_Num_Master) stacks two
+                // such WidgetCards — each wrapping one readout text field ("0m/s",
+                // "0.0 G", value 64). The master-mode display
+                // (HC_HUD_Ship_Master_Mode_Display_Master) stacks "SCM" / submode
+                // WidgetCards at value EXACTLY 1.0; the fill placement made both
+                // cards full-canvas height and overlapping (the big grey box).
+                //
+                // Discriminator for the value==1.0 boundary: only a WidgetCard
+                // (a content WRAPPER that should hug its text) takes the `>= 1.0`
+                // extension. A BARE WidgetTextField at value==1.0 keeps the fill
+                // fallback — the power screen's gold "2 / 16" readout
+                // (`564/565:widget_text_field`) lives in a center-justified column
+                // too but is authored Top/Left-aligned to fill its slot; content-
+                // fitting it re-centred the text +101px (live-IR guard caught it).
+                // Scoped to axisJustification == Center so the medical header (its
+                // column is NOT center-justified) keeps its platinum fill (§10).
                 h = intrinsic;
                 auto_main = false;
             } else if is_row {
@@ -1390,10 +1402,15 @@ fn layout_flex_no_grow_children(
         // fit stacks them. Same axisJustification == Center scope as the
         // main-axis intrinsic above, so no frozen screen is reached.
         if axis_just.eq_ignore_ascii_case("Center") {
+            // value==1.0 only for a WidgetCard wrapper (see the main-axis gate
+            // above); bare fields at 1.0 keep the fill so the power "2 / 16"
+            // readout is untouched.
+            let is_card = matches!(node.ty, BbNodeType::WidgetCard);
+            let cross_auto_ok = |value: f32| value > 1.0 || (value >= 1.0 && is_card);
             let cross_is_nonzero_auto = if is_row {
-                matches!(node.sizing.height, BbValue::Other { value, ref behavior } if behavior == "Auto" && value > 1.0)
+                matches!(node.sizing.height, BbValue::Other { value, ref behavior } if behavior == "Auto" && cross_auto_ok(value))
             } else {
-                matches!(node.sizing.width, BbValue::Other { value, ref behavior } if behavior == "Auto" && value > 1.0)
+                matches!(node.sizing.width, BbValue::Other { value, ref behavior } if behavior == "Auto" && cross_auto_ok(value))
             };
             if cross_is_nonzero_auto {
                 if is_row {

@@ -2502,6 +2502,56 @@ mod flex_shrink_tests {
         );
     }
 
+    /// A CENTER-justified column's Auto card with fallback value EXACTLY 1.0
+    /// content-fits its text — closing the `(0,1.0)`-vs-`>1.0` gap. The
+    /// master-mode display (`HC_HUD_Ship_Master_Mode_Display_Master`) stacks two
+    /// `WidgetCard`s (each wrapping one readout: "SCM" / submode) authored `Auto`
+    /// value 1.0 on both axes; the `(0,1.0)` path needs `< 1.0` and the
+    /// velocity-num path `> 1.0`, so 1.0 fell to the fill `else`, leaving both
+    /// cards full-height and overlapping (the big grey box). Center-scoped, so
+    /// the medical column (not center-justified) keeps its platinum fill (§10).
+    #[test]
+    fn center_column_auto_value_one_card_content_fits_text() {
+        let card = |ptr: &str, name: &str, txt_ptr: &str, name2: &str, txt: &str| {
+            serde_json::json!([
+                {"_Pointer_": ptr, "_Type_": "BuildingBlocks_WidgetCard", "name": name,
+                 "parent": "_PointsTo_:ptr:1", "isActive": true,
+                 "sizing": {"width": {"value": 1.0, "behavior": "Auto"}, "height": {"value": 1.0, "behavior": "Auto"}}},
+                {"_Pointer_": txt_ptr, "_Type_": "BuildingBlocks_WidgetTextField", "name": name2,
+                 "parent": format!("_PointsTo_:{ptr}"), "isActive": true,
+                 "_ResolvedText_": txt, "_DrawTextWidthPx_": 90.0, "_DrawTextHeightPx_": 40.0, "text": txt,
+                 "fontSize": {"value": 40.0, "behavior": "Fixed"},
+                 "sizing": {"width": {"value": 1.0, "behavior": "Auto"}, "height": {"value": 1.0, "behavior": "Auto"}}}
+            ])
+        };
+        let mut scene_nodes = vec![serde_json::json!(
+            {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget", "name": "base_TextColumn", "isActive": true,
+             "layoutPolicy": {"_Type_": "BuildingBlocks_FlexContainer", "direction": "Column",
+                              "axisJustification": "Center", "crossAxisJustification": "Center"},
+             "sizing": {"width": {"value": 1.0, "behavior": "Percent"}, "height": {"value": 1.0, "behavior": "Percent"}}})];
+        for n in card("ptr:2", "card_CurrentModeText", "ptr:3", "text_CurrentMode", "SCM").as_array().unwrap() {
+            scene_nodes.push(n.clone());
+        }
+        for n in card("ptr:4", "card_SubModeText", "ptr:5", "text_SubMode", "NAV").as_array().unwrap() {
+            scene_nodes.push(n.clone());
+        }
+        let canvas = serde_json::json!({"_RecordValue_": {"_Type_": "BuildingBlocks_Canvas",
+            "size": {"x": 400.0, "y": 600.0}, "coordinateMethod": "useRaw",
+            "scene": scene_nodes, "operations": []}});
+        let scene = parse_bb_canvas(&canvas).expect("fixture parses");
+        let result = layout(&scene, 400, 600);
+        let (current, sub) = (result.rects[&2], result.rects[&4]);
+        // Each card content-fits its single text line (not the 600px column)…
+        assert!(current.h < 200.0, "current-mode card content-fits, got {}", current.h);
+        assert!(sub.h < 200.0, "submode card content-fits, got {}", sub.h);
+        // …and the two cards STACK rather than overlapping at the same rect.
+        assert!(
+            sub.y >= current.y + current.h - 0.6,
+            "submode stacks below current-mode: sub.y {} vs current end {}",
+            sub.y, current.y + current.h
+        );
+    }
+
     /// The non-zero `Auto` value stays the fallback when the child has NO
     /// measurable text: it fills `value × container` as before (only
     /// text-backed children switch to content-fit).
