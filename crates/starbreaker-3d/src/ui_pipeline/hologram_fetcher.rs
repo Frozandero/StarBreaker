@@ -106,7 +106,8 @@ impl HologramFetcher for P4kHologramFetcher<'_> {
         // both come from `UIHoloVehicle_Config`; only the fainter alpha is a
         // SELF-STATUS framing choice. `shield_index_start` marks where the
         // shield triangles begin so the renderer can fade them vs the hull.
-        const SELF_STATUS_SHIELD_ALPHA_SCALE: f32 = 0.5;
+        // Shields read as a faint see-through cage, well below the hull alpha.
+        const SELF_STATUS_SHIELD_ALPHA_SCALE: f32 = 0.30;
         let shield_index_start = match self.shield_proxy() {
             Some((pane, shield_distance)) if !pane.positions.is_empty() => {
                 let (merged, boundary) = crate::with_shield_panes(mesh, &pane, shield_distance);
@@ -124,9 +125,10 @@ impl HologramFetcher for P4kHologramFetcher<'_> {
         // reference, not a layout fudge.
         const SELF_STATUS_YAW_DEG: f32 = 0.0;
         const SELF_STATUS_TILT_BACK_DEG: f32 = -30.0;
-        // The whole hologram (hull + shield box) fills the WidgetRuntimeImage
-        // rect (down to just above the footer), leaving a thin margin.
-        const SELF_STATUS_FIT: f32 = 0.95;
+        // The hull + snug shield box fill the WidgetRuntimeImage rect with a
+        // margin; the box now hugs the hull (see `with_shield_panes`), so the
+        // hull reads ~20% larger than the old loose-box framing at this fit.
+        const SELF_STATUS_FIT: f32 = 0.80;
         // Filled, shaded faces only (no wireframe) with a strong perspective so
         // the flat hull reads as an angled 3D hologram rather than a top-down
         // silhouette.

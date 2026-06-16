@@ -83,16 +83,22 @@ fn main() {
         }
     }
 
+    let envf = |k: &str, d: f32| env::var(k).ok().and_then(|s| s.parse().ok()).unwrap_or(d);
     let params = HologramParams {
         tilt_back_deg: tilt,
         yaw_deg: yaw,
         tint: [0.45, 0.75, 1.0, 1.0], // preview-only light blue
         shield_index_start,
-        shield_alpha_scale: 0.5, // shields at half the hull face alpha
+        fit: envf("HOLO_FIT", HologramParams::default().fit),
+        perspective: envf("HOLO_PERSP", HologramParams::default().perspective),
+        face_alpha: envf("HOLO_FACE_ALPHA", HologramParams::default().face_alpha),
+        shield_alpha_scale: envf("HOLO_SHIELD_ALPHA", 0.5),
         ..HologramParams::default()
     };
+    let w = env::var("HOLO_W").ok().and_then(|s| s.parse().ok()).unwrap_or(512);
+    let h = env::var("HOLO_H").ok().and_then(|s| s.parse().ok()).unwrap_or(512);
     let t = std::time::Instant::now();
-    let img = render_vehicle_hologram(&mesh.positions, &mesh.indices, 512, 512, &params);
+    let img = render_vehicle_hologram(&mesh.positions, &mesh.indices, w, h, &params);
     eprintln!("rastered in {:.2}s", t.elapsed().as_secs_f32());
     img.save(&out).expect("save png");
     eprintln!("wrote {out}");

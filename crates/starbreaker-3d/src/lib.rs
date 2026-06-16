@@ -98,12 +98,17 @@ pub fn with_shield_panes(mut ship: Mesh, pane: &Mesh, shield_distance: f32) -> (
     let pane_w = (phi[0] - plo[0]).max(1e-4); // local x extent (width)
     let pane_h = (phi[1] - plo[1]).max(1e-4); // local y extent (height)
 
-    // `shieldDistance` = the gap beyond the hull as a fraction of the half-
-    // extent; the box face along each axis sits at hull_half × (1 + sd).
-    let sd = shield_distance.clamp(0.0, 5.0);
+    // `shieldDistance` is the fraction of the shield box the hull fills along
+    // each axis (per `UIHoloVehicle_Config`), so the box face sits at
+    // hull_half / sd — a snug box (sd 0.85 → ~18% gap) that hugs the hull with
+    // natural corner gaps, matching the in-game SELF-STATUS reference. (The
+    // earlier `hull_half × (1 + sd)` reading put the panes ~85% out — far too
+    // loose.)
+    let sd = shield_distance.clamp(0.05, 1.0);
     // Each wall covers the hull silhouette on its face (height = hull height).
     let wall_height = 2.0 * half[2];
-    let scale_h = wall_height / pane_h; // local y (height) → world up
+    let pcx = 0.5 * (plo[0] + phi[0]);
+    let pcy = 0.5 * (plo[1] + phi[1]);
 
     // Combined rotation R(θ) = Rz(θ)·R0, where R0 stands the pane up (local
     // width→world +Y, height→world +Z, dome/normal→world +X) and Rz(θ) spins it
@@ -115,23 +120,26 @@ pub fn with_shield_panes(mut ship: Mesh, pane: &Mesh, shield_distance: f32) -> (
         let on_x = quarter % 2 == 0;
         let normal_half = if on_x { half[0] } else { half[1] };
         let tangent_half = if on_x { half[1] } else { half[0] };
-        let offset = normal_half * (1.0 + sd); // box-face distance along the normal
+        let offset = normal_half / sd; // box face: hull fills `sd` of the box
         let wall_width = 2.0 * tangent_half; // hull silhouette span
-        let scale_w = wall_width / pane_w; // local x (width) → world tangent
-        // Keep the dome's native curvature proportion relative to width (so the
-        // spherical cap isn't flattened or exaggerated — the earlier warp came
-        // from scaling the tiny depth axis to fill the height).
-        let scale_d = scale_w;
         // R rows (see doc): [[-s,0,co],[co,0,s],[0,1,0]].
         let r = [[-s, 0.0, co], [co, 0.0, s], [0.0, 1.0, 0.0]];
         let centre = [c[0] + offset * co, c[1] + offset * s, c[2]];
         let base = ship.positions.len() as u32;
         for p in &pane.positions {
-            // Scale in pane-local space; shift the dome so its rim (z_min) sits
-            // at the box face and the cap bulges outward (+local z).
-            let sx = (p[0] - 0.5 * (plo[0] + phi[0])) * scale_w; // centre width
-            let sy = (p[1] - 0.5 * (plo[1] + phi[1])) * scale_h; // centre height
-            let sz = (p[2] - plo[2]) * scale_d; // rim at 0, dome outward
+            let lx = p[0] - pcx; // centred width
+            let ly = p[1] - pcy; // centred height
+            let lz = p[2] - plo[2]; // rim at 0, dome outward
+            // Rotate the pane 90° in its own plane BEFORE stretching: the pane's
+            // HEIGHT axis (local Y) fills the wall's long tangent, its WIDTH
+            // (local X) fills the short world-up edge, and the dome scales with
+            // the tangent fill. (Stretching before this rotation warped the
+            // curve onto the wrong axis — the panes read as flat trays instead
+            // of outward-bowing walls.) Outputs feed R as (sx→tangent,
+            // sy→world-up, sz→normal/outward).
+            let sx = ly * (wall_width / pane_h);
+            let sy = lx * (wall_height / pane_w);
+            let sz = lz * (wall_width / pane_h);
             ship.positions.push([
                 r[0][0] * sx + r[0][1] * sy + r[0][2] * sz + centre[0],
                 r[1][0] * sx + r[1][1] * sy + r[1][2] * sz + centre[1],
@@ -451,20 +459,21 @@ mod nmc_flatten_tests {
         assert_eq!(merged.positions.len(), 3 + 4 * 4, "4 faces × 4 pane verts");
         assert_eq!(merged.indices.len(), 3 + 4 * 6, "4 faces × 6 pane indices");
 
-        // Front wall (+X, quarter 0 = verts[3..7]): rim at half_x×(1+sd), spans
-        // the hull WIDTH (2 × half_y = 10) along Y.
+        // Front wall (+X, quarter 0 = verts[3..7]): face at half_x / sd (hull
+        // fills `sd` of the box → snug), spans the hull WIDTH (2 × half_y = 10)
+        // along Y.
         let front = &merged.positions[3..7];
         let front_rim = front.iter().map(|p| p[0]).fold(f32::MAX, f32::min);
-        assert!((front_rim - 10.0 * (1.0 + sd)).abs() < 0.2, "front rim at half_x×(1+sd), got {front_rim}");
+        assert!((front_rim - 10.0 / sd).abs() < 0.2, "front face at half_x/sd, got {front_rim}");
         assert!(front_rim > 10.0, "front wall clears the hull (x > 10)");
         let front_w = span(front, 1);
         assert!((front_w - 10.0).abs() < 0.1, "front wall width = hull width (2×5), got {front_w}");
 
-        // Port wall (+Y, quarter 1 = verts[7..11]): rim at half_y×(1+sd), spans
+        // Port wall (+Y, quarter 1 = verts[7..11]): face at half_y / sd, spans
         // the hull LENGTH (2 × half_x = 20) along X.
         let port = &merged.positions[7..11];
         let port_rim = port.iter().map(|p| p[1]).fold(f32::MAX, f32::min);
-        assert!((port_rim - 5.0 * (1.0 + sd)).abs() < 0.2, "port rim at half_y×(1+sd), got {port_rim}");
+        assert!((port_rim - 5.0 / sd).abs() < 0.2, "port face at half_y/sd, got {port_rim}");
         assert!(port_rim > 5.0, "port wall clears the hull (y > 5)");
         let port_w = span(port, 0);
         assert!((port_w - 20.0).abs() < 0.1, "port wall width = hull length (2×10), got {port_w}");
@@ -474,6 +483,34 @@ mod nmc_flatten_tests {
         // Wall height = hull height (2 × half_z = 4) centred on z=0 → ±2.
         let max_z = merged.positions[3..].iter().map(|p| p[2].abs()).fold(0.0, f32::max);
         assert!((max_z - 2.0).abs() < 1e-2, "wall half-height = hull half-height ~2, got {max_z}");
+    }
+
+    /// The pane is rotated 90° in its own plane BEFORE the stretch, so its
+    /// HEIGHT axis (local +Y) fills the wall's long tangent and its WIDTH axis
+    /// (local +X) fills the short world-up edge. Marker verts at the pane's
+    /// +width and +height edges must therefore land on opposite wall axes — the
+    /// discriminator vs the old stretch-then-rotate order (which mapped width
+    /// onto the tangent and read as a flat tray).
+    #[test]
+    fn shield_pane_rotated_90_before_stretch() {
+        // Hull ±(10, 5, 2). Symmetric cross pane (centre at origin): v0 at the
+        // +width edge, v2 at the +height edge, so the centring is clean.
+        let ship = bare_mesh(vec![[-10.0, -5.0, -2.0], [10.0, 5.0, 2.0], [0.0, 0.0, 0.0]], vec![0, 1, 2]);
+        let pane = bare_mesh(
+            vec![[0.5, 0.0, 0.0], [-0.5, 0.0, 0.0], [0.0, 0.5, 0.0], [0.0, -0.5, 0.0]],
+            vec![0, 2, 1, 1, 2, 3],
+        );
+        let (merged, _) = with_shield_panes(ship, &pane, 0.85);
+        // Front wall (+X, quarter 0) = first appended pane (verts[3..7]); its
+        // tangent is world Y, its world-up is world Z.
+        let m_w = merged.positions[3]; // +width-edge vertex (v0)
+        let m_h = merged.positions[5]; // +height-edge vertex (v2)
+        // WIDTH edge → world-up (Z) extreme, tangent (Y) ≈ 0.
+        assert!(m_w[1].abs() < 1e-3, "pane width edge does NOT bleed onto the tangent, got y={}", m_w[1]);
+        assert!(m_w[2].abs() > 1.0, "pane width edge fills the world-up (Z) edge, got z={}", m_w[2]);
+        // HEIGHT edge → tangent (Y) extreme, world-up (Z) ≈ 0.
+        assert!(m_h[2].abs() < 1e-3, "pane height edge does NOT bleed onto world-up, got z={}", m_h[2]);
+        assert!(m_h[1].abs() > 1.0, "pane height edge fills the tangent (Y) edge, got y={}", m_h[1]);
     }
 
     fn span(verts: &[[f32; 3]], axis: usize) -> f32 {
