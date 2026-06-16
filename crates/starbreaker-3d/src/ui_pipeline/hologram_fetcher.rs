@@ -67,13 +67,13 @@ impl HologramFetcher for P4kHologramFetcher<'_> {
         if mesh.positions.is_empty() || mesh.indices.len() < 3 {
             return None;
         }
-        // SELF-STATUS framing: the engine's live hologram views the ship from
-        // BEHIND, ~25° back from top-down (the nose points away, up the frame),
-        // filling roughly half the diagram area. The engine camera FOV/distance
-        // for the runtime primitive isn't decoded, so the yaw/fit are calibrated
-        // to the in-game SELF-STATUS reference (a view choice, not a layout
-        // fudge); the tilt is the documented framing angle.
-        const SELF_STATUS_YAW_DEG: f32 = 0.0;
+        // SELF-STATUS framing, calibrated to the in-game reference: yaw 180°
+        // (nose toward the viewer / down the frame), tilted 65° back from
+        // top-down with a strong perspective, filling roughly half the diagram
+        // area. The engine camera FOV/distance for the runtime primitive isn't
+        // decoded, so these are a view choice matched to the reference, not a
+        // layout fudge.
+        const SELF_STATUS_YAW_DEG: f32 = 180.0;
         const SELF_STATUS_TILT_BACK_DEG: f32 = 65.0;
         const SELF_STATUS_FIT: f32 = 0.5;
         // Filled, shaded faces only (no wireframe) with a strong perspective so
