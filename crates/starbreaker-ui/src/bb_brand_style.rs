@@ -58,6 +58,23 @@ pub fn classify_canvas_family(record_name: &str) -> CanvasFamily {
     CanvasFamily::Other
 }
 
+/// Whether a canvas is a cockpit HUD ship-component — the dashboard HUD
+/// gauges/strips (`HC_HUD_Ship_*`: compass, velocity, g-force, countermeasures,
+/// …) and the engineering annunciator (`H_Eng_*`). Like the MFD masters these
+/// author the manufacturer's HUD-typography brand `s_<mfr>_hud` (the compass /
+/// velocity / g-force masters all declare `s_drak_hud`), but
+/// `classify_canvas_family` only routes `MC_*`/`M_*` to `Mfd`/`MfdRoot`. Used by
+/// the standard text-style brand selection so HUD components resolve
+/// `s_<mfr>_hud` rather than `s_<mfr>_env` — the env H1 is audimatmono-Bold /
+/// Bright, the HUD H1 is audimatmono-regular / Accent2 (the compass heading
+/// labels render bold-and-white instead of light-and-orange under env). This is
+/// a record-name family test, the same convention as the `MC_*`/`M_*`/`IC_*`
+/// classifiers above.
+pub fn is_cockpit_hud_canvas(record_name: &str) -> bool {
+    let lower = record_name.to_ascii_lowercase();
+    lower.starts_with("hc_hud_") || lower.starts_with("h_hud_") || lower.starts_with("h_eng_")
+}
+
 /// Borrowed view into a selected brand-style entry.
 ///
 /// Provides access to the entries array without copying.

@@ -1164,8 +1164,14 @@ fn resolve_effective_font_size(
     // the Heading1 standard's 60 (cap ≈ 6%). The field rect is already in target
     // pixels, so it is NOT multiplied by `design_text_scale`. Scoped to Percent
     // heights so fixed/auto/content-sized fields keep their named-style size.
+    //
+    // Returned as STYLED (verbatim em), NOT plain: the field height IS the intended
+    // glyph em, so it must NOT be divided by the font's imageSizePercent the way a
+    // plain authored size (which is a slug-IMAGE height) is. Boosting it ÷0.75
+    // over-sized the compass labels to ~22% cap (clipping the bottom into the tick)
+    // vs the reference's ~19%; verbatim gives ~19% and clears the tick.
     if text_field_sizes_font_to_relative_height(node) && node_rect_h > 1.0 {
-        return (UiIrValue::Fixed { value: node_rect_h }, false);
+        return (UiIrValue::Fixed { value: node_rect_h }, true);
     }
 
     // Engine-faithful default: a styled textfield renders at its named style's
@@ -1283,13 +1289,21 @@ fn collect_standard_text_styles(
             .or_else(|| {
                 source.strip_prefix("manufacturer:").map(|mfr| {
                     use crate::bb_brand_style::CanvasFamily;
-                    let family = canvas_name
-                        .map(|name| name.strip_prefix("BuildingBlocks_Canvas.").unwrap_or(name))
-                        .map(crate::bb_brand_style::classify_canvas_family);
-                    let class = match family {
-                        Some(CanvasFamily::Mfd | CanvasFamily::MfdRoot) => "hud",
-                        _ => "env",
-                    };
+                    let stripped = canvas_name
+                        .map(|name| name.strip_prefix("BuildingBlocks_Canvas.").unwrap_or(name));
+                    let family = stripped.map(crate::bb_brand_style::classify_canvas_family);
+                    // MFD masters (MC_*/M_*) AND cockpit HUD ship-components
+                    // (HC_HUD_*/H_Eng_*) are HUD-typography canvases that author
+                    // s_<mfr>_hud; classify_canvas_family only catches the former,
+                    // so recognise the HUD family explicitly. Otherwise the HUD
+                    // labels (compass headings, …) fall to s_<mfr>_env, whose H1 is
+                    // audimatmono-Bold/Bright instead of the HUD brand's
+                    // audimatmono-regular/Accent2.
+                    let is_hud = matches!(family, Some(CanvasFamily::Mfd | CanvasFamily::MfdRoot))
+                        || stripped
+                            .map(crate::bb_brand_style::is_cockpit_hud_canvas)
+                            .unwrap_or(false);
+                    let class = if is_hud { "hud" } else { "env" };
                     format!("s_{}_{}", mfr.to_ascii_lowercase(), class)
                 })
             })

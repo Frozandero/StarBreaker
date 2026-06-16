@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "frozen_at": "2026-06-15T15:29:17Z",
+  "frozen_at": "2026-06-16T00:09:45Z",
   "approver": "owner",
-  "reason": "Onboard clipper_velocity_num_master gold: text-faithful velocity-num readouts (0m/s / 0.0 G), defaultStyles no-brand-match fallback + text-format Type(Text) sizing, glyph-stroke not box (6c1343abf, c7931fb4b); background = emissive-screen capture characteristic",
+  "reason": "Onboard clipper_compass_master GOLD: compass heading labels now s_drak_hud HUD typography (audimatmono-regular/Accent2, field-height verbatim font). g-force HUD typography corrected (nodes 28/29/39 bold->regular, node 29 Bright->Accent2; off-screen at-rest readouts, visually unchanged).",
   "signature": null,
   "manifest_path": "crates/starbreaker-ui/tests/fixtures/ui_ir/ui_snapshot_manifest.json",
   "artifacts": [
@@ -104,6 +104,16 @@
       "sha256": "ca10a145c8a06cc81bb3c78f6e19724e693cee1fd4da574ed845890416e4a9e6",
       "width": 1920,
       "height": 1554,
+      "channels": "srgba"
+    },
+    {
+      "id": "clipper_compass_master",
+      "tier": "gold",
+      "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_hc_hud_ship_compass_master.png",
+      "artifact_path": "test-artifacts/ui/clipper_compass_master.png",
+      "sha256": "a1734c56d917df90e50bb999ed701bbd5aaf98851ddf7d49d67fe306a4cd1b56",
+      "width": 1920,
+      "height": 587,
       "channels": "srgba"
     }
   ]

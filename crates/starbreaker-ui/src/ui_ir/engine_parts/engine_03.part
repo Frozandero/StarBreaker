@@ -420,6 +420,99 @@ mod tests {
     }
 
     #[test]
+    fn compile_ir_hud_ship_component_resolves_hud_brand_typography() {
+        // A cockpit HUD ship-component (HC_HUD_*, here the compass) authors the
+        // manufacturer's HUD-typography brand (s_drak_hud) like the MFD masters,
+        // but classify_canvas_family only routes MC_*/M_* to "hud". The standard
+        // text-style brand selection must recognise the HUD family so an
+        // uncoloured Heading1 label resolves s_drak_hud H1 (audimatmono-regular,
+        // Accent2) — NOT s_drak_env H1 (audimatmono-bold, Bright). The compass
+        // heading labels rendered bold-and-white under the env brand.
+        let standard_path =
+            "file://./../../../../../../../libs/foundry/records/ui/buildingblocks/modularkit/standard/widgets/textfieldwidgetstandard.json";
+        let h1 = |font: &str, fill: &str| {
+            serde_json::json!({
+                "_Type_": "BuildingBlocks_StyleEntry",
+                "name": "H1",
+                "conditionsList": [],
+                "modifiers": [
+                    {"_Type_": "BuildingBlocks_FieldModifierRecordRef",
+                     "field": {"_Type_": "BuildingBlocks_FieldModifierRecordRefTypeFontStyleRecord",
+                               "value": format!("file://./../../../../../../../libs/foundry/records/ui/buildingblocks/fontstyles/{font}.json")}},
+                    {"_Type_": "BuildingBlocks_FieldModifierNumber", "field": "FontSize", "value": 45.0},
+                    {"_Type_": "BuildingBlocks_FieldModifierColor", "field": "FillColor",
+                     "color": {"_Type_": "BuildingBlocks_ColorStyle", "color": fill, "alpha": 1.0}}
+                ],
+                "transitions": []
+            })
+        };
+        let standard = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.TextFieldWidgetStandard",
+            "_RecordValue_": {
+                "size": {"x": 100, "y": 100},
+                "defaultStyles": {"entries": []},
+                "brandStyles": [
+                    {"brandIdentifier": "file://./styles/s_drak_env.json",
+                     "entries": [h1("audimatmono-bold", "Bright")]},
+                    {"brandIdentifier": "file://./styles/s_drak_hud.json",
+                     "entries": [h1("audimatmono-regular", "Accent2")]}
+                ],
+                "scene": [],
+                "operations": []
+            }
+        });
+        let fetcher = TestCanvasFetcher {
+            by_guid: std::collections::HashMap::new(),
+            by_path: std::collections::HashMap::from([(standard_path.to_string(), standard)]),
+        };
+        let label_canvas = |name: &str| {
+            serde_json::json!({
+                "_RecordName_": format!("BuildingBlocks_Canvas.{name}"),
+                "_RecordValue_": {
+                    "size": {"x": 100, "y": 100},
+                    "scene": [{
+                        "_Pointer_": "ptr:1",
+                        "_Type_": "BuildingBlocks_WidgetTextField",
+                        "name": "text_Label",
+                        "isActive": true,
+                        "text": "320",
+                        "labelProperties": {"style": "Heading1"},
+                        "size": {"width": {"behavior": "Fixed", "value": 80.0},
+                                 "height": {"behavior": "Fixed", "value": 20.0}}
+                    }],
+                    "operations": []
+                }
+            })
+        };
+        let compile_label = |name: &str| {
+            let canvas = label_canvas(name);
+            let scene = crate::bb_scene::parse_bb_canvas(&canvas).expect("scene parse");
+            let ir = compile_ui_ir_from_scene(
+                &scene, Some(&fetcher), "guid-hud-brand",
+                Some(&format!("BuildingBlocks_Canvas.{name}")), (100, 100), &defaults(),
+                Some("manufacturer:drak".to_string()), None, &[], Vec::new(), Vec::new(), 100,
+            );
+            let node = ir.nodes.iter().find(|n| n.name == "text_Label").expect("label").clone();
+            let style = node.text_style.expect("text style");
+            (style.colour_token.clone(), style.font_record.clone())
+        };
+
+        // HUD ship-component → s_drak_hud H1 (regular, Accent2).
+        let (hud_colour, hud_font) = compile_label("HC_HUD_Ship_Compass_Master");
+        assert_eq!(hud_colour.as_deref(), Some("Accent2"),
+            "a HUD ship-component Heading1 label takes s_drak_hud Accent2, not env Bright");
+        assert!(hud_font.as_deref().is_some_and(|f| f.contains("audimatmono-regular")),
+            "a HUD ship-component Heading1 label takes the s_drak_hud regular font, got {hud_font:?}");
+
+        // Control: a non-HUD (environment) canvas keeps s_drak_env H1 (bold, Bright).
+        let (env_colour, env_font) = compile_label("SomeEnvironmentCanvas");
+        assert_eq!(env_colour.as_deref(), Some("Bright"),
+            "a non-HUD canvas keeps the s_drak_env Bright H1");
+        assert!(env_font.as_deref().is_some_and(|f| f.contains("audimatmono-bold")),
+            "a non-HUD canvas keeps the s_drak_env bold font, got {env_font:?}");
+    }
+
+    #[test]
     fn compile_ir_keeps_state_tagged_inactive_image_inactive() {
         // State visibility is entry-driven: the annunciator's "Show Glow in
         // online state" NotTag-gates the glow, so a Moderate chiclet's glow
@@ -1612,6 +1705,8 @@ mod tests_b {
                 "operations": []
             }
         });
+        let font_path =
+            "file://./../../../../../../../libs/foundry/records/ui/buildingblocks/fontstyles/test-imagepercent.json";
         let standard = serde_json::json!({
             "_RecordName_": "BuildingBlocks_Canvas.TextFieldWidgetStandard",
             "_RecordValue_": {
@@ -1621,17 +1716,32 @@ mod tests_b {
                     "entries": [{
                         "name": "H1",
                         "modifiers": [
-                            {"_Type_": "BuildingBlocks_FieldModifierNumber", "field": "FontSize", "value": 57.0}
+                            {"_Type_": "BuildingBlocks_FieldModifierNumber", "field": "FontSize", "value": 57.0},
+                            {"_Type_": "BuildingBlocks_FieldModifierRecordRef",
+                             "field": {"_Type_": "BuildingBlocks_FieldModifierRecordRefTypeFontStyleRecord",
+                                       "value": font_path}}
                         ]
                     }]
                 }]
             }
         });
+        // The font carries imageSizePercent 0.75 (like AudimatMono). A PLAIN authored
+        // size is divided by it (the slug image is 0.75 of the nominal); the
+        // height-driven size is the field EM (verbatim), so it must NOT be divided —
+        // boosting it ÷0.75 over-sized the compass labels (80 → 107) and clipped them.
+        let font_record = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_FontStyle.TestImagePercent",
+            "_RecordValue_": {"_Type_": "BuildingBlocks_FontStyle", "font": "$Low-Reg",
+                              "imageSizePercent": 0.75}
+        });
         let fetcher = TestCanvasFetcher {
             by_guid: std::collections::HashMap::new(),
-            by_path: [(standard_text_field_widget_path().to_string(), standard)]
-                .into_iter()
-                .collect(),
+            by_path: [
+                (standard_text_field_widget_path().to_string(), standard),
+                (font_path.to_string(), font_record),
+            ]
+            .into_iter()
+            .collect(),
         };
         let scene = crate::bb_scene::parse_bb_canvas(&canvas).expect("scene parse");
         let ir = compile_ui_ir_from_scene(
