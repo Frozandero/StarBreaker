@@ -61,6 +61,11 @@ REGION_PRESETS = {
         "status": (0, 330, 1920, 860),
         "bottom": (0, 860, 1920, 1080),
     },
+    "compass": {  # Screen_Central_Compass (1920x587) vs compass_master.png
+        "labels": (0, 0, 1920, 250),
+        "ticks": (0, 280, 1920, 587),
+        "lubber": (880, 0, 1040, 587),
+    },
 }
 
 

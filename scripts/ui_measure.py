@@ -164,11 +164,22 @@ def measure_region(img, box, delta):
         }
 
     clean = [r["h"] for r in glyph_runs if not r["suspect_contamination"]]
+    # Vertical GAPS between consecutive bright runs. For an orange-on-orange
+    # compass label the digit band and the (same-colour) tick band below it are
+    # SEPARATE runs with a real gap between them — read the digit band's `h` and
+    # the gap to the tick, rather than a single bbox that silently merges them
+    # (a contaminated single bbox read "25% cap, clipping" when the digit was
+    # 18.9% with a 27px tick gap; ledger 68).
+    band_gaps = [
+        glyph_runs[i + 1]["y0"] - glyph_runs[i]["y1"]
+        for i in range(len(glyph_runs) - 1)
+    ]
     return {
         "box": [x0, y0, x1, y1],
         "median_luminance": round(median, 2),
         "threshold": round(threshold, 2),
         "glyph_runs": glyph_runs,
+        "band_gaps": band_gaps,
         "cap_height": max(clean) if clean else None,
         "colour": colour,
     }
