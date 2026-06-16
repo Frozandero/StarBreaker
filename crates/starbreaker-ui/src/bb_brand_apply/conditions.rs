@@ -228,13 +228,14 @@ pub(crate) fn condition_matches_node(
 /// entries, verified against the in-game power reference). Evaluation frame:
 /// `Parent(c)` tests `c` on the field itself; tag conditions see the field's
 /// (inherited) tags; a `Type(Text)` condition matches the implicit text-format
-/// child (a `Text` node) ONLY when the same conditions block is `Parent(...)`-
-/// anchored — a bare or `Ancestor`-wrapped `Type(Text)` targets a real
-/// WidgetText widget instead (the MFD footer's `Type(Text) + Ancestor[Tag]`
-/// screen-name entries do not restyle the WidgetTextField in the in-game
-/// reference; DRAK velocity-num's `Type(Text) + Parent[(Not)Tag]` readouts do,
-/// at FontSize 500/420). Callers apply only TEXT-FORMAT modifiers for a match
-/// made via this route.
+/// child (a `Text` node) UNLESS the conditions block is `Ancestor(...)`-wrapped
+/// without a `Parent` anchor, which targets a real WidgetText widget instead
+/// (the MFD footer's `Type(Text) + Ancestor[Tag]` screen-name entries do not
+/// restyle the WidgetTextField in the in-game reference). Both a `Parent`-anchored
+/// `Type(Text)` (DRAK velocity-num's `Type(Text) + Parent[(Not)Tag]` readouts,
+/// FontSize 500/420) and a BARE `Type(Text)` (DRAK master-mode's `defaultStyles`
+/// "New Style", FontSize 350 + white SCM/GUN) route to the field's text format.
+/// Callers apply only TEXT-FORMAT modifiers for a match made via this route.
 pub(crate) fn entry_matches_text_format(
     entry: &serde_json::Value,
     node_id: BbNodeId,
@@ -251,12 +252,18 @@ pub(crate) fn entry_matches_text_format(
         let Some(conditions) = conditions_block.get("conditions").and_then(|v| v.as_array()) else {
             return false;
         };
-        // A `Type(Text)` selector routes to the text-format child only when the
-        // block is `Parent(...)`-anchored (see `condition_matches_text_format`).
+        // A `Type(Text)` selector routes to the text-format child unless the
+        // block is `Ancestor(...)`-wrapped without a `Parent` anchor — that is
+        // the MFD-footer screen-name case, which targets a real WidgetText
+        // widget instead. A `Parent(...)`-anchored block (velocity-num) and a
+        // BARE `Type(Text)` (master-mode SCM/GUN) both route (see
+        // `condition_matches_text_format`).
         let entry_has_parent = conditions.iter().any(condition_tree_contains_parent);
+        let entry_has_ancestor = conditions.iter().any(condition_tree_contains_ancestor);
+        let route_text_format = entry_has_parent || !entry_has_ancestor;
         !conditions.is_empty()
             && conditions.iter().all(|condition| {
-                condition_matches_text_format(condition, node_id, node, scene, entry_has_parent)
+                condition_matches_text_format(condition, node_id, node, scene, route_text_format)
             })
     })
 }
@@ -287,12 +294,37 @@ fn condition_tree_contains_parent(condition: &serde_json::Value) -> bool {
     false
 }
 
+/// Whether a condition tree contains an `Ancestor(...)` wrapper. An
+/// `Ancestor`-wrapped `Type(Text)` (without a `Parent` anchor) is the MFD-footer
+/// screen-name case: it targets a real WidgetText widget, NOT a WidgetTextField's
+/// text-format child, so it is excluded from the text-format route. Descends only
+/// the boolean combinators (AllOf/AnyOf/Not), like `condition_tree_contains_parent`.
+fn condition_tree_contains_ancestor(condition: &serde_json::Value) -> bool {
+    let cond_type = condition
+        .get("_Type_")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if cond_type.ends_with("ConditionAncestor") {
+        return true;
+    }
+    if cond_type.ends_with("ConditionAllOfCondition")
+        || cond_type.ends_with("ConditionAnyOfCondition")
+        || cond_type.ends_with("ConditionNotCondition")
+    {
+        return condition
+            .get("conditions")
+            .and_then(|v| v.as_array())
+            .is_some_and(|conds| conds.iter().any(condition_tree_contains_ancestor));
+    }
+    false
+}
+
 fn condition_matches_text_format(
     condition: &serde_json::Value,
     node_id: BbNodeId,
     node: &BbNode,
     scene: &BbScene,
-    entry_has_parent: bool,
+    route_text_format: bool,
 ) -> bool {
     let cond_type = condition
         .get("_Type_")
@@ -317,7 +349,7 @@ fn condition_matches_text_format(
             .and_then(|v| v.as_array())
             .map(|conditions| {
                 conditions.iter().all(|child| {
-                    condition_matches_text_format(child, node_id, node, scene, entry_has_parent)
+                    condition_matches_text_format(child, node_id, node, scene, route_text_format)
                 })
             })
             .unwrap_or(false);
@@ -328,7 +360,7 @@ fn condition_matches_text_format(
             .and_then(|v| v.as_array())
             .map(|conditions| {
                 conditions.iter().any(|child| {
-                    condition_matches_text_format(child, node_id, node, scene, entry_has_parent)
+                    condition_matches_text_format(child, node_id, node, scene, route_text_format)
                 })
             })
             .unwrap_or(false);
@@ -339,7 +371,7 @@ fn condition_matches_text_format(
             .and_then(|v| v.as_array())
             .map(|conditions| {
                 !conditions.iter().any(|child| {
-                    condition_matches_text_format(child, node_id, node, scene, entry_has_parent)
+                    condition_matches_text_format(child, node_id, node, scene, route_text_format)
                 })
             })
             .unwrap_or(false);
@@ -347,14 +379,16 @@ fn condition_matches_text_format(
     if cond_type.ends_with("ConditionType") {
         // A WidgetTextField renders its text via an implicit text-format CHILD
         // that is itself a `Text` node, so a `Type(Text)` selector matches that
-        // child — but ONLY inside a `Parent(...)`-wrapped entry (the direct
-        // "this field's text" anchor; DRAK velocity-num sizes its readouts via
-        // `Type(Text) + Parent[(Not)Tag(fontnumber)]` → FontSize 500/420). A
-        // bare or `Ancestor`-wrapped `Type(Text)` targets a real WidgetText
-        // widget instead (the MFD footer's `Type(Text) + Ancestor[Tag]`
-        // screen-name entries must NOT restyle the WidgetTextField). Other
-        // widget types are not the text run, so they never match here.
-        return entry_has_parent
+        // child whenever `route_text_format` holds — i.e. a `Parent(...)`-anchored
+        // entry (DRAK velocity-num readouts, `Type(Text) + Parent[(Not)Tag]` →
+        // FontSize 500/420) OR a BARE `Type(Text)` (DRAK master-mode SCM/GUN,
+        // `defaultStyles` "New Style" → FontSize 350 + white). Only an
+        // `Ancestor(...)`-wrapped `Type(Text)` (NOT also `Parent`-anchored)
+        // targets a real WidgetText widget instead (the MFD footer's
+        // `Type(Text) + Ancestor[Tag]` screen-name entries must NOT restyle the
+        // WidgetTextField). Other widget types are not the text run, so they
+        // never match here.
+        return route_text_format
             && condition.get("type").and_then(|v| v.as_str()) == Some("Text");
     }
     // Tag / NotTag / Ancestor / interaction conditions share the widget's

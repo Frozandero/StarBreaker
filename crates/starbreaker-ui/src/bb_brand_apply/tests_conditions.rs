@@ -667,3 +667,44 @@ fn ancestor_wrapped_type_text_entry_does_not_style_text_format() {
         "Ancestor-wrapped Type(Text) targets a WidgetText widget, not the field's text format (MFD footer)"
     );
 }
+
+/// A BARE `Type(Text)` selector (no `Parent`, no `Ancestor`) also styles a
+/// WidgetTextField's implicit text-format child. The DRAK master-mode display
+/// (`drak_hc_hud_cutlass_masterm_display`) authors its `defaultStyles` "New
+/// Style" as a bare `Type(Text)` with FontSize 350 + white FillColor; the
+/// in-game `master_mode_display_master` reference shows large white SCM/GUN
+/// text, confirming the entry must reach the field's text format. Only an
+/// `Ancestor(...)`-wrapped `Type(Text)` is excluded (the MFD-footer case
+/// above); bare and `Parent`-wrapped both route.
+#[test]
+fn bare_type_text_entry_styles_text_format() {
+    let mut scene = make_test_scene();
+    {
+        let node = scene.nodes.get_mut(&1).unwrap();
+        node.ty = BbNodeType::WidgetTextField;
+    }
+    let entry = json!({
+        "conditionsList": [
+            {
+                "conditions": [
+                    {"_Type_": "BuildingBlocks_StyleSelectorConditionType", "type": "Text"}
+                ]
+            }
+        ],
+        "modifiers": [
+            {"_Type_": "BuildingBlocks_FieldModifierNumber", "field": "FontSize", "value": 350.0}
+        ]
+    });
+    let brand = BrandStyle {
+        identifier: "s_test_hud".to_string(),
+        entries: std::slice::from_ref(&entry),
+        raw: &json!({}),
+    };
+    apply_brand_modifiers(&mut scene, &brand, None);
+    let node = scene.nodes.get(&1).unwrap();
+    assert_eq!(
+        node.raw.get("FontSize").and_then(|v| v.as_f64()),
+        Some(350.0),
+        "bare Type(Text) sizes the field's text format (master-mode SCM/GUN, FontSize 350)"
+    );
+}
