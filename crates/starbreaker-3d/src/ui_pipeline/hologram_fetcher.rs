@@ -55,15 +55,18 @@ impl HologramFetcher for P4kHologramFetcher<'_> {
         }
         let p4k_path = self.hull_geometry_p4k_path()?;
         // Vertex data lives in the `m` companion (`.cgam`/`.cgfm`/`.skinm`);
-        // the bare file holds the scene-graph/NMC. The full (non-LOD) hull is
-        // used deliberately: the LOD variants don't decode cleanly yet.
+        // the bare primary file holds the scene-graph/NMC. The full (non-LOD)
+        // hull is used deliberately: the LOD variants don't decode cleanly yet.
+        // `parse_skin_positioned` bakes the NMC node transforms so multi-part
+        // geometry (wings, both engine pods, sub-objects) is assembled in world
+        // space — raw `parse_skin` leaves parts detached / at the origin.
         let companion = format!("{p4k_path}m");
-        let data = self
-            .p4k
-            .read_file(&companion)
-            .or_else(|_| self.p4k.read_file(&p4k_path))
-            .ok()?;
-        let mesh = crate::parse_skin(&data).ok()?;
+        let mesh = match (self.p4k.read_file(&companion), self.p4k.read_file(&p4k_path)) {
+            (Ok(verts), Ok(primary)) => crate::parse_skin_positioned(&verts, &primary).ok()?,
+            (Ok(verts), Err(_)) => crate::parse_skin(&verts).ok()?,
+            (Err(_), Ok(primary)) => crate::parse_skin(&primary).ok()?,
+            (Err(_), Err(_)) => return None,
+        };
         if mesh.positions.is_empty() || mesh.indices.len() < 3 {
             return None;
         }

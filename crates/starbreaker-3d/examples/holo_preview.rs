@@ -25,15 +25,38 @@ fn main() {
         .read_file(&companion)
         .or_else(|_| p4k.read_file(&cga))
         .expect("read geometry");
-    let mesh = parse_skin(&data).expect("parse skin");
+    let mesh = match p4k.read_file(&cga) {
+        Ok(primary) => starbreaker_3d::parse_skin_positioned(&data, &primary).expect("parse skin + nmc"),
+        Err(_) => parse_skin(&data).expect("parse skin"),
+    };
     eprintln!(
-        "verts={} indices={} tris={} bbox_min={:?} bbox_max={:?}",
+        "verts={} indices={} tris={} submeshes={} bbox_min={:?} bbox_max={:?}",
         mesh.positions.len(),
         mesh.indices.len(),
         mesh.indices.len() / 3,
+        mesh.submeshes.len(),
         mesh.model_min,
         mesh.model_max
     );
+    if std::env::var("HOLO_SUBMESH_DUMP").is_ok() {
+        for (i, s) in mesh.submeshes.iter().enumerate() {
+            let st = s.first_vertex as usize;
+            let en = (st + s.num_vertices as usize).min(mesh.positions.len());
+            if en <= st { continue; }
+            let mut lo = [f32::MAX; 3];
+            let mut hi = [f32::MIN; 3];
+            let mut c = [0.0f64; 3];
+            for p in &mesh.positions[st..en] {
+                for k in 0..3 { lo[k] = lo[k].min(p[k]); hi[k] = hi[k].max(p[k]); c[k] += p[k] as f64; }
+            }
+            let n = (en - st) as f64;
+            eprintln!(
+                "  sub[{i:3}] mat={} verts={} centroid=({:.1},{:.1},{:.1}) bbox=({:.1},{:.1},{:.1})..({:.1},{:.1},{:.1})",
+                s.material_id, en - st,
+                c[0]/n, c[1]/n, c[2]/n, lo[0],lo[1],lo[2], hi[0],hi[1],hi[2],
+            );
+        }
+    }
 
     let params = HologramParams {
         tilt_back_deg: tilt,
