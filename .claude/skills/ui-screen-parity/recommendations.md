@@ -60,34 +60,6 @@ findings land here in two states, with a lifecycle:
   skill (or arc start) skims the open items first.
 - **Multi-ship generalization unverified** (see Known assumptions) — exercise
   when a second `reference/in-game/` folder exists.
-- **Visual iteration via `SendUserFile` must use UNIQUE filenames per render**
-  (self-status hologram arc, ledger 69). `ui_render.sh` writes the same fixed path
-  (`/tmp/ui_render/<helper>/<helper>_TEX0.png`); sending that path repeatedly let
-  the user's viewer cache by filename and show the FIRST image for three different
-  iterations ("no change / identical" while the files differed on disk). When the
-  arc shows the user successive renders of the same screen, copy each to a unique
-  name first (`/tmp/<arc>_iters/<screen>_<ts>_<params>.png`) and verify on-disk
-  change via the `png md5:` line `ui_render.sh` now prints. Consider a SKILL.md
-  note in the autonomous-loop / VFL guidance: "showing the user iterative renders →
-  unique filename each time; a 'looks identical' report on a changed file = viewer
-  cache, confirm with the printed md5, don't re-tune blind."
-- **"Whack-a-mole scoping" is a proven-blocker signal; converge instead of
-  threading ever-narrower scopes** (master-mode arc 2026-06-16). The font-size and
-  colour fixes each regressed a DIFFERENT frozen `auto` canvas (target master, then
-  compass); every attempt to scope around it (`auto` → `HC_HUD+auto` → tag-match)
-  just regressed the next frozen sibling, because master-mode and the frozen
-  HC_HUD/MC_S `auto` `Heading1` screens are structurally identical but want opposite
-  size/colour. When a candidate fix regresses a frozen baseline AND the obvious
-  structural discriminator (the one that should separate this screen from the frozen
-  family) is FALSIFIED by measurement, that is the proven blocker — stop iterating
-  scopings. Consider a SKILL.md "Default to fixing" note: "if scoping a fix to dodge
-  a frozen regression keeps regressing the NEXT frozen sibling (each scope reveals
-  another), the no-discriminator blocker is proven — surface it, don't keep
-  narrowing." Pairs with ledger 75 (auto-canvas font/colour render drift is
-  whole-image-only — run `--full` before judging an `auto`/HC_HUD experiment clean;
-  `ui_check` live-IR misses it). Note also: I showed the user an iterative render via
-  the FIXED `ui_render.sh` path — the existing unique-filename rec above applies and
-  was not yet followed.
 
 ## Known assumptions & risks
 
@@ -290,6 +262,25 @@ under **Open recommendations** above.
   chose "investigate + characterizing failing test pre-gate; land the source fix
   only after the catalog gate (commit always waits)." Stated in *Build & confirm
   the diff catalog* + a red-flag row. Cleared the Open rec.
+- **2026-06-17 (visual-iteration cache trap + whack-a-mole-scoping blocker;
+  applied from Open recommendations — self-status hologram ledger 69 + master-mode
+  ledger 75).** A `writing-skills` session pointed at the recent retros actioned the
+  two un-applied Open recs. (1) Ledger 69: iterating renders to the user under
+  `ui_render.sh`'s FIXED output path let the viewer cache by filename and report "no
+  change" on a file that DID change (cost several cycles). Applied to the loop's
+  *Render* bullet — copy each user-facing iteration to a UNIQUE filename, confirm
+  on-disk change via the printed `png md5:`, never re-tune blind on a "looks
+  identical" report — plus a red-flag row. (2) Ledger 75: on the master-mode arc the
+  size and colour fixes each regressed a DIFFERENT frozen `auto` canvas, and every
+  narrower scope (`auto`→`HC_HUD+auto`→tag) regressed the next frozen sibling.
+  Applied to *Default to fixing* at the §5-discriminator sentence — "no discriminator"
+  now has a concrete tell (repeated next-sibling regression = PROVEN no-discriminator
+  blocker; stop threading scopings, surface it), and such auto-canvas /
+  `coordinateMethod=auto` / HC_HUD text experiments MUST be judged with `--full`
+  after a fresh export because the drift is whole-image-only and invisible to
+  `ui_check` live-IR — plus a red-flag row. Both changes are backed by documented
+  real-arc failures (the RED), consistent with this skill's real-use validation
+  model. Cleared both Open recs.
 - **2026-06-16 (verify data claims with the right tool; don't override a subagent
   cheaply; compass round 3, ledger 68).** The agent dismissed a CORRECT subagent
   colour diagnosis by `sed`/`grep`-ing line ranges of a 2 MB nested record,

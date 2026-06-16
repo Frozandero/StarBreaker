@@ -182,7 +182,11 @@ Replay-render → compare → catalog → TDD fix → check → re-render. Per c
 - **Render:** `bash scripts/ui_render.sh --helper <helper> [--ir]` — `<helper>` is
   the dossier's Helper/scene column for SCREEN (usually but not always the
   reference stem; see step 2). Cockpit/HUD screens need LOD0 — the wrapper picks
-  it; ledger 47.
+  it; ledger 47. When showing the USER successive renders of the same screen, copy
+  each to a UNIQUE filename first — the wrapper writes a FIXED path, so reusing it
+  lets the viewer cache by name and report "no change / identical" on a file that
+  DID change (ledger 69); confirm an on-disk change via the printed `png md5:` line
+  and never re-tune blind on a "looks identical" report.
 - **Compare:** `python3 scripts/ui_compare.py <render> <reference> --regions
   <preset> [--stats]` and **READ every crop with vision**. Rectify for POSITION
   via `corners.json`; judge a **thin feature's COLOUR on the crisp original**
@@ -251,7 +255,15 @@ the blocker + trail to the user for confirmation (Checkpoints) — major-item
 blockers are never self-certified. A "frozen-family risk" is
 likewise a §5 task: find the structural discriminator separating this screen from
 the frozen family and scope the fix by it; only if no discriminator exists is it
-a real blocker. Record the exhausted-search proof, not a guess. Effort, risk, or
+a real blocker — and "no discriminator" has a concrete tell: when scoping a fix to
+dodge a frozen regression just regresses the NEXT frozen sibling, and each narrower
+scope (`auto` → `HC_HUD+auto` → tag-match) reveals another, the screens are
+structurally identical but want OPPOSITE output — the no-discriminator blocker is
+PROVEN; stop threading scopings and surface it (ledger 75). Judge any such
+auto-canvas (`coordinateMethod=auto`) / HC_HUD text size+colour experiment with
+`--full` after a fresh export — that drift is WHOLE-IMAGE-only and invisible to
+`ui_check` live-IR (ledger 75), so a live-IR "green" is NOT proof a sibling `auto`
+baseline survived. Record the exhausted-search proof, not a guess. Effort, risk, or
 "undecoded" alone never justifies deferral.
 
 ## Use subagents for read-only research (never for builds)
@@ -459,3 +471,5 @@ needed is a doc bug — fix it before closing.
 | "I'll grep the source to find which stage/function owns this" | Query graphify first (`graphify query`/`explain`, `/graphify`, `graphify-mcp`) — relationship-aware over `.rs`/`.py`, answers with `file:line`, no API cost (ui-reference §4b). It's CODE structure only — not a data-value source (MCP trio / parse-JSON still rule). |
 | "graphify shows nothing / `No path` there — so that code doesn't exist" | graphify does NOT index the `engine_*.part` UI-engine core (~31k lines) — a miss there is the blind spot, not proof. Grep `crates/starbreaker-ui/src/*/engine_parts/` WITHOUT `--include="*.rs"` (it hides `.part`); and `.map(foo)` won't match `foo(`. |
 | "My quick check refutes the subagent — move on" | Refuting a careful subagent finding needs the SAME rigour as the claim. If your refutation is the weaker read, IT'S the unreliable one — verify with parse/probe before acting (ledger 68). |
+| "This render looks identical to the last — my change did nothing" | The wrapper writes a FIXED path; the user's viewer caches by name and shows the OLD image. Copy each iteration the user sees to a unique filename; confirm via the printed `png md5:` before concluding no-op (ledger 69). |
+| "I'll scope the fix one level narrower to dodge the frozen regression" | If each narrower scope (`auto`→`HC_HUD+auto`→tag) regresses the NEXT frozen sibling, the screens are structurally identical but want opposite output — the no-discriminator blocker is PROVEN. Stop threading scopings; judge with `--full` (whole-image — live-IR misses auto-canvas drift) and surface it (ledger 75). |
