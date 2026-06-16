@@ -1695,3 +1695,47 @@ spread to more screens/ships, or if the LOD variants start decoding (smaller mes
 rendered hologram keyed by ship + pixel size) so repeated renders within a session/export
 reuse it. Left as a documented IOU — premature to cache a single call.
 **Action:** noted here; no code change.
+
+### 72. Generic vehicle-hologram framing: centre on the model ORIGIN + `min(hull-fit, box-fit)` so the shield cage never clips — and `holo_preview`'s default framing is NOT the screen's framing
+**Observed:** the owner iterated the SELF-STATUS hologram framing heavily; two non-obvious
+GENERIC traps surfaced. (1) Fitting the HULL to a target size (so the hull reads large)
+lets the surrounding shield CAGE clip on hulls whose projected aspect differs from the
+image — a tall fighter filled the height and pushed the top/bottom shields off-screen.
+(2) Centring on the hull bbox centre puts an asymmetric hull (the Clipper reaches further
+one way) off-centre; the owner wanted the main BODY (the model origin) centred. Also: a
+genericness spot-check on a different hull (Gladius) via `holo_preview` showed a clipped
+bottom shield — but that was the EXAMPLE's `HologramParams::default()` framing (fit 0.86,
+no shield-box scale, near-square output), NOT the screen's SELF-STATUS framing — a test
+artifact, not the real screen.
+**Improvement (done):** `mesh_holo` fits about the model ORIGIN (which projects to (0,0),
+so the origin lands at the image centre regardless of hull asymmetry) with `scale =
+min(hull-fit at fit, box-fit at BOX_FIT=0.98)` — the hull fills `fit` of its longest axis
+when the shields have room, else shrinks just enough for the whole cage to fit. Generic
+across hull aspects (verified DRAK Clipper / AEGS Gladius / AEGS Avenger). `ir_compose`
+draws a `WidgetRuntimeImage` FULL-SCREEN (full width, top→`rect.y+rect.h` = the node's own
+bottom edge = footer top), since a vehicle hologram is a background 3D render, not 2D
+content confined to the inset MFD sub-rect. `holo_preview` now reads `HOLO_FIT` /
+`HOLO_PERSP` / `HOLO_FACE_ALPHA` / `HOLO_SHIELD_ALPHA` / `HOLO_SHIELD_SCALE` / `HOLO_W` /
+`HOLO_H` so you can SIMULATE the screen's real framing on any hull before claiming generic
+— don't trust the default-framing preview for a genericness verdict.
+**Action:** code `85c574f40` (origin-centre + full-screen) / `6ddba615c` (min-fit + the
+`holo_preview` knobs); dossier self_master row documents the model.
+
+### 73. Onboarding a hologram / composited-image screen as GOLD = `--category text`, not image (the standalone-canvas IR snapshot is degenerate) + remember the hard-coded target-count guard
+**Observed:** onboarding `clipper_self_master` GOLD via the standard flow failed twice,
+opaquely: first the live-IR guard `clipper_self_master: target category Image missing in
+baseline/current snapshot` (default `add_ui_regression_target.sh --category image`), then
+`manifest_contains_expected_visual_targets … expected eleven manifest targets`. Root cause
+of the first: the SELF-STATUS centre is a composited 3D HOLOGRAM; the IR-snapshot freeze
+pipeline renders the canvas STANDALONE (no cockpit scene / hologram fetcher / state pins),
+so the self_master snapshot is DEGENERATE — only the screen's 2 text fields, no Image
+element — and `require_category_present(Image)` fails. The meaningful baseline for a
+hologram is the WHOLE-IMAGE regression artifact (the exported PNG, which DOES carry the
+composited hologram), not the structural snapshot.
+**Improvement (done):** onboard a hologram / composited-image screen as **`--category
+text`** — the whole-image artifact guards the rendered hologram, the IR snapshot guards
+the only structurally-capturable elements (the text). Re-freeze the IR snapshot with
+`--allow-empty` to update the category metadata when only the manifest category changed.
+And ALWAYS bump the hard-coded `manifest_contains_expected_visual_targets` count
+(11→12) + add an id assertion when adding a manifest target.
+**Action:** `95a117213`; dossier self_master row + the count guard updated.
