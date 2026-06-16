@@ -1219,7 +1219,7 @@ fn resolve_canvas_graph_inner(
     // recursive `resolve_canvas_graph_inner` calls — no cycle can run forever.
     let conditional_canvas_norms: std::collections::HashSet<String> = {
         let mut set = std::collections::HashSet::new();
-        for entry in pick_active_entries(record_value, root_json, manufacturer_id) {
+        for entry in all_canvas_guard_entries(record_value) {
             let has_conditions = entry
                 .get("conditionsList")
                 .and_then(|v| v.as_array())
@@ -2140,6 +2140,35 @@ fn entries_from(value: &serde_json::Value) -> Vec<&serde_json::Value> {
         .and_then(|v| v.as_array())
         .map(|entries| entries.iter().collect())
         .unwrap_or_default()
+}
+
+/// Every style entry that could carry a `canvas`-reference modifier, across
+/// `defaultStyles` AND every `brandStyles[]` manufacturer block — NOT just the
+/// active brand (`pick_active_entries`).
+///
+/// The Pass-2 mode-switch guard (`conditional_canvas_norms`) needs the canvas
+/// URL of *any* conditional entry "regardless of which entry Pass 1 selected"
+/// (the resolver header's documented intent). A WidgetCanvas host can author a
+/// `canvas` DEFAULT that is another manufacturer's variant placeholder — the
+/// master-mode display authors the AEGS-Gladius variant as its editor
+/// placeholder while a `Set Canvas` modifier swaps it to the active ship's
+/// variant. On a DRAK ship `pick_active_entries` returns only the DRAK entries,
+/// so the AEGS placeholder is absent from the guard and Pass 2 follows it,
+/// overlaying the AEGS ship-in-oval on top of the DRAK layout. Collecting every
+/// brand's entries closes that gap; the guard still only skips a URL that was
+/// NOT visited by Pass 1, so genuine content canvases (which no brand entry
+/// references) are untouched.
+fn all_canvas_guard_entries(record_value: &serde_json::Value) -> Vec<&serde_json::Value> {
+    let mut out: Vec<&serde_json::Value> = Vec::new();
+    if let Some(default_styles) = record_value.get("defaultStyles") {
+        out.extend(entries_from(default_styles));
+    }
+    if let Some(brands) = record_value.get("brandStyles").and_then(|v| v.as_array()) {
+        for brand in brands {
+            out.extend(entries_from(brand));
+        }
+    }
+    out
 }
 
 /// Node IDs at or above this value belong to the widget-standard expansion

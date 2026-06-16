@@ -849,6 +849,112 @@ mod tests_param_relay {
         }
     }
 
+    /// Mirror of the master-mode display (`HC_HUD_Ship_Master_Mode_Display_Master`):
+    /// the interchangeable host `WidgetCanvas` carries an AUTHORED `canvas`
+    /// default pointing at ONE manufacturer's variant (the editor placeholder —
+    /// here AEGS) while a brand-style `Set Canvas` modifier swaps it to the
+    /// active ship's variant (DRAK). Only the active variant must render. The
+    /// authored placeholder matches a NON-active brand entry's canvas-reference,
+    /// so Pass 2 must skip it (the mode-switch guard's documented intent is "any
+    /// conditional entry, regardless of which Pass 1 selected"). Without the
+    /// skip both overlap — the AEGS ship-in-oval rendered on top of the DRAK
+    /// layout. Counterexample: the velocity-num sibling authors `canvas: ""`, so
+    /// only the modifier variant ever instantiated and the bug was latent.
+    fn variant_marker_canvas(record: &str, marker: &str) -> serde_json::Value {
+        serde_json::json!({
+            "_RecordName_": format!("BuildingBlocks_Canvas.{record}"),
+            "_RecordId_": "00000000-0000-0000-0000-0000000r0010",
+            "_RecordValue_": {
+                "_Type_": "BuildingBlocks_Canvas",
+                "size": {"_Type_": "Vec3", "x": 100.0, "y": 100.0, "z": 0.0},
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": marker, "isActive": true}
+                ],
+                "operations": []
+            }
+        })
+    }
+
+    fn brand_set_canvas_entry(brand_id: &str, variant_url: &str) -> serde_json::Value {
+        serde_json::json!({
+            "_Type_": "BuildingBlocks_BrandStyles",
+            "brandIdentifier": brand_id,
+            "entries": [
+                {"_Type_": "BuildingBlocks_StyleEntry", "name": "Set Canvas",
+                 "conditionsList": [
+                    {"_Type_": "BuildingBlocks_StyleConditionList", "name": "cl",
+                     "conditions": [
+                        {"_Type_": "BuildingBlocks_StyleSelectorConditionType", "type": "Canvas"}
+                     ]}
+                 ],
+                 "modifiers": [
+                    {"_Type_": "BuildingBlocks_FieldModifierRecordRef",
+                     "field": {"_Type_": "BuildingBlocks_FieldModifierRecordRefTypeCanvasReferenceRecord",
+                               "value": variant_url}}
+                 ],
+                 "transitions": []}
+            ]
+        })
+    }
+
+    fn interchangeable_brand_swap_root() -> serde_json::Value {
+        serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.Test_InterchangeableBrandSwap",
+            "_RecordId_": "00000000-0000-0000-0000-0000000r0009",
+            "_RecordValue_": {
+                "_Type_": "BuildingBlocks_Canvas",
+                "size": {"_Type_": "Vec3", "x": 100.0, "y": 100.0, "z": 0.0},
+                "brandStyles": [
+                    brand_set_canvas_entry(
+                        "file://./../styles/s_aegs_hud.json", "file://./test_aegs_variant.json"),
+                    brand_set_canvas_entry(
+                        "file://./../styles/s_drak_hud.json", "file://./test_drak_variant.json")
+                ],
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": "root", "isActive": true},
+                    {"_Pointer_": "ptr:2", "_Type_": "BuildingBlocks_WidgetCanvas",
+                     "name": "canvas_interchangeable", "parent": "_PointsTo_:ptr:1",
+                     "isActive": true, "instantiated": true,
+                     "canvas": "file://./test_aegs_variant.json"}
+                ],
+                "operations": []
+            }
+        })
+    }
+
+    fn fetcher_brand_swap(path: &str) -> Result<serde_json::Value, String> {
+        let p = path.to_ascii_lowercase();
+        if p.contains("test_aegs_variant") {
+            Ok(variant_marker_canvas("Test_AegsVariant", "aegs_marker"))
+        } else if p.contains("test_drak_variant") {
+            Ok(variant_marker_canvas("Test_DrakVariant", "drak_marker"))
+        } else {
+            Err(format!("no record for '{path}'"))
+        }
+    }
+
+    #[test]
+    fn interchangeable_authored_default_does_not_overlay_active_brand_variant() {
+        let defaults = DefaultValueRegistry::default();
+        let scene = resolve_canvas_graph_with_defaults(
+            &interchangeable_brand_swap_root(),
+            Some("drak"),
+            &fetcher_brand_swap,
+            None,
+            None,
+            &defaults,
+        )
+        .expect("resolve");
+        let drak = scene.nodes.values().filter(|n| n.name == "drak_marker").count();
+        let aegs = scene.nodes.values().filter(|n| n.name == "aegs_marker").count();
+        assert_eq!(drak, 1, "active DRAK brand variant must render");
+        assert_eq!(
+            aegs, 0,
+            "non-active AEGS authored-default placeholder must NOT overlay the active variant"
+        );
+    }
 }
 
 // Tests for parent param wiring target selection vs merged descendant defs
