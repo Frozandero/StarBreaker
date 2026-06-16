@@ -1525,6 +1525,7 @@ impl StarBreakerMcp {
             localization_map: None,
             loc_fetcher: None,
             derived_values: None,
+            hologram_fetcher: None,
         };
         let ir = match starbreaker_ui::compile_ir_for_binding(&inputs) {
             Ok(ir) => ir,

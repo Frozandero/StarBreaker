@@ -309,6 +309,7 @@ fn compile_snapshot(
         localization_map: localization_map.cloned(),
         loc_fetcher: None,
         derived_values: None,
+        hologram_fetcher: None,
     };
 
     let ir = compile_ir_for_binding(&inputs)

@@ -209,6 +209,7 @@ fn compile_target_ir(
         localization_map,
         loc_fetcher: None,
         derived_values: None,
+        hologram_fetcher: None,
     };
 
     compile_ir_for_binding(&inputs).expect("target IR compile should succeed")

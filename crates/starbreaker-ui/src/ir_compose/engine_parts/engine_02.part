@@ -521,6 +521,7 @@ mod tests {
             style: &style,
             defaults: &defaults,
             assets: &assets,
+            hologram_fetcher: None,
         };
         let mut node = blank_node("widget_custom_shape");
         node.asset_ref = Some("shape.svg".to_string());
@@ -549,6 +550,7 @@ mod tests {
             style: &style,
             defaults: &defaults,
             assets: &assets,
+            hologram_fetcher: None,
         };
         let mut node = blank_node("widget_custom_shape");
         node.asset_ref = Some("shape.svg".to_string());
@@ -583,6 +585,7 @@ mod tests {
             style: &style,
             defaults: &defaults,
             assets: &assets,
+            hologram_fetcher: None,
         };
         let mut node = blank_node("widget_custom_shape");
         node.asset_ref = Some("UI/Textures/Vector/General/FingerPrint.svg".to_string());
@@ -616,6 +619,7 @@ mod tests {
             style: &style,
             defaults: &defaults,
             assets: &assets,
+            hologram_fetcher: None,
         };
         let mut node = blank_node("widget_custom_shape");
         node.icon_tint_colour = Some([0.2, 0.6, 0.9, 1.0]);
@@ -640,6 +644,7 @@ mod tests {
             style: &style,
             defaults: &defaults,
             assets: &assets,
+            hologram_fetcher: None,
         };
         let mut node = blank_node("widget_manufacturer_logo");
         node.icon_tint_colour = Some([0.2, 0.6, 0.9, 1.0]);
@@ -657,6 +662,7 @@ mod tests {
             style: &style,
             defaults: &defaults,
             assets: &assets,
+            hologram_fetcher: None,
         };
         let node = blank_node("widget_manufacturer_logo");
 
@@ -690,6 +696,7 @@ mod tests {
             style: &style,
             defaults: &defaults,
             assets: &assets,
+            hologram_fetcher: None,
         };
         let border = uniform_test_border(3.0, [1.0, 0.0, 0.0, 1.0]);
         let rect = Rect { x: 0.0, y: 0.0, w: 64.0, h: 64.0 };
@@ -729,6 +736,7 @@ mod tests {
             style: &style,
             defaults: &defaults,
             assets: &assets,
+            hologram_fetcher: None,
         };
 
         let bright = resolve_colour_token(&ctx, "Bright").expect("bright resolves");
@@ -755,6 +763,7 @@ mod tests {
             style: &style,
             defaults: &defaults,
             assets: &assets,
+            hologram_fetcher: None,
         };
 
         let disabled = resolve_colour_token(&ctx, "Disabled").expect("disabled resolves");
@@ -1069,6 +1078,7 @@ mod tests_c {
             style: &style,
             defaults: &defaults,
             assets: &assets,
+            hologram_fetcher: None,
         };
         let mut node = blank_node("widget_image");
         node.icon_tint_colour_token = Some("Base".to_string());
@@ -1099,6 +1109,7 @@ mod tests_c {
             style: &style,
             defaults: &defaults,
             assets: &assets,
+            hologram_fetcher: None,
         };
         assert_eq!(
             resolve_colour_token(&ctx, "MissionObjectives"),
@@ -1150,6 +1161,7 @@ mod tests_c {
             style: &style,
             defaults: &defaults,
             assets: &assets,
+            hologram_fetcher: None,
         };
         let mut node = blank_node("widget_image");
         node.colour_overlay_enabled = true;
@@ -1188,6 +1200,7 @@ mod tests_c {
             style: &style,
             defaults: &defaults,
             assets: &assets,
+            hologram_fetcher: None,
         };
         let mut node = blank_node("widget_image");
         node.colour_overlay_enabled = true;
@@ -1223,6 +1236,7 @@ mod tests_c {
             style: &style,
             defaults: &defaults,
             assets: &assets,
+            hologram_fetcher: None,
         };
 
         assert_eq!(resolve_colour_token(&ctx, "Base"), Some(style_primary_rgba(&ctx)));
@@ -1256,6 +1270,7 @@ mod tests_c {
             style: &drake_hud_like_style,
             defaults: &defaults,
             assets: &assets,
+            hologram_fetcher: None,
         };
         assert_eq!(
             resolve_colour_token(&drake_ctx, "Accent2"),
@@ -1295,6 +1310,7 @@ mod tests_c {
             style: &style,
             defaults: &defaults,
             assets: &assets,
+            hologram_fetcher: None,
         };
         let mut node = blank_node("widget_text_field");
         node.text_style = Some(crate::ui_ir::UiIrTextStyle {
@@ -1328,6 +1344,7 @@ mod tests_c {
             style: &style,
             defaults: &defaults,
             assets: &assets,
+            hologram_fetcher: None,
         };
         let mut node = blank_node("widget_custom_shape");
         node.custom_shape = Some(UiIrCustomShape {
@@ -1354,6 +1371,7 @@ mod tests_c {
             style: &style,
             defaults: &defaults,
             assets: &assets,
+            hologram_fetcher: None,
         };
         let mut node = blank_node("widget_custom_shape");
         node.custom_shape = Some(UiIrCustomShape {
@@ -1462,6 +1480,7 @@ mod tests_c {
             style: &style,
             defaults: &defaults,
             assets: &assets,
+            hologram_fetcher: None,
         };
 
         let mut node = blank_node("BuildingBlocks_WidgetManufacturerLogo");
@@ -1532,6 +1551,7 @@ mod tests_c {
             style: &style,
             defaults: &defaults,
             assets: &assets,
+            hologram_fetcher: None,
         };
 
         let img = render_ui_ir_document(&document, &ctx, &atlas).expect("IR render should succeed");
@@ -1638,6 +1658,7 @@ mod tests_c {
             style: &style,
             defaults: &defaults,
             assets: &assets,
+            hologram_fetcher: None,
         };
 
         let img = render_ui_ir_document(&document, &ctx, &atlas).expect("IR render should succeed");
@@ -1645,6 +1666,87 @@ mod tests_c {
         assert!(center[0] > 0, "asset tint should contribute red at the center");
         let border = img.get_pixel(4, 4).0;
         assert!(border[0] > 200 && border[1] > 200, "border pixel should be yellow-ish");
+    }
+
+    /// A `WidgetRuntimeImage` (the SELF-STATUS own-vehicle hologram) composites
+    /// the hologram fetcher's rendered image into the node rect, in place of the
+    /// node's flat authored background fill. Guards the `draw_non_text_node`
+    /// runtime-image branch + the `ComposeContext::hologram_fetcher` wiring.
+    #[test]
+    fn render_ui_ir_document_composites_vehicle_hologram() {
+        struct StubHolo;
+        impl crate::pipeline::HologramFetcher for StubHolo {
+            fn fetch_vehicle_hologram(
+                &self,
+                width: u32,
+                height: u32,
+                _tint: [f32; 4],
+            ) -> Option<crate::pipeline::HologramImage> {
+                // Solid opaque GREEN — distinct from the node's blue authored fill.
+                Some(crate::pipeline::HologramImage {
+                    width,
+                    height,
+                    rgba: [0u8, 255, 0, 255].repeat((width * height) as usize),
+                })
+            }
+        }
+
+        let mut document: UiIrDocument = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/ui_ir/expected_testroot_ir.json"
+        ))
+        .expect("golden fixture should parse");
+        // One own-vehicle runtime-image node with a BLUE authored holo tint.
+        document.nodes.truncate(1);
+        let node = &mut document.nodes[0];
+        node.node_type = "BuildingBlocks_WidgetRuntimeImage".to_string();
+        node.background_fill_colour = Some([0.0, 0.0, 1.0, 1.0]);
+        node.is_active = true;
+        node.custom_shape = None;
+        node.asset_ref = None;
+        node.alpha = 1.0;
+        let rect = node.computed_rect;
+
+        let asset_fetcher = StubFetcher { images: HashMap::new() };
+        let atlas = AtlasLibrary::new(&asset_fetcher, Some("drak"));
+        let style = stub_style();
+        let defaults = crate::defaults::DefaultValueRegistry::with_well_known_path_defaults();
+        let assets = crate::swf_assets::SwfAssetLibrary::new(vec![
+            b'F', b'W', b'S', 6, 21, 0, 0, 0,
+            0x00, 0x18, 0x00, 0x01, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ])
+        .expect("minimal swf should parse");
+        let holo = StubHolo;
+
+        // With a fetcher: the rect composites GREEN (the hologram).
+        let ctx = ComposeContext {
+            style: &style,
+            defaults: &defaults,
+            assets: &assets,
+            hologram_fetcher: Some(&holo),
+        };
+        let img = render_ui_ir_document(&document, &ctx, &atlas).expect("IR render should succeed");
+        let px = (rect.x + rect.w * 0.5) as u32;
+        let py = (rect.y + rect.h * 0.5) as u32;
+        let centre = img.get_pixel(px.min(img.width() - 1), py.min(img.height() - 1)).0;
+        assert!(
+            centre[1] > 150 && centre[1] > centre[2],
+            "hologram (green) should be composited into the runtime-image rect, got {centre:?}"
+        );
+
+        // Without a fetcher: falls back to the flat authored BLUE fill (no green).
+        let ctx_none = ComposeContext {
+            style: &style,
+            defaults: &defaults,
+            assets: &assets,
+            hologram_fetcher: None,
+        };
+        let img2 = render_ui_ir_document(&document, &ctx_none, &atlas).expect("IR render should succeed");
+        let centre2 = img2.get_pixel(px.min(img2.width() - 1), py.min(img2.height() - 1)).0;
+        assert!(
+            centre2[2] > centre2[1],
+            "without a fetcher the authored blue fill should show, got {centre2:?}"
+        );
     }
 
     /// A `WidgetTextField`'s `StrokeColor` is its glyph outline, NOT a box around
@@ -1751,6 +1853,7 @@ mod tests_c {
             style: &style,
             defaults: &defaults,
             assets: &assets,
+            hologram_fetcher: None,
         };
 
         let img = render_ui_ir_document(&document, &ctx, &atlas).expect("IR render should succeed");
@@ -2030,6 +2133,7 @@ mod tests_d {
             style: &style,
             defaults: &defaults,
             assets: &assets,
+            hologram_fetcher: None,
         };
 
         let img_a = render_ui_ir_document(&document, &ctx, &atlas).expect("first render should succeed");
@@ -2190,7 +2294,7 @@ mod tests_d {
         let style = stub_style();
         let defaults = crate::defaults::DefaultValueRegistry::with_well_known_path_defaults();
         let assets = minimal_swf_assets();
-        let ctx = ComposeContext { style: &style, defaults: &defaults, assets: &assets };
+        let ctx = ComposeContext { style: &style, defaults: &defaults, assets: &assets, hologram_fetcher: None };
         let rect = ir_rect_to_layout_rect(child.computed_rect);
         let inline = inline_nested_textfield_text_rect(
             &child,

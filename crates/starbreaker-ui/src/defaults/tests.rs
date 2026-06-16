@@ -51,9 +51,15 @@ fn well_known_defaults_hp() {
 #[test]
 fn well_known_defaults_power() {
     let reg = DefaultValueRegistry::with_well_known_path_defaults();
+    // `/seatdashboard/powerstate` is an INTEGER enum (every consumer reads it
+    // via `BindingsIntegerVariable`): the SELF-STATUS player-diagram gate is
+    // `PowerState == 1`, and the in-game standing view shows that diagram while
+    // the power readout localises to "OFFLINE", so the at-rest enum value is 1
+    // (the text screens localise the integer to "OFFLINE"). The earlier string
+    // pin was type-incorrect — it displayed but failed the integer gate.
     assert_eq!(
         reg.lookup_path("/seatdashboard/powerstate"),
-        Some(&Value::Str("OFFLINE".into()))
+        Some(&Value::Int(1))
     );
     assert_eq!(reg.lookup_path("/seatdashboard/powercurrent"), Some(&Value::Int(2)));
     assert_eq!(reg.lookup_path("/seatdashboard/powermax"), Some(&Value::Int(16)));

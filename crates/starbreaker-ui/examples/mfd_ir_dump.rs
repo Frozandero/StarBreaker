@@ -246,6 +246,7 @@ fn main() {
         localization_map: None,
         loc_fetcher: None,
         derived_values: None,
+        hologram_fetcher: None,
     };
     let compile_start = std::time::Instant::now();
     let ir = starbreaker_ui::compile_ir_for_binding(&inputs).expect("compile");

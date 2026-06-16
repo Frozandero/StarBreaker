@@ -97,6 +97,27 @@ pub trait StyleFetcher {
     fn fetch_manufacturer_style(&self, manufacturer_id: &str) -> Result<ManufacturerStyle, UiError>;
 }
 
+/// A rendered vehicle-hologram bitmap: straight (non-premultiplied) RGBA8,
+/// row-major, exactly `width * height * 4` bytes.
+pub struct HologramImage {
+    pub width: u32,
+    pub height: u32,
+    pub rgba: Vec<u8>,
+}
+
+/// Render the loaded vehicle's hologram for a `WidgetRuntimeImage`/`Primitive`
+/// node (the SELF-STATUS "Own Vehicle Hologram"), which the engine draws as a
+/// live 3D primitive and the 2D UI compositor cannot. The implementor (the
+/// export pipeline) decodes the render scene's root-vehicle hull mesh and
+/// rasterises it to a neutral greyscale hologram; `tint` is the node's authored
+/// background fill (the per-manufacturer holo colour) applied over that
+/// greyscale. The compositor draws the returned image into the node's rect.
+/// Returns `None` when no vehicle geometry is available (e.g. non-vehicle
+/// exports), leaving the node unrendered.
+pub trait HologramFetcher {
+    fn fetch_vehicle_hologram(&self, width: u32, height: u32, tint: [f32; 4]) -> Option<HologramImage>;
+}
+
 /// Borrowed snapshot of UiBinding fields needed by the pipeline.
 pub struct UiBindingView<'a> {
     pub canvas_guid: Option<&'a str>,
@@ -144,6 +165,10 @@ pub struct PipelineInputs<'a> {
     /// Applied over the compiled-in well-known defaults; `None` keeps the
     /// static at-rest registry.
     pub derived_values: Option<std::collections::HashMap<String, crate::canvas::Value>>,
+    /// Renders the loaded vehicle's hologram for `WidgetRuntimeImage`/`Primitive`
+    /// own-vehicle nodes. `None` leaves those nodes unrendered (the prior
+    /// behaviour for callers/tests that don't supply ship geometry).
+    pub hologram_fetcher: Option<&'a dyn HologramFetcher>,
 }
 
 /// Diagnostics captured while rendering a UI image.
@@ -519,6 +544,7 @@ pub fn render_for_binding_ir(inputs: &PipelineInputs<'_>) -> Result<Vec<u8>, UiE
         style: &style,
         defaults: &defaults,
         assets: &assets,
+        hologram_fetcher: inputs.hologram_fetcher,
     };
     let atlas_manufacturer_id = inputs.binding.manufacturer_id.or_else(|| {
         ir.selected_style_source

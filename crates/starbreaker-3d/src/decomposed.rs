@@ -2679,6 +2679,7 @@ fn generated_ui_binding_record(
         root_manufacturer_id,
         loc_data,
         ship_data,
+        Some(root_entity_name),
     ) {
         Ok(png_bytes) => {
             let export_path = generated_ui_binding_path(

@@ -291,6 +291,7 @@ fn render_target(
         localization_map,
         loc_fetcher,
         derived_values: None,
+        hologram_fetcher: None,
     };
 
     let png = render_for_binding(&inputs).map_err(|e| {
@@ -471,6 +472,7 @@ fn main() -> Result<(), String> {
             localization_map: load_localization_map(&workspace),
             loc_fetcher: None,
             derived_values: None,
+            hologram_fetcher: None,
         };
         print_layout_locations(&ui_target_a_inputs, "ui_target_a", query)?;
 
@@ -498,6 +500,7 @@ fn main() -> Result<(), String> {
             localization_map: load_localization_map(&workspace),
             loc_fetcher: None,
             derived_values: None,
+            hologram_fetcher: None,
         };
         print_layout_locations(&ui_target_b_inputs, "ui_target_b", query)?;
     }

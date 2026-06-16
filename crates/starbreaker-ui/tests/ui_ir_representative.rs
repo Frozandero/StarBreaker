@@ -133,6 +133,7 @@ fn compile_ir_for_representative_fixtures_validates() {
             localization_map: None,
             loc_fetcher: None,
             derived_values: None,
+            hologram_fetcher: None,
         };
 
         let ir = compile_ir_for_binding(&inputs)
@@ -177,6 +178,7 @@ fn stable_hash_is_repeatable_for_representative_fixture() {
         localization_map: None,
         loc_fetcher: None,
         derived_values: None,
+        hologram_fetcher: None,
     };
 
     let ir_a = compile_ir_for_binding(&inputs).expect("first compile");

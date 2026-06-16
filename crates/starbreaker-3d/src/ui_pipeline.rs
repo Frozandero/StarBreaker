@@ -15,11 +15,13 @@ use starbreaker_ui::pipeline::{CanvasFetcher, PipelineInputs, UiBindingView};
 use crate::types::UiBinding;
 
 mod canvas_fetcher;
+mod hologram_fetcher;
 mod p4k_fetchers;
 pub(crate) mod screen_aspect;
 mod ship_values;
 mod style_fetcher;
 use canvas_fetcher::DatacoreCanvasFetcher;
+use hologram_fetcher::P4kHologramFetcher;
 use p4k_fetchers::{P4kAssetFetcher, P4kSwfFetcher};
 pub use ship_values::UiShipData;
 use style_fetcher::ManufacturerStyleFetcher;
@@ -86,9 +88,11 @@ pub fn render_ui_binding_png(
     root_manufacturer_id: Option<&str>,
     loc_data: &UiLocData,
     ship_data: &UiShipData,
+    root_entity_name: Option<&str>,
 ) -> Result<Vec<u8>, String> {
     let t_ui = std::env::var("SB_UI_TIMING").ok().map(|_| std::time::Instant::now());
     let canvas_fetcher = DatacoreCanvasFetcher::new(db);
+    let hologram_fetcher = P4kHologramFetcher { p4k, db, root_entity_name };
     let view = UiBindingView {
         canvas_guid: binding.canvas_guid.as_deref(),
         content_canvas_guid: binding.content_canvas_guid.as_deref(),
@@ -132,6 +136,7 @@ pub fn render_ui_binding_png(
         localization_map: Some(loc_data.map.clone()),
         loc_fetcher: Some(&loc_data.ini),
         derived_values: ship_data.derived_values.clone(),
+        hologram_fetcher: Some(&hologram_fetcher),
     };
     let _ = texture_mip; // size is fixed per binding_kind; mip is applied at texture level
     let result = starbreaker_ui::pipeline::render_for_binding(&inputs).map_err(|e| e.to_string());
@@ -196,6 +201,9 @@ pub fn compile_ui_binding_ir_json(
         localization_map: Some(loc_data.map.clone()),
         loc_fetcher: Some(&loc_data.ini),
         derived_values: ship_data.derived_values.clone(),
+        // IR compilation does not rasterise the hologram bitmap (the node is
+        // present in the IR regardless); only the PNG render path needs it.
+        hologram_fetcher: None,
     };
     let _ = texture_mip;
     let ir = starbreaker_ui::pipeline::compile_ir_for_binding(&inputs).map_err(|e| e.to_string())?;

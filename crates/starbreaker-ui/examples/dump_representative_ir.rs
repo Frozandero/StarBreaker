@@ -138,6 +138,7 @@ fn dump_one(
         localization_map: None,
         loc_fetcher: None,
         derived_values: None,
+        hologram_fetcher: None,
     };
 
     let ir = compile_ir_for_binding(&inputs)

@@ -8,7 +8,7 @@
     "/TargetSelector/LockedTarget/Hostility": 1,
     "/ship/hp/current": "MAX",
     "/ship/hp/max": "MAX",
-    "/seatdashboard/powerstate": "OFFLINE",
+    "/seatdashboard/powerstate": 1,
     "/AnnunciatorProvider/Issues/[0000]/Severity": 0,
     "/AnnunciatorProvider/Issues/[0001]/Severity": 1,
     "/AnnunciatorProvider/Issues/[0002]/Severity": 0,

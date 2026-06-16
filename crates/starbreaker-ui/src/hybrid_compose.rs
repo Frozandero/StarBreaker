@@ -157,6 +157,7 @@ mod tests {
             style: &style,
             defaults: &defaults,
             assets: &assets,
+            hologram_fetcher: None,
         };
 
         render_ui_ir_with_swf_overlay(&document, &ctx, &atlas, &|_| None)

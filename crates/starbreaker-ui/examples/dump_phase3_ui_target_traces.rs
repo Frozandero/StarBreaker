@@ -244,6 +244,7 @@ fn trace_for_canvas(
         localization_map,
         loc_fetcher: None,
         derived_values: None,
+        hologram_fetcher: None,
     };
 
     let ir = compile_ir_for_binding(&inputs)

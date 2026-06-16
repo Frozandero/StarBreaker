@@ -53,6 +53,7 @@ fn placeholder_is_predominantly_magenta() {
         style: &style,
         defaults: &defaults,
         assets: &assets,
+        hologram_fetcher: None,
     };
     let img = render_canvas(
         &empty_canvas(),
@@ -89,6 +90,7 @@ fn placeholder_rejects_zero_size() {
         style: &style,
         defaults: &defaults,
         assets: &assets,
+        hologram_fetcher: None,
     };
     let err = render_canvas(
         &empty_canvas(),
@@ -111,6 +113,7 @@ fn render_bb_scene_empty_is_background_colour() {
         style: &style,
         defaults: &defaults,
         assets: &assets,
+        hologram_fetcher: None,
     };
     let fetcher = NullFetcher;
     let atlas = AtlasLibrary::new(&fetcher, Some("drak"));
@@ -153,6 +156,7 @@ fn render_bb_scene_rejects_zero_size() {
         style: &style,
         defaults: &defaults,
         assets: &assets,
+        hologram_fetcher: None,
     };
     let fetcher = NullFetcher;
     let atlas = AtlasLibrary::new(&fetcher, Some("drak"));

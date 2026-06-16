@@ -28,6 +28,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         style: &style,
         defaults: &defaults,
         assets: &swf_assets,
+        hologram_fetcher: None,
     };
 
     let before = render_ui_ir_document(&document, &ctx, &atlas)?;

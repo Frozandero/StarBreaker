@@ -261,7 +261,7 @@ fn hybrid_render_composites_swf_for_flash_node() {
     let assets = SwfAssetLibrary::new(swf_bytes).expect("SwfAssetLibrary");
     let style = black_style();
     let defaults = DefaultValueRegistry::with_well_known_path_defaults();
-    let ctx = ComposeContext { style: &style, defaults: &defaults, assets: &assets };
+    let ctx = ComposeContext { style: &style, defaults: &defaults, assets: &assets, hologram_fetcher: None };
     let atlas = AtlasLibrary::new(&EmptyFetcher, None);
 
     let document = make_document(
@@ -300,7 +300,7 @@ fn hybrid_render_suppresses_bb_subtree_of_flash_node() {
     .expect("minimal swf");
     let style = black_style();
     let defaults = DefaultValueRegistry::with_well_known_path_defaults();
-    let ctx = ComposeContext { style: &style, defaults: &defaults, assets: &assets };
+    let ctx = ComposeContext { style: &style, defaults: &defaults, assets: &assets, hologram_fetcher: None };
     let atlas = AtlasLibrary::new(&EmptyFetcher, None);
 
     // Flash parent (id=1), child with red fill (id=2)
@@ -339,7 +339,7 @@ fn non_flash_node_still_renders_bb() {
     .expect("minimal swf");
     let style = black_style();
     let defaults = DefaultValueRegistry::with_well_known_path_defaults();
-    let ctx = ComposeContext { style: &style, defaults: &defaults, assets: &assets };
+    let ctx = ComposeContext { style: &style, defaults: &defaults, assets: &assets, hologram_fetcher: None };
     let atlas = AtlasLibrary::new(&EmptyFetcher, None);
 
     let red_fill = Some([1.0f32, 0.0, 0.0, 1.0]);

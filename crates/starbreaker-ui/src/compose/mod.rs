@@ -35,6 +35,10 @@ pub struct ComposeContext<'a> {
     pub style: &'a ManufacturerStyle,
     pub defaults: &'a DefaultValueRegistry,
     pub assets: &'a SwfAssetLibrary,
+    /// Renders the loaded vehicle's hologram for `WidgetRuntimeImage` nodes.
+    /// `None` (the default for tests and non-vehicle callers) leaves those
+    /// nodes drawn by their authored fields only.
+    pub hologram_fetcher: Option<&'a dyn crate::pipeline::HologramFetcher>,
 }
 
 /// Output canvas dimensions in pixels.
