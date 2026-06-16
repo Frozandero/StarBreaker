@@ -60,6 +60,23 @@ findings land here in two states, with a lifecycle:
   skill (or arc start) skims the open items first.
 - **Multi-ship generalization unverified** (see Known assumptions) — exercise
   when a second `reference/in-game/` folder exists.
+- **2026-06-16 (verify a subagent/memory DATA claim with the RIGHT tool — be as
+  skeptical of your own falsification; compass round 3).** The find-it-or-prove-
+  absence subagent correctly diagnosed the compass label colour (`s_drak_hud` H1 =
+  Accent2/regular vs the misclassified `s_drak_env` bold/Bright). The agent
+  "verified" it by `sed`/`grep`-ing line ranges of the 2 MB
+  `textfieldwidgetstandard.json`, landed on the WRONG H1 entry, and FALSIFIED the
+  correct claim — then spent a long detour on an overlay-shape fix (wrong role
+  `Base` not `Accent2`, no weight fix) + a revert + a user round-trip, before a
+  `FONTPROBE` env-probe and a 6-line `json.load` proved the subagent right.
+  Candidate skill text: when re-deriving an inherited verdict OR checking a
+  subagent's data claim, read the data the way it must be read to be correct
+  (parse the JSON / run a runtime probe like `BB_A3_STYLE_PROBE` or a one-off
+  `eprintln`), NOT a line-range grep of a big nested record — and treat a quick
+  refutation of a plausible claim as itself needing the rigorous read before you
+  act on it. (The skill's existing "inherited verdicts are hints, re-derive" rule
+  is what surfaced the blocker was wrong; this adds *how* to verify so the
+  re-derivation doesn't itself mislead.)
 
 ## Known assumptions & risks
 
