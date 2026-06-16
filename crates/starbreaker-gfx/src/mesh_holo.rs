@@ -131,20 +131,31 @@ pub fn render_vehicle_hologram(
         })
         .collect();
 
-    // 2. Fit the projected (x, y) extent into the image with a uniform scale.
-    let (mut minx, mut miny, mut maxx, mut maxy) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
-    for v in &proj {
-        minx = minx.min(v[0]);
-        miny = miny.min(v[1]);
-        maxx = maxx.max(v[0]);
-        maxy = maxy.max(v[1]);
+    // 2. Fit to the HULL extent (the shield panes are excluded from the fit so
+    //    they frame the hull near the edges rather than shrinking it). The fit is
+    //    measured about the model ORIGIN — which projects to (0, 0) — so the hull
+    //    extent on the farther side of the origin sets the scale and `fit` is the
+    //    fraction of the frame the hull's longest axis fills.
+    let shield_start = params.shield_index_start.unwrap_or(usize::MAX);
+    let hull_end = shield_start.min(indices.len());
+    let (mut ext_x, mut ext_y) = (1e-6_f32, 1e-6_f32);
+    if hull_end >= 3 {
+        for &vi in &indices[0..hull_end] {
+            if let Some(p) = proj.get(vi as usize) {
+                ext_x = ext_x.max(p[0].abs());
+                ext_y = ext_y.max(p[1].abs());
+            }
+        }
+    } else {
+        for p in &proj {
+            ext_x = ext_x.max(p[0].abs());
+            ext_y = ext_y.max(p[1].abs());
+        }
     }
-    let span_x = (maxx - minx).max(1e-6);
-    let span_y = (maxy - miny).max(1e-6);
     let fit = params.fit.clamp(0.05, 1.0);
-    let scale = ((width as f32 * fit) / span_x).min((height as f32 * fit) / span_y);
-    let cx = (minx + maxx) * 0.5;
-    let cy_mid = (miny + maxy) * 0.5;
+    let scale = ((width as f32 * fit * 0.5) / ext_x).min((height as f32 * fit * 0.5) / ext_y);
+    let cx = 0.0;
+    let cy_mid = 0.0;
     let half_w = width as f32 * 0.5;
     let half_h = height as f32 * 0.5;
     // Screen y grows downward; model +Y (forward) should point up in the frame.

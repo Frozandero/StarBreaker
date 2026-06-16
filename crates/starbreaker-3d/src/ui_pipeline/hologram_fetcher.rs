@@ -108,9 +108,21 @@ impl HologramFetcher for P4kHologramFetcher<'_> {
         // shield triangles begin so the renderer can fade them vs the hull.
         // Shields read as a faint see-through cage, well below the hull alpha.
         const SELF_STATUS_SHIELD_ALPHA_SCALE: f32 = 0.30;
+        // Owner-tuned view choice (like the framing constants below): shrink the
+        // shield box slightly toward the hull origin so the faces read smaller
+        // and hug the hull more closely — keeps them clear of the left/right
+        // image edges at this fill. The box GEOMETRY stays data-driven
+        // (`with_shield_panes` / `shieldDistance`); this only scales the result.
+        const SELF_STATUS_SHIELD_BOX_SCALE: f32 = 0.82;
+        let hull_vtx = mesh.positions.len();
         let shield_index_start = match self.shield_proxy() {
             Some((pane, shield_distance)) if !pane.positions.is_empty() => {
-                let (merged, boundary) = crate::with_shield_panes(mesh, &pane, shield_distance);
+                let (mut merged, boundary) = crate::with_shield_panes(mesh, &pane, shield_distance);
+                for p in merged.positions.iter_mut().skip(hull_vtx) {
+                    p[0] *= SELF_STATUS_SHIELD_BOX_SCALE;
+                    p[1] *= SELF_STATUS_SHIELD_BOX_SCALE;
+                    p[2] *= SELF_STATUS_SHIELD_BOX_SCALE;
+                }
                 mesh = merged;
                 Some(boundary)
             }
@@ -125,10 +137,10 @@ impl HologramFetcher for P4kHologramFetcher<'_> {
         // reference, not a layout fudge.
         const SELF_STATUS_YAW_DEG: f32 = 0.0;
         const SELF_STATUS_TILT_BACK_DEG: f32 = -30.0;
-        // The hull + snug shield box fill the WidgetRuntimeImage rect with a
-        // margin; the box now hugs the hull (see `with_shield_panes`), so the
-        // hull reads ~20% larger than the old loose-box framing at this fit.
-        const SELF_STATUS_FIT: f32 = 0.80;
+        // The HULL fills ~65% of its longest image axis (the rasteriser fits the
+        // hull, not the shields, and centres on the origin); the shield box then
+        // frames the hull inside the image edges.
+        const SELF_STATUS_FIT: f32 = 0.75;
         // Filled, shaded faces only (no wireframe) with a strong perspective so
         // the flat hull reads as an angled 3D hologram rather than a top-down
         // silhouette.

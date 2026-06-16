@@ -211,16 +211,24 @@ fn draw_non_text_node(
         && let Some(fetcher) = ctx.hologram_fetcher
         && let Some(tint) = node.background_fill_colour
     {
-        let holo_w = rect.w.round().max(1.0) as u32;
-        let holo_h = rect.h.round().max(1.0) as u32;
+        // The hologram is a full-screen background 3D render, not 2D UI confined
+        // to the inset MFD content sub-rect. Fill the image WIDTH and run from
+        // the image top down to the footer — the node rect's own bottom edge
+        // (`rect.y + rect.h`), which sits just above the footer chrome — instead
+        // of the authored content rect (16px-inset, overflowing the top).
+        let holo_x = 0.0_f32;
+        let holo_y = 0.0_f32;
+        let holo_bottom = (rect.y + rect.h).min(document.target_height as f32);
+        let holo_w = (document.target_width as f32).round().max(1.0) as u32;
+        let holo_h = (holo_bottom - holo_y).round().max(1.0) as u32;
         if let Some(holo) = fetcher.fetch_vehicle_hologram(holo_w, holo_h, tint)
             && let Some(img) = RgbaImage::from_raw(holo.width, holo.height, holo.rgba)
         {
             blit_atlas_image_tinted_with_mode(
                 pixmap,
                 &img,
-                rect.x.round() as i32,
-                rect.y.round() as i32,
+                holo_x.round() as i32,
+                holo_y.round() as i32,
                 [1.0, 1.0, 1.0, 1.0],
                 node.alpha,
                 BlendMode::SourceOver,
