@@ -18,6 +18,7 @@ fn main() {
     let out = env::args().nth(2).unwrap_or_else(|| "/tmp/holo.png".to_string());
     let tilt: f32 = env::args().nth(3).and_then(|s| s.parse().ok()).unwrap_or(15.0);
     let yaw: f32 = env::args().nth(4).and_then(|s| s.parse().ok()).unwrap_or(0.0);
+    let mut shield_index_start: Option<usize> = None;
 
     let p4k = MappedP4k::open(&p4k_path).expect("open p4k");
     let companion = format!("{cga}m");
@@ -25,10 +26,34 @@ fn main() {
         .read_file(&companion)
         .or_else(|_| p4k.read_file(&cga))
         .expect("read geometry");
-    let mesh = match p4k.read_file(&cga) {
+    let mut mesh = match p4k.read_file(&cga) {
         Ok(primary) => starbreaker_3d::parse_skin_positioned(&data, &primary).expect("parse skin + nmc"),
         Err(_) => parse_skin(&data).expect("parse skin"),
     };
+    if let Ok(sd) = env::var("HOLO_SHIELDS") {
+        let dist: f32 = sd.parse().unwrap_or(0.85);
+        let pane_cga = r"Data\Objects\UI\Shields\shield_pane\shield_pane.cgf";
+        if let (Ok(pv), Ok(pp)) = (p4k.read_file(&format!("{pane_cga}m")), p4k.read_file(pane_cga)) {
+            if let Ok(pane) = starbreaker_3d::parse_skin_positioned(&pv, &pp) {
+                let (mut lo, mut hi) = ([f32::MAX; 3], [f32::MIN; 3]);
+                for p in &pane.positions {
+                    for k in 0..3 {
+                        lo[k] = lo[k].min(p[k]);
+                        hi[k] = hi[k].max(p[k]);
+                    }
+                }
+                eprintln!(
+                    "PANE verts={} bbox=({:.3},{:.3},{:.3})..({:.3},{:.3},{:.3}) extent=({:.3},{:.3},{:.3})",
+                    pane.positions.len(),
+                    lo[0], lo[1], lo[2], hi[0], hi[1], hi[2],
+                    hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2],
+                );
+                let (merged, boundary) = starbreaker_3d::with_shield_panes(mesh, &pane, dist);
+                mesh = merged;
+                shield_index_start = Some(boundary);
+            }
+        }
+    }
     eprintln!(
         "verts={} indices={} tris={} submeshes={} bbox_min={:?} bbox_max={:?}",
         mesh.positions.len(),
@@ -62,6 +87,8 @@ fn main() {
         tilt_back_deg: tilt,
         yaw_deg: yaw,
         tint: [0.45, 0.75, 1.0, 1.0], // preview-only light blue
+        shield_index_start,
+        shield_alpha_scale: 0.5, // shields at half the hull face alpha
         ..HologramParams::default()
     };
     let t = std::time::Instant::now();

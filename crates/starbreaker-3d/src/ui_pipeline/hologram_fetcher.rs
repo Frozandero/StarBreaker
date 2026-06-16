@@ -46,6 +46,28 @@ impl P4kHologramFetcher<'_> {
         let geom_path = self.db.query_single::<String>(&compiled, record).ok()??;
         Some(datacore_path_to_p4k(&geom_path))
     }
+
+    /// Resolve and decode the generic shield-face proxy mesh
+    /// (`UIHoloVehicle_Config.shieldProxyModel`, a curved unit pane shared by
+    /// every ship's SELF-STATUS hologram). Returns `None` if the config record
+    /// or its asset is unavailable. Data-driven: the path comes from DataCore,
+    /// not a hard-coded asset reference.
+    fn shield_pane_mesh(&self) -> Option<crate::Mesh> {
+        let record = self.db.records_by_type_name("UIHoloVehicle_Config").next()?;
+        let compiled = self
+            .db
+            .compile_path::<String>(record.struct_id(), "shieldProxyModel")
+            .ok()?;
+        let proxy = self.db.query_single::<String>(&compiled, record).ok()??;
+        let p4k_path = datacore_path_to_p4k(&proxy);
+        let companion = format!("{p4k_path}m");
+        match (self.p4k.read_file(&companion), self.p4k.read_file(&p4k_path)) {
+            (Ok(verts), Ok(primary)) => crate::parse_skin_positioned(&verts, &primary).ok(),
+            (Ok(verts), Err(_)) => crate::parse_skin(&verts).ok(),
+            (Err(_), Ok(primary)) => crate::parse_skin(&primary).ok(),
+            (Err(_), Err(_)) => None,
+        }
+    }
 }
 
 impl HologramFetcher for P4kHologramFetcher<'_> {
@@ -61,7 +83,7 @@ impl HologramFetcher for P4kHologramFetcher<'_> {
         // geometry (wings, both engine pods, sub-objects) is assembled in world
         // space — raw `parse_skin` leaves parts detached / at the origin.
         let companion = format!("{p4k_path}m");
-        let mesh = match (self.p4k.read_file(&companion), self.p4k.read_file(&p4k_path)) {
+        let mut mesh = match (self.p4k.read_file(&companion), self.p4k.read_file(&p4k_path)) {
             (Ok(verts), Ok(primary)) => crate::parse_skin_positioned(&verts, &primary).ok()?,
             (Ok(verts), Err(_)) => crate::parse_skin(&verts).ok()?,
             (Err(_), Ok(primary)) => crate::parse_skin(&primary).ok()?,
@@ -70,6 +92,23 @@ impl HologramFetcher for P4kHologramFetcher<'_> {
         if mesh.positions.is_empty() || mesh.indices.len() < 3 {
             return None;
         }
+        // Wrap the hull in 4 shield faces forming a square box around it (15%
+        // margin off the larger horizontal dimension, 2× the hull height,
+        // gaps at the corners). The proxy mesh is data-driven; the margin and
+        // alpha scale are SELF-STATUS framing choices, like the camera angles
+        // below. `shield_index_start` marks where the shield triangles begin so
+        // the renderer can fade them relative to the hull.
+        const SELF_STATUS_SHIELD_MARGIN_FRAC: f32 = 0.15;
+        const SELF_STATUS_SHIELD_ALPHA_SCALE: f32 = 0.5;
+        let shield_index_start = match self.shield_pane_mesh() {
+            Some(pane) if !pane.positions.is_empty() => {
+                let (merged, boundary) =
+                    crate::with_shield_panes(mesh, &pane, SELF_STATUS_SHIELD_MARGIN_FRAC);
+                mesh = merged;
+                Some(boundary)
+            }
+            _ => None,
+        };
         // SELF-STATUS framing, calibrated to the in-game reference: yaw 0°
         // (nose pointing AWAY / up the frame), pitched -30° so the nose dips
         // DOWN, with perspective, filling roughly half the diagram area.
@@ -94,6 +133,8 @@ impl HologramFetcher for P4kHologramFetcher<'_> {
             face_alpha: SELF_STATUS_FACE_ALPHA,
             wire_alpha: SELF_STATUS_WIRE_ALPHA,
             perspective: SELF_STATUS_PERSPECTIVE,
+            shield_index_start,
+            shield_alpha_scale: SELF_STATUS_SHIELD_ALPHA_SCALE,
         };
         let img = render_vehicle_hologram(&mesh.positions, &mesh.indices, width, height, &params);
         Some(HologramImage {

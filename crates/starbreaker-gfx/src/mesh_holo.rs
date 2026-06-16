@@ -41,6 +41,15 @@ pub struct HologramParams {
     /// reads larger than the receding nose); large (≳ 10) is near-orthographic.
     /// Gives a flat ship a convincing angled-hologram look.
     pub perspective: f32,
+    /// Index-array offset (a multiple of 3) at which appended shield-pane
+    /// triangles begin. Triangles at or beyond it are filled at
+    /// `face_alpha × shield_alpha_scale` so the shield faces read fainter than
+    /// the hull. `None` = no shields (every triangle uses `face_alpha`).
+    pub shield_index_start: Option<usize>,
+    /// Alpha multiplier applied to shield-pane faces relative to hull faces
+    /// (e.g. `0.5` = shields at half the hull's face alpha). Ignored when
+    /// `shield_index_start` is `None`.
+    pub shield_alpha_scale: f32,
 }
 
 impl Default for HologramParams {
@@ -53,6 +62,8 @@ impl Default for HologramParams {
             wire_alpha: 0.55,
             fit: 0.86,
             perspective: 2.5,
+            shield_index_start: None,
+            shield_alpha_scale: 1.0,
         }
     }
 }
@@ -146,20 +157,24 @@ pub fn render_vehicle_hologram(
 
     // 3. Painter's algorithm: gather triangles with their mean depth, draw
     //    far→near so translucent faces composite into a see-through hologram.
-    let mut tris: Vec<(f32, [usize; 3])> = Vec::with_capacity(indices.len() / 3);
-    for chunk in indices.chunks_exact(3) {
+    let shield_start = params.shield_index_start.unwrap_or(usize::MAX);
+    let mut tris: Vec<(f32, [usize; 3], bool)> = Vec::with_capacity(indices.len() / 3);
+    for (ti, chunk) in indices.chunks_exact(3).enumerate() {
         let (a, b, c) = (chunk[0] as usize, chunk[1] as usize, chunk[2] as usize);
         if a >= rotated.len() || b >= rotated.len() || c >= rotated.len() {
             continue;
         }
         let depth = (rotated[a][2] + rotated[b][2] + rotated[c][2]) / 3.0;
-        tris.push((depth, [a, b, c]));
+        let is_shield = ti * 3 >= shield_start;
+        tris.push((depth, [a, b, c], is_shield));
     }
     tris.sort_by(|l, r| l.0.partial_cmp(&r.0).unwrap_or(std::cmp::Ordering::Equal));
 
     let face_a = (params.face_alpha.clamp(0.0, 1.0) * 255.0) as u8;
+    let shield_face_a =
+        ((params.face_alpha * params.shield_alpha_scale).clamp(0.0, 1.0) * 255.0) as u8;
     let wire_a = (params.wire_alpha.clamp(0.0, 1.0) * 255.0) as u8;
-    for (_, [a, b, c]) in &tris {
+    for (_, [a, b, c], is_shield) in &tris {
         let p0 = project(*a);
         let p1 = project(*b);
         let p2 = project(*c);
@@ -168,8 +183,9 @@ pub fn render_vehicle_hologram(
         // Greyscale (r=g=b) is preserved for the data-driven tint multiply.
         let shade = face_shade(&rotated[*a], &rotated[*b], &rotated[*c]);
         let v = (255.0 * shade) as u8;
-        if face_a > 0 {
-            fill_triangle(&mut img, p0, p1, p2, [v, v, v, face_a]);
+        let fa = if *is_shield { shield_face_a } else { face_a };
+        if fa > 0 {
+            fill_triangle(&mut img, p0, p1, p2, [v, v, v, fa]);
         }
         if wire_a > 0 {
             draw_line(&mut img, p0, p1, [255, 255, 255, wire_a]);
@@ -359,6 +375,29 @@ mod tests {
                 assert!(r == g && g == b, "neutral render must be greyscale, got {:?}", px.0);
             }
         }
+    }
+
+    #[test]
+    fn shield_triangles_render_at_reduced_alpha() {
+        let (p, idx) = cube();
+        // Baseline: every face at full face_alpha, no wireframe.
+        let mut base = HologramParams::default();
+        base.wire_alpha = 0.0;
+        base.face_alpha = 0.5;
+        let full = render_vehicle_hologram(&p, &idx, 48, 48, &base);
+        // Same geometry but treat ALL triangles as shields at half alpha.
+        let mut faded = base.clone();
+        faded.shield_index_start = Some(0);
+        faded.shield_alpha_scale = 0.5;
+        let half = render_vehicle_hologram(&p, &idx, 48, 48, &faded);
+        let max_a = |img: &RgbaImage| img.pixels().map(|px| px.0[3]).max().unwrap_or(0);
+        assert!(
+            max_a(&half) < max_a(&full),
+            "shield-scaled render must be fainter: full={} faded={}",
+            max_a(&full),
+            max_a(&half)
+        );
+        assert!(max_a(&half) > 0, "shield faces should still be visible");
     }
 
     #[test]
