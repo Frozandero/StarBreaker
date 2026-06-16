@@ -269,6 +269,21 @@ shared cargo target or source single-threaded.
   (`ui_compare.py`, `ui_measure.py`, reading crops with vision).
 - Doc / dossier / DataCore / P4K lookups.
 
+**Code discovery — graphify before blind grep** (a main-agent move too, not only
+delegated). To find WHICH source stage/function owns a behaviour, or what code
+relates to it, query the repo's graphify knowledge graph — `graphify query
+"<question>"` / `graphify explain "<symbol>"`, the `/graphify <question>` skill,
+or the `graphify-mcp` server — instead of grepping the tree blind. It is
+relationship-aware over the `.rs`/`.py` source and answers with `file:line`, at
+no API cost (auto-rebuilt each commit). **It does NOT index the `engine_*.part`
+UI-engine core (~31k lines):** a graphify miss / `No path` / `No affected` THERE
+is the blind spot, not proof of absence (the same "absence is under-research"
+rule) — grep `crates/starbreaker-ui/src/*/engine_parts/` WITHOUT
+`--include="*.rs"` (that flag hides `.part`; and `.map(foo)` won't match `foo(`).
+graphify maps code STRUCTURE only — it NEVER substitutes for the data probes
+above (MCP trio / parse-JSON) when verifying a game-data VALUE (ledger 68).
+Detail: ui-reference §4b.
+
 Each reports findings back; you synthesize and own the fix decision. **Don't
 override a subagent's data claim with a weaker check than it used.** If your quick
 refutation contradicts a careful subagent diagnosis, that refutation must ITSELF
@@ -441,4 +456,6 @@ needed is a doc bug — fix it before closing.
 | "It's engine C++ only / I exhausted the data — blocked" | Show the trail or it isn't proven: exact records/greps/probes + their empty results, not an assertion. Search the record FAMILIES (`*Params`/`*HudParams`), not just the feature keyword (the compass ticks were in `SVehicleHudParams`). "Engine C++ only" is unfalsifiable — never a valid basis. Run a find-it-or-prove-absence subagent; a MAJOR-item blocker is confirmed by the user (both modes), never self-certified. |
 | "Root cause's obvious — land the fix before the catalog gate" | Pre-gate you investigate and write the characterizing failing test, but DON'T land a source fix until the catalog is confirmed. After the gate the loop fixes directly. |
 | "I'll grep the line range to check that data claim" | A `sed`/`grep` line-window of a big nested record lands on the wrong entry (serialization order, multiple same-named/conditional entries). Parse the JSON + iterate the arrays, or run the runtime probe (`BB_A3_STYLE_PROBE`/`FONTPROBE`). |
+| "I'll grep the source to find which stage/function owns this" | Query graphify first (`graphify query`/`explain`, `/graphify`, `graphify-mcp`) — relationship-aware over `.rs`/`.py`, answers with `file:line`, no API cost (ui-reference §4b). It's CODE structure only — not a data-value source (MCP trio / parse-JSON still rule). |
+| "graphify shows nothing / `No path` there — so that code doesn't exist" | graphify does NOT index the `engine_*.part` UI-engine core (~31k lines) — a miss there is the blind spot, not proof. Grep `crates/starbreaker-ui/src/*/engine_parts/` WITHOUT `--include="*.rs"` (it hides `.part`); and `.map(foo)` won't match `foo(`. |
 | "My quick check refutes the subagent — move on" | Refuting a careful subagent finding needs the SAME rigour as the claim. If your refutation is the weaker read, IT'S the unreliable one — verify with parse/probe before acting (ledger 68). |

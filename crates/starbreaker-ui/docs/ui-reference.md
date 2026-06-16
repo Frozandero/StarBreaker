@@ -44,6 +44,13 @@ Individual suites for targeted debugging:
 `--test manifest_visual_regression`. Hardcoding guard:
 `bash scripts/check_ui_hardcoding.sh`.
 
+**graphify code graph (§4b) stays fresh automatically.** A post-commit git hook
+(`graphify hook install`, already installed) re-extracts changed CODE files and
+rebuilds `graphify-out/graph.json` after every commit — so the code-navigation
+graph tracks source as you commit. It is AST-only (no API cost) and ignores
+doc/image changes; for those run `/graphify . --update` in an assistant. If you
+need the graph current mid-arc before committing, `graphify update .` by hand.
+
 ## 2. Render & export
 
 **Replay (iteration, ~1 min, debug binary is fine).** Prefer the wrapper —
@@ -242,6 +249,42 @@ MCP server redeploy after changing it:
 `pkill -f starbreaker-mcp || true && cargo build --release -p starbreaker-mcp
 && cp target/release/starbreaker-mcp mcp/starbreaker-mcp`, then restart the
 client.
+
+## 4b. Code navigation (graphify)
+
+A repo-wide AST + semantic knowledge graph (`graphify-out/graph.json`, built by
+the `/graphify` skill; auto-rebuilt by a post-commit git hook — §1). Use it as
+the relationship-aware alternative to blind `grep` for **source-code** discovery
+— "where does X live, what calls/relates to Y, what's the path A→B" over the
+`.rs`/`.py` tree — BEFORE grepping. Answers from `graph.json`, no LLM/API cost:
+
+- `graphify query "<question>"` — BFS neighbourhood for a question (best for
+  "what's involved in resolving the brand-style cascade?"); returns nodes with
+  `file:line`.
+- `graphify explain "<symbol>"` — one node plus its neighbours (callers/callees).
+- `graphify path "A" "B"` / `graphify affected "X"` — shortest path / reverse
+  deps (available, but spottier — see the blind spot below).
+- MCP server `graphify-mcp` exposes the same as agent tools (graph search, node
+  details, neighbours, shortest-path); the `/graphify <question>` skill is the
+  conversational front-end.
+
+**BLIND SPOT — graphify does NOT index the `engine_*.part` files.** The UI engine
+core (≈31k lines across `crates/starbreaker-ui/src/*/engine_parts/*.part` —
+`collect_standard_text_styles`, the `ui_ir`/`ir_compose` internals) uses a
+non-`.rs` extension graphify's extractor skips, so those symbols are ABSENT from
+the graph and any edge crossing into them is missing. Therefore:
+- A graphify empty / `No path` / `No affected nodes` result near the engine core
+  is the blind spot, **NOT proof of absence** — same rule as the workflow's
+  "absence is under-research, not proof." Confirm in the `.part` files.
+- To search the `.part` core, `grep -rn '<sym>' crates/starbreaker-ui/src` with
+  **NO `--include="*.rs"`** (that flag hides `.part`), and remember a method
+  reference (`.map(foo)`) will not match a `foo(` pattern.
+
+**Scope:** code STRUCTURE only. graphify does not model game-data VALUES — it is
+NOT a substitute for the §4 MCP data probes or the parse-JSON / runtime-probe
+verification of style/brand/font records (a graph edge is never evidence for a
+colour/size claim; ledger 68 still applies). If the graph looks stale mid-arc,
+`graphify update .` refreshes the code side (AST-only, free).
 
 ## 5. Data locations
 

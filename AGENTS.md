@@ -353,6 +353,77 @@ data without shelling out to the CLI:
   `entity_loadout` tool returns StarBreaker's processed/resolved tree
   instead.
 
+## Code Knowledge Graph (graphify)
+
+The repo has a [graphify](https://github.com/safishamsi/graphify) knowledge
+graph — an AST + semantic map of the codebase (functions, types, calls,
+cross-file relationships, plus concepts mined from the docs and the UI render
+screenshots). Use it to answer "where does X connect / what calls Y / trace
+the data flow through Z" instead of grepping blind. The built graph lives in
+`graphify-out/` at the repo root:
+
+- `graph.json` — the graph data (queried by the CLI and MCP server below)
+- `GRAPH_REPORT.md` — god nodes, communities, surprising connections,
+  suggested questions, and the EXTRACTED/INFERRED/AMBIGUOUS confidence audit
+- `graph.html` — interactive community-level visualization (open in a browser)
+
+`graphify-out/` is a generated artifact and is git-ignored — do not commit it.
+The semantic edges are model-reasoned (INFERRED/AMBIGUOUS); treat them as leads
+to verify, not ground truth — the report flags which edges need checking.
+
+### Skill (`/graphify`)
+
+In Claude Code (and other assistants) the `/graphify` skill drives the graph:
+
+- `/graphify <question>` — ask a natural-language question; because
+  `graphify-out/graph.json` already exists it answers as a graph query (fast
+  path, no rebuild)
+- `/graphify .` — (re)build the whole-repo graph from scratch
+- `/graphify . --update` — incremental rebuild (only new/changed files; this
+  is the path to use when **docs or images** change, since their extraction
+  needs LLM subagents)
+- `/graphify path "A" "B"` — shortest path between two nodes
+- `/graphify explain "X"` — plain-language explanation of a node + neighbours
+
+### CLI (`graphify`)
+
+The `graphify` binary (installed with `uv tool install graphifyy`) operates on
+`graphify-out/graph.json` directly — **no LLM/API key is needed for queries**:
+
+```bash
+graphify query "how does the UI cascade resolve a brand style?"  # BFS Q&A over the graph
+graphify path "MaterialsMixin" "SubmaterialRecord"               # shortest path between nodes
+graphify explain "compile_ir_for_binding"                        # node + its neighbours
+graphify affected "load_material_textures"                       # reverse traversal: impact of a change
+graphify update .                                                # re-extract CODE (AST-only, free, no API)
+graphify export html                                             # regenerate graph.html
+graphify tree                                                    # collapsible-tree HTML view
+```
+
+A **post-commit git hook** (installed via `graphify hook install`) keeps the
+graph fresh automatically: after every commit it re-extracts the changed CODE
+files and rebuilds `graph.json` — AST-only, no API cost. So the code graph
+tracks source as you commit, with nothing to remember. To refresh mid-arc before
+committing, run `graphify update .` by hand. Doc/image (semantic) changes are
+NOT covered by the hook — run `/graphify . --update` in an assistant for those
+(it dispatches extraction subagents). Note: graphify's extractor does not index
+the `crates/starbreaker-ui/src/*/engine_parts/*.part` UI-engine files, so those
+symbols are absent from the graph — fall back to grep for them (see
+`crates/starbreaker-ui/docs/ui-reference.md` §4b).
+
+### MCP server (`graphify-mcp`)
+
+`graphify-mcp` serves the graph to agents over MCP, exposing graph search
+(BFS/DFS), node details, neighbour lookup, community lookup, god-nodes, summary
+stats, and shortest-path tools, plus the report/stats/surprises/audit/questions
+as MCP resources. This is **separate** from the StarBreaker MCP server (§MCP
+Server). Point an MCP client entry at the binary:
+
+```bash
+graphify-mcp --graph graphify-out/graph.json     # stdio (default per-dev transport)
+graphify-mcp --transport http --port 8080        # or Streamable HTTP
+```
+
 ## Large Source Files — Decomposition Plans
 
 The two previously-monolithic source files have been fully decomposed:
