@@ -1157,11 +1157,47 @@ fn build_mfd_view_canvas_map(
             .and_then(|json| json.get("_RecordValue_")?.get("name")?.as_str())
             .map(|s| s.to_string())
             .filter(|s| !s.is_empty() && s != "null");
-        // Keep the first record found for each view type (avoids duplicates).
-        map.entry(view_type)
-            .or_insert((canvas_guid, name, screen_name_loc_key));
+        // Multiple SMFDView records can author the SAME viewType — e.g. the
+        // Clipper has two `eView_SelfStatus`: the pilot view
+        // (`@ui_MFD_View_SelfStatus`) and a turret-operator variant
+        // (`@hud_turret_status`). A plain "keep first" picks whichever the
+        // record iteration hits first (the turret variant here → the SELF-STATUS
+        // footer mislabelled "TURRET STATUS"). Disambiguate STRUCTURALLY via
+        // `prefer_new_view_entry` (every canonical view names its loc key
+        // `@ui_MFD_View_<ViewType>`; the turret variant is the lone outlier).
+        match map.entry(view_type.clone()) {
+            std::collections::hash_map::Entry::Vacant(slot) => {
+                slot.insert((canvas_guid, name, screen_name_loc_key));
+            }
+            std::collections::hash_map::Entry::Occupied(mut slot) => {
+                if prefer_new_view_entry(
+                    &view_type,
+                    slot.get().2.as_deref(),
+                    screen_name_loc_key.as_deref(),
+                ) {
+                    slot.insert((canvas_guid, name, screen_name_loc_key));
+                }
+            }
+        }
     }
     map
+}
+
+/// On a `viewType` collision in the SMFDView map, decide whether the newly-seen
+/// record should replace the one already stored. Canonical MFD views name their
+/// screen-name loc key `@ui_MFD_View_<ViewType>` (`eView_Shields` →
+/// `@ui_MFD_View_Shields`, etc.); the Clipper's turret-operator `eView_SelfStatus`
+/// variant breaks that convention (`@hud_turret_status`). Prefer the
+/// canonically-named record so the pilot SelfStatus slot labels "SELF STATUS".
+fn prefer_new_view_entry(view_type: &str, existing_loc: Option<&str>, new_loc: Option<&str>) -> bool {
+    let Some(canonical) = view_type
+        .strip_prefix("eView_")
+        .map(|t| format!("@ui_MFD_View_{t}"))
+    else {
+        return false;
+    };
+    let canonical = canonical.as_str();
+    new_loc == Some(canonical) && existing_loc != Some(canonical)
 }
 
 /// Collect per-MFD default content canvases from a dashboard entity that carries
@@ -1613,6 +1649,34 @@ fn classify_canvas_fallback_literal(value: String) -> (Option<String>, Option<St
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn prefer_new_view_entry_disambiguates_self_status_collision() {
+        // Two SMFDView records author eView_SelfStatus: the pilot view
+        // (@ui_MFD_View_SelfStatus, canonical) and the turret variant
+        // (@hud_turret_status). Whichever is seen first, the canonical pilot
+        // loc key must win so the SELF-STATUS footer labels "SELF STATUS".
+        // Turret seen first, then the canonical self view → replace.
+        assert!(prefer_new_view_entry(
+            "eView_SelfStatus",
+            Some("@hud_turret_status"),
+            Some("@ui_MFD_View_SelfStatus"),
+        ));
+        // Canonical seen first, then the turret variant → keep the canonical.
+        assert!(!prefer_new_view_entry(
+            "eView_SelfStatus",
+            Some("@ui_MFD_View_SelfStatus"),
+            Some("@hud_turret_status"),
+        ));
+        // Non-colliding canonical views never get displaced (idempotent).
+        assert!(!prefer_new_view_entry(
+            "eView_Shields",
+            Some("@ui_MFD_View_Shields"),
+            Some("@ui_MFD_View_Shields"),
+        ));
+        // A non-eView_ key (no canonical form) never replaces.
+        assert!(!prefer_new_view_entry("Weird", Some("a"), Some("b")));
+    }
 
     #[test]
     fn classify_real_guid_returns_guid_slot() {
