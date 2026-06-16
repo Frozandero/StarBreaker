@@ -44,7 +44,13 @@ guess for an ask or a measurement. Default behaviour by category:
   fresh export), and the disable→adjudicate audit. Never estimate-then-defer. Visual findings must
   survive a SECOND look (guard square-vs-circle misreads, miscounts, wrong offset
   direction) and must include the background/backplate layer (stretch,
-  alignment), not just foreground widgets.
+  alignment), not just foreground widgets. Verify a STRUCTURED-DATA claim
+  (style/brand entries, `conditionsList`, modifiers, font records) by PARSING the
+  JSON and iterating the arrays, or a runtime probe (`BB_A3_STYLE_PROBE`,
+  `SB_UI_FONT_DUMP`/`FONTPROBE`, a one-off `eprintln`) — NEVER a `sed`/`grep`
+  line-range window of a big nested record (serialization order — e.g.
+  `brandIdentifier` after its `entries`, multiple same-named/conditional entries —
+  lands you on the wrong entry; ledger 68).
 - **The work itself → JUST DO IT.** Applying a structural fix (TDD, failing test
   first) is the loop's job, not a checkpoint.
 - **Hard-to-reverse actions → GATE.** Freeze (always), plus commit & final
@@ -263,7 +269,14 @@ shared cargo target or source single-threaded.
   (`ui_compare.py`, `ui_measure.py`, reading crops with vision).
 - Doc / dossier / DataCore / P4K lookups.
 
-Each reports findings back; you synthesize and own the fix decision.
+Each reports findings back; you synthesize and own the fix decision. **Don't
+override a subagent's data claim with a weaker check than it used.** If your quick
+refutation contradicts a careful subagent diagnosis, that refutation must ITSELF
+meet the rigorous-read bar (parse the JSON / runtime probe) before you act on it —
+a line-grep that "disproves" a parsed-from-the-arrays finding is the unreliable
+read, not the finding (compass round 3: a `sed` window "falsified" the subagent's
+correct style-entry diagnosis → a detour + revert; a 6-line `json.load` + a
+`FONTPROBE` proved the subagent right — ledger 68).
 
 **Never delegate — sequential in the main agent:**
 - Anything that runs `cargo build`/`test`, `ui_check.sh`, `ui_render.sh`,
@@ -427,3 +440,5 @@ needed is a doc bug — fix it before closing.
 | "Catalog's resolved / found more issues — run the retro" | The retro is the LAST step, never a substitute for fixing. Fix fixable diffs in the loop first, then the Closing re-review (re-render + re-compare like the start; fully-auto keeps fixing until clean or proven-blocked), THEN the retro. Not complete until the re-review is clean/proven-deferred AND the retro runs (track as a TodoWrite item from arc start). |
 | "It's engine C++ only / I exhausted the data — blocked" | Show the trail or it isn't proven: exact records/greps/probes + their empty results, not an assertion. Search the record FAMILIES (`*Params`/`*HudParams`), not just the feature keyword (the compass ticks were in `SVehicleHudParams`). "Engine C++ only" is unfalsifiable — never a valid basis. Run a find-it-or-prove-absence subagent; a MAJOR-item blocker is confirmed by the user (both modes), never self-certified. |
 | "Root cause's obvious — land the fix before the catalog gate" | Pre-gate you investigate and write the characterizing failing test, but DON'T land a source fix until the catalog is confirmed. After the gate the loop fixes directly. |
+| "I'll grep the line range to check that data claim" | A `sed`/`grep` line-window of a big nested record lands on the wrong entry (serialization order, multiple same-named/conditional entries). Parse the JSON + iterate the arrays, or run the runtime probe (`BB_A3_STYLE_PROBE`/`FONTPROBE`). |
+| "My quick check refutes the subagent — move on" | Refuting a careful subagent finding needs the SAME rigour as the claim. If your refutation is the weaker read, IT'S the unreliable one — verify with parse/probe before acting (ledger 68). |
