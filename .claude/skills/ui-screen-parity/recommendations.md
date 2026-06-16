@@ -60,6 +60,17 @@ findings land here in two states, with a lifecycle:
   skill (or arc start) skims the open items first.
 - **Multi-ship generalization unverified** (see Known assumptions) — exercise
   when a second `reference/in-game/` folder exists.
+- **Visual iteration via `SendUserFile` must use UNIQUE filenames per render**
+  (self-status hologram arc, ledger 69). `ui_render.sh` writes the same fixed path
+  (`/tmp/ui_render/<helper>/<helper>_TEX0.png`); sending that path repeatedly let
+  the user's viewer cache by filename and show the FIRST image for three different
+  iterations ("no change / identical" while the files differed on disk). When the
+  arc shows the user successive renders of the same screen, copy each to a unique
+  name first (`/tmp/<arc>_iters/<screen>_<ts>_<params>.png`) and verify on-disk
+  change via the `png md5:` line `ui_render.sh` now prints. Consider a SKILL.md
+  note in the autonomous-loop / VFL guidance: "showing the user iterative renders →
+  unique filename each time; a 'looks identical' report on a changed file = viewer
+  cache, confirm with the printed md5, don't re-tune blind."
 
 ## Known assumptions & risks
 

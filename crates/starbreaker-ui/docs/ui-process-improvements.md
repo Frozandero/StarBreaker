@@ -1641,3 +1641,57 @@ blocker). Retro docs:
 (c) **Orange-on-orange band measurements contaminate silently.** Measuring the label cap height with a fixed `--box` repeatedly merged the digit band with the (same-orange) tick band below it, reporting a "25% cap, clipping" panic when the digit was actually 18.9% with a 27px gap to the tick — nearly reverting the CORRECT size fix. The reliable read is contiguous-band detection (digit band, gap, tick band) reporting the gap, not a single bbox. → tooling (below).
 (d) **A height-driven font's field height IS the glyph EM — use it VERBATIM (no imageSizePercent boost).** The round-2 height-driven rule returned the field size as *plain* (`is_styled=false`), so the caller divided it by the font's `imageSizePercent` (0.75) — the boost for a plain authored size, which is a slug-IMAGE height, not an em. That over-sized the labels (188→250, ~22% cap, clipping) vs the reference's ~19%. Returning the branch as STYLED (verbatim em) gives ~19% with a clear gap. Lesson: the imageSizePercent boost applies to slug-image-height authored sizes, NOT to a rect-derived em target.
 **Improvement/Action:** root-cause fix + g-force re-freeze + compass GOLD onboard landed (`5ba8f4b7e`); two tests (HUD→s_drak_hud H1 with env control; strengthened height-driven test with an imageSizePercent font as a verbatim-em guard). Tooling: `ui_compare.py` gains a `compass` preset; `ui_measure.py --box` gains contiguous-band reporting (`bands`/`band_gaps`) so orange-on-orange digit-vs-tick no longer reads as one bbox. Dossier compass row + [[compass-hud-parity]] corrected (67d retracted). [done — this round]
+
+### 69. Sending iterative renders under the SAME filename → the user's viewer CACHES it → "no change" illusion (cost several wasted cycles)
+**Observed (self-status hologram arc, 2026-06-16):** while tuning the hologram
+angle I sent each in-screen render to the user with `SendUserFile` pointing at the
+SAME path (`/tmp/ui_render/Screen_Left_Upper_RTT/Screen_Left_Upper_RTT_TEX0.png`,
+the wrapper's fixed output). The user's viewer keyed on the filename and showed the
+FIRST image every time, so three successive iterations that WERE different on disk
+(tilt 25→45, +perspective, tilt 65) all read to the user as "per-pixel identical,
+top-down, no change". I iterated against feedback on a stale image and only caught
+it by diffing the files myself (`md5`/PIL `ImageChops.difference` — max 222, changed
+bbox) at the owner's prompt "check the images yourself". This is a silent-failure
+class: the tool gave a wrong-but-plausible "nothing changed" signal.
+**Improvement:** two parts. (1) When iterating VISUALLY with the user, copy each
+render to a UNIQUE filename before `SendUserFile` (timestamp/hash — e.g.
+`/tmp/holo_iters/self_<ts>_<params>.png`), so the viewer can't cache-collide. (2)
+`ui_render.sh` now prints the output PNG's md5 (`png md5: …`) so an
+"unchanged-looking" render can be confirmed as actually-changed-on-disk in one line —
+distinguishing a real no-op (same hash) from a viewer-cache artifact (different hash,
+same-looking image), without a separate diff step.
+**Action:** `ui_render.sh` md5 print [done — this retro]; skill recommendation
+(recommendations.md: unique-filename rule for visual iteration) [done]; workflow §10
+don't-retry note. The lesson generalises to ANY arc that shows the user repeated
+images of the same screen.
+
+### 70. `WidgetRuntimeImage`/`rendererType:Primitive` = a live 3D-scene render; reproduce headlessly via a mesh rasteriser + a fetcher trait
+**Observed:** the SELF-STATUS centre is a `BuildingBlocks_WidgetRuntimeImage`
+(`rendererType:Primitive`, `previewScene`) — the engine renders the player's ship
+3D model into that node; the 2D UI compositor has NO path for it (only `Flash`/`None`
+rendererTypes), so the screen was blank/flat-filled at rest. I had to re-derive: (a)
+this is a 3D render, not a UI asset; (b) the crate dep graph (`starbreaker-3d` → both
+`-ui` and `-gfx`; `-ui` can't see `-gfx`/`-3d`), so the mesh must reach the compositor
+via a FETCHER TRAIT on `PipelineInputs`/`ComposeContext` (the same pattern as
+`CanvasFetcher`/`SwfFetcher`/`StyleFetcher`/`AssetFetcher`); (c) the hull path resolves
+from the render scene's ROOT entity via `SGeometryResourceParams.Geometry.Geometry.Geometry.path`;
+(d) **`Mesh.model_min/model_max` (the printed bbox) does NOT match the actual vertex
+extent** — it suggested length along X, but the ship renders with length along Y (verify
+axes by rendering, not the bbox print).
+**Improvement:** the mechanism + the headless-3D-into-UI pattern is now in the dossier
+self_master row + a reference glossary entry, so the next runtime-image screen (or a
+different ship's hologram) starts from the pattern, not a cold re-derivation. The
+rasteriser (`starbreaker-gfx::mesh_holo`) and fetcher
+(`starbreaker-3d::ui_pipeline::hologram_fetcher`) are generic and reusable.
+**Action:** dossier + reference glossary [done]; code committed `2da6fa359`.
+
+### 71. The hologram fetcher decodes the 26 MB hull `.cgam` + rasters 641k tris on EVERY render — cache opportunity (not a blocker now)
+**Observed:** `P4kHologramFetcher` runs `parse_skin` on the full LOD0 hull (754k verts /
+641k tris) and rasters it at the node size on each render. For a FULL export this fires
+once (only the self screen has the node), but replay iteration paid ~1–2 s per render.
+Acceptable today (one screen, one ship); would compound if runtime-image holograms
+spread to more screens/ships, or if the LOD variants start decoding (smaller meshes).
+**Improvement (future, not implemented):** memoise the decoded `Mesh` (and/or the
+rendered hologram keyed by ship + pixel size) so repeated renders within a session/export
+reuse it. Left as a documented IOU — premature to cache a single call.
+**Action:** noted here; no code change.

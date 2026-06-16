@@ -355,3 +355,16 @@ Example: `BB_SHRINK_PROBE=1 ./target/debug/starbreaker ui render --scene
 - **BB_ColorStyle slot order**: authoritative enum index (Base=0 …
   Bright=6, Selected=7, Disabled=8…) — see `crates/starbreaker-ui/docs/ui-architecture-runbook.md`.
 - **LOD0 / LOD1 scene**: cockpit MFDs vs interior usables (dossier §3).
+- **runtime-image hologram**: a `BuildingBlocks_WidgetRuntimeImage` /
+  `rendererType:"Primitive"` node (e.g. SELF-STATUS "Own Vehicle Hologram") is a
+  live 3D-scene render the engine composites into the UI — NOT a UI asset (the
+  compositor only handles `Flash`/`None` rendererTypes). Reproduced headlessly by
+  a CPU mesh rasteriser (`starbreaker-gfx::mesh_holo::render_vehicle_hologram` —
+  yaw/pitch + perspective, painter's-order shaded filled faces, greyscale × tint)
+  fed by a `HologramFetcher` trait on `PipelineInputs`→`ComposeContext` (impl
+  `starbreaker-3d::ui_pipeline::hologram_fetcher::P4kHologramFetcher`: resolves the
+  render scene's ROOT vehicle hull `.cga` via `SGeometryResourceParams`,
+  `parse_skin`→mesh). The tint is the node's authored `background_fill_colour` (the
+  per-manufacturer holo colour). Reuse this fetcher-trait pattern for any
+  engine-3D-into-UI node. Gotcha: `Mesh.model_min/max` (bbox print) misreports the
+  axes — confirm orientation by rendering, e.g. the `holo_preview` example. Ledger 70.

@@ -76,3 +76,11 @@ if [[ "$DUMP_IR" -eq 1 ]]; then
 fi
 ./target/debug/starbreaker "${ARGS[@]}"
 ls -1 "$OUT"
+# Print the rendered PNG's md5 (ledger 69): an "unchanged-looking" render can be
+# confirmed as actually-changed-on-disk — distinguishing a real no-op (same hash)
+# from a viewer-cache artifact (different hash, same-looking image). When showing
+# iterations to the user, copy each PNG to a UNIQUE filename before sending so the
+# viewer can't cache-collide on the fixed output path.
+for png in "$OUT"/*.png; do
+    [[ -f "$png" ]] && printf 'png md5: %s  %s\n' "$(md5sum "$png" | cut -d' ' -f1)" "$png"
+done
