@@ -67,20 +67,20 @@ impl HologramFetcher for P4kHologramFetcher<'_> {
         if mesh.positions.is_empty() || mesh.indices.len() < 3 {
             return None;
         }
-        // SELF-STATUS framing, calibrated to the in-game reference: yaw 180°
-        // (nose toward the viewer / down the frame), tilted a gentle 30° back
-        // from top-down with perspective, filling roughly half the diagram area
-        // (a steeper tilt foreshortens the wings into the body and reads
-        // upside-down). The engine camera FOV/distance for the runtime
-        // primitive isn't decoded, so these are a view choice matched to the
-        // reference, not a layout fudge.
-        const SELF_STATUS_YAW_DEG: f32 = 180.0;
-        const SELF_STATUS_TILT_BACK_DEG: f32 = 30.0;
+        // SELF-STATUS framing, calibrated to the in-game reference: yaw 0°
+        // (nose pointing AWAY / up the frame), tilted a gentle 20° back from
+        // top-down with perspective (nose dips away), filling roughly half the
+        // diagram area. Semi-transparent faces (low alpha) so overlapping
+        // panels read as a see-through hologram. The engine camera FOV/distance
+        // for the runtime primitive isn't decoded, so these are a view choice
+        // matched to the reference, not a layout fudge.
+        const SELF_STATUS_YAW_DEG: f32 = 0.0;
+        const SELF_STATUS_TILT_BACK_DEG: f32 = 20.0;
         const SELF_STATUS_FIT: f32 = 0.5;
         // Filled, shaded faces only (no wireframe) with a strong perspective so
         // the flat hull reads as an angled 3D hologram rather than a top-down
         // silhouette.
-        const SELF_STATUS_FACE_ALPHA: f32 = 0.45;
+        const SELF_STATUS_FACE_ALPHA: f32 = 0.25;
         const SELF_STATUS_WIRE_ALPHA: f32 = 0.0;
         const SELF_STATUS_PERSPECTIVE: f32 = 1.5;
         let params = HologramParams {
