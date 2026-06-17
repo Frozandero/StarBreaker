@@ -326,6 +326,68 @@ mod tests {
     }
 
     #[test]
+    fn compile_ir_hud_overlay_custom_shape_keeps_native_svg_colour() {
+        // On a cockpit HUD canvas (`HC_HUD_*`) an entry-less colour-overlay custom
+        // shape does NOT take the MFD `MissionObjectives` generic-icon default — it
+        // keeps its SVG's native colours. The DRAK master-mode weapon icon
+        // (`guns.svg`, authored all-white) renders WHITE in the in-game
+        // `master_mode_display_master` reference, not the MFD MissionObjectives
+        // yellow the power-screen system icons take.
+        let canvas = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.HC_HUD_TestIconShapeDefault",
+            "_RecordValue_": {
+                "size": {"x": 100, "y": 100},
+                "scene": [
+                    {
+                        "_Pointer_": "ptr:1",
+                        "_Type_": "BuildingBlocks_WidgetCustomShape",
+                        "name": "shape_Icon",
+                        "isActive": true,
+                        "svgFill": {
+                            "svgPath": "UI/Textures/Vector/General/CommonIcons/guns.svg",
+                            "renderShape": true,
+                            "enableColorOverlay": true,
+                            "color": null
+                        },
+                        "size": {
+                            "width": {"behavior": "Fixed", "value": 99.0},
+                            "height": {"behavior": "Fixed", "value": 99.0}
+                        }
+                    }
+                ],
+                "operations": []
+            }
+        });
+
+        let scene = crate::bb_scene::parse_bb_canvas(&canvas).expect("scene parse");
+        let ir = compile_ui_ir_from_scene(
+            &scene,
+            None,
+            "guid-hud-icon-shape-default",
+            Some("BuildingBlocks_Canvas.HC_HUD_TestIconShapeDefault"),
+            (100, 100),
+            &defaults(),
+            None,
+            None,
+            &[],
+            Vec::new(),
+            Vec::new(),
+            100,
+        );
+
+        let node = ir
+            .nodes
+            .iter()
+            .find(|n| n.name == "shape_Icon")
+            .expect("icon shape node");
+        assert_eq!(
+            node.icon_tint_colour_token.as_deref(),
+            None,
+            "a HUD entry-less colour-overlay custom shape keeps its native SVG colour (white)"
+        );
+    }
+
+    #[test]
     fn compile_ir_style_tagged_textfield_inherits_brand_style_fill_colour() {
         // The medical menu option headers (OptionNameText, Heading2) carry
         // style tags with no colour semantics (UI_Generic_Flag_03); their
@@ -2281,6 +2343,119 @@ mod tests_c {
             flash.background_fill_colour,
             Some([1.0, 1.0, 1.0, 1.0]),
             "rendererType:Flash node keeps its authored white background"
+        );
+    }
+
+    #[test]
+    fn compile_ir_does_not_draw_background_on_renderertype_primitive_card() {
+        // A WidgetCard with `rendererType: "Primitive"` is rendered by a 3D
+        // primitive material (its empty `primitiveMaterialPath` draws nothing),
+        // NOT the Flash UI background — so the engine paints no background even
+        // when one is authored ENABLED. The DRAK master-mode display authors
+        // `card_Icon` / `card_CurrentModeText` exactly this way (white a60), and
+        // the in-game `master_mode_display_master` reference shows NO grey box
+        // behind the bullets / SCM. A `WidgetRuntimeImage` (the SELF-STATUS
+        // hologram) is ALSO `Primitive` but the hologram compositor reuses its
+        // `background_fill_colour` as the holo tint, so it keeps its background.
+        let canvas = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.TestRendererTypePrimitiveBackground",
+            "_RecordValue_": {
+                "size": {"x": 100, "y": 100},
+                "scene": [
+                    {
+                        "_Pointer_": "ptr:1",
+                        "_Type_": "BuildingBlocks_WidgetCard",
+                        "name": "primitive_card",
+                        "isActive": true,
+                        "rendererType": "Primitive",
+                        "background": {
+                            "enable": true,
+                            "color": {
+                                "_Type_": "BuildingBlocks_ColorSolid",
+                                "color": {"_Type_": "SRGBA8", "r": 254, "g": 255, "b": 255, "a": 60}
+                            }
+                        },
+                        "size": {
+                            "width": {"behavior": "Fixed", "value": 80.0},
+                            "height": {"behavior": "Fixed", "value": 80.0}
+                        }
+                    },
+                    {
+                        "_Pointer_": "ptr:2",
+                        "_Type_": "BuildingBlocks_WidgetRuntimeImage",
+                        "name": "holo_image",
+                        "isActive": true,
+                        "rendererType": "Primitive",
+                        "background": {
+                            "enable": true,
+                            "color": {
+                                "_Type_": "BuildingBlocks_ColorSolid",
+                                "color": {"_Type_": "SRGBA8", "r": 100, "g": 150, "b": 200, "a": 255}
+                            }
+                        },
+                        "size": {
+                            "width": {"behavior": "Fixed", "value": 80.0},
+                            "height": {"behavior": "Fixed", "value": 80.0}
+                        }
+                    },
+                    {
+                        "_Pointer_": "ptr:3",
+                        "_Type_": "BuildingBlocks_DisplayWidget",
+                        "name": "primitive_bar_fill",
+                        "isActive": true,
+                        "rendererType": "Primitive",
+                        "background": {
+                            "enable": true,
+                            "color": {
+                                "_Type_": "BuildingBlocks_ColorStyle",
+                                "color": "Base",
+                                "alpha": 1.0
+                            }
+                        },
+                        "size": {
+                            "width": {"behavior": "Fixed", "value": 80.0},
+                            "height": {"behavior": "Fixed", "value": 80.0}
+                        }
+                    }
+                ],
+                "operations": []
+            }
+        });
+
+        let scene = crate::bb_scene::parse_bb_canvas(&canvas).expect("scene parse");
+        let ir = compile_ui_ir_from_scene(
+            &scene,
+            None,
+            "guid-renderertype-primitive-background",
+            Some("BuildingBlocks_Canvas.TestRendererTypePrimitiveBackground"),
+            (100, 100),
+            &defaults(),
+            None,
+            None,
+            &[],
+            Vec::new(),
+            Vec::new(),
+            100,
+        );
+
+        let card = ir.nodes.iter().find(|node| node.name == "primitive_card").expect("card node");
+        assert_eq!(
+            card.background_fill_colour, None,
+            "rendererType:Primitive WidgetCard must not paint its background (was {:?})",
+            card.background_fill_colour
+        );
+
+        let holo = ir.nodes.iter().find(|node| node.name == "holo_image").expect("holo node");
+        assert!(
+            holo.background_fill_colour.is_some(),
+            "rendererType:Primitive WidgetRuntimeImage keeps its background (holo tint)"
+        );
+
+        let bar = ir.nodes.iter().find(|node| node.name == "primitive_bar_fill").expect("bar node");
+        assert_eq!(
+            bar.background_fill_colour_token.as_deref(),
+            Some("Base"),
+            "rendererType:Primitive node with a ColorStyle (palette-role) fill renders (power-bar PipBox_Fill)"
         );
     }
 

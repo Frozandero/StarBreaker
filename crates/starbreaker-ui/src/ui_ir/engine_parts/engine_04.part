@@ -1158,6 +1158,106 @@ mod tests_e {
     }
 
     #[test]
+    fn compile_ir_svg_path_binding_overrides_only_with_a_real_path() {
+        // A bound `SvgPath` resolving to a real asset PATH overrides the authored
+        // svgPath (the DRAK master-mode weapon icon, driven to `guns.svg`). But the
+        // MFD footer's pixel nav arrows bind `SvgPath` to a chrome FillStyle TAG
+        // reference (`Tag.<uuid>`) that the icon-preset/asset resolution turns into
+        // the real arrow SVG — a raw tag must NOT win over the authored/preset path
+        // (else the footer nav arrows vanish; the whole-image guard misses them as
+        // they are only a few px).
+        let canvas = serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.SvgPathBindingTagVsPath",
+            "_RecordValue_": {
+                "size": {"x": 100, "y": 100},
+                "scene": [
+                    {
+                        "_Pointer_": "ptr:1",
+                        "_Type_": "BuildingBlocks_WidgetCustomShape",
+                        "name": "icon_tag_binding",
+                        "isActive": true,
+                        "svgPath": "UI/Textures/Vector/General/CommonIcons/authored_arrow.svg",
+                        "svgFill": {"svgPath": "", "renderShape": true, "enableColorOverlay": true, "color": null},
+                        "size": {
+                            "width": {"behavior": "Fixed", "value": 30.0},
+                            "height": {"behavior": "Fixed", "value": 30.0}
+                        }
+                    },
+                    {
+                        "_Pointer_": "ptr:3",
+                        "_Type_": "BuildingBlocks_WidgetCustomShape",
+                        "name": "icon_path_binding",
+                        "isActive": true,
+                        "svgPath": "UI/Textures/Vector/General/CommonIcons/authored_placeholder.svg",
+                        "svgFill": {"svgPath": "", "renderShape": true, "enableColorOverlay": true, "color": null},
+                        "size": {
+                            "width": {"behavior": "Fixed", "value": 30.0},
+                            "height": {"behavior": "Fixed", "value": 30.0}
+                        }
+                    }
+                ],
+                "operations": [
+                    {
+                        "_Type_": "BuildingBlocks_BindingsStringField",
+                        "widget": "_PointsTo_:ptr:1",
+                        "field": "SvgPath",
+                        "input": "_PointsTo_:ptr:2"
+                    },
+                    {
+                        "_Pointer_": "ptr:2",
+                        "_Type_": "BuildingBlocks_BindingsStringComponentParameter",
+                        "name": "tag value",
+                        "parameter": "ParamInput0",
+                        "defaultValue": "Tag.5616aeff-a713-4530-8004-e7de5d655155"
+                    },
+                    {
+                        "_Type_": "BuildingBlocks_BindingsStringField",
+                        "widget": "_PointsTo_:ptr:3",
+                        "field": "SvgPath",
+                        "input": "_PointsTo_:ptr:4"
+                    },
+                    {
+                        "_Pointer_": "ptr:4",
+                        "_Type_": "BuildingBlocks_BindingsStringComponentParameter",
+                        "name": "path value",
+                        "parameter": "ParamInput1",
+                        "defaultValue": "UI/Textures/Vector/General/CommonIcons/guns.svg"
+                    }
+                ]
+            }
+        });
+
+        let scene = crate::bb_scene::parse_bb_canvas(&canvas).expect("scene parse");
+        let ir = compile_ui_ir_from_scene(
+            &scene,
+            None,
+            "guid-svg-path-binding-tag-vs-path",
+            None,
+            (100, 100),
+            &defaults(),
+            None,
+            None,
+            &[],
+            Vec::new(),
+            Vec::new(),
+            100,
+        );
+
+        let tag_node = ir.nodes.iter().find(|n| n.name == "icon_tag_binding").expect("tag node");
+        assert_eq!(
+            tag_node.asset_ref.as_deref(),
+            Some("UI/Textures/Vector/General/CommonIcons/authored_arrow.svg"),
+            "a tag-reference SvgPath binding must NOT override the authored/preset asset"
+        );
+        let path_node = ir.nodes.iter().find(|n| n.name == "icon_path_binding").expect("path node");
+        assert_eq!(
+            path_node.asset_ref.as_deref(),
+            Some("UI/Textures/Vector/General/CommonIcons/guns.svg"),
+            "a real-path SvgPath binding overrides the authored placeholder"
+        );
+    }
+
+    #[test]
     fn compile_ir_includes_ancestor_style_tags_on_child_nodes() {
         let canvas = serde_json::json!({
             "_RecordName_": "BuildingBlocks_Canvas.AncestorStyleTags",

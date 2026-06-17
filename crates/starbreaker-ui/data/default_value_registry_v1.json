@@ -2,7 +2,7 @@
   "paths": {
     "/vehicle/targetname": "NO TARGET",
     "/vehicle/target/distance": "0.0km",
-    "/vehicle/target/bearing": "0°",
+    "/vehicle/target/bearing": "0\u00b0",
     "/targetselector/lockedtarget/isvalidtarget": false,
     "/commscontroller/canhailtarget": false,
     "/TargetSelector/LockedTarget/Hostility": 1,
@@ -130,14 +130,15 @@
     "FlightController/ForwardBackSpeedGoal": 0.0,
     "flightcontroller.totalgforceamount": 0.0,
     "FlightController/Compass/Ticks": 0,
-    "controllablemanager/mastermode": 2
+    "controllablemanager/mastermode": 2,
+    "seatdashboard/currentmode": 3
   },
   "localization": {
     "hud_notarget": "NO TARGET",
     "dfm_ui_target": "TARGET",
     "hud_label_velocity": "VELOCITY",
     "scan_data_faction": "FACTION",
-    "ui_nodata": "—",
+    "ui_nodata": "\u2014",
     "innerthought_hail": "HAIL",
     "panel_call": "CALL",
     "hud_gimbalmode": "GIMBAL MODE",
@@ -161,7 +162,7 @@
     "hud_label_max": "MAX",
     "hud_label_weapon": "Weapon",
     "rn_offline": "OFFLINE",
-    "rn_celsiussymbol": "°C",
+    "rn_celsiussymbol": "\u00b0C",
     "loc_empty": "",
     "loc_placeholder": ""
   }

@@ -620,6 +620,13 @@ pub fn compile_ui_ir_from_scene_with_animation_sample(
         }
     }
 
+    // A cockpit HUD canvas (`HC_HUD_*`/`H_HUD_*`/`H_Eng_*`) styles its generic
+    // overlay icons differently from the MFD masters (see
+    // `custom_shape_overlay_icon_default`).
+    let is_hud_canvas = canvas_name
+        .map(|name| name.strip_prefix("BuildingBlocks_Canvas.").unwrap_or(name))
+        .map(crate::bb_brand_style::is_cockpit_hud_canvas)
+        .unwrap_or(false);
     let nodes: Vec<UiIrNode> = build_ui_ir_nodes(
         ordered_ids,
         scene,
@@ -634,6 +641,7 @@ pub fn compile_ui_ir_from_scene_with_animation_sample(
         animation_sample_percent,
         selected_style_source.as_deref(),
         design_text_scale,
+        is_hud_canvas,
     );
 
     let unresolved_count = nodes
@@ -866,6 +874,7 @@ fn build_ui_ir_nodes(
     animation_sample_percent: Option<f32>,
     selected_style_source: Option<&str>,
     design_text_scale: f32,
+    is_hud_canvas: bool,
 ) -> Vec<UiIrNode> {
     let mut nodes = Vec::with_capacity(ordered_ids.len());
     for id in ordered_ids {
@@ -1185,14 +1194,26 @@ fn build_ui_ir_nodes(
             None
         };
 
-        let mut asset_ref = collect_node_asset_refs(node)
-            .into_iter()
-            .next()
+        // A bound `SvgPath`/`svgPath` field overrides the authored placeholder when
+        // it resolves to a real asset PATH: the DRAK master-mode icon authors
+        // `ui_icon_vehicle_ship.svg` but the host canvas drives `shape_Icon.SvgPath`
+        // via the `ParamInput4` weapon-group switch (`seatdashboard/currentmode == 3`
+        // → `guns.svg`). The binding must look like a path (`contains('/')`) — the
+        // MFD footer's pixel nav arrows bind `SvgPath` to a chrome FillStyle TAG
+        // reference (`Tag.5616aeff…`) that `collect_node_asset_refs` resolves to the
+        // real arrow SVG, so a raw tag must NOT win over that resolution.
+        // `resolve_field_text` returns `None` for the common case of an unbound icon.
+        let mut asset_ref = binding_resolver
+            .resolve_field_text(id, "SvgPath", defaults)
+            .or_else(|| binding_resolver.resolve_field_text(id, "svgPath", defaults))
+            .filter(|s| {
+                let trimmed = s.trim();
+                !trimmed.is_empty() && trimmed.contains('/')
+            })
+            .or_else(|| collect_node_asset_refs(node).into_iter().next())
             .or_else(|| {
                 binding_resolver
-                    .resolve_field_text(id, "SvgPath", defaults)
-                    .or_else(|| binding_resolver.resolve_field_text(id, "svgPath", defaults))
-                    .or_else(|| binding_resolver.resolve_field_text(id, "ImagePath", defaults))
+                    .resolve_field_text(id, "ImagePath", defaults)
                     .or_else(|| binding_resolver.resolve_field_text(id, "imagePath", defaults))
             })
             .or_else(|| {
@@ -1307,6 +1328,7 @@ fn build_ui_ir_nodes(
                     || background_fill_colour.is_some()
                     || background_fill_colour_token.is_some(),
                 asset_ref.as_deref(),
+                is_hud_canvas,
             )
         });
 
@@ -1649,12 +1671,21 @@ fn overflow_mode_from_raw(raw: &serde_json::Value) -> Option<String> {
 /// Icon Styles. Entry-coloured shapes (the target chevrons' embedded `Base`,
 /// the medical fingerprint's `Accent1`) resolve from raw first and never
 /// reach this default.
+///
+/// This MFD generic-icon default does NOT apply on a cockpit HUD canvas
+/// (`HC_HUD_*`/`H_HUD_*`/`H_Eng_*`): there an entry-less overlay shape keeps its
+/// SVG's native colour. The DRAK master-mode weapon icon (`guns.svg`, authored
+/// all-white) renders WHITE in the in-game reference, not MissionObjectives.
 fn custom_shape_overlay_icon_default(
     node: &BbNode,
     has_resolved_colour: bool,
     asset_ref: Option<&str>,
+    is_hud_canvas: bool,
 ) -> Option<String> {
-    if has_resolved_colour || !matches!(node.ty, BbNodeType::WidgetCustomShape) {
+    if has_resolved_colour
+        || is_hud_canvas
+        || !matches!(node.ty, BbNodeType::WidgetCustomShape)
+    {
         return None;
     }
     let svg = node.raw.get("svgFill")?;
@@ -2116,20 +2147,48 @@ fn background_fill_alpha_from_raw(
 /// shared `UnSelectedName` entry yet draws no bar in-game). Container widgets
 /// are enabled by a supplied colour (`raw_background_enabled`).
 fn node_background_enabled(node: &crate::bb_scene::BbNode) -> bool {
-    // A node with `rendererType: "None"` is a non-rendering proxy / group widget
-    // (e.g. the compass `CanvasProxyRoot`): the engine paints nothing for it, even
-    // when `background.enable` is authored true with a colour. Only nodes carrying
-    // a primitive renderer (`rendererType: "Flash"` — the compass centre line, tick
-    // shapes, etc.) draw their authored background. Without this gate `CanvasProxyRoot`
-    // rendered an opaque white sheet over the dark compass vignette. Only an EXPLICIT
-    // "None" suppresses; an absent rendererType keeps the normal background rules.
-    if node
-        .raw
-        .get("rendererType")
-        .and_then(|value| value.as_str())
-        .is_some_and(|kind| kind.eq_ignore_ascii_case("None"))
-    {
-        return false;
+    // The Flash UI background is painted only by Scaleform-rendered nodes
+    // (`rendererType: "Flash"`, e.g. the compass centre line / tick shapes, the
+    // master-mode bar fill) and by nodes with an ABSENT rendererType (the normal
+    // case). Two rendererTypes suppress it:
+    //   - "None": a non-rendering proxy / group widget (the compass
+    //     `CanvasProxyRoot`, which otherwise painted an opaque white sheet over
+    //     the dark vignette);
+    //   - "Primitive": a node rendered by a 3D primitive material instead of the
+    //     Flash path (the master-mode `card_Icon` / `card_CurrentModeText`, whose
+    //     empty primitive material draws nothing — the in-game reference shows NO
+    //     grey box behind the bullets / SCM).
+    // EXCEPTION: a `WidgetRuntimeImage` (the SELF-STATUS own-vehicle hologram) is
+    // `rendererType: "Primitive"` too, but the hologram compositor reuses its
+    // `background_fill_colour` as the per-manufacturer holo tint, so its
+    // background must stay enabled.
+    if let Some(kind) = node.raw.get("rendererType").and_then(|value| value.as_str()) {
+        if kind.eq_ignore_ascii_case("None") {
+            return false;
+        }
+        if kind.eq_ignore_ascii_case("Primitive") {
+            let is_runtime_image = node
+                .raw
+                .get("_Type_")
+                .and_then(|value| value.as_str())
+                .is_some_and(|ty| ty.eq_ignore_ascii_case("BuildingBlocks_WidgetRuntimeImage"));
+            // A `Primitive` node coloured by a palette ROLE (`ColorStyle`) is a real
+            // data fill — the power-bar `PipBox_Fill` (`Base`), the master-mode bar
+            // `base_Fill` (`Bright`) — and must render. Only a LITERAL `ColorSolid`
+            // (SRGBA8) background is the editor placeholder the engine ignores (the
+            // master-mode `card_Icon`/`card_CurrentModeText` white α60, which the
+            // in-game reference shows as NO grey box).
+            let background_is_literal = node
+                .raw
+                .get("background")
+                .and_then(|background| background.get("color"))
+                .and_then(|colour| colour.get("_Type_"))
+                .and_then(|ty| ty.as_str())
+                .is_some_and(|ty| ty.eq_ignore_ascii_case("BuildingBlocks_ColorSolid"));
+            if !is_runtime_image && background_is_literal {
+                return false;
+            }
+        }
     }
     if matches!(node.ty, BbNodeType::WidgetTextField | BbNodeType::WidgetText) {
         let explicit = node
