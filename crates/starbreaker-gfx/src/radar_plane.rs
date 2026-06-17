@@ -26,11 +26,13 @@
 
 use image::{Rgba, RgbaImage};
 
-/// Radial gamma (< 1) that stretches the sweep wedge's outer-edge bright band
-/// inward toward the disc centre (the in-game beam reaches the centre; the raw
-/// texture hugs the edge). Lower = reaches further in. Owner-tuned (the sweep is
-/// a live animation, so its radial extent isn't in the static data).
-const SWEEP_RADIAL_GAMMA: f32 = 0.30;
+/// The sweep wedge's BRIGHT APEX (pivot) in `idle_animation` texture space, which
+/// maps to the disc CENTRE — the wedge fans out from here to the rim. Derived from
+/// the decoded texture (bright apex ~(0.49, 0.05), fading down-and-out).
+const SWEEP_APEX: [f32; 2] = [0.49, 0.05];
+/// Texture-space distance from the apex that maps to the disc rim (`r=1`): the
+/// wedge's radial extent. Derived from the decoded texture (~0.55).
+const SWEEP_TEX_RADIUS: f32 = 0.6;
 
 /// Owner-tuned bloom: how far the `line_a` material's `Glow` spreads each spoke
 /// bar, as a fraction of the disc major radius per unit Glow. The bars are only
@@ -151,24 +153,10 @@ pub struct RadarPlaneParams {
     /// reads as a glowing radial. The `Glow` value is data; the bloom scale is the
     /// owner-tuned render-bloom boundary (like [`Self::intensity`]).
     pub spoke_glow: f32,
-    /// How far each spoke's INNER end reaches toward the disc centre, as a scale
-    /// on its authored inner radius (`1.0` = authored; `<1` = closer to centre).
-    /// The authored `Circle_Line` lengths stop short of centre at static rest
-    /// (cardinals ~0.2, diagonals ~0.4 of the radius); the live radar plane
-    /// extends them inward — owner-tuned to the reference (same runtime-camera
-    /// boundary as [`Self::tilt_deg`] / the sweep gamma).
-    pub spoke_inner_reach: f32,
     /// The outer heading-tape ring (atlas window), if loaded. The atlas texture is
     /// passed separately to [`project_radar_disc`]; this carries its UV window +
     /// alpha. `None` = no ring.
     pub heading_ring: Option<HeadingRingParams>,
-    /// Where each spoke's OUTER end lands, as a scale on its authored outer radius
-    /// (`1.0` = the disc/plane edge). The authored outer ends sit at the plane
-    /// edge (radius ~1.0), OUTSIDE the bright ring (~0.8) that reads as the scope
-    /// boundary — so they poke past the ring (and, at 45°, jut to the corners).
-    /// Pull them to the ring (~0.8) to match the reference. Owner-tuned (runtime
-    /// plane scale, same boundary as the inner reach).
-    pub spoke_outer_reach: f32,
 }
 
 impl Default for RadarPlaneParams {
@@ -189,8 +177,6 @@ impl Default for RadarPlaneParams {
             spoke_outer_alpha: 1.0,
             spoke_inner_alpha: 0.5,
             spoke_glow: 0.0,
-            spoke_inner_reach: 1.0,
-            spoke_outer_reach: 1.0,
             heading_ring: None,
         }
     }
@@ -271,15 +257,22 @@ pub fn project_radar_disc(
         }
     }
 
-    // Rotating SWEEP wedge (`r_radarmapscreen_idle_animation`): the ping/scan
-    // beam, projected like the disc but rotated to its rest-frame angle and
-    // blended faintly over the disc. The wedge texture is bright only in the
-    // beam, transparent elsewhere, so only the beam shows.
+    // SWEEP wedge (`r_radarmapscreen_idle_animation`): the scan beam. The texture
+    // is a quarter wedge whose BRIGHT APEX (pivot) sits near the top, fading
+    // down-and-out — so the apex maps to the disc CENTRE and the wedge fans out to
+    // the rim (the beam reaches the centre). Earlier the texture CENTRE was mapped
+    // to the disc centre, putting the bright apex out at the disc top — the
+    // "compressed to the outside" the owner saw. `SWEEP_APEX`/`SWEEP_TEX_RADIUS`
+    // are the wedge geometry derived from the decoded texture; the rest-frame
+    // angle is owner-tuned (the beam rotates live).
     if let Some(sweep) = sweep {
         if params.sweep_alpha > 0.0 && sweep.width() > 0 && sweep.height() > 0 {
             let sw = sweep.width() as f32;
             let sh = sweep.height() as f32;
-            let a = (params.texture_rotation_deg + params.sweep_angle_deg).to_radians();
+            // The sweep has its OWN rest-frame angle (the beam rotates live); it is
+            // independent of the disc texture's ViewingAngle. `a=0` points the
+            // wedge down-and-right (apex→down-right in the texture).
+            let a = params.sweep_angle_deg.to_radians();
             let (ca, sa) = (a.cos(), a.sin());
             for y in y0..y1 {
                 for x in x0..x1 {
@@ -288,17 +281,15 @@ pub fn project_radar_disc(
                     if nx * nx + ny * ny > 1.0 {
                         continue;
                     }
+                    // Disc offset rotated to the rest-frame beam angle, then placed
+                    // relative to the wedge apex: disc centre → apex (brightest).
                     let (rx, ry) = (nx * ca - ny * sa, nx * sa + ny * ca);
-                    // Stretch the wedge radially INWARD: the texture's bright arc
-                    // hugs the outer edge, but the in-game sweep beam reaches from
-                    // the centre out, so map the outer texture band across more of
-                    // the disc radius (radial gamma < 1).
-                    let d = (rx * rx + ry * ry).sqrt();
-                    let scale = if d > 1e-4 { d.powf(SWEEP_RADIAL_GAMMA) / d } else { 1.0 };
-                    let (sx, sy) = (rx * scale, ry * scale);
-                    // Flip horizontally so the sweep reads CLOCKWISE (the
-                    // idle-animation texture is authored anti-clockwise).
-                    let texel = sample_bilinear(sweep, (-sx * 0.5 + 0.5) * (sw - 1.0), (sy * 0.5 + 0.5) * (sh - 1.0));
+                    let u = (SWEEP_APEX[0] + rx * SWEEP_TEX_RADIUS) * (sw - 1.0);
+                    let v = (SWEEP_APEX[1] + ry * SWEEP_TEX_RADIUS) * (sh - 1.0);
+                    if u < 0.0 || v < 0.0 || u > sw - 1.0 || v > sh - 1.0 {
+                        continue; // outside the wedge texture → no beam here
+                    }
+                    let texel = sample_bilinear(sweep, u, v);
                     let lum = (0.299 * texel[0] as f32 + 0.587 * texel[1] as f32 + 0.114 * texel[2] as f32) / 255.0;
                     let alpha = lum * (texel[3] as f32 / 255.0) * params.sweep_alpha;
                     if alpha > 0.003 {
@@ -339,21 +330,11 @@ pub fn project_radar_disc(
             let d1 = (e1[0] - 0.5).hypot(e1[1] - 0.5);
             let d2 = (e2[0] - 0.5).hypot(e2[1] - 0.5);
             let (outer, inner) = if d1 >= d2 { (e1, e2) } else { (e2, e1) };
-            // Rescale the spoke's radial span to the reference (the live radar
-            // plane's runtime scale is absent at rest): pull the inner end toward
-            // the centre and the outer end in to the bright ring. Both are scales
-            // on the authored endpoint's offset from the plane centre.
-            let inner = [
-                0.5 + (inner[0] - 0.5) * params.spoke_inner_reach,
-                0.5 + (inner[1] - 0.5) * params.spoke_inner_reach,
-            ];
-            let outer = [
-                0.5 + (outer[0] - 0.5) * params.spoke_outer_reach,
-                0.5 + (outer[1] - 0.5) * params.spoke_outer_reach,
-            ];
-            // Clamp endpoints to the disc: a 45° outer end lands at radius ~1.007
-            // (the ellipse corner), poking past the rim — keep it on the disc so
-            // spokes stay within the ring as in the reference.
+            // Place the spoke at its AUTHORED plane endpoints through the SAME
+            // plane→screen camera as the disc (no per-spoke reach rescaling): its
+            // on-screen radial span is the authored `Circle_Line` geometry × the one
+            // camera. Clamp a 45° outer end (lands at radius ~1.007, just past the
+            // rim) onto the disc so it doesn't poke past the ellipse.
             let clamp_disc = |p: [f32; 2]| -> [f32; 2] {
                 let r = (2.0 * p[0] - 1.0).hypot(2.0 * p[1] - 1.0);
                 if r > 1.0 {

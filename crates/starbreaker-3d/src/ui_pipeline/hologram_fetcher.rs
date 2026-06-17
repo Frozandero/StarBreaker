@@ -265,22 +265,12 @@ impl HologramFetcher for P4kHologramFetcher<'_> {
         // frame — owner-tuned, like the tilt).
         const RADAR_SWEEP_ANGLE_DEG: f32 = 45.0;
         const RADAR_SWEEP_ALPHA: f32 = 0.5;
-        // The authored `Circle_Line` lengths stop short of centre at static rest;
-        // the live radar plane extends them inward. Owner-tuned to the reference
-        // (the runtime camera/zoom is absent here — the disc-tilt boundary).
-        const RADAR_SPOKE_INNER_REACH: f32 = 0.35;
-        // Authored outer ends sit at the plane edge (~1.0), past the bright ring;
-        // pull them to the ring so the spokes (esp. the 45° diagonals) don't jut
-        // past the scope boundary. Owner-tuned (runtime plane scale).
-        const RADAR_SPOKE_OUTER_REACH: f32 = 0.82;
         let params = RadarPlaneParams {
             tilt_deg: RADAR_TILT_DEG,
             tint_rgb: tint,
             texture_rotation_deg,
             sweep_alpha: if sweep_texture.is_some() { RADAR_SWEEP_ALPHA } else { 0.0 },
             sweep_angle_deg: RADAR_SWEEP_ANGLE_DEG,
-            spoke_inner_reach: RADAR_SPOKE_INNER_REACH,
-            spoke_outer_reach: RADAR_SPOKE_OUTER_REACH,
             // The crisp `Circle_Ripple` boundary stroke is NOT in the reference —
             // the disc texture provides the soft rim. Leave it off.
             outer_ring_alpha: 0.0,
