@@ -155,6 +155,31 @@ a `LockedIcon` + "º" heading suffix + empty magnification (catalog #3, below).
   (`bb_state_filter::tests_b::radar_mode_registry_defaults_select_starmap_rtt_over_interior_map`,
   `radar_locked_icon_hidden_when_show_radar_locked_pinned_false`).
 
+## Remaining items (owner-requested, diagnosed 2026-06-17)
+
+- **Background image (#11)** — the radar's `DRAK_GroundVehicle_Dashboard_background_2.dds`
+  (dark panel + orange edge/corner glow; a DIFFERENT texture than other MFDs) is
+  the `image_Background` root node, authored `isActive=false` with `IsActive ←
+  NOT(IsVolumetric)`. At the flat radar (IsVolumetric=false) it SHOULD activate,
+  but `bb_state_filter` only DEACTIVATES nodes — it never ACTIVATES an
+  authored-false node on a true binding. RISK: a generic IsActive-activation pass
+  is the documented medical-breaker (workflow §10). Possible SCOPED fix: activate
+  authored-false nodes whose `IsActive` op resolves a genuine `Some(true)` from a
+  PINNED/resolved state (not the unset→override true that medical's live-gated
+  nodes hit) — must validate with `--full` (medical platinum is the canary).
+- **Outer dots/chrome (#10)** — `r_radarmapscreen_coordinates(_novalue).dds` is a
+  heading-degree-label + glyph ATLAS (010–350 grid); the `headingtape` material
+  places cells around the outer ring per heading. Complex (angular atlas-cell
+  placement on the tilted ring). Per-manufacturer (`grin_coordinates.dds`).
+- **Spokes (#9)** — the radial spokes are in the disc `radial_gradients` texture
+  (the material's bound TexSlot1) but read faint; the reference's prominence is
+  likely emissive bloom + the radial-UV mapping. Not a separate asset (the
+  navigation-grid texture is a plain white line tile; the grid is geometry).
+- **Readout kerning (#12)** — the bottom readout (`Text_Radar*` = WidgetTextField
+  components, Electrolize font) is too tightly spaced. No authored LetterSpacing
+  on the field; it's the font advance / text-format — a delicate text-metrics
+  residual (cf. prior LetterSpacing-pitch deferrals).
+
 ## Next step
 Major-item blocker gate for #2 (radar scope = 3D-RTT render). Owner decision on
 #3b (attempt the token-leak fix vs defer).
