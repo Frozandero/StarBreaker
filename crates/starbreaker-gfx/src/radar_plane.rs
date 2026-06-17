@@ -468,32 +468,46 @@ pub fn project_radar_disc(
         // like the rest of the ring. The atlas cell + colour are data
         // (`cardinal_uv_*` / the `NorthPoint` authored colour).
         let head = params.heading_deg.to_radians();
-        let box_w = (major * 0.06).max(5.0);
-        let box_h = if ring.cardinal_uv_size[0].abs() > 1e-4 {
-            box_w * (ring.cardinal_uv_size[1] / ring.cardinal_uv_size[0]).abs()
+        // Marker size: the radial (out) extent + the tangential (across) extent,
+        // keeping the glyph cell's aspect so it is neither squashed nor clipped.
+        let radial_half = (major * 0.10).max(8.0);
+        let cell_aspect = if ring.cardinal_uv_size[1].abs() > 1e-4 {
+            (ring.cardinal_uv_size[0] / ring.cardinal_uv_size[1]).abs()
         } else {
-            box_w
+            1.0
         };
+        let tangential_half = radial_half * cell_aspect;
+        let pad = radial_half.max(tangential_half).ceil() as i32 + 1;
         for k in 0..4u32 {
             let ang = std::f32::consts::FRAC_PI_2 * k as f32 + head; // N/E/S/W + heading
             let (sa, ca) = (ang.sin(), ang.cos());
             let mcx = cx + HEADING_RING_RADIUS * sa * major;
             let mcy = cy - HEADING_RING_RADIUS * ca * minor;
-            let (hw, hh) = (box_w as i32, box_h.max(2.0) as i32);
-            for dy in -hh..=hh {
-                for dx in -hw..=hw {
-                    let fu = dx as f32 / (2.0 * box_w) + 0.5; // 0..1 across the cell
-                    let fv = dy as f32 / (2.0 * box_h) + 0.5;
-                    let su = (ring.cardinal_uv_start[0] + fu * ring.cardinal_uv_size[0]).clamp(0.0, 1.0) * (aw - 1.0);
-                    let sv = (ring.cardinal_uv_start[1] + fv * ring.cardinal_uv_size[1]).clamp(0.0, 1.0) * (ah - 1.0);
+            // Glyph-local frame: rotate the screen offset by -ang so the OUTWARD
+            // radial (sin ang, -cos ang) maps to local "up" (the cell top, v=0) —
+            // the glyph faces outward, perpendicular to the ring.
+            for dy in -pad..=pad {
+                for dx in -pad..=pad {
+                    let (fx, fy) = (dx as f32, dy as f32);
+                    let lx = fx * ca + fy * sa; // tangential (across the glyph)
+                    let ly = -fx * sa + fy * ca; // radial: <0 = outward
+                    let fu = lx / (2.0 * tangential_half) + 0.5;
+                    // Map the cell BOTTOM (the `▽` chevron) to the OUTWARD side so
+                    // the marker faces out, not in.
+                    let fv = -ly / (2.0 * radial_half) + 0.5;
+                    if !(0.0..=1.0).contains(&fu) || !(0.0..=1.0).contains(&fv) {
+                        continue; // outside the glyph cell
+                    }
+                    let su = (ring.cardinal_uv_start[0] + fu * ring.cardinal_uv_size[0]) * (aw - 1.0);
+                    let sv = (ring.cardinal_uv_start[1] + fv * ring.cardinal_uv_size[1]) * (ah - 1.0);
                     let texel = sample_bilinear(atlas, su, sv);
                     let lum = (0.299 * texel[0] as f32 + 0.587 * texel[1] as f32 + 0.114 * texel[2] as f32) / 255.0;
                     let a = lum * (texel[3] as f32 / 255.0) * ring.alpha;
                     if a > 0.003 {
                         blend(
                             &mut out,
-                            (mcx + dx as f32).round() as i32,
-                            (mcy + dy as f32).round() as i32,
+                            (mcx + fx).round() as i32,
+                            (mcy + fy).round() as i32,
                             [ring.cardinal_colour[0], ring.cardinal_colour[1], ring.cardinal_colour[2], a.min(1.0)],
                         );
                     }
