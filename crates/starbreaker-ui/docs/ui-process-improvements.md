@@ -1893,3 +1893,59 @@ sites (`grep -rn 'UiIrNode {'` across src/tests/examples) and a `cargo test --no
 them — a script inserting `field: None,` after each `asset_ref:` line is fastest. Consider a
 `UiIrNode::default()`/builder for test construction if this recurs.
 **Action:** field added `#[serde(skip)]`; the ~12 sites fixed; noted here for the next IR-field add.
+
+### 81. Per-element tuned constants are the smell — find the ONE transform and place every element from authored data
+**Observed (radar chrome, 2026-06-17 session 3):** chasing the reference, I added a
+SEPARATE hand-tuned constant per visual element — `spoke_inner_reach`/`spoke_outer_reach`
+(spoke radial span), a heading-ring radius, a sweep apex+extent, a cardinal-marker size,
+each calibrated by eye. The owner pushed back FOUR times ("stop hand-tuning", "tie to data",
+"do it the way the engine would", "no measurement guesses or hard-coding"). Each fudge was
+compensating for the wrong STAGE: an approximate per-element projection instead of one
+camera + authored positions.
+**Improvement:** for a projected/rendered scope (RTT plane, hologram, radar), DON'T tune a
+magic number per element. Place every element at its AUTHORED node geometry (anchor / sizing
+/ UV / orientation) and project them all through ONE shared transform (the camera tilt+zoom).
+The per-element on-screen result then FALLS OUT of the data × the one camera — `spoke_inner_reach`
+etc. all DELETED (`721034083`). When an input is genuinely runtime-absent (camera transform,
+heading), it is ONE shared value (the hologram-camera boundary), never a pile of per-element
+constants. Sizes/extents that look like a guess are almost always derivable: the sweep apex
+from the texture's bright bbox (`gfx::sweep_wedge_geometry`), the cardinal-marker size from the
+heading scale's degree-cell width (the atlas's 4×9=36 grid = `HeadingDegreeReadout` W=1/36),
+the ring/marker alpha from the node's authored fill × the one emissive.
+**Action:** consolidated to one camera (`721034083`); sweep apex + ring alpha + marker size
+tied to data (`31e99a222`, `d5797f2a3`); memory `radar-hostplane-composite-spokes`.
+
+### 82. "Deactivated / gated in the IR" ≠ "absent from the data" — find the gate and activate the REAL nodes, never generate
+**Observed:** the radar spokes (`Circle_Line_*`) and the heading-tape chrome were NOT in the
+compiled IR, so a prior pass GENERATED spokes procedurally (8 eyeballed bars) — exactly the
+invention the owner rejects. The real nodes existed but were GATED OFF: the spoke host-plane by
+`HostplaneVisuals_Large.Instantiated = StarMapData/CommonData/IsFullScreen` (mutually exclusive
+with the disc plane), the chrome canvas by a BARE `IsRadar` (resolving differently than the
+qualified pin the readout uses — `BB_STATE_PROBE` showed it). Both confirmed by reading the
+`rc_radarmapscreen_hostplane.json` op-graph + the probe.
+**Improvement:** when an element is "missing", do NOT generate it — check whether its node is
+present-but-DEACTIVATED in the IR dump (`is_active=0`), trace the `Instantiated`/`IsActive`
+binding in the canvas op-graph (and `BB_STATE_PROBE` the resolved value), and activate it via
+the proper data mechanism (a registry pin for an unset flag, or a generic bb_state_filter rule
+for a mutually-exclusive toggle — scoped structurally so siblings like the medical bed are
+untouched). Then the renderer reads the now-loaded authored nodes. Inventing geometry to stand
+in for gated-off real nodes is the anti-pattern.
+**Action:** generic unset-`X`/`NOT X` compose rule + bare-`IsRadar` pin; real `Circle_Line` /
+`HeadingTape` nodes rendered (`f980a7189`, `6f1f23520`); memory `radar-hostplane-composite-spokes`.
+
+### 83. Verify per-manufacturer-ness (and runtime-absence) from the DATA, not by assumption — then it's defensible
+**Observed:** I'd been calling the radar tilt/zoom "owner-tuned" without proving they aren't
+per-manufacturer data. The owner's "these WILL differ per manufacturer" forced the check: the RTT
+`WindowCamera` carries only `fieldOfView:20` (no transform); the plane orientation/size bind to
+runtime `PlaneOrientation`/`RadarDiameter`; and ALL 19 `radar3dpresets/*_vehicleradar` have
+`offset.Rotation=(0,0,0)`. So the tilt/zoom are runtime camera state, the SAME for every ship —
+genuinely runtime-absent AND not per-manufacturer. The per-manufacturer variation is in the
+brand-resolved MATERIALS (item 79) + `renderRadius`/`position` (the holo-globe display).
+**Improvement:** before labelling any value "owner-tuned/runtime", PARSE the candidate data
+families (the `*_vehicleradar` presets, the `WindowCamera`, the host-plane op-graph bindings) and
+SHOW it's absent/uniform — the same exhausted-search bar as a deferral blocker. A verified
+"runtime-absent, not per-manufacturer" is a defensible single owner constant; an assumed one is
+the hard-code the owner rejects. Compute geometry FROM decoded assets (texture/atlas bbox, the
+atlas grid) rather than measuring-by-eye-and-hardcoding.
+**Action:** documented the camera/preset evidence trail in the commit + memory; sizes/positions
+tied to the atlas grid + node geometry.
