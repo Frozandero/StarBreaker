@@ -94,6 +94,49 @@ pub struct HeadingRingParams {
     pub cardinal_uv_size: [f32; 2],
     /// Resolved RGB of the cardinal markers (the `NorthPoint` authored colour).
     pub cardinal_colour: [f32; 3],
+    /// The degree-cell width as a fraction of the full 360° ring — the engine's
+    /// heading-scale cell size (`HeadingDegreeReadout` authors `W=1/36`; the atlas
+    /// is a 4-row × 9-column degree grid = 36 cells). Sizes each cardinal marker to
+    /// one degree cell's arc.
+    pub cardinal_cell_fraction: f32,
+}
+
+/// Find the cardinal "exit" glyph (`└▽┘`) cell in the heading atlas: the bright
+/// bounding box of the LAST (cardinal) column's top degree row. `columns` is the
+/// atlas's coordinate-label grid width (9 for `coordinates_novalue`: 8 labels + 1
+/// cardinal glyph per row). Returns `(uv_start, uv_size)` in atlas `[0,1]` space
+/// (1px padded so the L-bracket edges aren't clipped), or `None` if empty. Computed
+/// from the texture so a per-manufacturer atlas tracks automatically.
+pub fn cardinal_marker_cell(atlas: &RgbaImage, columns: f32) -> Option<([f32; 2], [f32; 2])> {
+    let (w, h) = (atlas.width(), atlas.height());
+    if w == 0 || h == 0 || columns < 1.0 {
+        return None;
+    }
+    let u0 = (((columns - 1.0) / columns) * w as f32).floor().max(0.0) as u32;
+    // The first degree row sits in the top tenth of the atlas.
+    let y_lim = ((h as f32) * 0.10).ceil().min(h as f32) as u32;
+    let (mut x0, mut y0, mut x1, mut y1) = (u32::MAX, u32::MAX, 0u32, 0u32);
+    for y in 0..y_lim {
+        for x in u0..w {
+            let px = atlas.get_pixel(x, y).0;
+            let lum = 0.299 * px[0] as f32 + 0.587 * px[1] as f32 + 0.114 * px[2] as f32;
+            if lum * (px[3] as f32 / 255.0) > 20.0 {
+                x0 = x0.min(x);
+                y0 = y0.min(y);
+                x1 = x1.max(x);
+                y1 = y1.max(y);
+            }
+        }
+    }
+    if x0 > x1 || y0 > y1 {
+        return None;
+    }
+    let (fw, fh) = (w as f32, h as f32);
+    let sx = (x0 as f32 - 1.0).max(0.0) / fw;
+    let sy = (y0 as f32 - 1.0).max(0.0) / fh;
+    let ex = (x1 as f32 + 2.0).min(fw) / fw;
+    let ey = (y1 as f32 + 2.0).min(fh) / fh;
+    Some(([sx, sy], [ex - sx, ey - sy]))
 }
 
 /// One authored radar spoke (`Circle_Line_*`) in the radar plane, projected onto
@@ -468,15 +511,20 @@ pub fn project_radar_disc(
         // like the rest of the ring. The atlas cell + colour are data
         // (`cardinal_uv_*` / the `NorthPoint` authored colour).
         let head = params.heading_deg.to_radians();
-        // Marker size: the radial (out) extent + the tangential (across) extent,
-        // keeping the glyph cell's aspect so it is neither squashed nor clipped.
-        let radial_half = (major * 0.10).max(8.0);
-        let cell_aspect = if ring.cardinal_uv_size[1].abs() > 1e-4 {
-            (ring.cardinal_uv_size[0] / ring.cardinal_uv_size[1]).abs()
+        // Marker size, the ENGINE way: a cardinal marker is ONE degree cell of the
+        // heading scale. The degree readout authors its width as a fraction of the
+        // ring (`HeadingDegreeReadout` W = 0.02778 = 1/36 → 36 cells over 360°, one
+        // per 10° — `cardinal_cell_fraction`). So the marker spans that cell's arc
+        // along the ring (tangential), and the radial extent keeps the glyph's atlas
+        // aspect so the `└▽┘` isn't squashed.
+        let cell_arc = ring.cardinal_cell_fraction * std::f32::consts::TAU * HEADING_RING_RADIUS * major;
+        let tangential_half = (0.5 * cell_arc).max(2.0);
+        let glyph_aspect = if ring.cardinal_uv_size[0].abs() > 1e-4 {
+            (ring.cardinal_uv_size[1] / ring.cardinal_uv_size[0]).abs()
         } else {
             1.0
         };
-        let tangential_half = radial_half * cell_aspect;
+        let radial_half = (tangential_half * glyph_aspect).max(2.0);
         let pad = radial_half.max(tangential_half).ceil() as i32 + 1;
         for k in 0..4u32 {
             let ang = std::f32::consts::FRAC_PI_2 * k as f32 + head; // N/E/S/W + heading

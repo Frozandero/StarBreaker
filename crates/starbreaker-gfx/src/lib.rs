@@ -18,7 +18,8 @@ pub use inspect::{GfxMetadata, dump_metadata};
 pub use mesh_holo::{HologramParams, render_vehicle_hologram};
 pub use parser::parse_gfx;
 pub use radar_plane::{
-    HeadingRingParams, RadarPlaneParams, RadarSpoke, project_radar_disc, sweep_wedge_geometry,
+    HeadingRingParams, RadarPlaneParams, RadarSpoke, cardinal_marker_cell, project_radar_disc,
+    sweep_wedge_geometry,
 };
 pub use raster::RasterContext;
 pub use render::{

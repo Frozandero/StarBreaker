@@ -275,14 +275,31 @@ impl HologramFetcher for P4kHologramFetcher<'_> {
         // its row height is the tape's authored `UVSize.y`. Drawn at N/E/S/W,
         // heading-rotated. Tinted by the brand accent (the `NorthPoint` cardinal
         // colour family).
+        // The `coordinates_novalue` atlas is a degree grid of 4 rows × 9 columns =
+        // 36 cells (8 labels + 1 cardinal glyph per row); the 9th column is the
+        // cardinal `└▽┘`. 36 cells = the full 360° heading scale, so each degree
+        // cell is 1/36 of the ring (matching `HeadingDegreeReadout` W = 0.02778).
+        const DEGREE_GRID_ROWS: f32 = 4.0;
         const DEGREE_GRID_COLUMNS: f32 = 9.0;
+        let cardinal_cell_fraction = 1.0 / (DEGREE_GRID_ROWS * DEGREE_GRID_COLUMNS);
+        // The cardinal glyph cell is COMPUTED from the atlas (the `└▽┘` bbox in the
+        // last column's top row) so it captures the full glyph (no clip) and tracks
+        // a per-manufacturer atlas; fall back to the nominal 9th-column cell.
+        let (cardinal_uv_start, cardinal_uv_size) = heading_texture
+            .as_ref()
+            .and_then(|atlas| starbreaker_gfx::cardinal_marker_cell(atlas, DEGREE_GRID_COLUMNS))
+            .unwrap_or((
+                [(DEGREE_GRID_COLUMNS - 1.0) / DEGREE_GRID_COLUMNS, 0.0],
+                [1.0 / DEGREE_GRID_COLUMNS, 0.063],
+            ));
         let heading_ring = heading.map(|h| HeadingRingParams {
             uv_start: h.uv_start,
             uv_size: h.uv_size,
             alpha: h.fill_alpha * RADAR_EMISSIVE,
-            cardinal_uv_start: [(DEGREE_GRID_COLUMNS - 1.0) / DEGREE_GRID_COLUMNS, 0.0],
-            cardinal_uv_size: [1.0 / DEGREE_GRID_COLUMNS, h.uv_size[1].abs().max(0.05)],
+            cardinal_uv_start,
+            cardinal_uv_size,
             cardinal_colour: tint,
+            cardinal_cell_fraction,
         });
 
         // ~37° matches the reference ellipse (minor/major ≈ 0.6). Owner-tuned.
