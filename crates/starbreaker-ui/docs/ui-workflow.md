@@ -408,3 +408,23 @@ Flows (commands in the reference doc §2/§7):
   `brandStyles` JSON and verify via `ui_ir_query --fields text_style` / `BB_TEXT_FORMAT_PROBE`
   that the authored value reaches the node. Third inherited "blocker" overturned this way
   (velocity-num, compass ×2, master-mode).
+- **A draw path can't produce an element natively (3D-RTT / Primitive / live render)? EXHAUST the
+  in-data ASSET before inventing — the hologram precedent is NOT a licence to invent geometry
+  (ledger 78).** The radar scope is a 3D-RTT `WidgetWindow`; the first attempt cited the SELF-STATUS
+  hologram and INVENTED the disc (eyeballed ring/spoke counts + tilt — banned reference-calibrated
+  magic numbers). The owner corrected it: the disc is a REAL texture
+  (`r_radarmapscreen_radial_gradients.dds`, bound by the `Circle_Radial_Grid` Primitive node's
+  `.mtl` TexSlot1). The distinction: the hologram rendered the REAL decoded MESH — only its CAMERA
+  was owner-tuned. So for any unreproducible visual: `mtl_summary <primitiveMaterialPath>` → texture
+  slots → `p4k_search` + `image_preview` the `.dds`; check `svgFill.svgPath`, styleTag
+  `SvgPath`/`ImagePath` modifiers, SWF/Flash. Render the REAL asset; ONLY the engine runtime camera
+  transform (absent at static rest) + an emissive-brightness match are legitimately owner-tuned.
+- **Visual assets are PER-MANUFACTURER — read the cascade-applied material, not the authored generic
+  (ledger 79).** A brand swaps a Primitive node's texture via a `PrimitiveMaterialPath` style
+  modifier, which `bb_brand_apply::apply_string_field` writes to a TOP-LEVEL `node.raw["PrimitiveMaterialPath"]`
+  (not the nested `primitiveSettings.primitiveMaterialPath`). Prefer the top-level value (the IR
+  `primitive_material` field does) so Greycat/RSI/… get their variant and a no-override brand (DRAK)
+  keeps the generic. An RTT-window 3D scene reuses the hologram fetcher pattern (`HologramFetcher`
+  trait method default-`None` → `PipelineInputs`→`ComposeContext`→`ir_compose`, impl in
+  `P4kHologramFetcher`); a new `UiIrNode` field for it should be `#[serde(skip)]` (IR-snapshot-safe)
+  and expect ~12 literal sites to update (ledger 80).

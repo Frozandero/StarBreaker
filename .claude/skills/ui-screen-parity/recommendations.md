@@ -60,6 +60,23 @@ findings land here in two states, with a lifecycle:
   skill (or arc start) skims the open items first.
 - **Multi-ship generalization unverified** (see Known assumptions) — exercise
   when a second `reference/in-game/` folder exists.
+- **The skill should explicitly warn that the hologram precedent ≠ licence to
+  invent geometry (radar arc, 2026-06-17).** When a draw path can't natively
+  produce an element (3D-RTT / `WidgetWindow` / `Primitive` / live render), the
+  skill's "Default to fixing, not deferring" + the hologram precedent led to a
+  procedural rasteriser that INVENTED the disc (eyeballed ring/spoke/tilt =
+  banned reference-calibrated magic numbers). The owner corrected it twice ("the
+  disc shape should be available in-data, e.g. an svg"; "ensure all point to the
+  correct image per manufacturer"). The disc was a real engine texture. The
+  hologram rendered the REAL decoded MESH — only its camera was owner-tuned;
+  inventing BOTH geometry and camera is not "the hologram pattern." RECOMMEND: add
+  a red-flag row — *"Can't render it natively, I'll reproduce the geometry" →
+  FIRST exhaust the in-data art (`mtl_summary`→texture / `image_preview` /
+  `svgFill.svgPath` / styleTag SvgPath / SWF); render the REAL asset; only the
+  engine runtime CAMERA (absent at rest) + emissive brightness are owner-tuned.
+  And: resolve PER-MANUFACTURER (the cascade-applied `PrimitiveMaterialPath`
+  brand override, not the authored generic).* (Now in ledger 78/79, workflow §10,
+  memory `feedback-find-indata-sources-before-inventing`.)
 
 ## Known assumptions & risks
 

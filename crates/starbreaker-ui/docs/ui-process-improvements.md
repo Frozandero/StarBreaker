@@ -1839,3 +1839,57 @@ icon presets), VISUALLY inspect the OTHER screens that share the mechanism — e
 in workflow §10 so it isn't re-learned.
 **Action:** committed `18a92a2d9` (path filter + guard test); workflow §10 bullet added (below);
 this ledger records the silent-guard gap.
+
+### 78. Exhaust in-data ASSET sources (textures/SVG/SWF/materials) before any procedural reproduction — the hologram precedent is NOT a licence to invent geometry
+**Observed (radar arc, owner-corrected TWICE):** the radar scope (`Screen_Radar_RTT` →
+`MapDisplayMaster`) is a live 3D-RTT `WidgetWindow` the 2D pipeline can't run. Citing the
+SELF-STATUS hologram precedent, the first attempt INVENTED the disc: a procedural rasteriser
+with eyeballed ring count / spoke count / tilt / ticks — reference-calibrated magic numbers, the
+exact banned pattern. The owner pushed back: "the radar should have more solid sources, e.g. the
+disc shape should be available somewhere in-data, e.g. as an svg or similar" — and it WAS: the disc
+is the real engine texture `UI/Textures/R_RadarMapScreen/3D_Object_Textures/r_radarmapscreen_radial_gradients.dds`
+(rings + degree-tick scale + axis), bound by `ui_r_radarmapscreen_radial_grid.mtl` (TexSlot1) on the
+`Circle_Radial_Grid` Primitive node; the sweep is the animated `…_radial_pulse`/`…_idle`/
+`…_expanding_ring` materials; the bright ring is the `Circle_Ripple_Textured` WidgetCircle. The
+crucial distinction the first attempt missed: the hologram rendered the REAL decoded ship MESH —
+only its CAMERA was owner-tuned. Inventing BOTH geometry and camera is not "the hologram pattern."
+**Improvement:** for ANY visual element a draw path can't natively produce, FIRST exhaust the
+in-data art: `mtl_summary <primitiveMaterialPath>` → its texture slots → `p4k_search` + `image_preview`
+the `.dds`; check `svgFill.svgPath`, the styleTag `SvgPath`/`ImagePath` modifiers, and SWF/Flash
+assets. Reproduce by loading + projecting the REAL asset; the ONLY legitimately owner-tuned value
+is the engine's runtime CAMERA transform (absent in static data), plus an emissive-brightness/bloom
+match. The result: `gfx::radar_plane::project_radar_disc` decodes + tilt-projects the real texture
+(commits `9e38f1501`/`d76270597`/`e530c0820`), data-faithful.
+**Action:** reverted the invented rasteriser (`6caf30c7b`); rebuilt texture-based; workflow §1
+rule added (below); reference §4/§5 asset-resolution probes documented; memory
+`feedback-find-indata-sources-before-inventing`.
+
+### 79. Visual assets are PER-MANUFACTURER — resolve the brand-applied material, not the authored generic
+**Observed:** the radar disc material has brand variants (`ui_grin_r_radarmapscreen_radial_grid.mtl`,
+`ui_r_radarmapscreen_radial_grid_RSI.mtl`); the authored node holds the GENERIC
+`ui_r_radarmapscreen_radial_grid.mtl`. The brand swaps it via a `Radial Grid Element` style
+`PrimitiveMaterialPath` modifier — which `bb_brand_apply::apply_string_field` writes to a TOP-LEVEL
+`node.raw["PrimitiveMaterialPath"]` (the generic-fallback branch), NOT into the nested
+`primitiveSettings.primitiveMaterialPath`. Reading only the authored nested value would give the
+wrong (generic) texture for Greycat/RSI. The owner flagged it: "ensure all of these point to the
+correct image depending on the manufacturer."
+**Improvement:** when consuming a Primitive node's material, PREFER the cascade-applied top-level
+`PrimitiveMaterialPath` over the authored `primitiveSettings.primitiveMaterialPath` (the IR
+`primitive_material` field does this). DRAK (no override) keeps the generic; brands with an override
+get theirs — manufacturer-correct, generically.
+**Action:** committed `d76270597` (IR `primitive_material` prefers the brand override); documented
+in reference §5.
+
+### 80. RTT-window 3D scenes reuse the hologram fetcher pattern — but a new field on `UiIrNode` ripples to ~12 literal sites
+**Observed:** compositing the radar disc reused the SELF-STATUS pattern exactly — a `HologramFetcher`
+trait method (default `None`), wired `PipelineInputs`→`ComposeContext`, consumed in
+`ir_compose::draw_non_text_node`, impl in `P4kHologramFetcher`. Cheap to extend. BUT carrying the
+disc material to `ir_compose` needed a new `UiIrNode` field (`primitive_material`); `UiIrNode` has
+no `Default`, so the field broke ~12 struct-literal sites (tests/examples/snapshot support). The
+lib (`cargo build`) compiled — only `cargo test`/`ui_check` exposed them, one example error at a time.
+**Improvement:** (1) mark IR fields consumed only by the renderer `#[serde(skip)]` so IR snapshots /
+freeze hashes are unaffected (no re-freeze). (2) When adding a `UiIrNode` field, expect ~12 literal
+sites (`grep -rn 'UiIrNode {'` across src/tests/examples) and a `cargo test --no-run` to enumerate
+them — a script inserting `field: None,` after each `asset_ref:` line is fastest. Consider a
+`UiIrNode::default()`/builder for test construction if this recurs.
+**Action:** field added `#[serde(skip)]`; the ~12 sites fixed; noted here for the next IR-field add.
