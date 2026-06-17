@@ -1,0 +1,123 @@
+# Radar screen (Screen_Radar_RTT) parity — handoff
+
+Arc started 2026-06-17. Screen: `Screen_Radar_RTT` (Drake Clipper cockpit radar
+MFD). Mode: fully-automated. First content parity pass (only the screen aspect
+was touched before — dossier).
+
+## Verified facts
+
+- `Screen_Radar_RTT` binds canvas `BuildingBlocks_Canvas.MapDisplayMaster`
+  (GUID `c4fd4ccf-9745-4a83-b9a7-a1aafad77855`), `binding_kind = radar`
+  (from the exported LOD0 `scene.json` ui_bindings — ground truth, workflow §9).
+- Both reference captures (`Screen_Radar_RTT.png`, `mapdisplaymaster.png`) show
+  the SAME radar scope: elliptical concentric rings + 6 radial spokes + central
+  white ship triangle + orange contact chevrons round the perimeter + perimeter
+  ticks + "130°  0.7km" heading/range readout at bottom, under the DRAK CRT
+  vignette. The SC cockpit radar IS a local-area map display, so MapDisplayMaster
+  is the right canvas.
+
+## What the render currently shows (baseline, md5 5afe4a36)
+
+Near-blank: a giant cream/pale-yellow rounded panel filling most of the screen,
+stray MFD chrome (nav arrows `‹ ›`, partial "APARTMENT/HABITATION" top-centre,
+an "ALREADY SELECTED" cream box bottom-left, a lone orange "0" bottom-centre).
+The whole radar scope is absent.
+
+## Root-cause map (from the IR dump, 637 nodes)
+
+MapDisplayMaster is a MULTI-MODE map component. Top-level sub-displays (all
+ACTIVE at once at static rest — the bug):
+`StarMapDisplay`, `InteriorMapDisplay`, `MapVelocitySFX`, `StarMapDisplayRTT`,
+`InteriorMapDisplayRTT`, `UIOverlayRTT`, `GalaxyMapDisplay`, `canvas_Readouts`.
+
+- Mode flags are engine state under `/MapNamespace`:
+  `IsInteriorMapActive`, `GeneralMapData/IsStarMapActive`, `IsMapActive`,
+  `IsVolumetric`, `IsRTT`; plus `GeneralMapData/DisplayRadius`,
+  `DisplayOrientation/{x,y,z}`, `DisplayPosition/{x,y,z}`. Absent at static rest
+  → per-mode visibility gating doesn't select one mode → InteriorMap chrome wins.
+- The actual radar scope is `PlayerRadarPlane > PlaneRoot > RadarCircleBase >
+  HostplaneVisuals_Small > RadarPlaneRingsBase` (rings `Circle_Ripple_Textured`)
+  under `StarMapDisplayRTT > CanvasProxyRoot > WindowContainer > 3D Root` —
+  currently `[OFF]`. The rings are 2D widgets parented under a 3D-projected /
+  RTT plane whose transform comes from live camera/orientation; at rest they
+  collapse to ~0×0. This is a live 3D-RTT render (analogous to the self-status
+  hologram, ledger 70).
+- Radar readouts ("130° 0.7km") come from `mapdisplaystarmap_radarreadouts`
+  under `canvas_Readouts`; only "0" renders at rest. Heading 130° + contacts are
+  LIVE state (unreproducible statically, like the compass live heading);
+  `DisplayRadius` would drive the range.
+- Contact chevrons + perimeter ticks are projected from live nearby-contact data
+  (`EdgeMarkers`/`VisibleMarkers` lists — empty at rest).
+
+## Naming caveat (owner-flagged 2026-06-17)
+
+The canvas's `StarMapDisplay*` / `IsStarMapActive` identifiers are the GENERIC
+map-render subsystem (the same pipeline that draws the radar plane) — **NOT the
+in-game navigation "starmap"**. This screen is the **MFD radar**. The radar mode
+is distinguished by `IsRadar` (+ `IsRTT`); the radar plane is hosted in the
+StarMap-RTT display, so `IsStarMapActive` rides along as its host flag.
+
+## LANDED — catalog #1 (mode gating)
+
+Registry pins added (`default_value_registry_v1.json`, exact raw binding-string
+keys): `IsRTT=true, IsStarMapActive=true, IsRadar=true, IsInteriorMapActive=false,
+IsGalacticMapActive=false, IsVolumetric=false, IsMapActive=true`. TDD guard:
+`bb_state_filter::tests_b::radar_mode_registry_defaults_select_starmap_rtt_over_interior_map`
+(red→green). Re-render (md5 99cdab81): the interior-map cream over-paint is GONE,
+the DRAK dashboard vignette shows, node count 637→148. Catalog #1 + #6 ✓. The
+`canvas_Readouts` "RadarMagnification" bar now renders (via `IsRadar`) — currently
+a `LockedIcon` + "º" heading suffix + empty magnification (catalog #3, below).
+
+## Diff catalog (priority order) + status
+
+1. **[CRITICAL] Mode gating — interior-map chrome over-paints.** ✅ **FIXED**
+   (registry pins, above). Interior/Star/Galaxy modes deactivated; dark vignette
+   shows; node count 637→148.
+2. **[CRITICAL/dominant] Radar scope grid absent** (rings/spokes/ship triangle).
+   ⛔ **PROVEN 3D-RTT BLOCKER → major-item gate.** After the gating fix the radar
+   plane IS active but COLLAPSED to ~0.5×0.8px at centre (512,392):
+   `PlayerRadarPlane > PlaneRoot > RadarCircleBase > HostplaneVisuals_Small >
+   RadarPlaneRingsBase` / `RadarSpokeLinesBase` / `NavigationGrid{1,2,3}{Mid,Alt}Plane`
+   all under `3D Root > WindowContainer` (a `WidgetWindow`). These are 2D
+   ring/spoke widgets (`WidgetCircle Circle_Ripple_Textured`, etc.) placed on a
+   **3D-projected RTT plane** whose transform comes from the live radar camera
+   (`/MapNamespace/GeneralMapData/DisplayOrientation/{x,y,z}`,
+   `DisplayPosition/{x,y,z}`, `DisplayRadius` — decoded as NumberVariable state
+   but absent at static rest) → the plane projects to a point. Reproducing the
+   scope = a radar-disc projection rasteriser (decode the plane geometry + ring
+   radii from DisplayRadius + a top-down perspective rasteriser), comparable to
+   the self-status hologram arc (ledger 70) — a whole separate effort. The owner
+   declined the "build it" option at the catalog gate; bring to the major-item
+   blocker gate.
+3. **[HIGH] Heading/range readout** "130° 0.7km".
+   - **#3a lock icon** ✅ **FIXED** (`ShowRadarLocked=false` pin): the padlock
+     (`LockedIcon`, `icon_common_door_locked.svg`) is gone.
+   - **#3b orange backplate** ⚠️ **characterized, deferred.** The readout card
+     `RadarMagnification` is `rendererType:Primitive` (material
+     `ui_ar_card_in_holo_volume.mtl`) with authored `background.color = ColorStyle
+     "Base"` (DRAK orange). In the full render `background_fill_colour = None` but
+     `background_fill_colour_token = "Base"` survives → ir_compose draws an opaque
+     orange bar over the readout. The sub-canvas authors a `Type(Card)∧Tag(Locked)
+     →BackgroundColor:null` entry (RadarMagnification carries the Locked tag) that
+     should null it, but `ui_scene_style_probe` shows `applied_style_entries:[]`.
+     ROOT-CAUSE CANDIDATE: `background_fill_colour_token` is read from `node.raw`
+     (authored "Base") while `background_fill_colour` (RGBA) goes through the
+     cascade — so a nulling BackgroundColor modifier clears the RGBA but the token
+     leaks. Fixing it touches a load-bearing token path (power pips, master-mode
+     bars) → needs the disable→adjudicate audit + `--full`. The readout VALUES
+     (heading `FlightController/Compass/Value`, range `…/radarrangemeters`) are
+     LIVE — the ref's 130°/0.7km is an in-flight capture, unreproducible at rest
+     (like the compass live heading). So full readout parity is bounded regardless.
+4. **[MED] Contact chevrons absent** — live nearby-contact data
+   (`EdgeMarkers`/`VisibleMarkers`, empty at rest). Deferred-with-proof.
+5. **[MED] Perimeter ticks absent** — part of the radar plane (#2).
+6. **[LOW] Background vignette** ✅ correct (dark DRAK vignette shows after #1).
+
+## Landed commits
+- (this arc) registry radar-mode pins + `ShowRadarLocked` + TDD guards
+  (`bb_state_filter::tests_b::radar_mode_registry_defaults_select_starmap_rtt_over_interior_map`,
+  `radar_locked_icon_hidden_when_show_radar_locked_pinned_false`).
+
+## Next step
+Major-item blocker gate for #2 (radar scope = 3D-RTT render). Owner decision on
+#3b (attempt the token-leak fix vs defer).

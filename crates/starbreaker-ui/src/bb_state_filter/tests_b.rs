@@ -446,3 +446,96 @@
         let false_set = instantiated_false_widgets_with_param_inputs(&rv, &[]);
         assert!(false_set.contains(&6), "case-insensitive name match must apply");
     }
+
+    /// Cockpit radar (`MapDisplayMaster`, `binding_kind = radar`) must select
+    /// the radar/local RTT mode at static rest. The `/MapNamespace` mode flags,
+    /// pinned in the default-value registry, gate the master canvas's per-mode
+    /// sub-displays:
+    ///   InteriorMapDisplay = And(¬IsRTT, IsInteriorMapActive)   → must hide
+    ///   StarMapDisplayRTT  = And(IsRTT,  IsStarMapActive)        → must stay
+    /// (`StarMapDisplayRTT` hosts the `PlayerRadarPlane` radar scope.) Without
+    /// the registry pins these `/MapNamespace` BooleanVariables are unset
+    /// non-state bindings, so the `contains_unset_non_state_variable` override
+    /// forces every mode active and the interior-map chrome over-paints the
+    /// radar screen. The flag values live in the registry, not in code.
+    #[test]
+    fn radar_mode_registry_defaults_select_starmap_rtt_over_interior_map() {
+        let rv = make_record_value(
+            vec![],
+            vec![
+                variable_op(25, "/~/MapNamespace~/GeneralMapData/IsRTT"),
+                variable_op(26, "/~/MapNamespace~GeneralMapData/IsInteriorMapActive"),
+                variable_op(31, "/~/MapNamespace~/GeneralMapData/IsStarMapActive"),
+                json!({
+                    "_Pointer_": "ptr:27",
+                    "_Type_": "BuildingBlocks_BindingsBooleanInvert",
+                    "input": "_PointsTo_:ptr:25"
+                }),
+                // InteriorMapDisplay (ptr:15) = And(¬IsRTT, IsInteriorMapActive)
+                json!({
+                    "_Pointer_": "ptr:16",
+                    "_Type_": "BuildingBlocks_BindingsBooleanEvaluateAnd",
+                    "inputs": ["_PointsTo_:ptr:27", "_PointsTo_:ptr:26"]
+                }),
+                // StarMapDisplayRTT (ptr:33) = And(IsRTT, IsStarMapActive)
+                json!({
+                    "_Pointer_": "ptr:34",
+                    "_Type_": "BuildingBlocks_BindingsBooleanEvaluateAnd",
+                    "inputs": ["_PointsTo_:ptr:25", "_PointsTo_:ptr:31"]
+                }),
+                boolean_field_op(15, 16),
+                boolean_field_op(33, 34),
+            ],
+        );
+        let defaults = crate::defaults::DefaultValueRegistry::with_well_known_path_defaults();
+        let false_set =
+            instantiated_false_widgets_with_param_inputs_inherited_bindings_and_defaults(
+                &rv,
+                &[],
+                &std::collections::HashMap::new(),
+                Some(&defaults),
+            );
+        assert!(
+            false_set.contains(&15),
+            "InteriorMapDisplay must deactivate in radar mode (¬IsRTT ∧ IsInteriorMapActive = false)"
+        );
+        assert!(
+            !false_set.contains(&33),
+            "StarMapDisplayRTT (radar-plane host) must stay active (IsRTT ∧ IsStarMapActive = true)"
+        );
+    }
+
+    /// The MFD-radar readout bar (`mapdisplaystarmap_radarreadouts`) shows a
+    /// `LockedIcon` whose `IsActive` binds `StarMapData/ShowRadarLocked`. At
+    /// static rest the radar is operational (the reference shows the heading /
+    /// range readout, no lock), so the registry pins `ShowRadarLocked = false`
+    /// and the lock must deactivate. Without the pin it is an unset non-state
+    /// binding → the override keeps it active → a spurious padlock over the
+    /// readout.
+    #[test]
+    fn radar_locked_icon_hidden_when_show_radar_locked_pinned_false() {
+        let rv = make_record_value(
+            vec![],
+            vec![
+                variable_op(50, "StarMapData/ShowRadarLocked"),
+                json!({
+                    "_Type_": "BuildingBlocks_BindingsBooleanField",
+                    "widget": "_PointsTo_:ptr:19",
+                    "field": "IsActive",
+                    "input": "_PointsTo_:ptr:50"
+                }),
+            ],
+        );
+        let defaults = crate::defaults::DefaultValueRegistry::with_well_known_path_defaults();
+        let false_set =
+            instantiated_false_widgets_with_param_inputs_inherited_bindings_and_defaults(
+                &rv,
+                &[],
+                &std::collections::HashMap::new(),
+                Some(&defaults),
+            );
+        assert!(
+            false_set.contains(&19),
+            "LockedIcon must deactivate when ShowRadarLocked is pinned false"
+        );
+    }

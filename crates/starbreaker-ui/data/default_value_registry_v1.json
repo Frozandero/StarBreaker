@@ -131,7 +131,15 @@
     "flightcontroller.totalgforceamount": 0.0,
     "FlightController/Compass/Ticks": 0,
     "controllablemanager/mastermode": 2,
-    "seatdashboard/currentmode": 3
+    "seatdashboard/currentmode": 3,
+    "/~/MapNamespace~/GeneralMapData/IsRTT": true,
+    "/~/MapNamespace~/GeneralMapData/IsStarMapActive": true,
+    "/~/MapNamespace~/StarMapData/CommonData/IsRadar": true,
+    "/~/MapNamespace~GeneralMapData/IsInteriorMapActive": false,
+    "/~/MapNamespace~/GeneralMapData/IsGalacticMapActive": false,
+    "/~/MapNamespace~/GeneralMapData/IsVolumetric": false,
+    "/~/MapNamespace~/GeneralMapData/IsMapActive": true,
+    "StarMapData/ShowRadarLocked": false
   },
   "localization": {
     "hud_notarget": "NO TARGET",
