@@ -212,12 +212,15 @@ impl HologramFetcher for P4kHologramFetcher<'_> {
         // frame — owner-tuned, like the tilt).
         const RADAR_SWEEP_ANGLE_DEG: f32 = 45.0;
         const RADAR_SWEEP_ALPHA: f32 = 0.5;
+        // The 8 radial spokes (Circle_Line_* in the radar plane); brand-tinted.
+        const RADAR_SPOKE_ALPHA: f32 = 0.55;
         let params = RadarPlaneParams {
             tilt_deg: RADAR_TILT_DEG,
             tint_rgb: tint,
             texture_rotation_deg,
             sweep_alpha: if sweep_texture.is_some() { RADAR_SWEEP_ALPHA } else { 0.0 },
             sweep_angle_deg: RADAR_SWEEP_ANGLE_DEG,
+            spoke_alpha: RADAR_SPOKE_ALPHA,
             ..Default::default()
         };
         let disc = project_radar_disc(width, height, &texture, sweep_texture.as_ref(), &params);

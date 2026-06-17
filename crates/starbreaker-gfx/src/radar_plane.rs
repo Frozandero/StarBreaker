@@ -77,6 +77,10 @@ pub struct RadarPlaneParams {
     /// in-game; this is the captured-frame position (owner-tuned, same basis as
     /// the camera tilt — the animation phase isn't in static data).
     pub sweep_angle_deg: f32,
+    /// Alpha of the 8 radial spokes (`Circle_Line_000…315` in the radar plane's
+    /// Large host-plane: thin `line_a` bars at 45° spacing, tinted by brand).
+    /// `0.0` = none.
+    pub spoke_alpha: f32,
 }
 
 impl Default for RadarPlaneParams {
@@ -93,6 +97,7 @@ impl Default for RadarPlaneParams {
             texture_rotation_deg: 0.0,
             sweep_alpha: 0.0,
             sweep_angle_deg: 0.0,
+            spoke_alpha: 0.0,
         }
     }
 }
@@ -209,6 +214,26 @@ pub fn project_radar_disc(
         }
     }
 
+    // Radial spokes (`Circle_Line_000…315`): 8 thin bars at 45° compass spacing,
+    // radiating from near the centre to the rim, tinted. Cardinals (N/E/S/W)
+    // reach further in than the diagonals (the data authors cardinal length 0.4
+    // vs diagonal 0.3). Drawn in the tilted disc plane so they foreshorten with
+    // the ellipse.
+    if params.spoke_alpha > 0.0 {
+        let c = [params.tint_rgb[0], params.tint_rgb[1], params.tint_rgb[2], params.spoke_alpha];
+        let ro = 0.9_f32; // outer end, just inside the boundary ring
+        for k in 0..8u32 {
+            let phi = std::f32::consts::TAU * (k as f32 / 8.0); // 0 = North (up), clockwise
+            let cardinal = k % 2 == 0;
+            let ri = if cardinal { 0.42 } else { 0.58 }; // cardinals reach further in
+            let (sf, cf) = (phi.sin(), phi.cos());
+            // disc-plane direction: North = up = (0,-1); East = (1,0); …
+            let p_in = (cx + ri * sf * major, cy - ri * cf * minor);
+            let p_out = (cx + ro * sf * major, cy - ro * cf * minor);
+            draw_line(&mut out, p_in.0, p_in.1, p_out.0, p_out.1, c);
+        }
+    }
+
     // Bright outer boundary ring: the `Circle_Ripple_Textured` WidgetCircle fills
     // the disc plane with an `Accent1` stroke — a crisp tinted ellipse at the
     // disc edge (the reference's bright outer ring). Drawn over the disc.
@@ -259,6 +284,16 @@ fn draw_ellipse_stroke(img: &mut RgbaImage, cx: f32, cy: f32, rx: f32, ry: f32, 
             }
         }
         prev = Some(p);
+    }
+}
+
+/// Draw a blended 1px line from `(x0,y0)` to `(x1,y1)` (the radar spokes).
+fn draw_line(img: &mut RgbaImage, x0: f32, y0: f32, x1: f32, y1: f32, c: [f32; 4]) {
+    let (dx, dy) = (x1 - x0, y1 - y0);
+    let steps = dx.abs().max(dy.abs()).ceil().max(1.0) as i32;
+    for i in 0..=steps {
+        let t = i as f32 / steps as f32;
+        blend(img, (x0 + dx * t).round() as i32, (y0 + dy * t).round() as i32, c);
     }
 }
 
@@ -412,6 +447,26 @@ mod tests {
         // No sweep texture → nothing (the black disc stays transparent).
         let none = project_radar_disc(200, 200, &disc, None, &p);
         assert!(none.pixels().all(|px| px.0[3] == 0), "no sweep + black disc → transparent");
+    }
+
+    #[test]
+    fn spokes_draw_eight_tinted_radials() {
+        // Black (transparent) disc, no ring/ship/sweep — only the 8 spokes.
+        let disc = RgbaImage::from_pixel(64, 64, Rgba([0, 0, 0, 255]));
+        let p = RadarPlaneParams {
+            outer_ring_alpha: 0.0,
+            ship_marker: false,
+            spoke_alpha: 0.6,
+            ..Default::default()
+        };
+        let img = project_radar_disc(400, 400, &disc, None, &p);
+        let tinted = img
+            .pixels()
+            .filter(|px| px.0[3] > 0 && px.0[0] > px.0[2])
+            .count();
+        assert!(tinted > 200, "8 tinted spokes must draw, got {tinted}");
+        let none = project_radar_disc(400, 400, &disc, None, &RadarPlaneParams { spoke_alpha: 0.0, outer_ring_alpha: 0.0, ship_marker: false, ..Default::default() });
+        assert!(none.pixels().all(|px| px.0[3] == 0), "no spokes + black disc → transparent");
     }
 
     #[test]
