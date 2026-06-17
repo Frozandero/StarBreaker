@@ -145,6 +145,14 @@ impl UiShipData {
             UiValue::Int(COMPASS_AT_REST_HEADING_DEG as i64),
         );
 
+        // Cockpit countermeasure list: the `List_Countermeasures` widget binds the
+        // engine-state array `WeaponController/Countermeasures/Launchers` (one entry
+        // per fitted launcher, each showing its loaded ammo). The static export has
+        // no weapon controller, so derive the at-rest list from the vehicle's fitted
+        // countermeasure launchers — same at-rest principle as the compass/velocity
+        // pins (the in-game reference may show a partially-fired live count).
+        overrides.extend(derive_countermeasure_launchers(db, &idx, record));
+
         if overrides.is_empty() {
             return Self::none();
         }
@@ -356,6 +364,63 @@ pub(crate) fn derive_compass_ticks(tape: &CompassTape, heading_deg: f64) -> Hash
     // The count the WidgetList reads at the array path (overrides the static
     // `…/Ticks = 0` empty-at-rest fallback for vehicles whose HUD params resolve).
     paths.insert(base.to_string(), UiValue::Int(entry));
+    paths
+}
+
+/// Derive the at-rest cockpit countermeasure launcher list from the vehicle's
+/// fitted launchers. One entry per `hardpoint_countermeasure*` loadout child, in
+/// loadout order; the `List_Countermeasures` ColumnReverse flex lays index 0 at
+/// the bottom panel and the next at the top.
+fn derive_countermeasure_launchers(
+    db: &Database<'_>,
+    idx: &EntityIndex,
+    record: &starbreaker_datacore::types::Record,
+) -> HashMap<String, UiValue> {
+    let tree = resolve_loadout_indexed(idx, record);
+    let ammo: Vec<i64> = tree
+        .root
+        .children
+        .iter()
+        // Generic discriminator: the item port category, never a ship/item name.
+        .filter(|child| child.item_port_name.to_ascii_lowercase().contains("countermeasure"))
+        .map(|child| {
+            record_json(db, &child.record)
+                .as_ref()
+                .and_then(countermeasure_initial_ammo)
+                .unwrap_or(0)
+        })
+        .collect();
+    derive_countermeasure_paths(&ammo)
+}
+
+/// A countermeasure launcher's full at-rest load:
+/// `SAmmoContainerComponentParams.initialAmmoCount`.
+fn countermeasure_initial_ammo(item_json: &Json) -> Option<i64> {
+    component(item_json, "SAmmoContainerComponentParams")?
+        .get("initialAmmoCount")?
+        .as_i64()
+}
+
+/// Build the countermeasure-list binding paths from each fitted launcher's
+/// at-rest ammo (in loadout order). The `List_Countermeasures` arrayVariable
+/// reads the count at the base path and clones the entry template per launcher
+/// under `…/[NNNN]`; each entry binds `AmmoCount` (the full load) plus the
+/// firing-state fields (`IsFiring`/`CurrentBurstSize`/`BurstSizeHoldRatio`),
+/// which rest at zero so the hold-to-fire overlay stays hidden at rest.
+pub(crate) fn derive_countermeasure_paths(ammo: &[i64]) -> HashMap<String, UiValue> {
+    let mut paths: HashMap<String, UiValue> = HashMap::new();
+    if ammo.is_empty() {
+        return paths;
+    }
+    let base = "WeaponController/Countermeasures/Launchers";
+    for (index, &count) in ammo.iter().enumerate() {
+        let entry = format!("{base}/[{index:04}]");
+        paths.insert(format!("{entry}/AmmoCount"), UiValue::Int(count));
+        paths.insert(format!("{entry}/IsFiring"), UiValue::Bool(false));
+        paths.insert(format!("{entry}/CurrentBurstSize"), UiValue::Int(0));
+        paths.insert(format!("{entry}/BurstSizeHoldRatio"), UiValue::Float(0.0));
+    }
+    paths.insert(base.to_string(), UiValue::Int(ammo.len() as i64));
     paths
 }
 

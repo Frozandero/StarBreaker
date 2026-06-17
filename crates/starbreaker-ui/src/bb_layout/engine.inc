@@ -4,3 +4,4 @@
 
 include!("engine_parts/engine_01.part");
 include!("engine_parts/engine_02.part");
+include!("engine_parts/engine_03.part");

@@ -327,3 +327,51 @@ fn compass_ticks_empty_for_degenerate_tape() {
     let tape = CompassTape { range_deg: 90.0, main_tick_increment_deg: 20.0, sub_ticks: 0 };
     assert!(derive_compass_ticks(&tape, 0.0).is_empty());
 }
+
+fn ammo_container_item(initial: i64) -> Json {
+    serde_json::json!({
+        "_RecordValue_": {
+            "Components": [
+                {
+                    "_Type_": "SAmmoContainerComponentParams",
+                    "ammoContainerType": "Primary",
+                    "initialAmmoCount": initial,
+                    "maxAmmoCount": initial
+                }
+            ]
+        }
+    })
+}
+
+#[test]
+fn countermeasure_initial_ammo_reads_container() {
+    assert_eq!(countermeasure_initial_ammo(&ammo_container_item(7)), Some(7));
+    // An item with no ammo container yields nothing.
+    let no_container = serde_json::json!({"_RecordValue_": {"Components": []}});
+    assert_eq!(countermeasure_initial_ammo(&no_container), None);
+}
+
+#[test]
+fn countermeasure_paths_one_entry_per_launcher_in_loadout_order() {
+    // Two launchers (loadout order); the ColumnReverse list lays index 0 at the
+    // bottom panel and index 1 at the top.
+    let paths = derive_countermeasure_paths(&[48, 5]);
+    let base = "WeaponController/Countermeasures/Launchers";
+
+    assert_eq!(paths.get(base), Some(&UiValue::Int(2)), "one entry per launcher");
+    assert_eq!(paths.get(&format!("{base}/[0000]/AmmoCount")), Some(&UiValue::Int(48)));
+    assert_eq!(paths.get(&format!("{base}/[0001]/AmmoCount")), Some(&UiValue::Int(5)));
+    // The hold-to-fire overlay stays hidden at rest.
+    assert_eq!(paths.get(&format!("{base}/[0000]/IsFiring")), Some(&UiValue::Bool(false)));
+    assert_eq!(paths.get(&format!("{base}/[0001]/IsFiring")), Some(&UiValue::Bool(false)));
+    assert_eq!(paths.get(&format!("{base}/[0000]/CurrentBurstSize")), Some(&UiValue::Int(0)));
+    assert_eq!(
+        paths.get(&format!("{base}/[0001]/BurstSizeHoldRatio")),
+        Some(&UiValue::Float(0.0))
+    );
+}
+
+#[test]
+fn countermeasure_paths_empty_without_launchers() {
+    assert!(derive_countermeasure_paths(&[]).is_empty());
+}
