@@ -105,6 +105,7 @@ use self::eval::{
     parse_points_to_ptr,
     parse_points_to_ptr_value,
     parse_ptr_id,
+    resolve_op_ref,
 };
 use self::idle_defaults::apply_idle_defaults;
 #[cfg(test)]
@@ -208,6 +209,41 @@ pub fn instantiated_false_widgets_with_param_inputs_inherited_bindings_and_defau
             ptr_to_op.insert(p, op);
         }
     }
+    // Scene nodes by pointer — lets the mutually-exclusive-toggle check confirm a
+    // gated widget is a sub-canvas variant (`WidgetCanvas` + `canvas` URL).
+    let mut scene_by_ptr: HashMap<BbNodeId, &serde_json::Value> = HashMap::new();
+    if let Some(scene) = record_value.get("scene").and_then(|v| v.as_array()) {
+        for item in scene {
+            if let Some(ptr) = item
+                .get("_Pointer_")
+                .and_then(|v| v.as_str())
+                .and_then(parse_ptr_id)
+            {
+                scene_by_ptr.insert(ptr, item);
+            }
+        }
+    }
+    // Variables that belong to a multi-member state GROUP (≥2 distinct bindings
+    // sharing a `.`-prefix). `apply_idle_defaults` resolves these by picking ONE
+    // branch, so they are NOT standalone `X`/`NOT X` composite toggles — the
+    // mutually-exclusive-instantiation rule must skip them (see that helper).
+    let grouped_state_vars: HashSet<String> = {
+        let mut by_prefix: HashMap<&str, HashSet<&str>> = HashMap::new();
+        for op in ops {
+            if op.get("_Type_").and_then(|v| v.as_str())
+                == Some("BuildingBlocks_BindingsBooleanVariable")
+                && let Some(binding) = op.get("binding").and_then(|v| v.as_str())
+                && let Some((prefix, _)) = binding.rsplit_once('.')
+            {
+                by_prefix.entry(prefix).or_default().insert(binding);
+            }
+        }
+        by_prefix
+            .into_iter()
+            .filter(|(_, members)| members.len() >= 2)
+            .flat_map(|(_, members)| members.into_iter().map(str::to_owned))
+            .collect()
+    };
     let state_probe = std::env::var("BB_STATE_PROBE").as_deref() == Ok("1");
     let mut ptr_to_name: HashMap<BbNodeId, String> = HashMap::new();
     if state_probe {
@@ -312,6 +348,29 @@ pub fn instantiated_false_widgets_with_param_inputs_inherited_bindings_and_defau
                 }
             }
         }
+        // Mutually-exclusive instantiation toggle, UNSET at static rest: two
+        // sibling canvas variants gated `X` and `NOT X` on the same boolean that
+        // has no value at rest. With no value we cannot pick a mode, so KEEP BOTH
+        // instantiated — the engine selects one at runtime, but the static export
+        // composites both authored variants. Without this, the direct (`X`) side
+        // is deactivated (eval → false default) while the inverted (`NOT X`) side
+        // is kept by the unset-override above — an asymmetry. Motivating case: the
+        // cockpit radar's `HostplaneVisuals_Large` (`StarMapData/CommonData/IsFullScreen`)
+        // and `HostplaneVisuals_Small` (`NOT IsFullScreen`), `IsFullScreen` unset.
+        if !val
+            && field == "Instantiated"
+            && is_unset_mutually_exclusive_instantiation_toggle(
+                widget,
+                input_ref,
+                ops,
+                &ptr_to_op,
+                &static_vals,
+                &scene_by_ptr,
+                &grouped_state_vars,
+            )
+        {
+            val = true;
+        }
         if state_probe {
             let widget_name = ptr_to_name.get(&widget).cloned().unwrap_or_default();
             let input_ty = input_ref
@@ -361,6 +420,107 @@ pub fn instantiated_false_widgets_with_param_inputs_inherited_bindings_and_defau
         false_set.remove(&root);
     }
     false_set
+}
+
+/// Resolve an `Instantiated`/`IsActive` input ref to a SINGLE boolean-variable
+/// gate: `Some((binding, negated))` when the ref is a `BooleanVariable` (or
+/// `Invert` of one). `None` for compound gates (Or/And/...), which are not
+/// mutually-exclusive toggles.
+fn single_variable_gate(
+    input_ref: &serde_json::Value,
+    ptr_to_op: &HashMap<BbNodeId, &serde_json::Value>,
+) -> Option<(String, bool)> {
+    let op = resolve_op_ref(input_ref, ptr_to_op)?;
+    match op.get("_Type_").and_then(|v| v.as_str()).unwrap_or("") {
+        "BuildingBlocks_BindingsBooleanVariable" => op
+            .get("binding")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(|s| (s.to_owned(), false)),
+        "BuildingBlocks_BindingsBooleanInvert" => {
+            let inner = resolve_op_ref(op.get("input")?, ptr_to_op)?;
+            (inner.get("_Type_").and_then(|v| v.as_str())
+                == Some("BuildingBlocks_BindingsBooleanVariable"))
+            .then(|| {
+                inner
+                    .get("binding")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                    .map(|s| (s.to_owned(), true))
+            })
+            .flatten()
+        }
+        _ => None,
+    }
+}
+
+/// True when `ptr` is a sub-canvas VARIANT scene node — a
+/// `BuildingBlocks_WidgetCanvas` with a non-empty `canvas` URL (it instantiates
+/// another canvas record). This is the structural signature of a host-plane
+/// composite (e.g. the radar's `HostplaneVisuals_Small`/`_Large`), distinct from
+/// an in-scene widget toggle (a text field / container gated mutually-exclusively,
+/// as on the medical/target MFD), which must keep its normal exclusivity.
+fn is_subcanvas_variant(
+    ptr: BbNodeId,
+    scene_by_ptr: &HashMap<BbNodeId, &serde_json::Value>,
+) -> bool {
+    scene_by_ptr.get(&ptr).is_some_and(|node| {
+        node.get("_Type_").and_then(|v| v.as_str()) == Some("BuildingBlocks_WidgetCanvas")
+            && node
+                .get("canvas")
+                .and_then(|v| v.as_str())
+                .is_some_and(|c| !c.is_empty())
+    })
+}
+
+/// True when `input_ref` gates `Instantiated` on a single boolean variable that
+/// is UNSET at static rest (no static / idle-default / registry value), AND a
+/// DIFFERENT widget gates its `Instantiated` on the COMPLEMENT of the same
+/// variable — i.e. two mutually-exclusive SUB-CANVAS variants (`X` / `NOT X`)
+/// whose selector has no value at rest. The caller keeps BOTH instantiated (the
+/// engine picks one at runtime; the static export composites both authored
+/// variants). Scoped structurally to sub-canvas variants (both sides are
+/// `WidgetCanvas` with a `canvas` URL — see [`is_subcanvas_variant`]) so in-scene
+/// widget toggles (medical/target MFD) keep their normal exclusivity. No
+/// node-name / material gating.
+fn is_unset_mutually_exclusive_instantiation_toggle(
+    widget: BbNodeId,
+    input_ref: &serde_json::Value,
+    ops: &[serde_json::Value],
+    ptr_to_op: &HashMap<BbNodeId, &serde_json::Value>,
+    static_vals: &HashMap<String, bool>,
+    scene_by_ptr: &HashMap<BbNodeId, &serde_json::Value>,
+    grouped_state_vars: &HashSet<String>,
+) -> bool {
+    let Some((var, negated)) = single_variable_gate(input_ref, ptr_to_op) else {
+        return false;
+    };
+    // A resolved value means the engine CAN pick a mode → honour normal gating.
+    if static_vals.contains_key(&var) {
+        return false;
+    }
+    // A member of a multi-variable state GROUP (`apply_idle_defaults` picks ONE
+    // branch for these — e.g. the medical bed's `Bed/state.BaseScreens.{Attract,
+    // MainMenu,Heal,…}`) is NOT a standalone toggle: its siblings being unset is
+    // the cold-default mechanism, not a both-modes composite. Only a standalone
+    // `X` / `NOT X` toggle (the radar's `IsFullScreen`, no `.`-grouped siblings)
+    // composes both.
+    if grouped_state_vars.contains(&var) {
+        return false;
+    }
+    if !is_subcanvas_variant(widget, scene_by_ptr) {
+        return false;
+    }
+    ops.iter().any(|op| {
+        op.get("_Type_").and_then(|v| v.as_str()) == Some("BuildingBlocks_BindingsBooleanField")
+            && op.get("field").and_then(|v| v.as_str()) == Some("Instantiated")
+            && parse_points_to_ptr_value(op.get("widget"))
+                .is_some_and(|w| w != widget && is_subcanvas_variant(w, scene_by_ptr))
+            && op
+                .get("input")
+                .and_then(|inp| single_variable_gate(inp, ptr_to_op))
+                .is_some_and(|(ovar, oneg)| ovar == var && oneg != negated)
+    })
 }
 
 /// Nodes whose `IsActive` field binding evaluates to a GENUINE `Some(true)` (a

@@ -608,3 +608,147 @@
             "a DisplayWidget genuine-true (medical-bed class) must NOT be force-activated (WidgetImage-scoped)"
         );
     }
+
+    /// Two sibling canvas variants gated on a mutually-exclusive toggle (`X` and
+    /// `NOT X`) whose selector is UNSET at static rest must BOTH stay instantiated
+    /// — with no value we can't pick a mode, so the static export composites both
+    /// authored variants. Motivating case: the cockpit radar's host-planes —
+    /// `HostplaneVisuals_Large.Instantiated = StarMapData/CommonData/IsFullScreen`
+    /// and `HostplaneVisuals_Small.Instantiated = NOT IsFullScreen`, with
+    /// `IsFullScreen` unset (a `/`-path toggle that escapes idle-default grouping).
+    /// Without the rule the direct (`X`) side is wrongly deactivated while the
+    /// inverted (`NOT X`) side is kept by the unset-override — asymmetric.
+    #[test]
+    fn unset_mutually_exclusive_instantiation_toggle_keeps_both_variants() {
+        // ptr:3 = IsFullScreen; ptr:11 = NOT IsFullScreen.
+        // ptr:2 (Large) Instantiated = ptr:3 (direct); ptr:4 (Small) = ptr:11.
+        // Both are sub-canvas variants (WidgetCanvas + canvas URL) — the host-plane
+        // composite signature (vs an in-scene widget toggle).
+        let ops = vec![
+            variable_op(3, "StarMapData/CommonData/IsFullScreen"),
+            json!({
+                "_Pointer_": "ptr:11",
+                "_Type_": "BuildingBlocks_BindingsBooleanInvert",
+                "input": "_PointsTo_:ptr:3"
+            }),
+            boolean_field_op(2, 3),
+            boolean_field_op(4, 11),
+        ];
+        let subcanvas = |ptr: u32, file: &str| {
+            json!({
+                "_Pointer_": format!("ptr:{ptr}"),
+                "_Type_": "BuildingBlocks_WidgetCanvas",
+                "name": format!("Variant{ptr}"),
+                "instantiated": true,
+                "canvas": format!("file://./{file}.json")
+            })
+        };
+        let make_rv = |statics: Vec<serde_json::Value>| {
+            json!({
+                "_Type_": "BuildingBlocks_Canvas",
+                "staticVariables": statics,
+                "operations": ops.clone(),
+                "scene": [subcanvas(2, "large"), subcanvas(4, "small")]
+            })
+        };
+        let result = instantiated_false_widgets(&make_rv(vec![]));
+        assert!(
+            !result.contains(&2),
+            "Large (X, unset) must stay instantiated alongside its NOT-X sibling"
+        );
+        assert!(
+            !result.contains(&4),
+            "Small (NOT X, unset) must stay instantiated"
+        );
+
+        // Control: when the toggle has an explicit value the engine picks ONE
+        // mode — normal mutual exclusivity, NOT both.
+        let result_set = instantiated_false_widgets(&make_rv(vec![static_var(
+            "StarMapData/CommonData/IsFullScreen",
+            true,
+        )]));
+        assert!(!result_set.contains(&2), "Large stays when IsFullScreen=true");
+        assert!(
+            result_set.contains(&4),
+            "Small deactivated when IsFullScreen=true (resolved value → exclusive, not both)"
+        );
+    }
+
+    /// Guard the narrowing: an UNSET `X` / `NOT X` toggle gating IN-SCENE widgets
+    /// (NOT sub-canvas variants — e.g. the medical/target MFD's text fields) keeps
+    /// its normal exclusivity (the `NOT X` side stays, the `X` side deactivates).
+    /// Without the `is_subcanvas_variant` scope this regressed `ui_target_a`.
+    #[test]
+    fn unset_mutually_exclusive_toggle_does_not_compose_in_scene_widgets() {
+        let ops = vec![
+            variable_op(3, "SomeNamespace/RuntimeToggle"),
+            json!({
+                "_Pointer_": "ptr:11",
+                "_Type_": "BuildingBlocks_BindingsBooleanInvert",
+                "input": "_PointsTo_:ptr:3"
+            }),
+            boolean_field_op(2, 3),
+            boolean_field_op(4, 11),
+        ];
+        // ptr:2 / ptr:4 are plain in-scene widgets (no `canvas` URL).
+        let plain = |ptr: u32, ty: &str| {
+            json!({ "_Pointer_": format!("ptr:{ptr}"), "_Type_": ty, "name": format!("W{ptr}") })
+        };
+        let rv = json!({
+            "_Type_": "BuildingBlocks_Canvas",
+            "staticVariables": [],
+            "operations": ops,
+            "scene": [plain(2, "BuildingBlocks_WidgetTextField"), plain(4, "BuildingBlocks_WidgetTextField")]
+        });
+        let result = instantiated_false_widgets(&rv);
+        assert!(
+            result.contains(&2),
+            "in-scene X-side widget keeps normal exclusivity (deactivated), not composited"
+        );
+        assert!(!result.contains(&4), "in-scene NOT-X side stays (unset → true)");
+    }
+
+    /// Guard the §10 medical hazard: a `.`-grouped state variable (a multi-member
+    /// state group — e.g. the medical bed's `Bed/state.BaseScreens.{Attract,
+    /// MainMenu,…}`) is NOT a standalone toggle, even when one member is gated `X`
+    /// and a framing widget `NOT X` over sub-canvases. The grouped cold-default
+    /// mechanism picks ONE branch (MainMenu); the others stay hidden — they must
+    /// NOT be composited. Without this scope, `AttractCanvas` regressed
+    /// `ui_target_a` (+1 draw-order).
+    #[test]
+    fn grouped_state_variable_pair_does_not_compose() {
+        let ops = vec![
+            variable_op(3, "Bed/state.BaseScreens.Attract"),
+            variable_op(5, "Bed/state.BaseScreens.MainMenu"),
+            json!({
+                "_Pointer_": "ptr:11",
+                "_Type_": "BuildingBlocks_BindingsBooleanInvert",
+                "input": "_PointsTo_:ptr:3"
+            }),
+            boolean_field_op(2, 3),  // AttractCanvas   = Attract
+            boolean_field_op(4, 11), // Header          = NOT Attract
+            boolean_field_op(6, 5),  // MainMenuCanvas  = MainMenu
+        ];
+        let subcanvas = |ptr: u32| {
+            json!({
+                "_Pointer_": format!("ptr:{ptr}"),
+                "_Type_": "BuildingBlocks_WidgetCanvas",
+                "name": format!("C{ptr}"),
+                "canvas": format!("file://./c{ptr}.json")
+            })
+        };
+        let rv = json!({
+            "_Type_": "BuildingBlocks_Canvas",
+            "staticVariables": [],
+            "operations": ops,
+            "scene": [subcanvas(2), subcanvas(4), subcanvas(6)]
+        });
+        let result = instantiated_false_widgets(&rv);
+        // Cold-default picks MainMenu → MainMenuCanvas (ptr:6) shown; AttractCanvas
+        // (ptr:2) stays hidden DESPITE the X / NOT-X sub-canvas pair.
+        assert!(
+            result.contains(&2),
+            "grouped-state AttractCanvas must stay hidden (cold-default picks MainMenu), not composed"
+        );
+        assert!(!result.contains(&6), "grouped-state cold-default MainMenuCanvas shown");
+    }

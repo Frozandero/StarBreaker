@@ -105,6 +105,28 @@ pub struct HologramImage {
     pub rgba: Vec<u8>,
 }
 
+/// One authored radar spoke (`Circle_Line_*`) handed to the radar-plane fetcher.
+/// Every field is AUTHORED DATA read from the spoke's IR node — geometry from
+/// `anchor`/`sizing`/`orientation`, colour from its resolved `background` fill
+/// (cardinals `Accent1`, diagonals `Base`). The fetcher projects these onto the
+/// tilted disc; nothing is invented (count, spacing, lengths, colours all come
+/// from `rc_radarmapscreen_hostplane_visuals_large.json`).
+#[derive(Debug, Clone, Copy)]
+pub struct RadarSpokeInput {
+    /// Bar centre in the parent plane's normalized `[0,1]×[0,1]` space (`anchor`).
+    pub anchor: [f32; 2],
+    /// Bar length as a fraction of the parent plane (`sizing.height` Percent).
+    pub length_frac: f32,
+    /// Bar width as a fraction of the parent plane (`sizing.width` Percent).
+    pub width_frac: f32,
+    /// In-plane rotation in degrees (`orientation.z`).
+    pub rotation_deg: f32,
+    /// Resolved RGB of the spoke's brand colour token (`Accent1`/`Base`).
+    pub colour: [f32; 3],
+    /// Authored fill alpha (`background.color.alpha`).
+    pub alpha: f32,
+}
+
 /// Render the loaded vehicle's hologram for a `WidgetRuntimeImage`/`Primitive`
 /// node (the SELF-STATUS "Own Vehicle Hologram"), which the engine draws as a
 /// live 3D primitive and the 2D UI compositor cannot. The implementor (the
@@ -127,6 +149,11 @@ pub trait HologramFetcher {
     /// tinted by `tint` (the brand palette colour). Returns `None` when the
     /// material/texture is unavailable, leaving the window unrendered. Default
     /// `None` so non-radar callers / tests need not implement it.
+    /// `spokes` are the authored `Circle_Line_*` bars (geometry + per-spoke colour
+    /// from their IR nodes); `spoke_material_path` is their brand-resolved
+    /// `line_a` material, from which the implementor reads the soft-glow
+    /// appearance (`Gradient`/`InnerAlpha`/`OuterAlpha`/`Glow`). Both are data —
+    /// nothing about the spokes is invented.
     fn fetch_radar_plane(
         &self,
         width: u32,
@@ -134,8 +161,18 @@ pub trait HologramFetcher {
         tint: [f32; 3],
         disc_material_path: &str,
         sweep_material_path: Option<&str>,
+        spoke_material_path: Option<&str>,
+        spokes: &[RadarSpokeInput],
     ) -> Option<HologramImage> {
-        let _ = (width, height, tint, disc_material_path, sweep_material_path);
+        let _ = (
+            width,
+            height,
+            tint,
+            disc_material_path,
+            sweep_material_path,
+            spoke_material_path,
+            spokes,
+        );
         None
     }
 }

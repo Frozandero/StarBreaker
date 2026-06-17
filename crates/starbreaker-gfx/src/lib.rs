@@ -17,7 +17,7 @@ pub use error::{GfxError, GfxResult};
 pub use inspect::{GfxMetadata, dump_metadata};
 pub use mesh_holo::{HologramParams, render_vehicle_hologram};
 pub use parser::parse_gfx;
-pub use radar_plane::{RadarPlaneParams, project_radar_disc};
+pub use radar_plane::{RadarPlaneParams, RadarSpoke, project_radar_disc};
 pub use raster::RasterContext;
 pub use render::{
     UiLightCue, UiStillBinding, UiStillSpec,

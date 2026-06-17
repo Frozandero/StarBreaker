@@ -31,6 +31,40 @@ use image::{Rgba, RgbaImage};
 /// texture hugs the edge). Owner-tuned (the sweep is a live animation).
 const SWEEP_RADIAL_GAMMA: f32 = 0.45;
 
+/// Owner-tuned bloom: how far the `line_a` material's `Glow` spreads each spoke
+/// bar, as a fraction of the disc major radius per unit Glow. The bars are only
+/// ~1px wide geometrically (`sizing.width` 0.002), but the engine draws them as
+/// emissive/bloomed glows, so a hairline bar reads as a soft radial. This is the
+/// same render-pipeline-bloom boundary as [`RadarPlaneParams::intensity`] (not in
+/// the static data); the actual `Glow` value it scales IS data
+/// ([`RadarPlaneParams::spoke_glow`], from the material).
+const SPOKE_GLOW_BLOOM_FRAC: f32 = 0.02;
+
+/// One authored radar spoke (`Circle_Line_*`) in the radar plane, projected onto
+/// the tilted disc. Every field is AUTHORED DATA read from the spoke's IR node —
+/// geometry from `anchor`/`sizing`/`orientation`, colour from its resolved
+/// `background` fill (cardinals `Accent1`, diagonals `Base`; alpha `0.1`/`0.2`).
+/// Nothing here is invented: the count (8), 45° spacing, per-spoke lengths and
+/// colours all come from `rc_radarmapscreen_hostplane_visuals_large.json`.
+#[derive(Debug, Clone, Copy)]
+pub struct RadarSpoke {
+    /// Bar centre in the parent plane's normalized `[0,1]×[0,1]` space (the node
+    /// `anchor`); `(0.5,0.5)` is the disc centre.
+    pub anchor: [f32; 2],
+    /// Bar length as a fraction of the parent plane (`sizing.height` Percent:
+    /// cardinals `0.4`, diagonals `0.3`).
+    pub length_frac: f32,
+    /// Bar width as a fraction of the parent plane (`sizing.width` Percent,
+    /// `0.002`) — a hairline; the visible softness is the material glow.
+    pub width_frac: f32,
+    /// In-plane rotation in degrees (`orientation.z`: 0/45/90/135).
+    pub rotation_deg: f32,
+    /// Resolved RGB of the spoke's brand colour token (`Accent1`/`Base`).
+    pub colour: [f32; 3],
+    /// Authored fill alpha (`background.color.alpha`).
+    pub alpha: f32,
+}
+
 /// Projection + style parameters for [`project_radar_disc`].
 #[derive(Debug, Clone)]
 pub struct RadarPlaneParams {
@@ -77,10 +111,22 @@ pub struct RadarPlaneParams {
     /// in-game; this is the captured-frame position (owner-tuned, same basis as
     /// the camera tilt — the animation phase isn't in static data).
     pub sweep_angle_deg: f32,
-    /// Alpha of the 8 radial spokes (`Circle_Line_000…315` in the radar plane's
-    /// Large host-plane: thin `line_a` bars at 45° spacing, tinted by brand).
-    /// `0.0` = none.
-    pub spoke_alpha: f32,
+    /// The authored radar spokes (`Circle_Line_*`), each projected in the tilted
+    /// disc plane as a soft glowing bar. Empty = none. Geometry + colour are all
+    /// data (see [`RadarSpoke`]).
+    pub spokes: Vec<RadarSpoke>,
+    /// The spoke material's gradient rim-end alpha (`line_a.mtl` `OuterAlpha`):
+    /// the bar's alpha at its outer (rim) end. Data-backed (from the material).
+    pub spoke_outer_alpha: f32,
+    /// The spoke material's gradient centre-end alpha (`line_a.mtl` `InnerAlpha`,
+    /// with `Gradient=1`): each bar fades from `spoke_outer_alpha` at its rim end
+    /// to this at its disc-centre (inner) end. Data-backed (from the material).
+    pub spoke_inner_alpha: f32,
+    /// The spoke material's `Glow` (`line_a.mtl` `Glow`), scaled by
+    /// [`SPOKE_GLOW_BLOOM_FRAC`] into a soft bloom half-width so a hairline bar
+    /// reads as a glowing radial. The `Glow` value is data; the bloom scale is the
+    /// owner-tuned render-bloom boundary (like [`Self::intensity`]).
+    pub spoke_glow: f32,
 }
 
 impl Default for RadarPlaneParams {
@@ -97,7 +143,10 @@ impl Default for RadarPlaneParams {
             texture_rotation_deg: 0.0,
             sweep_alpha: 0.0,
             sweep_angle_deg: 0.0,
-            spoke_alpha: 0.0,
+            spokes: Vec::new(),
+            spoke_outer_alpha: 1.0,
+            spoke_inner_alpha: 0.5,
+            spoke_glow: 0.0,
         }
     }
 }
@@ -214,23 +263,49 @@ pub fn project_radar_disc(
         }
     }
 
-    // Radial spokes (`Circle_Line_000…315`): 8 thin bars at 45° compass spacing,
-    // radiating from near the centre to the rim, tinted. Cardinals (N/E/S/W)
-    // reach further in than the diagonals (the data authors cardinal length 0.4
-    // vs diagonal 0.3). Drawn in the tilted disc plane so they foreshorten with
-    // the ellipse.
-    if params.spoke_alpha > 0.0 {
-        let c = [params.tint_rgb[0], params.tint_rgb[1], params.tint_rgb[2], params.spoke_alpha];
-        let ro = 0.9_f32; // outer end, just inside the boundary ring
-        for k in 0..8u32 {
-            let phi = std::f32::consts::TAU * (k as f32 / 8.0); // 0 = North (up), clockwise
-            let cardinal = k % 2 == 0;
-            let ri = if cardinal { 0.42 } else { 0.58 }; // cardinals reach further in
-            let (sf, cf) = (phi.sin(), phi.cos());
-            // disc-plane direction: North = up = (0,-1); East = (1,0); …
-            let p_in = (cx + ri * sf * major, cy - ri * cf * minor);
-            let p_out = (cx + ro * sf * major, cy - ro * cf * minor);
-            draw_line(&mut out, p_in.0, p_in.1, p_out.0, p_out.1, c);
+    // Radial spokes (`Circle_Line_*`): the authored thin `line_a` bars. Each is
+    // placed by its node geometry — centre at `anchor`, length `length_frac` of
+    // the plane, rotated by `rotation_deg` about its own centre — projected into
+    // the tilted disc plane (so they foreshorten with the ellipse), and drawn as
+    // a SOFT glowing bar reproducing the material (a `Gradient` fade from full at
+    // the rim end to `spoke_inner_alpha` at the disc-centre end, with a `Glow`
+    // bloom half-width). Colour + alpha are per-spoke (Accent1/Base).
+    if !params.spokes.is_empty() {
+        // Map a plane point `[0,1]²` → screen px through the disc tilt: the plane
+        // square inscribes the disc (`[-1,1]` ↦ `±major`/`±minor` about centre).
+        let to_screen = |p: [f32; 2]| -> (f32, f32) {
+            ((cx + (2.0 * p[0] - 1.0) * major), (cy + (2.0 * p[1] - 1.0) * minor))
+        };
+        // Glow bloom in px: the geometric half-width (data) plus the material
+        // `Glow` spread (data × owner-tuned bloom scale). Floor so a hairline bar
+        // still anti-aliases to ~1px.
+        let glow_half = (params.spoke_glow * SPOKE_GLOW_BLOOM_FRAC * major).max(0.0);
+        for spoke in &params.spokes {
+            let theta = spoke.rotation_deg.to_radians();
+            let (st, ct) = (theta.sin(), theta.cos());
+            let h = spoke.length_frac * 0.5;
+            // Endpoints of the bar centreline in plane space (long axis = the
+            // node's vertical, rotated by orientation.z about the anchor).
+            let e1 = [spoke.anchor[0] + h * st, spoke.anchor[1] - h * ct];
+            let e2 = [spoke.anchor[0] - h * st, spoke.anchor[1] + h * ct];
+            // The inner (disc-centre) end is whichever is nearer plane centre
+            // (0.5,0.5); the gradient fades toward it.
+            let d1 = (e1[0] - 0.5).hypot(e1[1] - 0.5);
+            let d2 = (e2[0] - 0.5).hypot(e2[1] - 0.5);
+            let (outer, inner) = if d1 >= d2 { (e1, e2) } else { (e2, e1) };
+            let (ox, oy) = to_screen(outer); // full alpha here (rim)
+            let (ix, iy) = to_screen(inner); // spoke_inner_alpha here (centre)
+            let half_w = (spoke.width_frac * major).max(0.5) + glow_half;
+            draw_soft_spoke(
+                &mut out,
+                (ox, oy),
+                (ix, iy),
+                half_w,
+                spoke.colour,
+                spoke.alpha * params.intensity,
+                params.spoke_outer_alpha,
+                params.spoke_inner_alpha,
+            );
         }
     }
 
@@ -287,13 +362,51 @@ fn draw_ellipse_stroke(img: &mut RgbaImage, cx: f32, cy: f32, rx: f32, ry: f32, 
     }
 }
 
-/// Draw a blended 1px line from `(x0,y0)` to `(x1,y1)` (the radar spokes).
-fn draw_line(img: &mut RgbaImage, x0: f32, y0: f32, x1: f32, y1: f32, c: [f32; 4]) {
-    let (dx, dy) = (x1 - x0, y1 - y0);
-    let steps = dx.abs().max(dy.abs()).ceil().max(1.0) as i32;
-    for i in 0..=steps {
-        let t = i as f32 / steps as f32;
-        blend(img, (x0 + dx * t).round() as i32, (y0 + dy * t).round() as i32, c);
+/// Draw one soft, faded radar spoke bar from `outer` (rim) to `inner` (disc
+/// centre), reproducing the `line_a` material: the `Gradient` alpha fade along
+/// the bar (`outer_alpha` at the rim → `inner_alpha` at the centre, both authored
+/// in the material) and a Gaussian `Glow` falloff across it (half-width `half_w`
+/// px), so a hairline bar reads as a soft glow rather than a crisp line.
+/// `base_alpha` is the authored fill alpha already scaled by the emissive boost.
+fn draw_soft_spoke(
+    img: &mut RgbaImage,
+    outer: (f32, f32),
+    inner: (f32, f32),
+    half_w: f32,
+    colour: [f32; 3],
+    base_alpha: f32,
+    outer_alpha: f32,
+    inner_alpha: f32,
+) {
+    let (dx, dy) = (inner.0 - outer.0, inner.1 - outer.1);
+    let len2 = dx * dx + dy * dy;
+    if len2 <= 1e-6 || base_alpha <= 0.0 || half_w <= 0.0 {
+        return;
+    }
+    // Bounding box of the bar expanded by the glow half-width (+ a small AA pad).
+    let pad = half_w + 1.5;
+    let min_x = (outer.0.min(inner.0) - pad).floor().max(0.0) as u32;
+    let max_x = (outer.0.max(inner.0) + pad).ceil().min(img.width() as f32) as u32;
+    let min_y = (outer.1.min(inner.1) - pad).floor().max(0.0) as u32;
+    let max_y = (outer.1.max(inner.1) + pad).ceil().min(img.height() as f32) as u32;
+    for y in min_y..max_y {
+        for x in min_x..max_x {
+            let (px, py) = (x as f32 + 0.5, y as f32 + 0.5);
+            // Projection parameter t along outer→inner (0 = rim, 1 = centre).
+            let t = (((px - outer.0) * dx + (py - outer.1) * dy) / len2).clamp(0.0, 1.0);
+            let projx = outer.0 + dx * t;
+            let projy = outer.1 + dy * t;
+            let perp = (px - projx).hypot(py - projy);
+            // Across-bar Gaussian glow (the `Glow` bloom).
+            let across = (-(perp / half_w) * (perp / half_w)).exp();
+            // Along-bar gradient: material OuterAlpha at the rim → InnerAlpha at
+            // the centre.
+            let along = outer_alpha + (inner_alpha - outer_alpha) * t;
+            let a = base_alpha * across * along;
+            if a > 0.003 {
+                blend(img, x as i32, y as i32, [colour[0], colour[1], colour[2], a.min(1.0)]);
+            }
+        }
     }
 }
 
@@ -450,22 +563,66 @@ mod tests {
     }
 
     #[test]
-    fn spokes_draw_eight_tinted_radials() {
-        // Black (transparent) disc, no ring/ship/sweep — only the 8 spokes.
+    fn spokes_are_data_driven_soft_and_per_colour() {
+        // Black (transparent) disc, no ring/ship/sweep — only authored spokes.
+        // One Accent-orange cardinal (North, anchor 0.5,0.2, len 0.4) and one
+        // Base-grey diagonal (anchor 0.75,0.25, 45°, len 0.3) — like the real
+        // Circle_Line nodes' per-spoke colours.
         let disc = RgbaImage::from_pixel(64, 64, Rgba([0, 0, 0, 255]));
+        let spokes = vec![
+            RadarSpoke {
+                anchor: [0.5, 0.2],
+                length_frac: 0.4,
+                width_frac: 0.002,
+                rotation_deg: 0.0,
+                colour: [1.0, 0.6, 0.2],
+                alpha: 0.5,
+            },
+            RadarSpoke {
+                anchor: [0.75, 0.25],
+                length_frac: 0.3,
+                width_frac: 0.002,
+                rotation_deg: 45.0,
+                colour: [0.7, 0.7, 0.7],
+                alpha: 0.5,
+            },
+        ];
         let p = RadarPlaneParams {
             outer_ring_alpha: 0.0,
             ship_marker: false,
-            spoke_alpha: 0.6,
+            intensity: 1.0,
+            spoke_glow: 0.23,
+            spoke_inner_alpha: 0.5,
+            spokes: spokes.clone(),
             ..Default::default()
         };
         let img = project_radar_disc(400, 400, &disc, None, &p);
-        let tinted = img
+        // Both colours present: warm (R>B) from the Accent spoke, neutral
+        // (R≈G≈B) from the Base spoke.
+        let warm = img.pixels().filter(|px| px.0[3] > 0 && px.0[0] > px.0[2] + 10).count();
+        let neutral = img
             .pixels()
-            .filter(|px| px.0[3] > 0 && px.0[0] > px.0[2])
+            .filter(|px| px.0[3] > 0 && (px.0[0] as i32 - px.0[2] as i32).abs() <= 6)
             .count();
-        assert!(tinted > 200, "8 tinted spokes must draw, got {tinted}");
-        let none = project_radar_disc(400, 400, &disc, None, &RadarPlaneParams { spoke_alpha: 0.0, outer_ring_alpha: 0.0, ship_marker: false, ..Default::default() });
+        assert!(warm > 20, "Accent (warm) spoke must draw, got {warm}");
+        assert!(neutral > 20, "Base (neutral) spoke must draw, got {neutral}");
+        // SOFT, not a crisp 1px line: a meaningful share of lit pixels carry a
+        // partial alpha (the Gaussian glow falloff), not just full opacity.
+        let lit = img.pixels().filter(|px| px.0[3] > 0).count();
+        let partial = img.pixels().filter(|px| px.0[3] > 0 && px.0[3] < 200).count();
+        assert!(lit > 60, "spokes must cover a soft band, got {lit}");
+        assert!(
+            partial * 2 > lit,
+            "spokes must be soft (mostly partial-alpha edges), got {partial}/{lit}"
+        );
+        // No spokes → fully transparent (black disc).
+        let none = project_radar_disc(
+            400,
+            400,
+            &disc,
+            None,
+            &RadarPlaneParams { outer_ring_alpha: 0.0, ship_marker: false, ..Default::default() },
+        );
         assert!(none.pixels().all(|px| px.0[3] == 0), "no spokes + black disc → transparent");
     }
 

@@ -14,9 +14,11 @@
 use starbreaker_datacore::loadout::EntityIndex;
 use starbreaker_datacore::Database;
 use starbreaker_dds::{DdsFile, ReadSibling};
-use starbreaker_gfx::{project_radar_disc, render_vehicle_hologram, HologramParams, RadarPlaneParams};
+use starbreaker_gfx::{
+    project_radar_disc, render_vehicle_hologram, HologramParams, RadarPlaneParams, RadarSpoke,
+};
 use starbreaker_p4k::MappedP4k;
-use starbreaker_ui::pipeline::{HologramFetcher, HologramImage};
+use starbreaker_ui::pipeline::{HologramFetcher, HologramImage, RadarSpokeInput};
 
 use crate::pipeline::datacore_path_to_p4k;
 
@@ -174,6 +176,8 @@ impl HologramFetcher for P4kHologramFetcher<'_> {
         tint: [f32; 3],
         disc_material_path: &str,
         sweep_material_path: Option<&str>,
+        spoke_material_path: Option<&str>,
+        spokes: &[RadarSpokeInput],
     ) -> Option<HologramImage> {
         if width == 0 || height == 0 {
             return None;
@@ -206,21 +210,55 @@ impl HologramFetcher for P4kHologramFetcher<'_> {
             .and_then(|m| m.materials.iter().find_map(|sm| sm.diffuse_tex.clone()))
             .and_then(|tex| decode_p4k_dds_rgba(self.p4k, &tex));
 
+        // The authored spokes (`Circle_Line_*`): their geometry + per-spoke colour
+        // arrive from the IR (`spokes`); the soft-glow APPEARANCE is read from the
+        // brand-resolved `line_a` material — `Glow` (the bloom amount), and the
+        // `OuterAlpha`/`InnerAlpha` PublicParams (the bar's `Gradient` fade from
+        // rim to centre). All data-backed + per-manufacturer (a brand-swapped
+        // material or a `.mtl` edit flows straight through). Defaults match the
+        // shader's own defaults when a param is absent.
+        let spoke_mtl = spoke_material_path
+            .and_then(|path| super::p4k_fetchers::read_p4k_asset(self.p4k, path))
+            .and_then(|bytes| crate::mtl::parse_mtl(&bytes).ok());
+        let spoke_sub = spoke_mtl.as_ref().and_then(|m| m.materials.first());
+        let spoke_glow = spoke_sub.map(|s| s.glow).unwrap_or(0.0);
+        let spoke_outer_alpha = spoke_sub
+            .and_then(|s| s.public_param_f32(&["OuterAlpha"]))
+            .unwrap_or(1.0);
+        let spoke_inner_alpha = spoke_sub
+            .and_then(|s| s.public_param_f32(&["InnerAlpha"]))
+            .unwrap_or(1.0);
+        let radar_spokes: Vec<RadarSpoke> = spokes
+            .iter()
+            .map(|s| RadarSpoke {
+                anchor: s.anchor,
+                length_frac: s.length_frac,
+                width_frac: s.width_frac,
+                rotation_deg: s.rotation_deg,
+                colour: s.colour,
+                alpha: s.alpha,
+            })
+            .collect();
+
         // ~37° matches the reference ellipse (minor/major ≈ 0.6). Owner-tuned.
         const RADAR_TILT_DEG: f32 = 37.0;
         // Rest-frame sweep position (the beam rotates live; this is the captured
         // frame — owner-tuned, like the tilt).
         const RADAR_SWEEP_ANGLE_DEG: f32 = 45.0;
         const RADAR_SWEEP_ALPHA: f32 = 0.5;
-        // The 8 radial spokes (Circle_Line_* in the radar plane); brand-tinted.
-        const RADAR_SPOKE_ALPHA: f32 = 0.55;
         let params = RadarPlaneParams {
             tilt_deg: RADAR_TILT_DEG,
             tint_rgb: tint,
             texture_rotation_deg,
             sweep_alpha: if sweep_texture.is_some() { RADAR_SWEEP_ALPHA } else { 0.0 },
             sweep_angle_deg: RADAR_SWEEP_ANGLE_DEG,
-            spoke_alpha: RADAR_SPOKE_ALPHA,
+            // The crisp `Circle_Ripple` boundary stroke is NOT in the reference —
+            // the disc texture provides the soft rim. Leave it off.
+            outer_ring_alpha: 0.0,
+            spokes: radar_spokes,
+            spoke_outer_alpha,
+            spoke_inner_alpha,
+            spoke_glow,
             ..Default::default()
         };
         let disc = project_radar_disc(width, height, &texture, sweep_texture.as_ref(), &params);

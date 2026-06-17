@@ -13,6 +13,52 @@
 // renders through a scratch surface and composites only the clip region back
 // (boundary-crossing nodes — the power list's partially visible 4th column).
 
+/// Collect the authored radar spokes (`Circle_Line_*`) from the compiled radar
+/// plane: every Primitive node binding the `line_a` material. Geometry +
+/// per-spoke colour are read straight from the IR node — `anchor`, authored
+/// `sizing` width/height (Percent), `orientation.z`, and the resolved
+/// `background` fill (cardinals `Accent1`, diagonals `Base`; alpha 0.1/0.2).
+/// Returns the spoke list plus the brand-resolved spoke material path (the
+/// fetcher reads its `Gradient`/`InnerAlpha`/`OuterAlpha`/`Glow` for the soft-glow
+/// look). Nothing is invented — an empty list means no spoke nodes were loaded.
+fn collect_radar_spokes<'a>(
+    nodes: &'a [UiIrNode],
+    ctx: &ComposeContext<'_>,
+) -> (Vec<crate::pipeline::RadarSpokeInput>, Option<&'a str>) {
+    let is_line_a = |n: &UiIrNode| {
+        n.primitive_material
+            .as_deref()
+            .is_some_and(|m| m.to_ascii_lowercase().contains("line_a"))
+    };
+    let spokes = nodes
+        .iter()
+        .filter(|n| is_line_a(n))
+        .filter_map(|n| {
+            let fill = n.background_fill_colour.or_else(|| {
+                n.background_fill_colour_token
+                    .as_deref()
+                    .and_then(|t| resolve_surface_colour_token(ctx, t))
+                    .map(|mut c| {
+                        c[3] *= n.background_fill_alpha.unwrap_or(1.0);
+                        c
+                    })
+            })?;
+            Some(crate::pipeline::RadarSpokeInput {
+                anchor: n.anchor,
+                length_frac: ir_value_to_px(&n.authored_size[1]),
+                width_frac: ir_value_to_px(&n.authored_size[0]),
+                rotation_deg: n.rotation_deg.unwrap_or(0.0),
+                colour: [fill[0], fill[1], fill[2]],
+                alpha: fill[3],
+            })
+        })
+        .collect();
+    let material = nodes
+        .iter()
+        .find_map(|n| n.primitive_material.as_deref().filter(|m| m.to_ascii_lowercase().contains("line_a")));
+    (spokes, material)
+}
+
 enum ClipRelation {
     Inside,
     Outside,

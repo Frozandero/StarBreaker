@@ -173,6 +173,37 @@ a `LockedIcon` + "º" heading suffix + empty magnification (catalog #3, below).
   (workflow §10). `--full` GREEN.
 - ✅ **Spokes** (`e677ef971`): 8 `Circle_Line` radial bars (cardinals longer than
   diagonals), data-driven geometry, drawn in the tilted plane.
+  - ⚠️ **OVERTURNED 2026-06-17 — those were INVENTED (generated), not data.** Owner
+    pushed ("are they generated? … look for a texture"; "must be data backed … will
+    a re-render pick up an 8→4 change?"). Re-derived from data:
+    - The real spokes are the `Circle_Line_000…315` Primitive nodes in
+      `rc_radarmapscreen_hostplane_visuals_LARGE.json` (`line_a.mtl`): 8 bars, 45°
+      spacing (node-name angle), `sizing` width 0.002 + height 0.4 (cardinals) /
+      0.3 (diagonals) Percent, `orientation.z` 0/45/90/135, per-spoke colour
+      cardinals `Accent1` / diagonals `Base` (alpha 0.1, `135`/`315` 0.2). Soft look
+      = the `line_a` material (`Gradient=1`, `InnerAlpha=0.5`, `OuterAlpha=1`,
+      `Glow=0.23`; the `.dds` is a plain white quad). All DATA.
+    - **The spokes live in a DIFFERENT, mutually-exclusive host-plane than the disc.**
+      `rc_radarmapscreen_hostplane.json` op-graph:
+      `HostplaneVisuals_Large.Instantiated = StarMapData/CommonData/IsFullScreen`,
+      `HostplaneVisuals_Small.Instantiated = NOT IsFullScreen`. `IsFullScreen` is a
+      `/`-path toggle (escapes `apply_idle_defaults` `.`-grouping) → genuinely UNSET.
+      SMALL (cockpit) = the `radial_grid` textured disc + sweep, **empty spokes**;
+      LARGE (full-screen) = the 8 spokes + ring borders, **no `radial_grid` disc**.
+      `map_window.mtl` is `UIPlane`/`$RenderToTexture` (the disc is RTT scene content,
+      not the window bg). The reference shows BOTH disc and spokes → **owner chose
+      "composite the real Large spokes over the Small disc"** (AskUserQuestion).
+    - FIX: a generic `bb_state_filter` rule — when two SUB-CANVAS variants
+      (`WidgetCanvas` + `canvas` URL) are gated `X` / `NOT X` on an UNSET toggle,
+      keep BOTH instantiated (can't pick a mode at rest → composite both authored
+      variants). Scoped to sub-canvas variants via `is_subcanvas_variant` so in-scene
+      widget toggles (medical/target MFD) keep exclusivity (the unscoped first cut
+      regressed `ui_target_a` +1 draw-order). Then `ir_compose::collect_radar_spokes`
+      reads the now-loaded `Circle_Line` nodes (geometry + resolved Accent1/Base fill)
+      → `fetch_radar_plane` reads `line_a.mtl` (Gradient/InnerAlpha/OuterAlpha/Glow)
+      → `radar_plane::project_radar_disc` draws soft faded glow bars (no crisp outer
+      ring; `outer_ring_alpha=0`). 100% data-backed + per-manufacturer (brand-resolved
+      `primitive_material`); an 8→4 / colour / length change re-renders without code.
 - ⏸ **Readout kerning (#12)**: DEFERRED with proof — no authored LetterSpacing
   exists; it's the Electrolize SWF font's intrinsic advance (a global SWF
   text-metrics model question, same class as the prior power/target deferrals).

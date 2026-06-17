@@ -269,9 +269,22 @@ fn draw_non_text_node(
                 .as_deref()
                 .filter(|m| m.to_ascii_lowercase().contains("radial_idle"))
         });
+        // The authored radar spokes (`Circle_Line_*`, `line_a` material) read
+        // straight from the compiled radar-plane nodes + the brand-resolved spoke
+        // material path (see `collect_radar_spokes`). Nothing is invented; an empty
+        // list means no spoke nodes were loaded.
+        let (spokes, spoke_material) = collect_radar_spokes(&document.nodes, ctx);
         let win_w = rect.w.round().max(1.0) as u32;
         let win_h = rect.h.round().max(1.0) as u32;
-        if let Some(plane) = fetcher.fetch_radar_plane(win_w, win_h, tint, disc_material, sweep_material)
+        if let Some(plane) = fetcher.fetch_radar_plane(
+            win_w,
+            win_h,
+            tint,
+            disc_material,
+            sweep_material,
+            spoke_material,
+            &spokes,
+        )
             && let Some(img) = RgbaImage::from_raw(plane.width, plane.height, plane.rgba)
         {
             blit_atlas_image_tinted_with_mode(
