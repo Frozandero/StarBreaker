@@ -2172,6 +2172,28 @@ fn node_background_enabled(node: &crate::bb_scene::BbNode) -> bool {
                 .get("_Type_")
                 .and_then(|value| value.as_str())
                 .is_some_and(|ty| ty.eq_ignore_ascii_case("BuildingBlocks_WidgetRuntimeImage"));
+            // A `Primitive` card rendered by an AR HOLO-VOLUME material is a 3D
+            // holographic-volume element (the radar readout's `RadarMagnification`,
+            // `AR_HoloVolume_standards/ui_ar_card_in_holo_volume.mtl`): its flat
+            // background fill is NOT drawn on the flat RTT/screen UI. The in-game
+            // DRAK radar readout shows text on the dark vignette with NO orange
+            // backplate; the `Type(Card)∧Tag(Locked)→BackgroundColor:null`
+            // suppressor exists only in the Greycat/RSI brand blocks, so a DRAK
+            // (no-brand-match) ship leaks the card's authored `ColorStyle "Base"`
+            // fill. Discriminator is the holo-volume MATERIAL, not the colour: the
+            // real palette-role Primitive fills keep rendering — the power-bar
+            // `PipBox_Fill` (empty material) and the master-mode `card_BarFill`
+            // (`materials/default_rtt.mtl`). `WidgetRuntimeImage` (the SELF-STATUS
+            // hologram, also Primitive) is excluded so its holo tint stays.
+            let holo_volume_material = node
+                .raw
+                .get("primitiveSettings")
+                .and_then(|settings| settings.get("primitiveMaterialPath"))
+                .and_then(|path| path.as_str())
+                .is_some_and(|path| path.to_ascii_lowercase().contains("ar_holovolume"));
+            if !is_runtime_image && holo_volume_material {
+                return false;
+            }
             // A `Primitive` node coloured by a palette ROLE (`ColorStyle`) is a real
             // data fill — the power-bar `PipBox_Fill` (`Base`), the master-mode bar
             // `base_Fill` (`Bright`) — and must render. Only a LITERAL `ColorSolid`
@@ -2227,4 +2249,71 @@ fn raw_background_enabled(raw: &serde_json::Value) -> bool {
         .and_then(|background| background.get("enable"))
         .and_then(|enable| enable.as_bool())
         .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod node_background_enabled_tests {
+    use super::node_background_enabled;
+    use serde_json::json;
+
+    /// Build a one-node canvas with a `Primitive` `WidgetCard` carrying the
+    /// given primitive material and an enabled palette-role `ColorStyle` "Base"
+    /// background, parse it, and return whether the card's background is enabled.
+    fn primitive_card_background_enabled(material_path: &str) -> bool {
+        let canvas = json!({
+            "_RecordValue_": {
+                "size": { "x": 100.0, "y": 100.0 },
+                "scene": [{
+                    "_Pointer_": "ptr:1",
+                    "_Type_": "BuildingBlocks_WidgetCard",
+                    "name": "card",
+                    "rendererType": "Primitive",
+                    "primitiveSettings": {
+                        "_Type_": "BuildingBlocks_PrimitiveSettings",
+                        "primitiveMaterialPath": material_path
+                    },
+                    "background": {
+                        "_Type_": "BuildingBlocks_Background",
+                        "enable": true,
+                        "color": { "_Type_": "BuildingBlocks_ColorStyle", "color": "Base", "alpha": 1.0 }
+                    },
+                    "isActive": true
+                }]
+            }
+        });
+        let scene = crate::bb_scene::parse_bb_canvas(&canvas).expect("parse");
+        let node = scene.nodes.values().next().expect("one node");
+        node_background_enabled(node)
+    }
+
+    /// An AR holo-volume Primitive card (the radar readout's `RadarMagnification`,
+    /// material `AR_HoloVolume_standards/ui_ar_card_in_holo_volume.mtl`) is a
+    /// 3D-volume element: its flat `ColorStyle "Base"` backplate is NOT drawn on
+    /// the flat RTT screen UI (the in-game DRAK radar readout shows text on the
+    /// dark vignette, no orange backplate; the `Card→BackgroundColor:null`
+    /// suppressor exists only in the Greycat/RSI brand blocks, so DRAK leaks it).
+    #[test]
+    fn ar_holo_volume_primitive_card_background_is_suppressed() {
+        assert!(
+            !primitive_card_background_enabled(
+                "Materials/UI/AR_HoloVolume_standards/ui_ar_card_in_holo_volume.mtl"
+            ),
+            "AR holo-volume Primitive card backplate must not render on the flat UI"
+        );
+    }
+
+    /// Real palette-role Primitive fills must still render: the power-bar
+    /// `PipBox_Fill` (empty material) and the master-mode `card_BarFill`
+    /// (`materials/default_rtt.mtl`) are not holo-volume cards.
+    #[test]
+    fn non_holo_volume_primitive_fills_still_render() {
+        assert!(
+            primitive_card_background_enabled(""),
+            "empty-material Primitive fill (power PipBox_Fill) must still render"
+        );
+        assert!(
+            primitive_card_background_enabled("materials/default_rtt.mtl"),
+            "default_rtt Primitive fill (master-mode card_BarFill) must still render"
+        );
+    }
 }

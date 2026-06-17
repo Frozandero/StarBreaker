@@ -74,40 +74,55 @@ a `LockedIcon` + "º" heading suffix + empty magnification (catalog #3, below).
    (registry pins, above). Interior/Star/Galaxy modes deactivated; dark vignette
    shows; node count 637→148.
 2. **[CRITICAL/dominant] Radar scope grid absent** (rings/spokes/ship triangle).
-   ⛔ **PROVEN 3D-RTT BLOCKER → major-item gate.** After the gating fix the radar
-   plane IS active but COLLAPSED to ~0.5×0.8px at centre (512,392):
-   `PlayerRadarPlane > PlaneRoot > RadarCircleBase > HostplaneVisuals_Small >
-   RadarPlaneRingsBase` / `RadarSpokeLinesBase` / `NavigationGrid{1,2,3}{Mid,Alt}Plane`
-   all under `3D Root > WindowContainer` (a `WidgetWindow`). These are 2D
-   ring/spoke widgets (`WidgetCircle Circle_Ripple_Textured`, etc.) placed on a
-   **3D-projected RTT plane** whose transform comes from the live radar camera
-   (`/MapNamespace/GeneralMapData/DisplayOrientation/{x,y,z}`,
-   `DisplayPosition/{x,y,z}`, `DisplayRadius` — decoded as NumberVariable state
-   but absent at static rest) → the plane projects to a point. Reproducing the
-   scope = a radar-disc projection rasteriser (decode the plane geometry + ring
-   radii from DisplayRadius + a top-down perspective rasteriser), comparable to
-   the self-status hologram arc (ledger 70) — a whole separate effort. The owner
-   declined the "build it" option at the catalog gate; bring to the major-item
-   blocker gate.
+   ⛔ **PROVEN 3D-RTT BLOCKER (researched further per owner) → major-item gate.**
+   After the gating fix the radar plane IS active but COLLAPSED to ~0.5×0.8px at
+   centre (512,392): `PlayerRadarPlane > PlaneRoot > RadarCircleBase >
+   HostplaneVisuals_Small > RadarPlaneRingsBase` / `RadarSpokeLinesBase` /
+   `NavigationGrid{1,2,3}{Mid,Alt}Plane`, all under `3D Root > WindowContainer`.
+   **`WindowContainer` is a `BuildingBlocks_WidgetWindow`** (`rendererType:Primitive`,
+   material `Materials/UI/Starmap/map_window.mtl`, **`camera {WindowCamera,
+   fieldOfView:20}`**, `windowPreviewScene` RTT) — an RTT WINDOW that renders 3D
+   content through a 3D camera into a texture. `PlayerRadarPlane` (a `WidgetCanvas`
+   loading the radar-disc sub-canvas: rings/spokes/ship/nav-grids) is that 3D
+   content. The window's camera transform comes from the live radar state
+   (`/MapNamespace/GeneralMapData/DisplayPosition/{x,y,z}`,
+   `DisplayOrientation/{x,y,z}`, `DisplayRadius` — decoded NumberVariables, absent
+   at static rest) → the projection collapses to a point. Reproducing the scope
+   needs a **WidgetWindow RTT 3D-projection renderer + radar-disc geometry
+   rasterisation** — a substantial subsystem comparable to / larger than the
+   self-status hologram CPU rasteriser (ledger 70), and even with it the at-rest
+   camera transform is live (the ref's populated 130°-heading scope is an
+   in-flight capture). EVIDENCE TRAIL: `Screen_Radar_RTT`→`MapDisplayMaster`→radar
+   mode→`StarMapDisplayRTT`→`mapdisplaystarmap_window`→`WindowContainer`(WidgetWindow,
+   camera FOV 20)→`PlayerRadarPlane`(3D disc). Owner declined "build it" (option 3)
+   at the catalog gate; researched-further at the major-item gate confirms the
+   blocker.
 3. **[HIGH] Heading/range readout** "130° 0.7km".
    - **#3a lock icon** ✅ **FIXED** (`ShowRadarLocked=false` pin): the padlock
      (`LockedIcon`, `icon_common_door_locked.svg`) is gone.
-   - **#3b orange backplate** ⚠️ **characterized, deferred.** The readout card
-     `RadarMagnification` is `rendererType:Primitive` (material
-     `ui_ar_card_in_holo_volume.mtl`) with authored `background.color = ColorStyle
-     "Base"` (DRAK orange). In the full render `background_fill_colour = None` but
-     `background_fill_colour_token = "Base"` survives → ir_compose draws an opaque
-     orange bar over the readout. The sub-canvas authors a `Type(Card)∧Tag(Locked)
-     →BackgroundColor:null` entry (RadarMagnification carries the Locked tag) that
-     should null it, but `ui_scene_style_probe` shows `applied_style_entries:[]`.
-     ROOT-CAUSE CANDIDATE: `background_fill_colour_token` is read from `node.raw`
-     (authored "Base") while `background_fill_colour` (RGBA) goes through the
-     cascade — so a nulling BackgroundColor modifier clears the RGBA but the token
-     leaks. Fixing it touches a load-bearing token path (power pips, master-mode
-     bars) → needs the disable→adjudicate audit + `--full`. The readout VALUES
-     (heading `FlightController/Compass/Value`, range `…/radarrangemeters`) are
-     LIVE — the ref's 130°/0.7km is an in-flight capture, unreproducible at rest
-     (like the compass live heading). So full readout parity is bounded regardless.
+   - **#3b orange backplate** ✅ **FIXED** (AR_HoloVolume Primitive-card
+     suppression). The readout card `RadarMagnification` is `rendererType:Primitive`
+     with material `AR_HoloVolume_standards/ui_ar_card_in_holo_volume.mtl` and
+     authored `background.color = ColorStyle "Base"` (DRAK orange). The
+     `Type(Card)∧Tag(Locked)→BackgroundColor:null` suppressor exists ONLY in the
+     `s_grin_hud`(Greycat)/`s_rsi` brand blocks of `mapdisplaystarmap_radarreadouts`
+     — the canvas has NO drak brand block and an EMPTY `defaultStyles`, so a DRAK
+     (no-brand-match) ship leaks the authored "Base" backplate as an opaque orange
+     bar (the reference shows bright text on the DARK vignette, RGB [54,36,14], NO
+     backplate — measured). Fix: `node_background_enabled` now suppresses the flat
+     background of a `rendererType:Primitive` node whose `primitiveMaterialPath`
+     is an **AR HOLO-VOLUME material** (a 3D-volume card; its flat backplate isn't
+     drawn on the flat UI). Discriminator is the MATERIAL, not the colour, so the
+     real palette-role Primitive fills keep rendering — power `PipBox_Fill` (empty
+     material) + master-mode `card_BarFill` (`materials/default_rtt.mtl`); the
+     self-status hologram (`WidgetRuntimeImage`) is excluded. No frozen MFD/HUD
+     screen uses AR_HoloVolume cards (grep-verified). TDD guards
+     (`node_background_enabled_tests` in `ui_ir/engine_parts/engine_01.part`).
+     RESIDUAL (live, deferred): the readout VALUES — heading
+     `FlightController/Compass/Value`, range `…/radarrangemeters` — are LIVE; the
+     ref's 130°/0.7km is an in-flight capture (render shows at-rest 0°). Like the
+     compass live heading, unreproducible statically. So full readout parity is
+     bounded regardless.
 4. **[MED] Contact chevrons absent** — live nearby-contact data
    (`EdgeMarkers`/`VisibleMarkers`, empty at rest). Deferred-with-proof.
 5. **[MED] Perimeter ticks absent** — part of the radar plane (#2).
