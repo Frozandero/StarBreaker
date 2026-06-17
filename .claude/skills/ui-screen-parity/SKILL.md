@@ -200,9 +200,13 @@ Replay-render → compare → catalog → TDD fix → check → re-render. Per c
 - **Fix (TDD):** failing test first → ONE structural fix at the owning stage
   (`bb_layout` rects / `ui_ir` preserved metadata / `ir_compose` draw / `text`
   metrics — workflow §2 table) → `bash scripts/ui_check.sh` every cycle →
-  re-render + compare → update catalog + memory. **Once you've traced the root
-  cause, apply the fix directly — never ask permission to fix it. Editing source
-  to correct the IR is the loop's job, not a checkpoint.**
+  re-render + compare → update catalog + memory. After a change to a SHARED
+  ASSET / ICON / BINDING mechanism (SvgPath, icon preset, separator, footer
+  chrome), `--full`'s ~1% whole-image budget can MISS a few-px element regression
+  on SIBLING screens that share it — render + EYEBALL every screen sharing the
+  mechanism (e.g. all MFD footers), not just the arc's screen (ledger 77). **Once
+  you've traced the root cause, apply the fix directly — never ask permission to
+  fix it. Editing source to correct the IR is the loop's job, not a checkpoint.**
 - **Guard trips:** that is the system working — adjudicate via workflow §5
   (structural discriminator, never a name). Baseline genuinely wrong → that's a
   freeze (a STOP). Known deferred miss → register a §6 known-outlier.
@@ -254,17 +258,23 @@ dispatch a dedicated "find-it-or-prove-absence" research subagent, then surface
 the blocker + trail to the user for confirmation (Checkpoints) — major-item
 blockers are never self-certified. A "frozen-family risk" is
 likewise a §5 task: find the structural discriminator separating this screen from
-the frozen family and scope the fix by it; only if no discriminator exists is it
-a real blocker — and "no discriminator" has a concrete tell: when scoping a fix to
-dodge a frozen regression just regresses the NEXT frozen sibling, and each narrower
-scope (`auto` → `HC_HUD+auto` → tag-match) reveals another, the screens are
-structurally identical but want OPPOSITE output — the no-discriminator blocker is
-PROVEN; stop threading scopings and surface it (ledger 75). Judge any such
-auto-canvas (`coordinateMethod=auto`) / HC_HUD text size+colour experiment with
-`--full` after a fresh export — that drift is WHOLE-IMAGE-only and invisible to
-`ui_check` live-IR (ledger 75), so a live-IR "green" is NOT proof a sibling `auto`
-baseline survived. Record the exhausted-search proof, not a guess. Effort, risk, or
-"undecoded" alone never justifies deferral.
+the frozen family and scope the fix by it — but beware the INVERSE trap. When
+scoping render-side to dodge a frozen regression just regresses the NEXT frozen
+sibling (each narrower scope `auto` → `HC_HUD+auto` → tag-match reveals another),
+that is NOT a proven blocker — it is the signal you are at the WRONG STAGE,
+symptom-scoping a fix that belongs UPSTREAM. THREE arcs (velocity-num, compass,
+master-mode) looked like a size/colour blocker and each DISSOLVED once the
+INSTANTIATED variant's authored entries were read: the value was authored in
+`defaultStyles`/`brandStyles` (e.g. master-mode's FontSize 350 + white) and simply
+was not being APPLIED. So before surfacing ANY size/colour blocker, re-read the
+instantiated variant's `defaultStyles`/`brandStyles` (PARSE the JSON) and verify via
+`ui_ir_query --fields text_style` / `BB_TEXT_FORMAT_PROBE` whether the authored
+value reaches the node; only a genuinely-absent authored value AND an exhausted
+upstream search is a real blocker (ledger 76). (Still judge such auto-canvas
+(`coordinateMethod=auto`) / HC_HUD experiments with `--full` after a fresh export —
+that drift is WHOLE-IMAGE-only, invisible to `ui_check` live-IR, so a live-IR
+"green" is not proof a sibling `auto` baseline survived.) Record the exhausted-search
+proof, not a guess. Effort, risk, or "undecoded" alone never justifies deferral.
 
 ## Use subagents for read-only research (never for builds)
 
@@ -374,7 +384,10 @@ exactly as the opening *Build & confirm the diff catalog* phase did:
 1. **Re-render the screen fresh** and **re-run compare + self-verify** against the
    reference: look AGAIN (guard shape/count/offset misreads), and re-check the
    BACKGROUND/backplate layer (stretch, alignment). Build a fresh diff catalog of
-   what REMAINS — including anything the fixes introduced or missed.
+   what REMAINS — including anything the fixes introduced or missed. If the arc
+   touched a SHARED asset/icon/binding mechanism, also re-render and eyeball the
+   OTHER screens that share it (e.g. all MFD footers) — small chrome regresses
+   below `--full`'s ~1% budget (ledger 77).
 2. **Fully automated:** if any fixable difference remains, feed it back into the
    loop and FIX it; repeat re-render → re-review → fix until the screen is clean —
    every difference fixed or carrying a PROVEN deferral/blocker (size/risk is not
@@ -472,4 +485,5 @@ needed is a doc bug — fix it before closing.
 | "graphify shows nothing / `No path` there — so that code doesn't exist" | graphify does NOT index the `engine_*.part` UI-engine core (~31k lines) — a miss there is the blind spot, not proof. Grep `crates/starbreaker-ui/src/*/engine_parts/` WITHOUT `--include="*.rs"` (it hides `.part`); and `.map(foo)` won't match `foo(`. |
 | "My quick check refutes the subagent — move on" | Refuting a careful subagent finding needs the SAME rigour as the claim. If your refutation is the weaker read, IT'S the unreliable one — verify with parse/probe before acting (ledger 68). |
 | "This render looks identical to the last — my change did nothing" | The wrapper writes a FIXED path; the user's viewer caches by name and shows the OLD image. Copy each iteration the user sees to a unique filename; confirm via the printed `png md5:` before concluding no-op (ledger 69). |
-| "I'll scope the fix one level narrower to dodge the frozen regression" | If each narrower scope (`auto`→`HC_HUD+auto`→tag) regresses the NEXT frozen sibling, the screens are structurally identical but want opposite output — the no-discriminator blocker is PROVEN. Stop threading scopings; judge with `--full` (whole-image — live-IR misses auto-canvas drift) and surface it (ledger 75). |
+| "Each narrower scope regresses the next frozen sibling — no-discriminator blocker proven" | NO — that's the signal you're at the WRONG STAGE, symptom-scoping render-side a fix that belongs UPSTREAM. Three arcs (velocity-num/compass/master-mode) "blocked" on size/colour, all dissolved on reading the INSTANTIATED variant's authored `defaultStyles`/`brandStyles` (value authored but NOT applied). Re-read the variant (parse JSON) + verify it reaches the node before ANY blocker claim; keep `--full` for auto-canvas drift (ledger 76). |
+| "`--full` is green, so nothing regressed" | `--full`'s ~1% whole-image budget misses a few-px element drop (e.g. footer nav arrows) on SIBLING screens. After an asset/icon/binding change, EYEBALL every screen sharing the mechanism, not just the arc's (ledger 77). |

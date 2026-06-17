@@ -52,33 +52,6 @@ findings land here in two states, with a lifecycle:
 
 ## Open recommendations (review / decide)
 
-- **REVISE the "whack-a-mole = proven no-discriminator blocker" guidance (2026-06-17
-  change log entry / *Default to fixing* §5-discriminator sentence) — it is now
-  PARTIALLY WRONG and would have mis-fired this arc.** That guidance (applied from
-  ledger 75) tells the agent: "repeated next-sibling regression = PROVEN
-  no-discriminator blocker; stop threading scopings, surface it." But the ARC-2
-  master-mode pass OVERTURNED ledger 75 (→ ledger 76): the whack-a-mole was a
-  RENDER-SIDE-scope treadmill, and the real fix was UPSTREAM — an unapplied authored
-  `defaultStyles` entry (FontSize 350 + white) that ARC-1 never read. The current
-  skill text would have told ME to accept the (false) blocker. Proposed revision:
-  repeated next-sibling regression means the agent is likely at the WRONG STAGE, not
-  that a blocker is proven — BEFORE surfacing a size/colour blocker, re-read the
-  INSTANTIATED variant's `defaultStyles`/`brandStyles` entries (parse JSON) and
-  verify via `ui_ir_query --fields text_style` / `BB_TEXT_FORMAT_PROBE` that the
-  authored value reaches the node; only a genuinely-absent authored value + an
-  exhausted upstream search makes it a blocker. (The `--full`-after-export half of
-  that 2026-06-17 change is still correct and stays.) This is the THIRD inherited
-  "blocker" overturned (velocity-num, compass ×2, master-mode) — the skill should
-  bias HARD toward "re-read the authored variant first," not toward accepting blockers.
-- **The whole-image guard misses few-px element regressions — the catalog/closing
-  re-review should explicitly cover OTHER screens sharing a changed mechanism
-  (ledger 77).** A binding-first `SvgPath` change silently dropped the MFD footer nav
-  arrows (a few px) on power/target/self; `--full` stayed GREEN (under the 1% budget),
-  the owner caught it by eye. The skill's review/closing phases re-derive only the
-  ARC's screen. Proposed: after a change to asset/icon/binding resolution, the loop
-  should render + eyeball every screen that shares the mechanism (here: all MFD
-  footers), since small chrome regresses below the automated threshold. Decide whether
-  to add this to *The autonomous loop* (Validate) and *Closing re-review*.
 - **Formal compliance dry-run** — still un-run. Decide whether real-use coverage
   supersedes it, or run it once for the paths real use hasn't exercised:
   multi-ship disambiguation, and a screen absent from the dossier.
@@ -319,3 +292,25 @@ under **Open recommendations** above.
   section adds "don't override a subagent's data claim with a weaker check than it
   used — your refutation must meet the same rigour"; two red-flag rows. Cleared
   the Open rec.
+- **2026-06-17 (REVISED the whack-a-mole guidance — it was itself an
+  inherited-blocker trap; + sibling-screen eyeball; master-mode arc-2 ledger 76 +
+  ledger 77).** A retro OVERTURNED ledger 75 (codified in the entry above, the SAME
+  day): the master-mode "no-discriminator blocker" was a RENDER-SIDE scope treadmill —
+  the real fix was UPSTREAM, an authored `defaultStyles` (FontSize 350 + white) the
+  first pass never read (ledger 76). That made the freshly-added "repeated
+  next-sibling regression = PROVEN blocker" text actively MISLEADING — the THIRD
+  inherited size/colour "blocker" to dissolve on reading the instantiated variant
+  (after velocity-num + compass). FIX: *Default to fixing* and its red-flag row now
+  say repeated next-sibling regression means you are at the WRONG STAGE
+  (symptom-scoping render-side a fix that belongs UPSTREAM), NOT that a blocker is
+  proven — re-read the instantiated variant's `defaultStyles`/`brandStyles` (parse
+  JSON) and verify the authored value reaches the node (`ui_ir_query --fields
+  text_style` / `BB_TEXT_FORMAT_PROBE`) before ANY size/colour blocker claim; only a
+  genuinely-absent authored value + exhausted upstream search is a blocker. The
+  `--full`-after-export half of the prior entry stays (still correct). SEPARATELY
+  (ledger 77): a shared-mechanism asset/icon/binding change (footer nav arrows)
+  regressed sibling screens a few px UNDER `--full`'s ~1% budget — added a
+  sibling-screen eyeball note to the loop's *Fix* step + *Closing re-review* + a
+  red-flag row. Cleared both Open recs. META-lesson: be wary of codifying "X is a
+  proven blocker" from one arc — these blockers keep dissolving on a deeper read of
+  the authored variant; the skill should bias toward RE-READING, not toward accepting.
