@@ -387,3 +387,24 @@ Flows (commands in the reference doc §2/§7):
   template deactivates = faithful empty list). A BARE single-segment name (power outer
   `pipList`) is UI-local and still needs a namespace — the discriminator that keeps the
   power pip stacks byte-identical.
+- **The whole-image guard MISSES few-px elements — after any asset/icon/binding change,
+  eyeball ALL screens sharing the mechanism (ledger 77).** A binding-first `SvgPath` change
+  let a chrome FillStyle TAG ref win over the preset asset, so the MFD footer pixel nav
+  arrows (`‹`/`›` on power/target/self) vanished — but each arrow is only a few px, under the
+  1% gold whole-image budget, so `ui_check --full` stayed GREEN; the owner caught it by eye.
+  The pixel-diff guard is a coarse net (no few-px element-presence check). After touching
+  `asset_ref` / `collect_node_asset_refs` / `resolve_field_text` / icon presets, render the
+  OTHER screens that share the path and read them with vision — small chrome (nav arrows,
+  separators, greebles) regresses silently. Specific rule: a bound `SvgPath`/`svgPath`
+  overrides the authored/preset asset only when it resolves to a real PATH (`contains('/')`),
+  never a tag ref.
+- **A size/colour "frozen-family blocker" → re-read the INSTANTIATED variant's authored
+  style entries and confirm they APPLY, before any render-side scaling/gating (ledger 76,
+  reinforces 60).** master-mode's text size AND colour (declared proven frozen-family blockers
+  in ledger 75) were ONE unapplied authored `defaultStyles` entry (bare `Type(Text)`, FontSize
+  350 + white) — the fix was UPSTREAM (apply it), not the render-side autoFontSize/tag-gating
+  that collided with frozen `auto` siblings. When a render-side scope keeps regressing the next
+  frozen sibling (whack-a-mole), suspect the WRONG STAGE: parse the variant's `defaultStyles`/
+  `brandStyles` JSON and verify via `ui_ir_query --fields text_style` / `BB_TEXT_FORMAT_PROBE`
+  that the authored value reaches the node. Third inherited "blocker" overturned this way
+  (velocity-num, compass ×2, master-mode).

@@ -1789,3 +1789,53 @@ ledger + dossier) — a future fix needs a decoded engine `auto`-coordinate scal
 real tag/colour discriminator, not the regressing heuristics tried here.
 **Action:** experiments reverted (committed state D1/D2/D3a `--full` GREEN); dossier
 master-mode row + this ledger document the blockers.
+
+### 76. Item 75 OVERTURNED (ARC-2, owner-pushed): master-mode size AND colour were ONE unapplied authored entry — the "frozen-family blocker" framing was wrong
+**Observed:** the ARC-1 "proven blockers (a) text ~6× small (b) SCM orange-vs-white"
+(item 75) were both the SAME root cause, and neither was a frozen-family conflict. The
+DRAK `drak_hc_hud_cutlass_masterm_display` variant authors its `defaultStyles` "New Style"
+entry — a BARE `Type(Text)` — with `FontSize` **350** + `FillColor`/`StrokeColor` **white**
+(SRGBA8 255,255,255,164). It was never applied, so the text fell back to the widget-standard
+`Heading1` (60 / Accent2). Cause: `condition_matches_text_format` routed a `Type(Text)`
+selector to a WidgetTextField's text-format child ONLY when the entry was `Parent(...)`-wrapped
+(velocity-num's pattern); a bare `Type(Text)` matched nothing. ARC-1 fought RENDER-SIDE
+heuristics (autoFontSize scaling, colour tag-gating) that collided with the frozen `auto`
+siblings — but the real fix was UPSTREAM (apply the authored entry), with NO frozen conflict
+(the white comes from the canvas's own `defaultStyles`, not the tag-gated standard, so the
+compass stays Accent2). The prior "~340px needed" estimate ≈ the authored **350**. Fix:
+route a bare `Type(Text)` (discriminator: `entry_has_parent || !entry_has_ancestor` — the
+MFD-footer `Ancestor` case stays excluded). One change fixed size AND colour. This is the
+THIRD inherited "blocker" overturned (velocity-num 500/420, compass ×2, now master-mode) —
+all the same trap: a size/colour "blocker" not preceded by reading the INSTANTIATED variant's
+authored style entries and confirming they REACH the node.
+**Improvement (process):** when a render-side scope keeps regressing the next frozen sibling
+(the "whack-a-mole" signal from a53d752907 / item 75), that is ALSO a signal you may be at the
+WRONG STAGE — before concluding "no discriminator → blocked", re-read the instantiated variant's
+`defaultStyles`/`brandStyles` entries (parse JSON, iterate arrays) and verify via
+`ui_ir_query --fields text_style` / `BB_A3_STYLE_PROBE` / `BB_TEXT_FORMAT_PROBE` that the
+authored size/colour is actually being APPLIED. "Converge, don't narrow" (item 75) is right
+about not narrowing the render-side scope, but the convergence is often UPSTREAM, not a deferral.
+**Action:** committed `b9350d1b9` (bare-`Type(Text)` routing + `bare_type_text_entry_styles_text_format`
+guard); workflow §10 read-the-authored-FontSize bullet (item 60) reinforced; dossier + memory
+corrected; item 75 marked overturned here.
+
+### 77. The whole-image guard MISSED a real regression: the MFD footer pixel nav arrows vanished (a few px, below the 1% gold threshold) — owner caught it by eye
+**Observed:** the ARC-2 "binding-first `SvgPath`" change (so the master-mode weapon icon's
+`ParamInput4`→`guns.svg` binding overrides its authored placeholder) initially let ANY non-empty
+`SvgPath` binding win over `collect_node_asset_refs`. The MFD footer's pixel nav arrows (`‹`/`›`
+on power/target/self) bind `SvgPath` to a chrome FillStyle TAG reference (`Tag.5616aeff…`) that
+`collect_node_asset_refs` resolves to the real arrow SVG (`DRAK_MFD_Arrow_big_1.svg`); the raw
+tag then won → `IconInstance` asset_ref became the un-renderable tag → arrows GONE on every MFD
+screen. `ui_check --full` stayed GREEN: each arrow is only a few px, far under the 1% gold
+whole-image budget, so the regression was invisible to the automated guard. The OWNER caught it
+by eye on a screen (target) that wasn't even the arc's subject.
+**Improvement:** (1) CODE: a bound `SvgPath`/`svgPath` overrides the authored/preset asset only
+when it resolves to a real PATH (`contains('/')`) — a tag ref must not win over preset resolution
+(guard: `compile_ir_svg_path_binding_overrides_only_with_a_real_path`). (2) PROCESS: after ANY
+change to asset/icon/binding resolution (`asset_ref`, `collect_node_asset_refs`, `resolve_field_text`,
+icon presets), VISUALLY inspect the OTHER screens that share the mechanism — especially small chrome
+(footer nav arrows, separators, greebles) that regress BELOW the whole-image threshold and so pass
+`--full`. The 1% pixel budget is a coarse net; few-px element presence is not guarded. (3) Doc this
+in workflow §10 so it isn't re-learned.
+**Action:** committed `18a92a2d9` (path filter + guard test); workflow §10 bullet added (below);
+this ledger records the silent-guard gap.
