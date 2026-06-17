@@ -60,23 +60,6 @@ findings land here in two states, with a lifecycle:
   skill (or arc start) skims the open items first.
 - **Multi-ship generalization unverified** (see Known assumptions) — exercise
   when a second `reference/in-game/` folder exists.
-- **The skill should explicitly warn that the hologram precedent ≠ licence to
-  invent geometry (radar arc, 2026-06-17).** When a draw path can't natively
-  produce an element (3D-RTT / `WidgetWindow` / `Primitive` / live render), the
-  skill's "Default to fixing, not deferring" + the hologram precedent led to a
-  procedural rasteriser that INVENTED the disc (eyeballed ring/spoke/tilt =
-  banned reference-calibrated magic numbers). The owner corrected it twice ("the
-  disc shape should be available in-data, e.g. an svg"; "ensure all point to the
-  correct image per manufacturer"). The disc was a real engine texture. The
-  hologram rendered the REAL decoded MESH — only its camera was owner-tuned;
-  inventing BOTH geometry and camera is not "the hologram pattern." RECOMMEND: add
-  a red-flag row — *"Can't render it natively, I'll reproduce the geometry" →
-  FIRST exhaust the in-data art (`mtl_summary`→texture / `image_preview` /
-  `svgFill.svgPath` / styleTag SvgPath / SWF); render the REAL asset; only the
-  engine runtime CAMERA (absent at rest) + emissive brightness are owner-tuned.
-  And: resolve PER-MANUFACTURER (the cascade-applied `PrimitiveMaterialPath`
-  brand override, not the authored generic).* (Now in ledger 78/79, workflow §10,
-  memory `feedback-find-indata-sources-before-inventing`.)
 
 ## Known assumptions & risks
 
@@ -331,3 +314,26 @@ under **Open recommendations** above.
   red-flag row. Cleared both Open recs. META-lesson: be wary of codifying "X is a
   proven blocker" from one arc — these blockers keep dissolving on a deeper read of
   the authored variant; the skill should bias toward RE-READING, not toward accepting.
+- **2026-06-17 (reproduce from decoded data, never invent geometry; radar arc,
+  ledger 78–83).** When a draw path can't natively produce an element (3D-RTT
+  `WidgetWindow`/`Primitive`/live render), the skill's "Default to fixing" + the
+  self-status hologram precedent led the radar pass to a procedural rasteriser that
+  INVENTED the disc (eyeballed ring/spoke/tilt = banned magic numbers); the owner
+  corrected the family ~10× across the arc. The disc was a real engine texture
+  (`…radial_gradients.dds`); the hologram had rendered the real decoded MESH —
+  only its CAMERA was tuned, so inventing BOTH geometry and camera was never "the
+  hologram pattern." This is a NEW failure class, not covered anywhere in the skill,
+  so it landed in three places (close the loophole at the lever, the law, and the
+  self-check): (1) a one-sentence defuse in *Default to fixing* ("'fixing' means
+  rendering the REAL decoded asset — never inventing"); (2) a new **Strict rules**
+  bullet — exhaust the in-data art (`mtl_summary`→`image_preview`, `svgFill.svgPath`,
+  styleTag `SvgPath`/`ImagePath`, SWF; reference §4/§5) and PROJECT the real asset,
+  resolve PER-MANUFACTURER (cascade-applied `PrimitiveMaterialPath`, not the generic),
+  place every element from AUTHORED node geometry through ONE shared transform
+  (per-element constants = wrong stage), "gated off in the IR" ≠ "absent" (activate
+  the real node, don't generate), only a parsed-proven runtime-absent value (the
+  camera) is owner-tuned; (3) a red-flag row. The owner had already pushed the full
+  detail to ledger 78–83 / workflow §10 / reference §4/§5 / memory
+  `feedback-find-indata-sources-before-inventing`; the skill carries the principle +
+  rationalization-counters and points at the docs for the probe chain. Cleared the
+  Open rec.

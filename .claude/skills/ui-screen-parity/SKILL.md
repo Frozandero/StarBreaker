@@ -223,7 +223,9 @@ the mandatory retrospective (below) are the final steps in every mode.
 nodes," "deserves its own deliberate change," or any size/risk estimate is NOT a
 blocker — it is a signal to RESEARCH and PLAN, then fix within this arc (fan the
 read-only research across subagents — see *Use subagents for read-only
-research*). De-risk
+research*). But "fixing" means rendering the REAL decoded asset — never inventing
+geometry or values to stand in for an element the draw path can't natively produce
+(see Strict rules; ledger 78–83). De-risk
 a wide change empirically: run the disable→adjudicate audit (workflow §5) and
 `bash scripts/ui_check.sh --full` (re-export first — `--full` does not re-export;
 ledger 56) so the frozen pins MEASURE the real blast radius instead of you
@@ -371,6 +373,21 @@ presumed "yes"; never perform the action before the answer comes back.
   SAME change; never extend it because precedent exists.
 - IR is the sole styling authority; fix the owning upstream stage, not the
   draw-time symptom.
+- **Reproduce visuals from the REAL decoded asset; never invent geometry or
+  values.** When a draw path can't natively produce an element (a 3D-RTT
+  `WidgetWindow` / `Primitive` / live render — the radar scope, the self-status
+  hologram), a procedural rasteriser with eyeballed ring/spoke/tilt/size constants
+  is the banned magic-number pattern, NOT "the hologram pattern" (which rendered the
+  real decoded MESH; only its runtime CAMERA was tuned). FIRST exhaust the in-data
+  art (textures via `mtl_summary`→`image_preview`, `svgFill.svgPath`, styleTag
+  `SvgPath`/`ImagePath`, SWF — reference §4/§5) and PROJECT the real asset; resolve
+  it PER-MANUFACTURER (the cascade-applied top-level `PrimitiveMaterialPath` brand
+  override, not the authored generic). Place every element from its AUTHORED node
+  geometry through ONE shared transform — a per-element tuned constant is the smell
+  you're at the wrong stage. "Gated off in the IR" ≠ "absent" — find the
+  `Instantiated`/`IsActive` gate and activate the real node, don't generate a
+  stand-in. The only owner-tunable value is one PARSED-and-proven runtime-absent
+  (the camera) — the deferral-blocker bar (ledger 78–83).
 - Frozen platinum/gold guards are never silenced by editing tests/baselines;
   baselines move only through the audited freeze flow or a §6 known-outlier.
 - 3000-line cap; remove no-effect experiments immediately (revert + record what
@@ -465,6 +482,7 @@ needed is a doc bug — fix it before closing.
 | Thought | Reality |
 |---|---|
 | "Just hard-code this one value/offset" | Banned, even in fixtures/fallbacks. Find the structural cause. |
+| "Can't render it natively / it's missing from the IR — I'll reproduce or generate the geometry" | That's the banned invent-magic-numbers pattern, not "the hologram pattern" (which rendered the REAL mesh; only the camera was tuned). Exhaust the in-data art first (`mtl_summary`→texture / `image_preview` / `svgFill.svgPath` / styleTag `SvgPath`/`ImagePath` / SWF) and render the REAL asset; a "missing" node is usually GATED-OFF not absent — activate the real node. Resolve PER-MANUFACTURER (`PrimitiveMaterialPath` override, not the generic). Only a parsed-proven runtime-absent value (the camera) is owner-tuned (ledger 78–83). |
 | "Render differs from ref, so the render is wrong" | Captures have bloom/skew/resolution/hover artifacts. Compare structurally. |
 | "First glance: a square / shifted left / only the foreground's off" | Look AGAIN before cataloguing (shape/count/offset misreads are the wrong ones — measure if unsure) AND check the background/backplate layer (stretch/scale/aspect/align/crop — the commonly-missed layer that skews everything on top). |
 | "Memory says this region is faithful/owner-confirmed — skip it" | Inherited verdicts are hints, not conclusions. Re-derive each region from the reference at high zoom; the owner's view evolves and earlier passes under-scrutinize. Frozen/outlier regions route through §5/§6/§7. |
