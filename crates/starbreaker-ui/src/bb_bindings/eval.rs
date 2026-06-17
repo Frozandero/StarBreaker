@@ -79,14 +79,18 @@ impl BindingResolver {
                 Some(format_number_places(value, n_places, trailing))
             }
             "BuildingBlocks_BindingsLocalizedSIUnitFromNumber" => {
-                // Formatted number + the localized SI unit symbol. Two engine knobs:
+                // Formatted number + the localized SI unit symbol. Engine knobs:
                 //   `forcedSIPrefix` — "Unit" pins the BASE unit (no magnitude
-                //     prefix); the auto modes (e.g. "INVALID") scale to K/M/G by
-                //     magnitude (the emissions header's "3.5K", 3500).
+                //     prefix); a NAMED prefix ("Kilo"/"Mega"/"Giga") FORCES that
+                //     prefix regardless of magnitude (the MFD-radar range:
+                //     `forcedSIPrefix=Kilo` renders 700 m as "0.7km"); any other /
+                //     auto mode (e.g. "INVALID") scales to K/M/G by magnitude (the
+                //     emissions header's "3.5K", 3500).
                 //   `unitSuffix` — the quantity enum (Speed/Distance/...). The unit
                 //     symbol is its localization entry `text_ui_SIUnit_<suffix>`
-                //     (Speed → "m/s"); "None" appends nothing (the g-force readout,
-                //     whose "G" comes from a later LocalizationCombine).
+                //     (Speed → "m/s", Distance → "m" so Kilo → "km"); "None" appends
+                //     nothing (the g-force readout, whose "G" comes from a later
+                //     LocalizationCombine).
                 let mut seen_num = std::collections::HashSet::new();
                 let value = op
                     .get("input")
@@ -97,7 +101,14 @@ impl BindingResolver {
                 let forced_prefix = op.get("forcedSIPrefix").and_then(|v| v.as_str()).unwrap_or("");
                 let (scaled, prefix) = if forced_prefix.eq_ignore_ascii_case("Unit") {
                     (value, "")
+                } else if forced_prefix.eq_ignore_ascii_case("Kilo") {
+                    (value / 1_000.0, "k")
+                } else if forced_prefix.eq_ignore_ascii_case("Mega") {
+                    (value / 1_000_000.0, "M")
+                } else if forced_prefix.eq_ignore_ascii_case("Giga") {
+                    (value / 1_000_000_000.0, "G")
                 } else {
+                    // Auto-scale by magnitude (unrecognised / auto prefix).
                     let magnitude = value.abs();
                     if magnitude >= 1_000_000_000.0 {
                         (value / 1_000_000_000.0, "G")

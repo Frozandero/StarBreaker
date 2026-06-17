@@ -139,7 +139,8 @@
     "/~/MapNamespace~/GeneralMapData/IsGalacticMapActive": false,
     "/~/MapNamespace~/GeneralMapData/IsVolumetric": false,
     "/~/MapNamespace~/GeneralMapData/IsMapActive": true,
-    "StarMapData/ShowRadarLocked": false
+    "StarMapData/ShowRadarLocked": false,
+    "~/mapnamespace~/starmapdata/radarrangemeters": 700
   },
   "localization": {
     "hud_notarget": "NO TARGET",

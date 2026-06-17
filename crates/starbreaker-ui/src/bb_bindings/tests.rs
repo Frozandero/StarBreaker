@@ -199,6 +199,28 @@ fn resolver() -> BindingResolver {
         assert_eq!(out.as_deref(), Some("0m/s"));
     }
 
+    /// `forcedSIPrefix=Kilo` FORCES the kilo prefix (÷1000 + "k") regardless of
+    /// magnitude — the MFD-radar range readout renders 700 m as "0.7km" (number
+    /// 0.7, prefix "k", Distance unit "m"). Distinct from the auto-scale path
+    /// (only scales magnitude ≥ 1000) and the "Unit" base path.
+    #[test]
+    fn si_unit_forced_kilo_prefix_scales_and_prefixes() {
+        let mut r = resolver();
+        r.ptr_to_op.insert(7, json!({"_Type_": "_SynthNumberParam_", "resolvedNumber": 700.0}));
+        r.ptr_to_op.insert(24, json!({
+            "_Type_": "BuildingBlocks_BindingsLocalizedSIUnitFromNumber",
+            "nPlaces": 1,
+            "unitSuffix": "Distance",
+            "forcedSIPrefix": "Kilo",
+            "input": "_PointsTo_:ptr:7"
+        }));
+        let mut defaults = DefaultValueRegistry::default();
+        // The live global.ini supplies this at runtime; the test mirrors it.
+        defaults.merge_localization([("text_ui_siunit_distance".to_string(), "m".to_string())].into());
+        let out = r.eval_localized_ptr(24, &defaults, &mut std::collections::HashSet::new());
+        assert_eq!(out.as_deref(), Some("0.7km"));
+    }
+
     /// `unitSuffix=None` adds no unit (the g-force readout, whose "G" comes from a
     /// later `LocalizationCombine`): the SIUnit op stays the bare formatted number.
     #[test]

@@ -115,6 +115,19 @@ impl UiShipData {
             overrides.extend(derive_compass_ticks(&tape, COMPASS_AT_REST_HEADING_DEG));
         }
 
+        // Cockpit-compass heading VALUE — the SINGLE shared heading source for the
+        // cockpit compass tape AND the radar readout's heading text
+        // (`Text_RadarRotation` binds `FlightController/Compass/Value`; the compass
+        // tape centres on the same heading). Deriving it from the one
+        // `COMPASS_AT_REST_HEADING_DEG` constant keeps the two readouts in
+        // agreement — changing the heading moves both. At rest the flight
+        // controller isn't simulated, so this is the neutral forward heading (0°),
+        // the same at-rest principle as the tick set above.
+        overrides.insert(
+            "FlightController/Compass/Value".to_string(),
+            UiValue::Int(COMPASS_AT_REST_HEADING_DEG as i64),
+        );
+
         if overrides.is_empty() {
             return Self::none();
         }
