@@ -28,8 +28,9 @@ use image::{Rgba, RgbaImage};
 
 /// Radial gamma (< 1) that stretches the sweep wedge's outer-edge bright band
 /// inward toward the disc centre (the in-game beam reaches the centre; the raw
-/// texture hugs the edge). Owner-tuned (the sweep is a live animation).
-const SWEEP_RADIAL_GAMMA: f32 = 0.45;
+/// texture hugs the edge). Lower = reaches further in. Owner-tuned (the sweep is
+/// a live animation, so its radial extent isn't in the static data).
+const SWEEP_RADIAL_GAMMA: f32 = 0.30;
 
 /// Owner-tuned bloom: how far the `line_a` material's `Glow` spreads each spoke
 /// bar, as a fraction of the disc major radius per unit Glow. The bars are only
@@ -127,6 +128,20 @@ pub struct RadarPlaneParams {
     /// reads as a glowing radial. The `Glow` value is data; the bloom scale is the
     /// owner-tuned render-bloom boundary (like [`Self::intensity`]).
     pub spoke_glow: f32,
+    /// How far each spoke's INNER end reaches toward the disc centre, as a scale
+    /// on its authored inner radius (`1.0` = authored; `<1` = closer to centre).
+    /// The authored `Circle_Line` lengths stop short of centre at static rest
+    /// (cardinals ~0.2, diagonals ~0.4 of the radius); the live radar plane
+    /// extends them inward — owner-tuned to the reference (same runtime-camera
+    /// boundary as [`Self::tilt_deg`] / the sweep gamma).
+    pub spoke_inner_reach: f32,
+    /// Where each spoke's OUTER end lands, as a scale on its authored outer radius
+    /// (`1.0` = the disc/plane edge). The authored outer ends sit at the plane
+    /// edge (radius ~1.0), OUTSIDE the bright ring (~0.8) that reads as the scope
+    /// boundary — so they poke past the ring (and, at 45°, jut to the corners).
+    /// Pull them to the ring (~0.8) to match the reference. Owner-tuned (runtime
+    /// plane scale, same boundary as the inner reach).
+    pub spoke_outer_reach: f32,
 }
 
 impl Default for RadarPlaneParams {
@@ -147,6 +162,8 @@ impl Default for RadarPlaneParams {
             spoke_outer_alpha: 1.0,
             spoke_inner_alpha: 0.5,
             spoke_glow: 0.0,
+            spoke_inner_reach: 1.0,
+            spoke_outer_reach: 1.0,
         }
     }
 }
@@ -293,8 +310,31 @@ pub fn project_radar_disc(
             let d1 = (e1[0] - 0.5).hypot(e1[1] - 0.5);
             let d2 = (e2[0] - 0.5).hypot(e2[1] - 0.5);
             let (outer, inner) = if d1 >= d2 { (e1, e2) } else { (e2, e1) };
-            let (ox, oy) = to_screen(outer); // full alpha here (rim)
-            let (ix, iy) = to_screen(inner); // spoke_inner_alpha here (centre)
+            // Rescale the spoke's radial span to the reference (the live radar
+            // plane's runtime scale is absent at rest): pull the inner end toward
+            // the centre and the outer end in to the bright ring. Both are scales
+            // on the authored endpoint's offset from the plane centre.
+            let inner = [
+                0.5 + (inner[0] - 0.5) * params.spoke_inner_reach,
+                0.5 + (inner[1] - 0.5) * params.spoke_inner_reach,
+            ];
+            let outer = [
+                0.5 + (outer[0] - 0.5) * params.spoke_outer_reach,
+                0.5 + (outer[1] - 0.5) * params.spoke_outer_reach,
+            ];
+            // Clamp endpoints to the disc: a 45° outer end lands at radius ~1.007
+            // (the ellipse corner), poking past the rim — keep it on the disc so
+            // spokes stay within the ring as in the reference.
+            let clamp_disc = |p: [f32; 2]| -> [f32; 2] {
+                let r = (2.0 * p[0] - 1.0).hypot(2.0 * p[1] - 1.0);
+                if r > 1.0 {
+                    [0.5 + (p[0] - 0.5) / r, 0.5 + (p[1] - 0.5) / r]
+                } else {
+                    p
+                }
+            };
+            let (ox, oy) = to_screen(clamp_disc(outer)); // full alpha here (rim)
+            let (ix, iy) = to_screen(clamp_disc(inner)); // spoke_inner_alpha (centre)
             let half_w = (spoke.width_frac * major).max(0.5) + glow_half;
             draw_soft_spoke(
                 &mut out,
