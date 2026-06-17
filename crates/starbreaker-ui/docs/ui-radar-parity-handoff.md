@@ -155,7 +155,43 @@ a `LockedIcon` + "º" heading suffix + empty magnification (catalog #3, below).
   (`bb_state_filter::tests_b::radar_mode_registry_defaults_select_starmap_rtt_over_interior_map`,
   `radar_locked_icon_hidden_when_show_radar_locked_pinned_false`).
 
-## Remaining items (owner-requested, diagnosed 2026-06-17)
+## Session 2 (owner-driven polish, 2026-06-17) — LANDED
+
+- ✅ **Heading + range readout** (`e1c23ec37`): heading text shares the compass
+  source (`FlightController/Compass/Value` derived from `COMPASS_AT_REST_HEADING_DEG`,
+  so radar + compass agree) → "0°"; range = registry `radarrangemeters=700` + the
+  `LocalizedSIUnitFromNumber forcedSIPrefix=Kilo` fix → "0.7km". (It IS the radar
+  range/magnification, not altitude — the field is `RadarMagnification`.)
+- ✅ **Disc orientation** (`63b3bc915`): apply the disc material's `ViewingAngle=180`
+  (data-backed, per-manufacturer) — fixes the inverted disc.
+- ✅ **Sweep wedge** (`a525fb7c6` + flip/stretch `…`): the real `idle_animation`
+  wedge, clockwise (flipped), radially stretched toward centre.
+- ✅ **Background** (`ec9772a07`): the missing `DRAK_GroundVehicle_Dashboard_background_2`
+  orange-glow panel, via a scoped `forced_active_widgets_with_defaults` (activates
+  authored-false `WidgetImage` nodes whose `IsActive` resolves genuine `Some(true)`
+  — the `NOT(IsVolumetric)` gate). WidgetImage-scoped to avoid the medical bed
+  (workflow §10). `--full` GREEN.
+- ✅ **Spokes** (`e677ef971`): 8 `Circle_Line` radial bars (cardinals longer than
+  diagonals), data-driven geometry, drawn in the tilted plane.
+- ⏸ **Readout kerning (#12)**: DEFERRED with proof — no authored LetterSpacing
+  exists; it's the Electrolize SWF font's intrinsic advance (a global SWF
+  text-metrics model question, same class as the prior power/target deferrals).
+
+## Remaining
+
+- **Outer heading-label chrome (#10)** — the `Headings`/`HeadingTape` ring
+  (`rc_radarmapscreen_volumetricnavelements.json`: 36 degree labels from the
+  `r_radarmapscreen_coordinates_novalue` atlas, curled into a ring via
+  `radialTransform` curvatureAxis Y, 10° spacing, `HeadingRotation`=0 at rest;
+  per-manufacturer `grin_coordinates`). **That canvas is NOT loaded in our radar
+  IR** (only a collapsed `canvas_RadarNavElements`), so it can't be resolved from
+  a node — it needs a PROCEDURAL heading-ring: brand-resolve the coordinates
+  atlas, extract the per-heading cell (grid 9 cols × 4 rows, UStart=(i%9)/9,
+  VStart=(i//9)*0.08203+0.0249), and place 36 cells around the foreshortened
+  ellipse (a focused follow-up; full mechanism in the research notes).
+- **Contact chevrons** — live nearby-contact data (deferred, like the compass).
+
+## Earlier remaining items (now resolved — see Session 2 above)
 
 - **Background image (#11)** — the radar's `DRAK_GroundVehicle_Dashboard_background_2.dds`
   (dark panel + orange edge/corner glow; a DIFFERENT texture than other MFDs) is
