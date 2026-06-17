@@ -130,6 +130,7 @@ fn synthetic_hybrid_document() -> UiIrDocument {
             meter_progress: None,
             text_style: None::<UiIrTextStyle>,
             asset_ref: None,
+            primitive_material: None,
             asset_layout: None,
             custom_shape: None,
             style_tag_uuids: Vec::new(),

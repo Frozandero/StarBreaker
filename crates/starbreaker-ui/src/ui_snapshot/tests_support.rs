@@ -67,6 +67,7 @@ pub(super) fn base_node(id: u32, layer: i32) -> UiIrNode {
             label_style: Some("Heading1".to_string()),
         }),
         asset_ref: None,
+        primitive_material: None,
         asset_layout: None,
         custom_shape: None,
         style_tag_uuids: vec![],

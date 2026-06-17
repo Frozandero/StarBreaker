@@ -116,6 +116,27 @@ pub struct HologramImage {
 /// exports), leaving the node unrendered.
 pub trait HologramFetcher {
     fn fetch_vehicle_hologram(&self, width: u32, height: u32, tint: [f32; 4]) -> Option<HologramImage>;
+
+    /// Render the MFD-radar scope for a `BuildingBlocks_WidgetWindow`/`Primitive`
+    /// node (the cockpit radar's `WindowContainer`), which the engine draws as a
+    /// live render-to-texture 3D scene the 2D compositor cannot. The implementor
+    /// loads the REAL disc texture bound by `disc_material_path` (the
+    /// `Circle_Radial_Grid` node's `ui_r_radarmapscreen_radial_grid.mtl` →
+    /// `r_radarmapscreen_radial_gradients.dds`: concentric rings + tick scale +
+    /// axis) and projects it as the RTT camera would (tilted disc → ellipse),
+    /// tinted by `tint` (the brand palette colour). Returns `None` when the
+    /// material/texture is unavailable, leaving the window unrendered. Default
+    /// `None` so non-radar callers / tests need not implement it.
+    fn fetch_radar_plane(
+        &self,
+        width: u32,
+        height: u32,
+        tint: [f32; 3],
+        disc_material_path: &str,
+    ) -> Option<HologramImage> {
+        let _ = (width, height, tint, disc_material_path);
+        None
+    }
 }
 
 /// Borrowed snapshot of UiBinding fields needed by the pipeline.

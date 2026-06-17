@@ -13,7 +13,8 @@
 
 use starbreaker_datacore::loadout::EntityIndex;
 use starbreaker_datacore::Database;
-use starbreaker_gfx::{render_vehicle_hologram, HologramParams};
+use starbreaker_dds::{DdsFile, ReadSibling};
+use starbreaker_gfx::{project_radar_disc, render_vehicle_hologram, HologramParams, RadarPlaneParams};
 use starbreaker_p4k::MappedP4k;
 use starbreaker_ui::pipeline::{HologramFetcher, HologramImage};
 
@@ -165,4 +166,76 @@ impl HologramFetcher for P4kHologramFetcher<'_> {
             rgba: img.into_raw(),
         })
     }
+
+    fn fetch_radar_plane(
+        &self,
+        width: u32,
+        height: u32,
+        tint: [f32; 3],
+        disc_material_path: &str,
+    ) -> Option<HologramImage> {
+        if width == 0 || height == 0 {
+            return None;
+        }
+        // Resolve the disc material → its diffuse texture: the REAL radar-disc
+        // art (concentric rings + degree-tick scale + axis). `disc_material_path`
+        // is already the brand-correct material (the IR `primitive_material`
+        // reflects the per-manufacturer override — DRAK keeps the generic,
+        // Greycat/RSI swap to `ui_grin_…`/`…_RSI`). Decode the texture and
+        // project it as the RTT window camera would (tilted disc → ellipse),
+        // tinted by `tint` (the brand accent). The art + tint are DATA; only the
+        // camera tilt is owner-tuned (the engine runtime camera transform is
+        // absent at static rest — the hologram-camera boundary).
+        let mtl_bytes = super::p4k_fetchers::read_p4k_asset(self.p4k, disc_material_path)?;
+        let mtl = crate::mtl::parse_mtl(&mtl_bytes).ok()?;
+        let tex_ref = mtl.materials.iter().find_map(|sm| sm.diffuse_tex.clone())?;
+        let texture = decode_p4k_dds_rgba(self.p4k, &tex_ref)?;
+
+        // ~37° matches the reference ellipse (minor/major ≈ 0.6). Owner-tuned.
+        const RADAR_TILT_DEG: f32 = 37.0;
+        let params = RadarPlaneParams {
+            tilt_deg: RADAR_TILT_DEG,
+            tint_rgb: tint,
+            ..Default::default()
+        };
+        let disc = project_radar_disc(width, height, &texture, &params);
+        Some(HologramImage {
+            width,
+            height,
+            rgba: disc.into_raw(),
+        })
+    }
+}
+
+/// Reads split-mip DDS sibling files (`.1`, `.2`, … / `.dds.a`) from the P4K for
+/// [`DdsFile::from_split`].
+struct RadarDdsSiblingReader<'a> {
+    p4k: &'a MappedP4k,
+    base_path: String,
+}
+
+impl ReadSibling for RadarDdsSiblingReader<'_> {
+    fn read_sibling(&self, suffix: &str) -> Option<Vec<u8>> {
+        let path = format!("{}{suffix}", self.base_path);
+        self.p4k
+            .entry_case_insensitive(&path)
+            .and_then(|entry| self.p4k.read(entry).ok())
+    }
+}
+
+/// Decode a P4K DDS texture (handling split-mip siblings) to RGBA, resolving the
+/// texture reference's actual archive path via the shared asset candidates
+/// (`.tif` → `.dds`, `Data\` prefix).
+fn decode_p4k_dds_rgba(p4k: &MappedP4k, tex_ref: &str) -> Option<image::RgbaImage> {
+    let base_path = super::p4k_fetchers::p4k_asset_candidates(tex_ref)
+        .into_iter()
+        .find(|candidate| p4k.entry_case_insensitive(candidate).is_some())?;
+    let data = p4k.read_file(&base_path).ok()?;
+    let reader = RadarDdsSiblingReader { p4k, base_path };
+    let dds = DdsFile::from_split(&data, &reader)
+        .or_else(|_| DdsFile::headers_only(&data))
+        .ok()?;
+    let rgba = dds.decode_rgba(0).ok()?;
+    let (w, h) = dds.dimensions(0);
+    image::RgbaImage::from_raw(w, h, rgba)
 }

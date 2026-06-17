@@ -95,6 +95,7 @@ fn minimal_node(
         meter_progress: None,
         text_style: None,
         asset_ref: None,
+        primitive_material: None,
         asset_layout: None,
         custom_shape: None,
         style_tag_uuids: vec![],

@@ -237,6 +237,49 @@ fn draw_non_text_node(
         }
     }
 
+    // MFD-radar scope: the radar's `WindowContainer` is a `BuildingBlocks_WidgetWindow`
+    // / `Primitive` node (material `…/map_window.mtl`) — a live render-to-texture 3D
+    // scene the 2D compositor cannot run, so its 3D children collapse to a point at
+    // rest. When a fetcher is available, project the REAL disc texture (resolved from
+    // the radar disc node's `…radial_grid.mtl`) into the full window rect, tinted by
+    // the brand accent (the disc's `Circle_Ripple_Textured` rings author `Accent1`).
+    // Mirrors the SELF-STATUS hologram path above. See `starbreaker_gfx::radar_plane`.
+    if node
+        .node_type
+        .eq_ignore_ascii_case("BuildingBlocks_WidgetWindow")
+        && node
+            .primitive_material
+            .as_deref()
+            .is_some_and(|m| m.to_ascii_lowercase().contains("map_window"))
+        && let Some(fetcher) = ctx.hologram_fetcher
+        && let Some(disc_material) = document.nodes.iter().find_map(|n| {
+            n.primitive_material
+                .as_deref()
+                .filter(|m| m.to_ascii_lowercase().contains("radial_grid"))
+        })
+    {
+        let tint = resolve_colour_token(ctx, "Accent1")
+            .or_else(|| resolve_colour_token(ctx, "Base"))
+            .map(|c| [c[0], c[1], c[2]])
+            .unwrap_or([1.0, 1.0, 1.0]);
+        let win_w = rect.w.round().max(1.0) as u32;
+        let win_h = rect.h.round().max(1.0) as u32;
+        if let Some(plane) = fetcher.fetch_radar_plane(win_w, win_h, tint, disc_material)
+            && let Some(img) = RgbaImage::from_raw(plane.width, plane.height, plane.rgba)
+        {
+            blit_atlas_image_tinted_with_mode(
+                pixmap,
+                &img,
+                rect.x.round() as i32,
+                rect.y.round() as i32,
+                [1.0, 1.0, 1.0, 1.0],
+                node.alpha,
+                BlendMode::SourceOver,
+            );
+            return;
+        }
+    }
+
     if node
         .node_type
         .eq_ignore_ascii_case("BuildingBlocks_WidgetCircle")

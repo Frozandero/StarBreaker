@@ -130,6 +130,13 @@ pub struct UiIrNode {
     pub meter_progress: Option<f32>,
     pub text_style: Option<UiIrTextStyle>,
     pub asset_ref: Option<String>,
+    /// `primitiveSettings.primitiveMaterialPath` for `rendererType:"Primitive"`
+    /// nodes (e.g. the radar `WindowContainer` `map_window.mtl` / the disc
+    /// `Circle_Radial_Grid` `radial_grid.mtl`). In-memory only (`serde(skip)`):
+    /// consumed by `ir_compose` to identify the radar RTT window + its disc
+    /// texture; never serialized, so IR snapshots / freeze hashes are unaffected.
+    #[serde(skip)]
+    pub primitive_material: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub asset_layout: Option<UiIrAssetLayout>,
     pub custom_shape: Option<UiIrCustomShape>,
@@ -1394,6 +1401,25 @@ fn build_ui_ir_nodes(
             meter_progress,
             text_style,
             asset_ref,
+            // Prefer the cascade-applied top-level `PrimitiveMaterialPath` (the
+            // brand override — the radar disc swaps to `ui_grin_…`/`…_RSI` per
+            // manufacturer via a `Radial Grid Element` style modifier;
+            // `apply_string_field` writes it top-level) over the authored
+            // `primitiveSettings.primitiveMaterialPath` (the generic default a
+            // no-override brand like DRAK keeps). Keeps the radar disc texture
+            // manufacturer-correct.
+            primitive_material: node
+                .raw
+                .get("PrimitiveMaterialPath")
+                .and_then(|path| path.as_str())
+                .or_else(|| {
+                    node.raw
+                        .get("primitiveSettings")
+                        .and_then(|settings| settings.get("primitiveMaterialPath"))
+                        .and_then(|path| path.as_str())
+                })
+                .map(str::to_owned)
+                .filter(|path| !path.is_empty()),
             asset_layout: separator_asset_layout.or_else(|| asset_layout_from_raw(&node.raw)),
             custom_shape,
             style_tag_uuids,
