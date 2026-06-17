@@ -1306,6 +1306,26 @@ fn resolve_canvas_graph_inner(
 
         deactivate_subtrees(&mut scene, &instantiated_false);
 
+        // Force-activate authored-inactive nodes whose `IsActive` binding resolves
+        // a GENUINE true at rest (e.g. the cockpit-radar background
+        // `image_Background`, `IsActive ← NOT(IsVolumetric)`, at the flat radar).
+        // The deactivation-only filter above can't flip an authored-false node
+        // active, but the engine treats the `IsActive` binding as the runtime
+        // truth. Applied AFTER deactivation so a genuine active wins; scoped to a
+        // genuine `Some(true)` (not the unset→override), so medical's at-rest-
+        // unset `IsActive` nodes are untouched (workflow §10).
+        let force_active = crate::bb_state_filter::forced_active_widgets_with_defaults(
+            record_value,
+            inherited_param_inputs.unwrap_or(&[]),
+            inherited_boolean_bindings,
+            Some(defaults),
+        );
+        for id in &force_active {
+            if let Some(node) = scene.nodes.get_mut(id) {
+                node.is_active = true;
+            }
+        }
+
         // Snapshot the visited set as it stands right after Pass 1.  Used
         // below to test "was this canvas already merged by Pass 1?" without
         // modifying the set (so the same URL may appear multiple times in the

@@ -363,6 +363,121 @@ pub fn instantiated_false_widgets_with_param_inputs_inherited_bindings_and_defau
     false_set
 }
 
+/// Nodes whose `IsActive` field binding evaluates to a GENUINE `Some(true)` (a
+/// resolved/pinned state value) — the renderer ACTIVATES these even when the node
+/// is authored `isActive=false`, because the engine treats the IsActive binding
+/// as the runtime truth.
+///
+/// Motivating case: the cockpit-radar background `image_Background`
+/// (`DRAK_GroundVehicle_Dashboard_background_2`) is authored `isActive=false` with
+/// `IsActive ← NOT(IsVolumetric)`; at the flat radar (IsVolumetric pinned false)
+/// it resolves `Some(true)` and must render — but the deactivation-only filter
+/// above never activates an authored-false node.
+///
+/// SAFETY: requires a GENUINE `Some(true)` — the raw `eval_bool_ref` result, NOT
+/// the `contains_unset_non_state_variable` override that drives unknown bindings
+/// true. Medical's live-`IsActive`-gated nodes are unset at rest (`eval` = `None`,
+/// not `Some(true)`), so they are never spuriously activated (the workflow §10
+/// "generic IsActive pass breaks medical" hazard). Scoped to the `IsActive` field.
+pub fn forced_active_widgets_with_defaults(
+    record_value: &serde_json::Value,
+    param_inputs: &[serde_json::Value],
+    inherited_bindings: &HashMap<String, bool>,
+    defaults: Option<&crate::defaults::DefaultValueRegistry>,
+) -> HashSet<BbNodeId> {
+    let mut static_vals = parse_static_variables(record_value);
+    for (binding, value) in inherited_bindings {
+        static_vals.entry(binding.clone()).or_insert(*value);
+    }
+    if let Some(defaults) = defaults
+        && let Some(ops) = record_value.get("operations").and_then(|v| v.as_array())
+    {
+        for op in ops {
+            if op.get("_Type_").and_then(|v| v.as_str())
+                != Some("BuildingBlocks_BindingsBooleanVariable")
+            {
+                continue;
+            }
+            let Some(binding) = op.get("binding").and_then(|v| v.as_str()) else {
+                continue;
+            };
+            if static_vals.contains_key(binding) {
+                continue;
+            }
+            if let Some(crate::canvas::Value::Bool(value)) = defaults.lookup_path(binding) {
+                static_vals.insert(binding.to_owned(), *value);
+            }
+        }
+    }
+    let param_overrides = parse_boolean_param_inputs(param_inputs);
+    let ops = match record_value.get("operations").and_then(|v| v.as_array()) {
+        Some(a) => a,
+        None => return HashSet::new(),
+    };
+    apply_idle_defaults(ops, &mut static_vals);
+    let ptr_vals = evaluate_bool_ops(ops, &static_vals, &param_overrides);
+    let mut ptr_to_op: HashMap<BbNodeId, &serde_json::Value> = HashMap::new();
+    for op in ops {
+        if let Some(p) = op
+            .get("_Pointer_")
+            .and_then(|v| v.as_str())
+            .and_then(parse_ptr_id)
+        {
+            ptr_to_op.insert(p, op);
+        }
+    }
+    // Map each scene node ptr → its widget _Type_, so activation can be scoped
+    // to `WidgetImage` nodes only (see below).
+    let mut ptr_to_type: HashMap<BbNodeId, &str> = HashMap::new();
+    if let Some(scene) = record_value.get("scene").and_then(|v| v.as_array()) {
+        for item in scene {
+            if let (Some(ptr), Some(ty)) = (
+                item.get("_Pointer_").and_then(|v| v.as_str()).and_then(parse_ptr_id),
+                item.get("_Type_").and_then(|v| v.as_str()),
+            ) {
+                ptr_to_type.insert(ptr, ty);
+            }
+        }
+    }
+    let mut active_set: HashSet<BbNodeId> = HashSet::new();
+    for op in ops {
+        if op.get("_Type_").and_then(|v| v.as_str()) != Some("BuildingBlocks_BindingsBooleanField") {
+            continue;
+        }
+        if op.get("field").and_then(|v| v.as_str()) != Some("IsActive") {
+            continue;
+        }
+        let Some(widget) = parse_points_to_ptr_value(op.get("widget")) else {
+            continue;
+        };
+        // SCOPE: only `WidgetImage` nodes (the radar background is a
+        // `BuildingBlocks_WidgetImage`). The medical bed (`ui_target_a`) has
+        // `DisplayWidget` Image nodes authored-false with IsActive gated on
+        // medical pins (ActorIsInBed, …) that ALSO resolve genuine-true at rest
+        // but must stay inactive (the gold baseline) — the workflow §10 hazard.
+        // Restricting to the dedicated image WIDGET keeps those untouched.
+        if ptr_to_type.get(&widget).copied() != Some("BuildingBlocks_WidgetImage") {
+            continue;
+        }
+        let Some(input_ref) = op.get("input") else {
+            continue;
+        };
+        let mut visiting = HashSet::new();
+        let eval = eval_bool_ref(
+            input_ref,
+            &ptr_vals,
+            &ptr_to_op,
+            &static_vals,
+            &param_overrides,
+            &mut visiting,
+        );
+        if eval == Some(true) {
+            active_set.insert(widget);
+        }
+    }
+    active_set
+}
+
 /// Return the node id of the canvas's *sole* top-level `WidgetCanvas` — the one
 /// scene node (with no `parent` pointer) of type `WidgetCanvas` — or `None` when
 /// there are zero or more than one. A single top-level WidgetCanvas is the whole

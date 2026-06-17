@@ -539,3 +539,72 @@
             "LockedIcon must deactivate when ShowRadarLocked is pinned false"
         );
     }
+
+    /// The radar background `image_Background` (DRAK_GroundVehicle_Dashboard bg)
+    /// is authored `isActive=false` with `IsActive ← NOT(IsVolumetric)`. At the
+    /// flat radar (IsVolumetric pinned false → NOT = genuine Some(true)) it must
+    /// be force-activated. A node gated on an UNSET sensor (eval None, override
+    /// would make it "true" for the false-set path) must NOT be force-activated.
+    #[test]
+    fn forced_active_activates_genuine_isactive_true_only() {
+        // ptr:5 = a WidgetImage (the radar background), ptr:6 = a WidgetImage gated
+        // on an unset sensor, ptr:7 = a DisplayWidget gated genuine-true (the
+        // medical-bed class — must NOT activate, scope is WidgetImage-only).
+        let rv = json!({
+            "_Type_": "BuildingBlocks_Canvas",
+            "scene": [
+                {"_Pointer_": "ptr:5", "_Type_": "BuildingBlocks_WidgetImage", "name": "bg"},
+                {"_Pointer_": "ptr:6", "_Type_": "BuildingBlocks_WidgetImage", "name": "other"},
+                {"_Pointer_": "ptr:7", "_Type_": "BuildingBlocks_DisplayWidget", "name": "med"},
+            ],
+            "operations": [
+                variable_op(10, "/~/MapNamespace~/GeneralMapData/IsVolumetric"),
+                json!({
+                    "_Pointer_": "ptr:11",
+                    "_Type_": "BuildingBlocks_BindingsBooleanInvert",
+                    "input": "_PointsTo_:ptr:10"
+                }),
+                json!({
+                    "_Type_": "BuildingBlocks_BindingsBooleanField",
+                    "widget": "_PointsTo_:ptr:5",
+                    "field": "IsActive",
+                    "input": "_PointsTo_:ptr:11"
+                }),
+                // gated on an unset sensor var → genuine eval None
+                variable_op(20, "SomeUnsetSensor/Live"),
+                json!({
+                    "_Type_": "BuildingBlocks_BindingsBooleanField",
+                    "widget": "_PointsTo_:ptr:6",
+                    "field": "IsActive",
+                    "input": "_PointsTo_:ptr:20"
+                }),
+                // a DisplayWidget gated genuine-true (NOT IsVolumetric) — excluded
+                // by the WidgetImage scope.
+                json!({
+                    "_Type_": "BuildingBlocks_BindingsBooleanField",
+                    "widget": "_PointsTo_:ptr:7",
+                    "field": "IsActive",
+                    "input": "_PointsTo_:ptr:11"
+                }),
+            ],
+        });
+        let defaults = crate::defaults::DefaultValueRegistry::with_well_known_path_defaults();
+        let active = forced_active_widgets_with_defaults(
+            &rv,
+            &[],
+            &std::collections::HashMap::new(),
+            Some(&defaults),
+        );
+        assert!(
+            active.contains(&5),
+            "WidgetImage background (NOT IsVolumetric, pinned false → Some(true)) must be force-activated"
+        );
+        assert!(
+            !active.contains(&6),
+            "unset-sensor IsActive (genuine eval None) must NOT be force-activated"
+        );
+        assert!(
+            !active.contains(&7),
+            "a DisplayWidget genuine-true (medical-bed class) must NOT be force-activated (WidgetImage-scoped)"
+        );
+    }
