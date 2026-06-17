@@ -283,8 +283,10 @@ pub fn layout_with_animation_sample(
 /// The covered canvas is laid out origin-anchored, so its trailing edge overflows
 /// the target. The ball-area is the largest LOCALISED node — the largest active
 /// rect that does NOT span the full canvas (`canvas_w`/`canvas_h`; this excludes
-/// the full-bleed background image and the content root). It is the primary gauge
-/// content and is larger than the readouts panel, so centring on it frames the
+/// the full-bleed background image and the content root) AND whose centre lies
+/// within the canvas (this excludes an off-canvas animation overlay parked outside
+/// the canvas by an extreme authored pivot — the countermeasure hold-to-fire
+/// circle). It is the primary gauge content and is larger than the readouts panel, so centring on it frames the
 /// ball while the readouts overflow and crop. Position-independent: the g-force
 /// ball-area sits at canvas-LEFT, the velocity ball's at canvas-RIGHT (mirrored),
 /// but both centre. Keyed on relative size + full-canvas span, never a node name.
@@ -303,7 +305,18 @@ fn cover_fit_recentre(
         .filter(|(_, r)| {
             // Localised: strictly smaller than the full (cover-scaled) canvas on at
             // least one axis — excludes the full-bleed background and content root.
-            r.w > 0.0 && r.h > 0.0 && !(r.w >= 0.95 * canvas_w && r.h >= 0.95 * canvas_h)
+            let localised = r.w > 0.0 && r.h > 0.0 && !(r.w >= 0.95 * canvas_w && r.h >= 0.95 * canvas_h);
+            // On-canvas: the rect's CENTRE lies within the canvas bounds. An
+            // animation overlay parked OUTSIDE the canvas by an extreme authored
+            // pivot (the countermeasure hold-to-fire circle sits at canvas x≈−4074
+            // via pivot.x=22 and slides in only while firing) is not the primary
+            // on-screen gauge content; centring on it would shove the real content
+            // off-screen. The g-force/velocity ball-areas sit inside the canvas, so
+            // they stay eligible. Keyed on geometry, never a node name.
+            let cx = r.x + r.w * 0.5;
+            let cy = r.y + r.h * 0.5;
+            let on_canvas = cx >= 0.0 && cx <= canvas_w && cy >= 0.0 && cy <= canvas_h;
+            localised && on_canvas
         })
         .max_by(|a, b| {
             (a.1.w * a.1.h)
@@ -1386,6 +1399,31 @@ fn layout_flex_no_grow_children(
                 // fitting it re-centred the text +101px (live-IR guard caught it).
                 // Scoped to axisJustification == Center so the medical header (its
                 // column is NOT center-justified) keeps its platinum fill (§10).
+                h = intrinsic;
+                auto_main = false;
+            } else if !is_row
+                && node
+                    .raw
+                    .get("_MaterialisedEntry_")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+                && matches!(
+                    node.sizing.height,
+                    BbValue::Other { ref behavior, .. } if behavior == "Auto"
+                )
+                && let Some(intrinsic) = auto_text_intrinsic_main(child_id, scene, csy, false)
+            {
+                // A materialised LIST ENTRY (cloned per array element, flagged
+                // `_MaterialisedEntry_` by `apply_array_variable_lists`) authored
+                // Auto height fits its content so the list's flex justification
+                // can DISTRIBUTE the entries down the column instead of overlaying
+                // every clone at one anchor (Auto's fill fallback). The
+                // countermeasure list (ColumnReverse / SpaceEvenly) shows one
+                // launcher panel per entry; without this both launchers' counts
+                // pile onto one spot. Scoped to materialised entries, so authored
+                // (non-list) column children — the medical/power fill pins — are
+                // untouched, and to Auto height (the power pip entries are
+                // Fixed/Percent and keep their explicit slot size).
                 h = intrinsic;
                 auto_main = false;
             } else if is_row {
@@ -2529,6 +2567,39 @@ mod tests {
             "full-target (aspectOverrides) canvas must not be re-centred vertically"
         );
         assert_eq!(rects[&2].x, 0.0, "nor horizontally");
+    }
+
+    /// An OFF-CANVAS animation overlay must never be chosen as the ball-area.
+    /// Models the COUNTERMEASURES screen: a cover-scaled 3413×1920 canvas whose
+    /// largest localised rect by area is the hold-to-fire circle overlay
+    /// (`card_CountermeasureFireHoldCirlce`, 2304²), parked far off-canvas
+    /// (centre x ≈ −2922) by an authored pivot of x=22 — at rest it sits outside
+    /// the canvas and slides in only while firing. Centring on it shoves all the
+    /// real content (the two countermeasure panels) +3882px off the right edge,
+    /// blanking the screen. The recentre must instead ignore it and centre the
+    /// on-canvas content, so the canvas keeps covering the target.
+    #[test]
+    fn cover_fit_recentre_ignores_off_canvas_overlay() {
+        let mut rects: BTreeMap<BbNodeId, Rect> = BTreeMap::new();
+        // node 1: full-canvas background/root 3413×1920 — must keep covering target.
+        rects.insert(1, Rect { x: 0.0, y: 0.0, w: 3413.0, h: 1920.0 });
+        // node 2: real content (countermeasure list), localised, centred in canvas
+        // (centre x = 1706.5) — the largest ON-canvas localised node.
+        rects.insert(2, Rect { x: 341.5, y: 0.0, w: 2730.0, h: 1920.0 });
+        // node 3: hold-to-fire overlay — LARGER (2304² > 2730×1920) but off-canvas
+        // (centre x = −2922), parked there by the authored pivot.x=22.
+        rects.insert(3, Rect { x: -4074.0, y: -192.0, w: 2304.0, h: 2304.0 });
+        cover_fit_recentre(&mut rects, |_| true, 1920.0, 1920.0, 3413.0, 1920.0);
+        assert!(
+            rects[&1].x <= 0.0 && rects[&1].x + 3413.0 >= 1920.0,
+            "off-canvas overlay must not be centred; canvas must cover target, got {:?}",
+            rects[&1]
+        );
+        let content = rects[&2];
+        assert!(
+            (content.x + content.w * 0.5 - 960.0).abs() <= 1.0,
+            "on-canvas content must centre, got {content:?}"
+        );
     }
 
     #[test]
