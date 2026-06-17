@@ -211,6 +211,13 @@ impl HologramFetcher for P4kHologramFetcher<'_> {
             .and_then(|bytes| crate::mtl::parse_mtl(&bytes).ok())
             .and_then(|m| m.materials.iter().find_map(|sm| sm.diffuse_tex.clone()))
             .and_then(|tex| decode_p4k_dds_rgba(self.p4k, &tex));
+        // The wedge apex (pivot → disc centre) + radial extent are COMPUTED from
+        // the decoded sweep texture, so a per-manufacturer sweep texture tracks
+        // automatically (no hard-coded apex).
+        let (sweep_apex, sweep_tex_radius) = sweep_texture
+            .as_ref()
+            .and_then(starbreaker_gfx::sweep_wedge_geometry)
+            .unwrap_or(([0.5, 0.5], 0.5));
 
         // The authored spokes (`Circle_Line_*`): their geometry + per-spoke colour
         // arrive from the IR (`spokes`); the soft-glow APPEARANCE is read from the
@@ -242,11 +249,15 @@ impl HologramFetcher for P4kHologramFetcher<'_> {
             })
             .collect();
 
-        // The outer heading-tape ring (`HeadingTape`): load the brand-resolved
-        // tape material's atlas (`coordinates_novalue` tick row) and carry the
-        // node's authored UV window. The atlas + UV are DATA; only the ring's alpha
-        // is the tape's authored fill scaled by the emissive boost.
-        const RADAR_HEADING_ALPHA: f32 = 2.0;
+        // The emissive/bloom brightness — the ONE render value (the radar screen is
+        // an emissive/bloomed surface; the absolute brightness is a render-pipeline
+        // effect not in the static data, shared by the disc + spokes + ring).
+        const RADAR_EMISSIVE: f32 = 3.0;
+        // The outer heading-tape ring (`HeadingTape`): load the brand-resolved tape
+        // material's atlas (`coordinates_novalue` tick row) + carry the node's
+        // authored UV window. Atlas + UV + fill alpha are DATA; the ring alpha is
+        // the tape's authored fill (`fill_alpha`, the brand `Base` ~0.3) × the one
+        // emissive boost — not a picked constant.
         let heading_texture = heading
             .map(|h| h.material_path)
             .and_then(|path| super::p4k_fetchers::read_p4k_asset(self.p4k, path))
@@ -256,7 +267,7 @@ impl HologramFetcher for P4kHologramFetcher<'_> {
         let heading_ring = heading.map(|h| HeadingRingParams {
             uv_start: h.uv_start,
             uv_size: h.uv_size,
-            alpha: RADAR_HEADING_ALPHA,
+            alpha: h.fill_alpha * RADAR_EMISSIVE,
         });
 
         // ~37° matches the reference ellipse (minor/major ≈ 0.6). Owner-tuned.
@@ -268,9 +279,12 @@ impl HologramFetcher for P4kHologramFetcher<'_> {
         let params = RadarPlaneParams {
             tilt_deg: RADAR_TILT_DEG,
             tint_rgb: tint,
+            intensity: RADAR_EMISSIVE,
             texture_rotation_deg,
             sweep_alpha: if sweep_texture.is_some() { RADAR_SWEEP_ALPHA } else { 0.0 },
             sweep_angle_deg: RADAR_SWEEP_ANGLE_DEG,
+            sweep_apex,
+            sweep_tex_radius,
             // The crisp `Circle_Ripple` boundary stroke is NOT in the reference —
             // the disc texture provides the soft rim. Leave it off.
             outer_ring_alpha: 0.0,

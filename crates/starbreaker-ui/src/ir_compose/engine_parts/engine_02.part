@@ -59,6 +59,33 @@ fn collect_radar_spokes<'a>(
     (spokes, material)
 }
 
+/// The outer heading-tape ring (`HeadingTape`): the `headingtape` Primitive whose
+/// atlas window is TILED around the ring (`UVSize.x > 1`) — the structural
+/// discriminator vs the single-cell `NorthPoint`/readout glyphs that share the
+/// material. Returns its brand-resolved material + authored UV window + fill alpha
+/// (the brand `Base` ~0.3), all data. `None` when no tape is loaded.
+fn collect_radar_heading_tape(nodes: &[UiIrNode]) -> Option<crate::pipeline::RadarHeadingTape<'_>> {
+    nodes.iter().find_map(|n| {
+        let material = n
+            .primitive_material
+            .as_deref()
+            .filter(|m| m.to_ascii_lowercase().contains("headingtape"))?;
+        let uv_start = n.primitive_uv_start?;
+        let uv_size = n.primitive_uv_size?;
+        let fill_alpha = n
+            .background_fill_colour
+            .map(|c| c[3])
+            .or(n.background_fill_alpha)
+            .unwrap_or(1.0);
+        (uv_size[0].abs() > 1.0).then_some(crate::pipeline::RadarHeadingTape {
+            material_path: material,
+            uv_start,
+            uv_size,
+            fill_alpha,
+        })
+    })
+}
+
 enum ClipRelation {
     Inside,
     Outside,

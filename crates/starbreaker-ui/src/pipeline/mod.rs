@@ -195,6 +195,10 @@ pub struct RadarHeadingTape<'a> {
     /// `primitiveSettings.UVSize` (atlas-space extent; `x>1` = tiled around the
     /// ring, `y` = the tick-row band height).
     pub uv_size: [f32; 2],
+    /// The tape's authored `background` fill alpha (`HeadingTape` authors `Base`
+    /// alpha ~0.3) — data, per-manufacturer (the brand palette). The implementor
+    /// scales it by the emissive brightness; not a picked constant.
+    pub fill_alpha: f32,
 }
 
 /// Borrowed snapshot of UiBinding fields needed by the pipeline.

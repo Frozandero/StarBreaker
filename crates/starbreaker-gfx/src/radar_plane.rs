@@ -26,13 +26,36 @@
 
 use image::{Rgba, RgbaImage};
 
-/// The sweep wedge's BRIGHT APEX (pivot) in `idle_animation` texture space, which
-/// maps to the disc CENTRE — the wedge fans out from here to the rim. Derived from
-/// the decoded texture (bright apex ~(0.49, 0.05), fading down-and-out).
-const SWEEP_APEX: [f32; 2] = [0.49, 0.05];
-/// Texture-space distance from the apex that maps to the disc rim (`r=1`): the
-/// wedge's radial extent. Derived from the decoded texture (~0.55).
-const SWEEP_TEX_RADIUS: f32 = 0.6;
+/// Compute the sweep wedge's BRIGHT APEX (pivot) + radial extent from the decoded
+/// sweep texture, so they track a per-manufacturer texture instead of a hard-coded
+/// number. The wedge fans out from its apex; the apex is the bright bounding-box
+/// corner nearest the texture origin and the extent is the bbox diagonal (the
+/// radial-sweep convention: the wedge points away from its apex). Returns
+/// `(apex_uv, tex_radius)` in texture `[0,1]` space, or `None` if the texture has
+/// no bright content.
+pub fn sweep_wedge_geometry(sweep: &RgbaImage) -> Option<([f32; 2], f32)> {
+    let (w, h) = (sweep.width(), sweep.height());
+    if w == 0 || h == 0 {
+        return None;
+    }
+    let (mut x0, mut y0, mut x1, mut y1) = (u32::MAX, u32::MAX, 0u32, 0u32);
+    for (x, y, px) in sweep.enumerate_pixels() {
+        let lum = 0.299 * px.0[0] as f32 + 0.587 * px.0[1] as f32 + 0.114 * px.0[2] as f32;
+        if lum * (px.0[3] as f32 / 255.0) > 16.0 {
+            x0 = x0.min(x);
+            y0 = y0.min(y);
+            x1 = x1.max(x);
+            y1 = y1.max(y);
+        }
+    }
+    if x0 > x1 || y0 > y1 {
+        return None;
+    }
+    let (fw, fh) = (w as f32, h as f32);
+    let apex = [x0 as f32 / fw, y0 as f32 / fh];
+    let radius = (((x1 - x0) as f32 / fw).powi(2) + ((y1 - y0) as f32 / fh).powi(2)).sqrt();
+    Some((apex, radius.max(0.05)))
+}
 
 /// Owner-tuned bloom: how far the `line_a` material's `Glow` spreads each spoke
 /// bar, as a fraction of the disc major radius per unit Glow. The bars are only
@@ -137,6 +160,13 @@ pub struct RadarPlaneParams {
     /// in-game; this is the captured-frame position (owner-tuned, same basis as
     /// the camera tilt — the animation phase isn't in static data).
     pub sweep_angle_deg: f32,
+    /// The sweep wedge's bright APEX (pivot) in texture `[0,1]` space — maps to the
+    /// disc centre. COMPUTED from the sweep texture by [`sweep_wedge_geometry`]
+    /// (per-manufacturer), not hard-coded.
+    pub sweep_apex: [f32; 2],
+    /// Texture-space distance from the apex that maps to the disc rim (the wedge's
+    /// radial extent). COMPUTED from the sweep texture by [`sweep_wedge_geometry`].
+    pub sweep_tex_radius: f32,
     /// The authored radar spokes (`Circle_Line_*`), each projected in the tilted
     /// disc plane as a soft glowing bar. Empty = none. Geometry + colour are all
     /// data (see [`RadarSpoke`]).
@@ -173,6 +203,8 @@ impl Default for RadarPlaneParams {
             texture_rotation_deg: 0.0,
             sweep_alpha: 0.0,
             sweep_angle_deg: 0.0,
+            sweep_apex: [0.5, 0.5],
+            sweep_tex_radius: 0.5,
             spokes: Vec::new(),
             spoke_outer_alpha: 1.0,
             spoke_inner_alpha: 0.5,
@@ -284,8 +316,8 @@ pub fn project_radar_disc(
                     // Disc offset rotated to the rest-frame beam angle, then placed
                     // relative to the wedge apex: disc centre → apex (brightest).
                     let (rx, ry) = (nx * ca - ny * sa, nx * sa + ny * ca);
-                    let u = (SWEEP_APEX[0] + rx * SWEEP_TEX_RADIUS) * (sw - 1.0);
-                    let v = (SWEEP_APEX[1] + ry * SWEEP_TEX_RADIUS) * (sh - 1.0);
+                    let u = (params.sweep_apex[0] + rx * params.sweep_tex_radius) * (sw - 1.0);
+                    let v = (params.sweep_apex[1] + ry * params.sweep_tex_radius) * (sh - 1.0);
                     if u < 0.0 || v < 0.0 || u > sw - 1.0 || v > sh - 1.0 {
                         continue; // outside the wedge texture → no beam here
                     }
