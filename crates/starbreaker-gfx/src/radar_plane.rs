@@ -46,6 +46,17 @@ pub struct RadarPlaneParams {
     pub tint_rgb: [f32; 3],
     /// Overall alpha multiplier applied to the projected disc, `0.0..=1.0`.
     pub alpha: f32,
+    /// Emissive intensity multiplier on the texture luminance: the engine draws
+    /// the disc as an emissive/bloomed surface, so the subtle source texture
+    /// reads much brighter in-game than its raw values. Owner-tuned (the bloom
+    /// intensity is a render-pipeline effect not in the static data).
+    pub intensity: f32,
+    /// Alpha of the bright outer boundary ring (the `Circle_Ripple_Textured`
+    /// WidgetCircle that fills the disc plane: stroke `Accent1`). `0.0` = none.
+    pub outer_ring_alpha: f32,
+    /// Draw the own-ship centre marker (the white triangle the radar shows for
+    /// the player vehicle).
+    pub ship_marker: bool,
 }
 
 impl Default for RadarPlaneParams {
@@ -56,6 +67,9 @@ impl Default for RadarPlaneParams {
             centre_y_frac: 0.5,
             tint_rgb: [1.0, 0.62, 0.22],
             alpha: 1.0,
+            intensity: 3.0,
+            outer_ring_alpha: 0.7,
+            ship_marker: true,
         }
     }
 }
@@ -108,7 +122,7 @@ pub fn project_radar_disc(
             let lum = (0.299 * texel[0] as f32 + 0.587 * texel[1] as f32 + 0.114 * texel[2] as f32)
                 / 255.0;
             let src_a = texel[3] as f32 / 255.0;
-            let a = lum * src_a * params.alpha;
+            let a = (lum * params.intensity).min(1.0) * src_a * params.alpha;
             if a <= 0.003 {
                 continue;
             }
@@ -124,7 +138,81 @@ pub fn project_radar_disc(
             );
         }
     }
+
+    // Bright outer boundary ring: the `Circle_Ripple_Textured` WidgetCircle fills
+    // the disc plane with an `Accent1` stroke — a crisp tinted ellipse at the
+    // disc edge (the reference's bright outer ring). Drawn over the disc.
+    if params.outer_ring_alpha > 0.0 {
+        let c = [params.tint_rgb[0], params.tint_rgb[1], params.tint_rgb[2], params.outer_ring_alpha];
+        draw_ellipse_stroke(&mut out, cx, cy, major, minor, c);
+    }
+    // Own-ship centre marker: the white triangle the radar shows for the player
+    // vehicle (pointing up = the ship's facing at the neutral heading).
+    if params.ship_marker {
+        let s = (major * 0.045).max(3.0);
+        fill_triangle(
+            &mut out,
+            (cx, cy - s * 1.2),
+            (cx - s, cy + s * 0.8),
+            (cx + s, cy + s * 0.8),
+            [1.0, 1.0, 1.0, 1.0],
+        );
+    }
     out
+}
+
+/// Alpha-blend `c` (channels `0.0..=1.0`) onto pixel `(x, y)` (source-over).
+fn blend(img: &mut RgbaImage, x: i32, y: i32, c: [f32; 4]) {
+    if x < 0 || y < 0 || x as u32 >= img.width() || y as u32 >= img.height() || c[3] <= 0.0 {
+        return;
+    }
+    let px = img.get_pixel_mut(x as u32, y as u32);
+    let a = c[3];
+    for i in 0..3 {
+        px.0[i] = ((c[i] * 255.0) * a + px.0[i] as f32 * (1.0 - a)).round() as u8;
+    }
+    px.0[3] = ((c[3] * 255.0) + px.0[3] as f32 * (1.0 - a)).round().min(255.0) as u8;
+}
+
+/// Stroke an axis-aligned ellipse outline (segmented, blended).
+fn draw_ellipse_stroke(img: &mut RgbaImage, cx: f32, cy: f32, rx: f32, ry: f32, c: [f32; 4]) {
+    let segments = (rx.max(ry) * 6.0).clamp(96.0, 4096.0) as u32;
+    let mut prev: Option<(f32, f32)> = None;
+    for i in 0..=segments {
+        let t = std::f32::consts::TAU * (i as f32 / segments as f32);
+        let p = (cx + rx * t.cos(), cy + ry * t.sin());
+        if let Some((px, py)) = prev {
+            let steps = ((p.0 - px).abs().max((p.1 - py).abs())).ceil().max(1.0) as i32;
+            for s in 0..=steps {
+                let f = s as f32 / steps as f32;
+                blend(img, (px + (p.0 - px) * f).round() as i32, (py + (p.1 - py) * f).round() as i32, c);
+            }
+        }
+        prev = Some(p);
+    }
+}
+
+/// Fill a triangle (scanline, blended) — the own-ship marker.
+fn fill_triangle(img: &mut RgbaImage, a: (f32, f32), b: (f32, f32), d: (f32, f32), col: [f32; 4]) {
+    let edge = |p: (f32, f32), q: (f32, f32), r: (f32, f32)| {
+        (r.0 - p.0) * (q.1 - p.1) - (r.1 - p.1) * (q.0 - p.0)
+    };
+    if edge(a, b, d).abs() < 1e-3 {
+        return;
+    }
+    let min_x = a.0.min(b.0).min(d.0).floor() as i32;
+    let max_x = a.0.max(b.0).max(d.0).ceil() as i32;
+    let min_y = a.1.min(b.1).min(d.1).floor() as i32;
+    let max_y = a.1.max(b.1).max(d.1).ceil() as i32;
+    for y in min_y..=max_y {
+        for x in min_x..=max_x {
+            let p = (x as f32 + 0.5, y as f32 + 0.5);
+            let (w0, w1, w2) = (edge(b, d, p), edge(d, a, p), edge(a, b, p));
+            if (w0 >= 0.0 && w1 >= 0.0 && w2 >= 0.0) || (w0 <= 0.0 && w1 <= 0.0 && w2 <= 0.0) {
+                blend(img, x, y, col);
+            }
+        }
+    }
 }
 
 /// Bilinear texture sample at floating `(u, v)` in pixel coords (clamped).
@@ -179,25 +267,56 @@ mod tests {
     #[test]
     fn projects_tinted_squashed_ellipse_from_texture() {
         let tex = white_disc_texture(128);
-        let p = RadarPlaneParams { tilt_deg: 30.0, ..Default::default() };
+        // Isolate the disc projection (no ring/ship overlays) for the tint/squash
+        // assertions.
+        let p = RadarPlaneParams {
+            tilt_deg: 30.0,
+            outer_ring_alpha: 0.0,
+            ship_marker: false,
+            ..Default::default()
+        };
         let img = project_radar_disc(400, 400, &tex, &p);
         let (x0, x1, y0, y1) = bounds(&img);
         let w = (x1 - x0) as f32;
         let h = (y1 - y0) as f32;
         assert!(w > h * 1.4, "tilted disc must be wider than tall (w={w}, h={h})");
-        // Centre pixel carries the orange tint, not white.
-        let centre = img.get_pixel(200, 200).0;
-        assert!(centre[3] > 0, "disc centre must be opaque");
-        assert!(centre[0] > centre[2], "tint must be warmer (R>B)");
+        // Disc pixel carries the orange tint, not white.
+        let p = img.get_pixel(200, 200).0;
+        assert!(p[3] > 0, "disc must be opaque");
+        assert!(p[0] > p[2], "tint must be warmer (R>B)");
     }
 
     #[test]
     fn black_texture_background_is_transparent() {
         // A texture that is all black (zero luminance) yields a fully
-        // transparent projection — the disc reads emissive, not a black fill.
+        // transparent disc — it reads emissive, not a black fill. (Ring/ship
+        // overlays disabled so only the texture mapping is under test.)
         let tex = RgbaImage::from_pixel(64, 64, Rgba([0, 0, 0, 255]));
-        let img = project_radar_disc(200, 200, &tex, &RadarPlaneParams::default());
+        let p = RadarPlaneParams { outer_ring_alpha: 0.0, ship_marker: false, ..Default::default() };
+        let img = project_radar_disc(200, 200, &tex, &p);
         assert!(img.pixels().all(|p| p.0[3] == 0), "black texture must composite transparent");
+    }
+
+    #[test]
+    fn outer_ring_and_ship_marker_draw() {
+        // With overlays on, a black texture still gets the tinted outer ring and
+        // the white own-ship triangle (the data-driven WidgetCircle + own-ship
+        // marker over the disc).
+        let tex = RgbaImage::from_pixel(64, 64, Rgba([0, 0, 0, 255]));
+        let img = project_radar_disc(400, 400, &tex, &RadarPlaneParams::default());
+        let mut ring = 0u32;
+        let mut white = 0u32;
+        for px in img.pixels() {
+            if px.0[3] > 0 {
+                if px.0[0] > 220 && px.0[1] > 220 && px.0[2] > 220 {
+                    white += 1;
+                } else if px.0[0] > 120 && px.0[2] < px.0[0] {
+                    ring += 1;
+                }
+            }
+        }
+        assert!(ring > 50, "expected tinted outer-ring pixels, got {ring}");
+        assert!(white > 5, "expected white own-ship marker pixels, got {white}");
     }
 
     #[test]
