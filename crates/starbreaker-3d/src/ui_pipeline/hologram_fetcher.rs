@@ -188,14 +188,20 @@ impl HologramFetcher for P4kHologramFetcher<'_> {
         // absent at static rest — the hologram-camera boundary).
         let mtl_bytes = super::p4k_fetchers::read_p4k_asset(self.p4k, disc_material_path)?;
         let mtl = crate::mtl::parse_mtl(&mtl_bytes).ok()?;
+        let sub = mtl.materials.first()?;
         let tex_ref = mtl.materials.iter().find_map(|sm| sm.diffuse_tex.clone())?;
         let texture = decode_p4k_dds_rgba(self.p4k, &tex_ref)?;
+        // The disc material's `ViewingAngle` PublicParam (the radial shader's
+        // view angle) orients the texture: the DRAK radar authors 180°, so the
+        // disc reads rotated vs the raw texture. Data-backed + per-manufacturer.
+        let texture_rotation_deg = sub.public_param_f32(&["ViewingAngle"]).unwrap_or(0.0);
 
         // ~37° matches the reference ellipse (minor/major ≈ 0.6). Owner-tuned.
         const RADAR_TILT_DEG: f32 = 37.0;
         let params = RadarPlaneParams {
             tilt_deg: RADAR_TILT_DEG,
             tint_rgb: tint,
+            texture_rotation_deg,
             ..Default::default()
         };
         let disc = project_radar_disc(width, height, &texture, &params);

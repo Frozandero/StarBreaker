@@ -57,6 +57,13 @@ pub struct RadarPlaneParams {
     /// Draw the own-ship centre marker (the white triangle the radar shows for
     /// the player vehicle).
     pub ship_marker: bool,
+    /// Rotation (degrees) applied to the disc TEXTURE content — the disc
+    /// material's `ViewingAngle` PublicParam (the radial shader's view angle:
+    /// the DRAK radar authors `ViewingAngle=180`, so the texture's tick scale /
+    /// "0" marker read rotated 180° vs an un-rotated sample). Data-backed +
+    /// per-manufacturer (the material is brand-resolved). The disc OUTLINE and
+    /// the own-ship marker are unaffected (only the texture lookup rotates).
+    pub texture_rotation_deg: f32,
 }
 
 impl Default for RadarPlaneParams {
@@ -70,6 +77,7 @@ impl Default for RadarPlaneParams {
             intensity: 3.0,
             outer_ring_alpha: 0.7,
             ship_marker: true,
+            texture_rotation_deg: 0.0,
         }
     }
 }
@@ -114,9 +122,17 @@ pub fn project_radar_disc(
             if nx * nx + ny * ny > 1.0 {
                 continue; // outside the disc
             }
+            // Rotate the texture lookup by the material's ViewingAngle (the disc
+            // OUTLINE stays put; only the sampled content rotates).
+            let (rx, ry) = if params.texture_rotation_deg != 0.0 {
+                let a = params.texture_rotation_deg.to_radians();
+                (nx * a.cos() - ny * a.sin(), nx * a.sin() + ny * a.cos())
+            } else {
+                (nx, ny)
+            };
             // Map disc [-1,1] → texture [0,1] → texel.
-            let u = (nx * 0.5 + 0.5) * (tw - 1.0);
-            let v = (ny * 0.5 + 0.5) * (th - 1.0);
+            let u = (rx * 0.5 + 0.5) * (tw - 1.0);
+            let v = (ry * 0.5 + 0.5) * (th - 1.0);
             let texel = sample_bilinear(texture, u, v);
             // Emissive: luminance → alpha; colour = tint.
             let lum = (0.299 * texel[0] as f32 + 0.587 * texel[1] as f32 + 0.114 * texel[2] as f32)
