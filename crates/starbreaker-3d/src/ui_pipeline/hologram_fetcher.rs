@@ -30,6 +30,10 @@ pub(super) struct P4kHologramFetcher<'a> {
     /// Render scene's root entity name (the player's vehicle). `None` for
     /// non-vehicle exports — the fetcher then yields nothing.
     pub(super) root_entity_name: Option<&'a str>,
+    /// The radar plane's heading-up rotation (degrees) — the shared
+    /// `FlightController/Compass/Value` (0 at static rest). Rotates the radar
+    /// chrome (spokes, heading ring, cardinal markers) WITH the ship heading.
+    pub(super) radar_heading_deg: f32,
 }
 
 impl P4kHologramFetcher<'_> {
@@ -264,10 +268,21 @@ impl HologramFetcher for P4kHologramFetcher<'_> {
             .and_then(|bytes| crate::mtl::parse_mtl(&bytes).ok())
             .and_then(|m| m.materials.iter().find_map(|sm| sm.diffuse_tex.clone()))
             .and_then(|tex| decode_p4k_dds_rgba(self.p4k, &tex));
+        // The cardinal "exit" markers (`⌐▽⌐`) are the 9th column of the atlas's
+        // coordinate-label grid (the `coordinates_novalue` atlas has 8 degree
+        // labels + 1 cardinal glyph per row → 9 columns; confirmed by the degree
+        // readout's `1/9` cell width). The 9th column, top row, is the exit glyph;
+        // its row height is the tape's authored `UVSize.y`. Drawn at N/E/S/W,
+        // heading-rotated. Tinted by the brand accent (the `NorthPoint` cardinal
+        // colour family).
+        const DEGREE_GRID_COLUMNS: f32 = 9.0;
         let heading_ring = heading.map(|h| HeadingRingParams {
             uv_start: h.uv_start,
             uv_size: h.uv_size,
             alpha: h.fill_alpha * RADAR_EMISSIVE,
+            cardinal_uv_start: [(DEGREE_GRID_COLUMNS - 1.0) / DEGREE_GRID_COLUMNS, 0.0],
+            cardinal_uv_size: [1.0 / DEGREE_GRID_COLUMNS, h.uv_size[1].abs().max(0.05)],
+            cardinal_colour: tint,
         });
 
         // ~37° matches the reference ellipse (minor/major ≈ 0.6). Owner-tuned.
@@ -285,6 +300,7 @@ impl HologramFetcher for P4kHologramFetcher<'_> {
             sweep_angle_deg: RADAR_SWEEP_ANGLE_DEG,
             sweep_apex,
             sweep_tex_radius,
+            heading_deg: self.radar_heading_deg,
             // The crisp `Circle_Ripple` boundary stroke is NOT in the reference —
             // the disc texture provides the soft rim. Leave it off.
             outer_ring_alpha: 0.0,

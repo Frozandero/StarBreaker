@@ -67,6 +67,23 @@ impl UiShipData {
         Self { derived_values: None }
     }
 
+    /// The radar/compass heading (degrees) the radar plane chrome rotates by — the
+    /// SHARED `FlightController/Compass/Value` (the same source as the cockpit
+    /// compass tape + the radar heading readout; 0 at static rest). Driving the
+    /// radar plane's heading-up rotation from this keeps the spokes, heading ring
+    /// and cardinal markers rotating WITH the ship heading.
+    pub fn radar_heading_deg(&self) -> f32 {
+        self.derived_values
+            .as_ref()
+            .and_then(|m| m.get("FlightController/Compass/Value"))
+            .map(|v| match v {
+                UiValue::Int(i) => *i as f32,
+                UiValue::Float(f) => *f as f32,
+                _ => 0.0,
+            })
+            .unwrap_or(0.0)
+    }
+
     /// Derive per-ship UI values from `root_entity_name`'s records.
     pub fn derive(db: &Database<'_>, root_entity_name: &str) -> Self {
         let idx = EntityIndex::new(db);

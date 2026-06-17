@@ -87,6 +87,13 @@ pub struct HeadingRingParams {
     pub uv_size: [f32; 2],
     /// Overall alpha of the ring (the tape's authored fill × emissive).
     pub alpha: f32,
+    /// The cardinal "exit" marker atlas cell (the `⌐▽⌐` glyph in the atlas's 9th
+    /// degree column) — drawn at N/E/S/W on the ring, rotated with the heading.
+    /// `UVStart`/`UVSize` in atlas `[0,1]` space.
+    pub cardinal_uv_start: [f32; 2],
+    pub cardinal_uv_size: [f32; 2],
+    /// Resolved RGB of the cardinal markers (the `NorthPoint` authored colour).
+    pub cardinal_colour: [f32; 3],
 }
 
 /// One authored radar spoke (`Circle_Line_*`) in the radar plane, projected onto
@@ -167,6 +174,12 @@ pub struct RadarPlaneParams {
     /// Texture-space distance from the apex that maps to the disc rim (the wedge's
     /// radial extent). COMPUTED from the sweep texture by [`sweep_wedge_geometry`].
     pub sweep_tex_radius: f32,
+    /// Heading-up rotation (degrees) applied to the whole radar PLANE content (the
+    /// disc texture/degree-scale, the spokes, the heading ring + cardinal markers)
+    /// — the shared `FlightController/Compass/Value`. As the ship heading changes,
+    /// all the plane chrome rotates together (the own-ship triangle stays fixed).
+    /// 0 at static rest. NOT applied per-element — one rotation for the plane.
+    pub heading_deg: f32,
     /// The authored radar spokes (`Circle_Line_*`), each projected in the tilted
     /// disc plane as a soft glowing bar. Empty = none. Geometry + colour are all
     /// data (see [`RadarSpoke`]).
@@ -205,6 +218,7 @@ impl Default for RadarPlaneParams {
             sweep_angle_deg: 0.0,
             sweep_apex: [0.5, 0.5],
             sweep_tex_radius: 0.5,
+            heading_deg: 0.0,
             spokes: Vec::new(),
             spoke_outer_alpha: 1.0,
             spoke_inner_alpha: 0.5,
@@ -256,10 +270,13 @@ pub fn project_radar_disc(
             if nx * nx + ny * ny > 1.0 {
                 continue; // outside the disc
             }
-            // Rotate the texture lookup by the material's ViewingAngle (the disc
-            // OUTLINE stays put; only the sampled content rotates).
-            let (rx, ry) = if params.texture_rotation_deg != 0.0 {
-                let a = params.texture_rotation_deg.to_radians();
+            // Rotate the texture lookup by the material's ViewingAngle MINUS the
+            // ship heading: the disc OUTLINE stays put, but the degree-scale / ticks
+            // rotate WITH the heading (heading-up — subtracting in the lookup frame
+            // displays a +heading rotation, matching the spokes / ring / cardinals).
+            let disc_rot = params.texture_rotation_deg - params.heading_deg;
+            let (rx, ry) = if disc_rot != 0.0 {
+                let a = disc_rot.to_radians();
                 (nx * a.cos() - ny * a.sin(), nx * a.sin() + ny * a.cos())
             } else {
                 (nx, ny)
@@ -323,7 +340,12 @@ pub fn project_radar_disc(
                     }
                     let texel = sample_bilinear(sweep, u, v);
                     let lum = (0.299 * texel[0] as f32 + 0.587 * texel[1] as f32 + 0.114 * texel[2] as f32) / 255.0;
-                    let alpha = lum * (texel[3] as f32 / 255.0) * params.sweep_alpha;
+                    // Emissive lift (the SAME `intensity` the disc uses): the wedge
+                    // texture fades from a bright core to a faint trailing arc, so a
+                    // flat multiplier shows only the core (a tiny blob near centre).
+                    // Lifting by the emissive (clamped) makes the full beam visible
+                    // spanning from the rim inward — the faint outer arc included.
+                    let alpha = (lum * params.intensity).min(1.0) * (texel[3] as f32 / 255.0) * params.sweep_alpha;
                     if alpha > 0.003 {
                         blend(&mut out, x as i32, y as i32, [params.tint_rgb[0], params.tint_rgb[1], params.tint_rgb[2], alpha]);
                     }
@@ -340,10 +362,16 @@ pub fn project_radar_disc(
     // the rim end to `spoke_inner_alpha` at the disc-centre end, with a `Glow`
     // bloom half-width). Colour + alpha are per-spoke (Accent1/Base).
     if !params.spokes.is_empty() {
-        // Map a plane point `[0,1]²` → screen px through the disc tilt: the plane
-        // square inscribes the disc (`[-1,1]` ↦ `±major`/`±minor` about centre).
+        // Map a plane point `[0,1]²` → screen px: rotate about the plane centre by
+        // the ship heading (heading-up — the spokes turn WITH the heading), then
+        // project through the disc tilt (the plane square inscribes the disc,
+        // `[-1,1]` ↦ `±major`/`±minor`). At rest (heading 0) this is the identity.
+        let head = params.heading_deg.to_radians();
+        let (hc, hs) = (head.cos(), head.sin());
         let to_screen = |p: [f32; 2]| -> (f32, f32) {
-            ((cx + (2.0 * p[0] - 1.0) * major), (cy + (2.0 * p[1] - 1.0) * minor))
+            let (dx, dy) = (p[0] - 0.5, p[1] - 0.5);
+            let (rx, ry) = (dx * hc - dy * hs, dx * hs + dy * hc);
+            (cx + 2.0 * rx * major, cy + 2.0 * ry * minor)
         };
         // Glow bloom in px: the geometric half-width (data) plus the material
         // `Glow` spread (data × owner-tuned bloom scale). Floor so a hairline bar
@@ -404,7 +432,9 @@ pub fn project_radar_disc(
         let (aw, ah) = (atlas.width() as f32, atlas.height() as f32);
         let steps = ((major * 8.0) as u32).clamp(360, 4096);
         let band_steps = 6u32;
-        let rot = params.texture_rotation_deg.to_radians();
+        // The tape rotates with the ship heading (heading-up) on top of the
+        // material ViewingAngle base — so the ring + its markers turn together.
+        let rot = (params.texture_rotation_deg + params.heading_deg).to_radians();
         for i in 0..steps {
             let frac = i as f32 / steps as f32; // 0..1 around the ring
             let ang = frac * std::f32::consts::TAU + rot;
@@ -430,6 +460,44 @@ pub fn project_radar_disc(
                     py.round() as i32,
                     [params.tint_rgb[0], params.tint_rgb[1], params.tint_rgb[2], a.min(1.0)],
                 );
+            }
+        }
+
+        // Cardinal "exit" markers (`⌐▽⌐`, the atlas's 9th-degree-column glyph) at
+        // N/E/S/W, rotated WITH the heading (heading-up) so they turn with the ship
+        // like the rest of the ring. The atlas cell + colour are data
+        // (`cardinal_uv_*` / the `NorthPoint` authored colour).
+        let head = params.heading_deg.to_radians();
+        let box_w = (major * 0.06).max(5.0);
+        let box_h = if ring.cardinal_uv_size[0].abs() > 1e-4 {
+            box_w * (ring.cardinal_uv_size[1] / ring.cardinal_uv_size[0]).abs()
+        } else {
+            box_w
+        };
+        for k in 0..4u32 {
+            let ang = std::f32::consts::FRAC_PI_2 * k as f32 + head; // N/E/S/W + heading
+            let (sa, ca) = (ang.sin(), ang.cos());
+            let mcx = cx + HEADING_RING_RADIUS * sa * major;
+            let mcy = cy - HEADING_RING_RADIUS * ca * minor;
+            let (hw, hh) = (box_w as i32, box_h.max(2.0) as i32);
+            for dy in -hh..=hh {
+                for dx in -hw..=hw {
+                    let fu = dx as f32 / (2.0 * box_w) + 0.5; // 0..1 across the cell
+                    let fv = dy as f32 / (2.0 * box_h) + 0.5;
+                    let su = (ring.cardinal_uv_start[0] + fu * ring.cardinal_uv_size[0]).clamp(0.0, 1.0) * (aw - 1.0);
+                    let sv = (ring.cardinal_uv_start[1] + fv * ring.cardinal_uv_size[1]).clamp(0.0, 1.0) * (ah - 1.0);
+                    let texel = sample_bilinear(atlas, su, sv);
+                    let lum = (0.299 * texel[0] as f32 + 0.587 * texel[1] as f32 + 0.114 * texel[2] as f32) / 255.0;
+                    let a = lum * (texel[3] as f32 / 255.0) * ring.alpha;
+                    if a > 0.003 {
+                        blend(
+                            &mut out,
+                            (mcx + dx as f32).round() as i32,
+                            (mcy + dy as f32).round() as i32,
+                            [ring.cardinal_colour[0], ring.cardinal_colour[1], ring.cardinal_colour[2], a.min(1.0)],
+                        );
+                    }
+                }
             }
         }
     }

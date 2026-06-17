@@ -92,7 +92,12 @@ pub fn render_ui_binding_png(
 ) -> Result<Vec<u8>, String> {
     let t_ui = std::env::var("SB_UI_TIMING").ok().map(|_| std::time::Instant::now());
     let canvas_fetcher = DatacoreCanvasFetcher::new(db);
-    let hologram_fetcher = P4kHologramFetcher { p4k, db, root_entity_name };
+    let hologram_fetcher = P4kHologramFetcher {
+        p4k,
+        db,
+        root_entity_name,
+        radar_heading_deg: ship_data.radar_heading_deg(),
+    };
     let view = UiBindingView {
         canvas_guid: binding.canvas_guid.as_deref(),
         content_canvas_guid: binding.content_canvas_guid.as_deref(),
