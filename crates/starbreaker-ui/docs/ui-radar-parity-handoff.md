@@ -73,8 +73,30 @@ a `LockedIcon` + "º" heading suffix + empty magnification (catalog #3, below).
 1. **[CRITICAL] Mode gating — interior-map chrome over-paints.** ✅ **FIXED**
    (registry pins, above). Interior/Star/Galaxy modes deactivated; dark vignette
    shows; node count 637→148.
-2. **[CRITICAL/dominant] Radar scope grid absent** (rings/spokes/ship triangle).
-   ⛔ **PROVEN 3D-RTT BLOCKER (researched further per owner) → major-item gate.**
+2. **[CRITICAL/dominant] Radar scope grid** (rings/spokes/ship triangle).
+   ✅ **LANDED — data-faithful RTT renderer (owner directed "build it").** The disc
+   is NOT invented: it's the REAL engine texture
+   `UI/Textures/R_RadarMapScreen/3D_Object_Textures/r_radarmapscreen_radial_gradients.dds`
+   (concentric rings + perimeter degree-tick scale + axis), bound by the
+   `Circle_Radial_Grid` Primitive node's `ui_r_radarmapscreen_radial_grid.mtl`
+   (TexSlot1). Pipeline (mirrors the SELF-STATUS hologram):
+   `gfx::radar_plane::project_radar_disc` decodes + tilt-projects that texture
+   (flat disc → ellipse) tinted by the brand `Accent1`, + the `Circle_Ripple_Textured`
+   WidgetCircle outer ring (Accent stroke) + the white own-ship triangle;
+   `HologramFetcher::fetch_radar_plane` (P4kHologramFetcher) loads the brand disc
+   `.mtl`→texture (split-mip DDS) and projects; `ir_compose` composites it into the
+   radar `WidgetWindow` (material `map_window`), gated so no frozen screen is
+   touched. **PER-MANUFACTURER**: the IR `primitive_material` prefers the
+   cascade-applied `PrimitiveMaterialPath` brand override (Greycat `ui_grin_…`,
+   RSI `…_RSI`) over the authored generic (DRAK keeps generic) — so the disc
+   texture is manufacturer-correct. **DATA vs owner-tuned**: disc art + ring +
+   ship + tint all DATA; ONLY the camera tilt (37°, the engine runtime camera is
+   absent at rest) + emissive brightness are owner-tuned (the hologram-camera
+   boundary). Commits `9e38f1501`/`d76270597`/`e530c0820`. RESIDUAL: the 6 radial
+   spokes read fainter than the reference (in the gradients texture the material
+   binds; ref likely brighter via emissive bloom / radialUV); live contacts +
+   heading/range "130° 0.7km" unreproducible at rest (live state, like compass).
+   **History — ⛔ was a PROVEN 3D-RTT BLOCKER (researched per owner):**
    After the gating fix the radar plane IS active but COLLAPSED to ~0.5×0.8px at
    centre (512,392): `PlayerRadarPlane > PlaneRoot > RadarCircleBase >
    HostplaneVisuals_Small > RadarPlaneRingsBase` / `RadarSpokeLinesBase` /
