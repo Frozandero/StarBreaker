@@ -208,9 +208,39 @@ a `LockedIcon` + "º" heading suffix + empty magnification (catalog #3, below).
   exists; it's the Electrolize SWF font's intrinsic advance (a global SWF
   text-metrics model question, same class as the prior power/target deferrals).
 
+## Session 3 (2026-06-17) — spokes overturned, #13, chrome
+
+- ✅ **Spokes data-backed** (`f980a7189`) — see [[radar-hostplane-composite-spokes]]
+  / the OVERTURNED note above. Real `Circle_Line` nodes composited from the
+  full-screen host-plane via the generic unset-`X`/`NOT X` rule.
+- ✅ **#13 spokes + sweep reach centre** (`9cd34e58e`) — `spoke_inner_reach=0.35`
+  (pull inner ends to ~centre), `spoke_outer_reach=0.82` (pull outer ends to the
+  bright ring → diagonals stop jutting past the ellipse), `SWEEP_RADIAL_GAMMA`
+  0.45→0.30. Owner-tuned radial-extent (runtime plane scale absent at rest).
+- ✅ **Outer heading-tape chrome (#10) LANDED** — the `HeadingTape` ring is REAL
+  data, like the spokes (NOT the "procedural" the note below feared). It's the
+  `coordinates_novalue` tick-marker atlas (`ui_r_radarmapscreen_headingtape_simple.mtl`,
+  TexSlot1) wrapped around the perimeter. Lives in `canvas_RadarNavElements`
+  (`volumetricnavelements.json`), gated `Instantiated = IsRadar` — but the BARE
+  `IsRadar` (not the qualified `/~/MapNamespace~/StarMapData/CommonData/IsRadar`
+  the readout uses; confirmed via `BB_STATE_PROBE`). Registry pin `"IsRadar": true`
+  activates it (radar-only binding → safe; `ui_check` GREEN). It's RTT content
+  (collapses at rest) so it's PROJECTED like the disc: `ir_compose` detects the
+  `headingtape` Primitive with a TILED atlas window (`UVSize.x>1`, the structural
+  discriminator vs the single-cell `NorthPoint`/readouts) and passes its material +
+  authored `UVStart (-0.24,0.44)`/`UVSize (18,0.06)` (new `#[serde(skip)]`
+  `primitive_uv_start/size` IR fields) → `fetch_radar_plane` loads the atlas →
+  `radar_plane::project_radar_disc` wraps the tick row around the perimeter ellipse
+  (`HEADING_RING_RADIUS 0.94`, owner-tuned curl radius — the runtime
+  `radialTransform.transformMultiplier=0` at rest; `RADAR_HEADING_ALPHA 2.0`). The
+  atlas window + content + UV are DATA + per-manufacturer (brand-resolved
+  material). DEFERRED still: contact chevrons (live), `HeadingRotation` (live, 0 at
+  rest). `map_window.mtl` is `UIPlane`/`$RenderToTexture`.
+
 ## Remaining
 
-- **Outer heading-label chrome (#10)** — the `Headings`/`HeadingTape` ring
+- **Outer heading-label chrome (#10)** — ✅ LANDED (see Session 3). Original note:
+  the `Headings`/`HeadingTape` ring
   (`rc_radarmapscreen_volumetricnavelements.json`: 36 degree labels from the
   `r_radarmapscreen_coordinates_novalue` atlas, curled into a ring via
   `radialTransform` curvatureAxis Y, 10° spacing, `HeadingRotation`=0 at rest;

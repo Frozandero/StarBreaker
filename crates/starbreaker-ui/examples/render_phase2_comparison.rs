@@ -131,6 +131,8 @@ fn synthetic_hybrid_document() -> UiIrDocument {
             text_style: None::<UiIrTextStyle>,
             asset_ref: None,
             primitive_material: None,
+            primitive_uv_start: None,
+            primitive_uv_size: None,
             asset_layout: None,
             custom_shape: None,
             style_tag_uuids: Vec::new(),

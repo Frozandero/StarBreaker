@@ -68,6 +68,8 @@ pub(super) fn base_node(id: u32, layer: i32) -> UiIrNode {
         }),
         asset_ref: None,
         primitive_material: None,
+        primitive_uv_start: None,
+        primitive_uv_size: None,
         asset_layout: None,
         custom_shape: None,
         style_tag_uuids: vec![],

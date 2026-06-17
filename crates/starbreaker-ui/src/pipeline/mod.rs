@@ -154,6 +154,11 @@ pub trait HologramFetcher {
     /// `line_a` material, from which the implementor reads the soft-glow
     /// appearance (`Gradient`/`InnerAlpha`/`OuterAlpha`/`Glow`). Both are data —
     /// nothing about the spokes is invented.
+    ///
+    /// `heading` describes the outer heading-tape ring (the `HeadingTape` Primitive:
+    /// the `coordinates_novalue` tick-marker atlas tiled around the perimeter): its
+    /// brand-resolved material + the node's authored `UVStart`/`UVSize` atlas
+    /// window. `None` when no heading tape is loaded.
     fn fetch_radar_plane(
         &self,
         width: u32,
@@ -163,6 +168,7 @@ pub trait HologramFetcher {
         sweep_material_path: Option<&str>,
         spoke_material_path: Option<&str>,
         spokes: &[RadarSpokeInput],
+        heading: Option<RadarHeadingTape<'_>>,
     ) -> Option<HologramImage> {
         let _ = (
             width,
@@ -172,9 +178,23 @@ pub trait HologramFetcher {
             sweep_material_path,
             spoke_material_path,
             spokes,
+            heading,
         );
         None
     }
+}
+
+/// The outer heading-tape ring inputs: the brand-resolved tape material and the
+/// `HeadingTape` node's authored atlas window (`UVStart` + `UVSize`). All data —
+/// the implementor wraps the material's atlas tick-row around the perimeter.
+#[derive(Debug, Clone, Copy)]
+pub struct RadarHeadingTape<'a> {
+    pub material_path: &'a str,
+    /// `primitiveSettings.UVStart` (atlas-space origin of the tape's window).
+    pub uv_start: [f32; 2],
+    /// `primitiveSettings.UVSize` (atlas-space extent; `x>1` = tiled around the
+    /// ring, `y` = the tick-row band height).
+    pub uv_size: [f32; 2],
 }
 
 /// Borrowed snapshot of UiBinding fields needed by the pipeline.

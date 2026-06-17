@@ -15,10 +15,11 @@ use starbreaker_datacore::loadout::EntityIndex;
 use starbreaker_datacore::Database;
 use starbreaker_dds::{DdsFile, ReadSibling};
 use starbreaker_gfx::{
-    project_radar_disc, render_vehicle_hologram, HologramParams, RadarPlaneParams, RadarSpoke,
+    project_radar_disc, render_vehicle_hologram, HeadingRingParams, HologramParams,
+    RadarPlaneParams, RadarSpoke,
 };
 use starbreaker_p4k::MappedP4k;
-use starbreaker_ui::pipeline::{HologramFetcher, HologramImage, RadarSpokeInput};
+use starbreaker_ui::pipeline::{HologramFetcher, HologramImage, RadarHeadingTape, RadarSpokeInput};
 
 use crate::pipeline::datacore_path_to_p4k;
 
@@ -178,6 +179,7 @@ impl HologramFetcher for P4kHologramFetcher<'_> {
         sweep_material_path: Option<&str>,
         spoke_material_path: Option<&str>,
         spokes: &[RadarSpokeInput],
+        heading: Option<RadarHeadingTape<'_>>,
     ) -> Option<HologramImage> {
         if width == 0 || height == 0 {
             return None;
@@ -240,6 +242,23 @@ impl HologramFetcher for P4kHologramFetcher<'_> {
             })
             .collect();
 
+        // The outer heading-tape ring (`HeadingTape`): load the brand-resolved
+        // tape material's atlas (`coordinates_novalue` tick row) and carry the
+        // node's authored UV window. The atlas + UV are DATA; only the ring's alpha
+        // is the tape's authored fill scaled by the emissive boost.
+        const RADAR_HEADING_ALPHA: f32 = 2.0;
+        let heading_texture = heading
+            .map(|h| h.material_path)
+            .and_then(|path| super::p4k_fetchers::read_p4k_asset(self.p4k, path))
+            .and_then(|bytes| crate::mtl::parse_mtl(&bytes).ok())
+            .and_then(|m| m.materials.iter().find_map(|sm| sm.diffuse_tex.clone()))
+            .and_then(|tex| decode_p4k_dds_rgba(self.p4k, &tex));
+        let heading_ring = heading.map(|h| HeadingRingParams {
+            uv_start: h.uv_start,
+            uv_size: h.uv_size,
+            alpha: RADAR_HEADING_ALPHA,
+        });
+
         // ~37° matches the reference ellipse (minor/major ≈ 0.6). Owner-tuned.
         const RADAR_TILT_DEG: f32 = 37.0;
         // Rest-frame sweep position (the beam rotates live; this is the captured
@@ -269,9 +288,17 @@ impl HologramFetcher for P4kHologramFetcher<'_> {
             spoke_outer_alpha,
             spoke_inner_alpha,
             spoke_glow,
+            heading_ring,
             ..Default::default()
         };
-        let disc = project_radar_disc(width, height, &texture, sweep_texture.as_ref(), &params);
+        let disc = project_radar_disc(
+            width,
+            height,
+            &texture,
+            sweep_texture.as_ref(),
+            heading_texture.as_ref(),
+            &params,
+        );
         Some(HologramImage {
             width,
             height,

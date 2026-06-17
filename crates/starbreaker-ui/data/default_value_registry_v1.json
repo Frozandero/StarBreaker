@@ -135,6 +135,7 @@
     "/~/MapNamespace~/GeneralMapData/IsRTT": true,
     "/~/MapNamespace~/GeneralMapData/IsStarMapActive": true,
     "/~/MapNamespace~/StarMapData/CommonData/IsRadar": true,
+    "IsRadar": true,
     "/~/MapNamespace~GeneralMapData/IsInteriorMapActive": false,
     "/~/MapNamespace~/GeneralMapData/IsGalacticMapActive": false,
     "/~/MapNamespace~/GeneralMapData/IsVolumetric": false,

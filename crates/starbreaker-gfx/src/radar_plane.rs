@@ -41,6 +41,29 @@ const SWEEP_RADIAL_GAMMA: f32 = 0.30;
 /// ([`RadarPlaneParams::spoke_glow`], from the material).
 const SPOKE_GLOW_BLOOM_FRAC: f32 = 0.02;
 
+/// Owner-tuned placement of the heading-tape ring on the tilted disc: the runtime
+/// `radialTransform` curl that wraps the tape into a ring is absent at static rest
+/// (`transformMultiplier=0`), so the ring radius/band are view constants matched to
+/// the reference (same boundary as [`RadarPlaneParams::tilt_deg`]). The atlas
+/// window + content are DATA ([`HeadingRingParams`]).
+const HEADING_RING_RADIUS: f32 = 0.94;
+/// Radial thickness of the heading-tape band, as a fraction of the disc radius.
+const HEADING_RING_BAND: f32 = 0.08;
+
+/// The outer heading-tape ring: the `coordinates_novalue` tick-marker atlas window
+/// (DATA — the `HeadingTape` node's `UVStart`/`UVSize`) wrapped around the disc
+/// perimeter. `UVSize.x` (>1) tiles the row around the full ring.
+#[derive(Debug, Clone, Copy)]
+pub struct HeadingRingParams {
+    /// `primitiveSettings.UVStart` (atlas-space window origin).
+    pub uv_start: [f32; 2],
+    /// `primitiveSettings.UVSize` (atlas-space window extent; `x` = tiles around
+    /// the ring, `y` = the tick-row band height).
+    pub uv_size: [f32; 2],
+    /// Overall alpha of the ring (the tape's authored fill × emissive).
+    pub alpha: f32,
+}
+
 /// One authored radar spoke (`Circle_Line_*`) in the radar plane, projected onto
 /// the tilted disc. Every field is AUTHORED DATA read from the spoke's IR node —
 /// geometry from `anchor`/`sizing`/`orientation`, colour from its resolved
@@ -135,6 +158,10 @@ pub struct RadarPlaneParams {
     /// extends them inward — owner-tuned to the reference (same runtime-camera
     /// boundary as [`Self::tilt_deg`] / the sweep gamma).
     pub spoke_inner_reach: f32,
+    /// The outer heading-tape ring (atlas window), if loaded. The atlas texture is
+    /// passed separately to [`project_radar_disc`]; this carries its UV window +
+    /// alpha. `None` = no ring.
+    pub heading_ring: Option<HeadingRingParams>,
     /// Where each spoke's OUTER end lands, as a scale on its authored outer radius
     /// (`1.0` = the disc/plane edge). The authored outer ends sit at the plane
     /// edge (radius ~1.0), OUTSIDE the bright ring (~0.8) that reads as the scope
@@ -164,6 +191,7 @@ impl Default for RadarPlaneParams {
             spoke_glow: 0.0,
             spoke_inner_reach: 1.0,
             spoke_outer_reach: 1.0,
+            heading_ring: None,
         }
     }
 }
@@ -179,6 +207,7 @@ pub fn project_radar_disc(
     height: u32,
     texture: &RgbaImage,
     sweep: Option<&RgbaImage>,
+    heading: Option<&RgbaImage>,
     params: &RadarPlaneParams,
 ) -> RgbaImage {
     let mut out = RgbaImage::new(width, height);
@@ -346,6 +375,49 @@ pub fn project_radar_disc(
                 params.spoke_outer_alpha,
                 params.spoke_inner_alpha,
             );
+        }
+    }
+
+    // Outer heading-tape ring (`HeadingTape`): the `coordinates_novalue` tick-row
+    // (the atlas window `uv_start`/`uv_size` — DATA) wrapped around the disc
+    // perimeter. `uv_size.x` (>1) tiles the row around the full ring; `uv_size.y`
+    // is the band height. Tilt-projected like the disc; the curl radius/band are
+    // owner-tuned view constants (the runtime `radialTransform` is absent at rest).
+    if let (Some(ring), Some(atlas)) = (params.heading_ring, heading)
+        && ring.alpha > 0.0
+        && atlas.width() > 0
+        && atlas.height() > 0
+    {
+        let (aw, ah) = (atlas.width() as f32, atlas.height() as f32);
+        let steps = ((major * 8.0) as u32).clamp(360, 4096);
+        let band_steps = 6u32;
+        let rot = params.texture_rotation_deg.to_radians();
+        for i in 0..steps {
+            let frac = i as f32 / steps as f32; // 0..1 around the ring
+            let ang = frac * std::f32::consts::TAU + rot;
+            let (sa, ca) = (ang.sin(), ang.cos());
+            let u = ring.uv_start[0] + frac * ring.uv_size[0];
+            let uu = u.rem_euclid(1.0) * (aw - 1.0);
+            for b in 0..band_steps {
+                let bt = b as f32 / (band_steps - 1) as f32; // 0..1 across the band
+                let v = (ring.uv_start[1] + bt * ring.uv_size[1]).clamp(0.0, 1.0);
+                let r = HEADING_RING_RADIUS + (bt - 0.5) * HEADING_RING_BAND;
+                let texel = sample_bilinear(atlas, uu, v * (ah - 1.0));
+                let lum = (0.299 * texel[0] as f32 + 0.587 * texel[1] as f32 + 0.114 * texel[2] as f32) / 255.0;
+                let a = lum * (texel[3] as f32 / 255.0) * ring.alpha;
+                if a <= 0.003 {
+                    continue;
+                }
+                // disc-plane: angle 0 = North (up), clockwise.
+                let px = cx + r * sa * major;
+                let py = cy - r * ca * minor;
+                blend(
+                    &mut out,
+                    px.round() as i32,
+                    py.round() as i32,
+                    [params.tint_rgb[0], params.tint_rgb[1], params.tint_rgb[2], a.min(1.0)],
+                );
+            }
         }
     }
 
@@ -533,7 +605,7 @@ mod tests {
             ship_marker: false,
             ..Default::default()
         };
-        let img = project_radar_disc(400, 400, &tex, None, &p);
+        let img = project_radar_disc(400, 400, &tex, None, None, &p);
         let (x0, x1, y0, y1) = bounds(&img);
         let w = (x1 - x0) as f32;
         let h = (y1 - y0) as f32;
@@ -551,7 +623,7 @@ mod tests {
         // overlays disabled so only the texture mapping is under test.)
         let tex = RgbaImage::from_pixel(64, 64, Rgba([0, 0, 0, 255]));
         let p = RadarPlaneParams { outer_ring_alpha: 0.0, ship_marker: false, ..Default::default() };
-        let img = project_radar_disc(200, 200, &tex, None, &p);
+        let img = project_radar_disc(200, 200, &tex, None, None, &p);
         assert!(img.pixels().all(|p| p.0[3] == 0), "black texture must composite transparent");
     }
 
@@ -561,7 +633,7 @@ mod tests {
         // the white own-ship triangle (the data-driven WidgetCircle + own-ship
         // marker over the disc).
         let tex = RgbaImage::from_pixel(64, 64, Rgba([0, 0, 0, 255]));
-        let img = project_radar_disc(400, 400, &tex, None, &RadarPlaneParams::default());
+        let img = project_radar_disc(400, 400, &tex, None, None, &RadarPlaneParams::default());
         let mut ring = 0u32;
         let mut white = 0u32;
         for px in img.pixels() {
@@ -594,11 +666,11 @@ mod tests {
             sweep_alpha: 0.6,
             ..Default::default()
         };
-        let img = project_radar_disc(200, 200, &disc, Some(&sweep), &p);
+        let img = project_radar_disc(200, 200, &disc, Some(&sweep), None, &p);
         let lit = img.pixels().filter(|px| px.0[3] > 0).count();
         assert!(lit > 100, "sweep wedge must composite over the (black) disc, got {lit}");
         // No sweep texture → nothing (the black disc stays transparent).
-        let none = project_radar_disc(200, 200, &disc, None, &p);
+        let none = project_radar_disc(200, 200, &disc, None, None, &p);
         assert!(none.pixels().all(|px| px.0[3] == 0), "no sweep + black disc → transparent");
     }
 
@@ -636,7 +708,7 @@ mod tests {
             spokes: spokes.clone(),
             ..Default::default()
         };
-        let img = project_radar_disc(400, 400, &disc, None, &p);
+        let img = project_radar_disc(400, 400, &disc, None, None, &p);
         // Both colours present: warm (R>B) from the Accent spoke, neutral
         // (R≈G≈B) from the Base spoke.
         let warm = img.pixels().filter(|px| px.0[3] > 0 && px.0[0] > px.0[2] + 10).count();
@@ -661,6 +733,7 @@ mod tests {
             400,
             &disc,
             None,
+            None,
             &RadarPlaneParams { outer_ring_alpha: 0.0, ship_marker: false, ..Default::default() },
         );
         assert!(none.pixels().all(|px| px.0[3] == 0), "no spokes + black disc → transparent");
@@ -669,7 +742,7 @@ mod tests {
     #[test]
     fn empty_dims_do_not_panic() {
         let tex = white_disc_texture(16);
-        let _ = project_radar_disc(0, 0, &tex, None, &RadarPlaneParams::default());
-        let _ = project_radar_disc(100, 100, &RgbaImage::new(0, 0), None, &RadarPlaneParams::default());
+        let _ = project_radar_disc(0, 0, &tex, None, None, &RadarPlaneParams::default());
+        let _ = project_radar_disc(100, 100, &RgbaImage::new(0, 0), None, None, &RadarPlaneParams::default());
     }
 }
