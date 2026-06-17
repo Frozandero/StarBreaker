@@ -131,7 +131,7 @@ fn manifest_snapshot_runner_preflight() {
 #[test]
 fn manifest_contains_expected_visual_targets() {
     let manifest = snapshot_manifest();
-    assert_eq!(manifest.targets.len(), 12, "expected twelve manifest targets");
+    assert_eq!(manifest.targets.len(), 13, "expected thirteen manifest targets");
     assert!(
         manifest
             .targets
@@ -194,6 +194,13 @@ fn manifest_contains_expected_visual_targets() {
             .iter()
             .any(|target| target.id == "clipper_velocity_num_master"),
         "velocity-num readout should be in the gold manifest set"
+    );
+    assert!(
+        manifest
+            .targets
+            .iter()
+            .any(|target| target.id == "clipper_master_mode_display_master"),
+        "master-mode display should be in the gold manifest set"
     );
 }
 
