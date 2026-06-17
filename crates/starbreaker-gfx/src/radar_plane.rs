@@ -26,6 +26,11 @@
 
 use image::{Rgba, RgbaImage};
 
+/// Radial gamma (< 1) that stretches the sweep wedge's outer-edge bright band
+/// inward toward the disc centre (the in-game beam reaches the centre; the raw
+/// texture hugs the edge). Owner-tuned (the sweep is a live animation).
+const SWEEP_RADIAL_GAMMA: f32 = 0.45;
+
 /// Projection + style parameters for [`project_radar_disc`].
 #[derive(Debug, Clone)]
 pub struct RadarPlaneParams {
@@ -184,7 +189,16 @@ pub fn project_radar_disc(
                         continue;
                     }
                     let (rx, ry) = (nx * ca - ny * sa, nx * sa + ny * ca);
-                    let texel = sample_bilinear(sweep, (rx * 0.5 + 0.5) * (sw - 1.0), (ry * 0.5 + 0.5) * (sh - 1.0));
+                    // Stretch the wedge radially INWARD: the texture's bright arc
+                    // hugs the outer edge, but the in-game sweep beam reaches from
+                    // the centre out, so map the outer texture band across more of
+                    // the disc radius (radial gamma < 1).
+                    let d = (rx * rx + ry * ry).sqrt();
+                    let scale = if d > 1e-4 { d.powf(SWEEP_RADIAL_GAMMA) / d } else { 1.0 };
+                    let (sx, sy) = (rx * scale, ry * scale);
+                    // Flip horizontally so the sweep reads CLOCKWISE (the
+                    // idle-animation texture is authored anti-clockwise).
+                    let texel = sample_bilinear(sweep, (-sx * 0.5 + 0.5) * (sw - 1.0), (sy * 0.5 + 0.5) * (sh - 1.0));
                     let lum = (0.299 * texel[0] as f32 + 0.587 * texel[1] as f32 + 0.114 * texel[2] as f32) / 255.0;
                     let alpha = lum * (texel[3] as f32 / 255.0) * params.sweep_alpha;
                     if alpha > 0.003 {
