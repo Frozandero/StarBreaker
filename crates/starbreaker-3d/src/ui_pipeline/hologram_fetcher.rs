@@ -173,6 +173,7 @@ impl HologramFetcher for P4kHologramFetcher<'_> {
         height: u32,
         tint: [f32; 3],
         disc_material_path: &str,
+        sweep_material_path: Option<&str>,
     ) -> Option<HologramImage> {
         if width == 0 || height == 0 {
             return None;
@@ -196,15 +197,30 @@ impl HologramFetcher for P4kHologramFetcher<'_> {
         // disc reads rotated vs the raw texture. Data-backed + per-manufacturer.
         let texture_rotation_deg = sub.public_param_f32(&["ViewingAngle"]).unwrap_or(0.0);
 
+        // The rotating sweep wedge (`r_radarmapscreen_idle_animation`), loaded from
+        // its brand-resolved material. The sweep is a live animation; at static
+        // rest it's drawn once at an owner-tuned rest-frame angle.
+        let sweep_texture = sweep_material_path
+            .and_then(|path| super::p4k_fetchers::read_p4k_asset(self.p4k, path))
+            .and_then(|bytes| crate::mtl::parse_mtl(&bytes).ok())
+            .and_then(|m| m.materials.iter().find_map(|sm| sm.diffuse_tex.clone()))
+            .and_then(|tex| decode_p4k_dds_rgba(self.p4k, &tex));
+
         // ~37° matches the reference ellipse (minor/major ≈ 0.6). Owner-tuned.
         const RADAR_TILT_DEG: f32 = 37.0;
+        // Rest-frame sweep position (the beam rotates live; this is the captured
+        // frame — owner-tuned, like the tilt).
+        const RADAR_SWEEP_ANGLE_DEG: f32 = 45.0;
+        const RADAR_SWEEP_ALPHA: f32 = 0.5;
         let params = RadarPlaneParams {
             tilt_deg: RADAR_TILT_DEG,
             tint_rgb: tint,
             texture_rotation_deg,
+            sweep_alpha: if sweep_texture.is_some() { RADAR_SWEEP_ALPHA } else { 0.0 },
+            sweep_angle_deg: RADAR_SWEEP_ANGLE_DEG,
             ..Default::default()
         };
-        let disc = project_radar_disc(width, height, &texture, &params);
+        let disc = project_radar_disc(width, height, &texture, sweep_texture.as_ref(), &params);
         Some(HologramImage {
             width,
             height,

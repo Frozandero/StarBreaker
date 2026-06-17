@@ -262,9 +262,16 @@ fn draw_non_text_node(
             .or_else(|| resolve_colour_token(ctx, "Base"))
             .map(|c| [c[0], c[1], c[2]])
             .unwrap_or([1.0, 1.0, 1.0]);
+        // The rotating sweep wedge's material (the `Circle_Radial_Idle_Wave` node)
+        // — brand-resolved like the disc.
+        let sweep_material = document.nodes.iter().find_map(|n| {
+            n.primitive_material
+                .as_deref()
+                .filter(|m| m.to_ascii_lowercase().contains("radial_idle"))
+        });
         let win_w = rect.w.round().max(1.0) as u32;
         let win_h = rect.h.round().max(1.0) as u32;
-        if let Some(plane) = fetcher.fetch_radar_plane(win_w, win_h, tint, disc_material)
+        if let Some(plane) = fetcher.fetch_radar_plane(win_w, win_h, tint, disc_material, sweep_material)
             && let Some(img) = RgbaImage::from_raw(plane.width, plane.height, plane.rgba)
         {
             blit_atlas_image_tinted_with_mode(

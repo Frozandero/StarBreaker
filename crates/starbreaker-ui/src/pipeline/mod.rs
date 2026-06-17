@@ -133,8 +133,9 @@ pub trait HologramFetcher {
         height: u32,
         tint: [f32; 3],
         disc_material_path: &str,
+        sweep_material_path: Option<&str>,
     ) -> Option<HologramImage> {
-        let _ = (width, height, tint, disc_material_path);
+        let _ = (width, height, tint, disc_material_path, sweep_material_path);
         None
     }
 }

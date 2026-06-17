@@ -64,6 +64,14 @@ pub struct RadarPlaneParams {
     /// per-manufacturer (the material is brand-resolved). The disc OUTLINE and
     /// the own-ship marker are unaffected (only the texture lookup rotates).
     pub texture_rotation_deg: f32,
+    /// Alpha of the rotating radar SWEEP wedge (`r_radarmapscreen_idle_animation`,
+    /// the ping/scan beam), `0.0` = none. The sweep is a live animation; at static
+    /// rest it's drawn once at `sweep_angle_deg`.
+    pub sweep_alpha: f32,
+    /// Rest-frame rotation (degrees) of the sweep wedge. The sweep rotates live
+    /// in-game; this is the captured-frame position (owner-tuned, same basis as
+    /// the camera tilt — the animation phase isn't in static data).
+    pub sweep_angle_deg: f32,
 }
 
 impl Default for RadarPlaneParams {
@@ -78,6 +86,8 @@ impl Default for RadarPlaneParams {
             outer_ring_alpha: 0.7,
             ship_marker: true,
             texture_rotation_deg: 0.0,
+            sweep_alpha: 0.0,
+            sweep_angle_deg: 0.0,
         }
     }
 }
@@ -92,6 +102,7 @@ pub fn project_radar_disc(
     width: u32,
     height: u32,
     texture: &RgbaImage,
+    sweep: Option<&RgbaImage>,
     params: &RadarPlaneParams,
 ) -> RgbaImage {
     let mut out = RgbaImage::new(width, height);
@@ -152,6 +163,35 @@ pub fn project_radar_disc(
                     (a.clamp(0.0, 1.0) * 255.0).round() as u8,
                 ]),
             );
+        }
+    }
+
+    // Rotating SWEEP wedge (`r_radarmapscreen_idle_animation`): the ping/scan
+    // beam, projected like the disc but rotated to its rest-frame angle and
+    // blended faintly over the disc. The wedge texture is bright only in the
+    // beam, transparent elsewhere, so only the beam shows.
+    if let Some(sweep) = sweep {
+        if params.sweep_alpha > 0.0 && sweep.width() > 0 && sweep.height() > 0 {
+            let sw = sweep.width() as f32;
+            let sh = sweep.height() as f32;
+            let a = (params.texture_rotation_deg + params.sweep_angle_deg).to_radians();
+            let (ca, sa) = (a.cos(), a.sin());
+            for y in y0..y1 {
+                for x in x0..x1 {
+                    let nx = (x as f32 + 0.5 - cx) / major;
+                    let ny = (y as f32 + 0.5 - cy) / minor;
+                    if nx * nx + ny * ny > 1.0 {
+                        continue;
+                    }
+                    let (rx, ry) = (nx * ca - ny * sa, nx * sa + ny * ca);
+                    let texel = sample_bilinear(sweep, (rx * 0.5 + 0.5) * (sw - 1.0), (ry * 0.5 + 0.5) * (sh - 1.0));
+                    let lum = (0.299 * texel[0] as f32 + 0.587 * texel[1] as f32 + 0.114 * texel[2] as f32) / 255.0;
+                    let alpha = lum * (texel[3] as f32 / 255.0) * params.sweep_alpha;
+                    if alpha > 0.003 {
+                        blend(&mut out, x as i32, y as i32, [params.tint_rgb[0], params.tint_rgb[1], params.tint_rgb[2], alpha]);
+                    }
+                }
+            }
         }
     }
 
@@ -291,7 +331,7 @@ mod tests {
             ship_marker: false,
             ..Default::default()
         };
-        let img = project_radar_disc(400, 400, &tex, &p);
+        let img = project_radar_disc(400, 400, &tex, None, &p);
         let (x0, x1, y0, y1) = bounds(&img);
         let w = (x1 - x0) as f32;
         let h = (y1 - y0) as f32;
@@ -309,7 +349,7 @@ mod tests {
         // overlays disabled so only the texture mapping is under test.)
         let tex = RgbaImage::from_pixel(64, 64, Rgba([0, 0, 0, 255]));
         let p = RadarPlaneParams { outer_ring_alpha: 0.0, ship_marker: false, ..Default::default() };
-        let img = project_radar_disc(200, 200, &tex, &p);
+        let img = project_radar_disc(200, 200, &tex, None, &p);
         assert!(img.pixels().all(|p| p.0[3] == 0), "black texture must composite transparent");
     }
 
@@ -319,7 +359,7 @@ mod tests {
         // the white own-ship triangle (the data-driven WidgetCircle + own-ship
         // marker over the disc).
         let tex = RgbaImage::from_pixel(64, 64, Rgba([0, 0, 0, 255]));
-        let img = project_radar_disc(400, 400, &tex, &RadarPlaneParams::default());
+        let img = project_radar_disc(400, 400, &tex, None, &RadarPlaneParams::default());
         let mut ring = 0u32;
         let mut white = 0u32;
         for px in img.pixels() {
@@ -336,9 +376,34 @@ mod tests {
     }
 
     #[test]
+    fn sweep_wedge_composites_over_disc() {
+        // Black (transparent) disc so only the sweep shows; a sweep bright in the
+        // left half. With sweep_alpha > 0 the projection gains tinted pixels.
+        let disc = RgbaImage::from_pixel(64, 64, Rgba([0, 0, 0, 255]));
+        let mut sweep = RgbaImage::new(64, 64);
+        for (x, _y, px) in sweep.enumerate_pixels_mut() {
+            if x < 32 {
+                *px = Rgba([255, 255, 255, 255]);
+            }
+        }
+        let p = RadarPlaneParams {
+            outer_ring_alpha: 0.0,
+            ship_marker: false,
+            sweep_alpha: 0.6,
+            ..Default::default()
+        };
+        let img = project_radar_disc(200, 200, &disc, Some(&sweep), &p);
+        let lit = img.pixels().filter(|px| px.0[3] > 0).count();
+        assert!(lit > 100, "sweep wedge must composite over the (black) disc, got {lit}");
+        // No sweep texture → nothing (the black disc stays transparent).
+        let none = project_radar_disc(200, 200, &disc, None, &p);
+        assert!(none.pixels().all(|px| px.0[3] == 0), "no sweep + black disc → transparent");
+    }
+
+    #[test]
     fn empty_dims_do_not_panic() {
         let tex = white_disc_texture(16);
-        let _ = project_radar_disc(0, 0, &tex, &RadarPlaneParams::default());
-        let _ = project_radar_disc(100, 100, &RgbaImage::new(0, 0), &RadarPlaneParams::default());
+        let _ = project_radar_disc(0, 0, &tex, None, &RadarPlaneParams::default());
+        let _ = project_radar_disc(100, 100, &RgbaImage::new(0, 0), None, &RadarPlaneParams::default());
     }
 }
