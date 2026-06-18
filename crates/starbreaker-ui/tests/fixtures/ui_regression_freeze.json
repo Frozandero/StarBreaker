@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "frozen_at": "2026-06-18T16:08:49Z",
+  "frozen_at": "2026-06-18T23:31:14Z",
   "approver": "owner",
-  "reason": "Onboard clipper_countermeasures_master GOLD: catalog parity #2 (firing '0' hidden) + #4 (decoy count = ceil(ammo/CHARGE_SIZE) per fire-action type; cascades #1 dot + #3 alignment); matches countermeasures_master.png. Delta: clipper_countermeasures_master <added> only; no existing baseline changed.",
+  "reason": "Onboard clipper_lrind_master GOLD artifact (LR-indicator portrait render: CPLD/ESP lit, large labels); velocity-ball IR re-freeze handled in snapshot step",
   "signature": null,
   "manifest_path": "crates/starbreaker-ui/tests/fixtures/ui_ir/ui_snapshot_manifest.json",
   "artifacts": [
@@ -144,6 +144,16 @@
       "sha256": "3e5fc606933f639b5f69c89a89a0a09de9c4796e3936b347c8f01849bddab8cd",
       "width": 1920,
       "height": 1920,
+      "channels": "srgba"
+    },
+    {
+      "id": "clipper_lrind_master",
+      "tier": "gold",
+      "source_generated_png": "ships/Data/UI/Generated/ship/drak/Clipper/buildingblocks_canvas_hc_hud_ship_lrind_master.png",
+      "artifact_path": "test-artifacts/ui/clipper_lrind_master.png",
+      "sha256": "51983c413e66e3616043fdac4d8e199967ae6abe19d2870c3d082ff40597df5a",
+      "width": 1920,
+      "height": 3002,
       "channels": "srgba"
     }
   ]

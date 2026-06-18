@@ -605,7 +605,53 @@
         );
         assert!(
             !active.contains(&7),
-            "a DisplayWidget genuine-true (medical-bed class) must NOT be force-activated (WidgetImage-scoped)"
+            "a DisplayWidget genuine-true on a non-flight-controller binding (IsVolumetric) must NOT be force-activated"
+        );
+    }
+
+    #[test]
+    fn forced_active_activates_flight_controller_display_widget_not_bed_state() {
+        // The LR-indicator CPLD/ESP/LOCK indicators are authored-false
+        // `DisplayWidget`s whose `IsActive` binds the ship's FLIGHT-CONTROLLER
+        // state (coupled/ESP/…), genuinely lit at the at-rest power-on state — they
+        // MUST force-activate. A medical-bed `DisplayWidget` binds `Bed/state.*`
+        // (genuine-true at rest too, but the `ui_target_a` gold baseline shows it
+        // inactive) and must NOT — the workflow §10 hazard the WidgetImage scope
+        // previously guarded by excluding ALL DisplayWidgets.
+        let rv = json!({
+            "_Type_": "BuildingBlocks_Canvas",
+            "scene": [
+                {"_Pointer_": "ptr:5", "_Type_": "BuildingBlocks_DisplayWidget", "name": "esp"},
+                {"_Pointer_": "ptr:6", "_Type_": "BuildingBlocks_DisplayWidget", "name": "bed"},
+            ],
+            "operations": [
+                variable_op(10, "flightcontroller.isesp"),
+                json!({
+                    "_Type_": "BuildingBlocks_BindingsBooleanField",
+                    "widget": "_PointsTo_:ptr:5",
+                    "field": "IsActive",
+                    "input": "_PointsTo_:ptr:10"
+                }),
+                variable_op(20, "Bed/state.BaseScreens.Attract"),
+                json!({
+                    "_Type_": "BuildingBlocks_BindingsBooleanField",
+                    "widget": "_PointsTo_:ptr:6",
+                    "field": "IsActive",
+                    "input": "_PointsTo_:ptr:20"
+                }),
+            ],
+        });
+        let mut inherited = std::collections::HashMap::new();
+        inherited.insert("flightcontroller.isesp".to_string(), true);
+        inherited.insert("Bed/state.BaseScreens.Attract".to_string(), true);
+        let active = forced_active_widgets_with_defaults(&rv, &[], &inherited, None);
+        assert!(
+            active.contains(&5),
+            "a flight-controller-grounded DisplayWidget (LR-indicator ESP) must force-activate"
+        );
+        assert!(
+            !active.contains(&6),
+            "a Bed/state-grounded DisplayWidget (medical bed) must NOT force-activate"
         );
     }
 

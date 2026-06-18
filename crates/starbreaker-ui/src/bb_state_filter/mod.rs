@@ -707,18 +707,30 @@ pub fn forced_active_widgets_with_defaults(
         let Some(widget) = parse_points_to_ptr_value(op.get("widget")) else {
             continue;
         };
-        // SCOPE: only `WidgetImage` nodes (the radar background is a
-        // `BuildingBlocks_WidgetImage`). The medical bed (`ui_target_a`) has
-        // `DisplayWidget` Image nodes authored-false with IsActive gated on
-        // medical pins (ActorIsInBed, …) that ALSO resolve genuine-true at rest
-        // but must stay inactive (the gold baseline) — the workflow §10 hazard.
-        // Restricting to the dedicated image WIDGET keeps those untouched.
-        if ptr_to_type.get(&widget).copied() != Some("BuildingBlocks_WidgetImage") {
-            continue;
-        }
         let Some(input_ref) = op.get("input") else {
             continue;
         };
+        // SCOPE: the radar background `WidgetImage` (unconditional — its IsActive is
+        // `NOT(IsVolumetric)`), PLUS a cockpit flight-mode `DisplayWidget` indicator
+        // whose IsActive is grounded in the ship's FLIGHT-CONTROLLER state (the
+        // LR-indicator CPLD/ESP/LOCK bind `flightcontroller.isdecoupled`/`isesp`/
+        // `isrotationlocked`, genuinely lit/unlit at the at-rest power-on state).
+        // The medical bed (`ui_target_a`) has authored-false `DisplayWidget`s gated
+        // on `Bed/state.*` that ALSO resolve genuine-true at rest but must stay
+        // inactive (the gold baseline) — excluded because they are NOT
+        // flight-controller-grounded (the workflow §10 hazard the WidgetImage scope
+        // guarded; broadening to ALL DisplayWidgets regresses ui_target_a).
+        let allow = match ptr_to_type.get(&widget).copied() {
+            Some("BuildingBlocks_WidgetImage") => true,
+            Some("BuildingBlocks_DisplayWidget") => {
+                let mut seen = HashSet::new();
+                isactive_grounded_in_flight_controller(input_ref, &ptr_to_op, &mut seen)
+            }
+            _ => false,
+        };
+        if !allow {
+            continue;
+        }
         let mut visiting = HashSet::new();
         let eval = eval_bool_ref(
             input_ref,
@@ -734,6 +746,66 @@ pub fn forced_active_widgets_with_defaults(
         }
     }
     active_set
+}
+
+/// True when an `IsActive` input op-graph is grounded — through the boolean
+/// combinators (`Invert`/`EvaluateAnd`/`EvaluateOr` and the integer/number
+/// comparisons) — in a `flightcontroller.*` boolean state variable. This is the
+/// discriminator that lets `forced_active_widgets_with_defaults` activate a
+/// genuine-true authored-false `DisplayWidget` ONLY when it is a cockpit
+/// flight-mode indicator (the LR-indicator CPLD/ESP/LOCK), while leaving a
+/// medical-bed `DisplayWidget` (grounded in `Bed/state.*`) inactive. Follows
+/// `_PointsTo_` pointer refs via `ptr_to_op`; `seen` guards against cycles.
+fn isactive_grounded_in_flight_controller(
+    input: &serde_json::Value,
+    ptr_to_op: &HashMap<BbNodeId, &serde_json::Value>,
+    seen: &mut HashSet<BbNodeId>,
+) -> bool {
+    match input {
+        serde_json::Value::String(s) => {
+            let Some(ptr) = parse_points_to_ptr(s) else {
+                return false;
+            };
+            if !seen.insert(ptr) {
+                return false;
+            }
+            let Some(op) = ptr_to_op.get(&ptr) else {
+                return false;
+            };
+            isactive_grounded_in_flight_controller(op, ptr_to_op, seen)
+        }
+        serde_json::Value::Object(obj) => {
+            if obj
+                .get("binding")
+                .and_then(|v| v.as_str())
+                .is_some_and(|b| b.to_ascii_lowercase().starts_with("flightcontroller"))
+            {
+                return true;
+            }
+            // Recurse every nested operand ref (combinators carry `input`,
+            // `inputs[]`, and `inputL`/`inputR` for the comparison ops).
+            for value in obj.values() {
+                match value {
+                    serde_json::Value::String(_) | serde_json::Value::Object(_) => {
+                        if isactive_grounded_in_flight_controller(value, ptr_to_op, seen) {
+                            return true;
+                        }
+                    }
+                    serde_json::Value::Array(arr) => {
+                        if arr
+                            .iter()
+                            .any(|item| isactive_grounded_in_flight_controller(item, ptr_to_op, seen))
+                        {
+                            return true;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            false
+        }
+        _ => false,
+    }
 }
 
 /// Return the node id of the canvas's *sole* top-level `WidgetCanvas` — the one
