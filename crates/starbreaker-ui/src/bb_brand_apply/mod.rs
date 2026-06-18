@@ -48,6 +48,27 @@ pub(crate) use self::conditions::*;
 use self::colors::PaletteSources;
 use self::modifiers::{apply_inline_color_overlay, apply_modifier};
 
+/// Which entries (if any) take the TEXT-FORMAT route — the route that lets a
+/// selector matching a `Text` node style a WidgetTextField's implicit
+/// text-format child (FontSize/FillColor/…) rather than the widget. The route
+/// is tier-scoped (see `crates/starbreaker-ui/docs/ui-cascade-passes.md`):
+///
+/// - [`Full`](TextFormatRoute::Full) — the BRAND tier: every `Parent`-wrapped
+///   or bare `Type(Text)` entry routes (velocity-num/master-mode readouts).
+/// - [`BareTextOnly`](TextFormatRoute::BareTextOnly) — the EMBEDDED tier: ONLY
+///   an unconditional bare `Type(Text)` declaration routes (the DRAK
+///   LR-indicator's `embeddedStyles` "Font Size" -> FontSize 100). A
+///   CONDITIONAL embedded entry (the target screen's `Bright Elements`
+///   `Parent[Tag]` override, the medical bed's `Textfield_BrightColor_Override`)
+///   is a state/selection override absent at rest, so it stays brand-tier-only.
+/// - [`Off`](TextFormatRoute::Off) — every other tier (shared / inline / …).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TextFormatRoute {
+    Off,
+    Full,
+    BareTextOnly,
+}
+
 /// Apply brand-style modifiers to a scene.
 ///
 /// For each node in `scene.nodes`, tests whether any `brand.entries[]` match the
@@ -76,7 +97,7 @@ pub fn apply_brand_modifiers(
         loc_fetcher,
         None,
         None,
-        true,
+        TextFormatRoute::Full,
         true,
         false,
     );
@@ -92,14 +113,15 @@ pub fn apply_scene_style_entries(
     loc_fetcher: Option<&dyn LocFetcher>,
 ) {
     let palettes = PaletteSources::uniform(palette_source);
-    apply_style_entries_gated(scene, entries, &palettes, None, loc_fetcher, None, None, false, false, false);
+    apply_style_entries_gated(scene, entries, &palettes, None, loc_fetcher, None, None, TextFormatRoute::Off, false, false);
 }
 
 
 /// The selector-engine entry point (`bb_style_engine`, plan P4.2): same
 /// kernel as every legacy wrapper, but the text-format route and the
-/// `__BrandIdentifier` stamp are gated EXPLICITLY by the sheet's tier
-/// (`brand_tier`) instead of being inferred from the identifier prefix.
+/// `__BrandIdentifier` stamp are gated EXPLICITLY by the sheet's tier instead
+/// of being inferred from the identifier prefix. `text_format_route` carries
+/// the tier-scoped route mode; `stamp_brand` is the brand-tier marker stamp.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn apply_style_entries_for_engine(
     scene: &mut BbScene,
@@ -110,7 +132,8 @@ pub(crate) fn apply_style_entries_for_engine(
     loc_fetcher: Option<&dyn LocFetcher>,
     scope_marker: Option<&str>,
     allowed_nodes: Option<&std::collections::HashSet<BbNodeId>>,
-    brand_tier: bool,
+    text_format_route: TextFormatRoute,
+    stamp_brand: bool,
     shared_tier: bool,
 ) {
     let palettes = PaletteSources {
@@ -125,8 +148,8 @@ pub(crate) fn apply_style_entries_for_engine(
         loc_fetcher,
         scope_marker,
         allowed_nodes,
-        brand_tier,
-        brand_tier,
+        text_format_route,
+        stamp_brand,
         shared_tier,
     )
 }
@@ -142,7 +165,7 @@ fn apply_style_entries_gated(
     loc_fetcher: Option<&dyn LocFetcher>,
     scope_marker: Option<&str>,
     allowed_nodes: Option<&std::collections::HashSet<BbNodeId>>,
-    text_format_route: bool,
+    text_format_route: TextFormatRoute,
     stamp_brand: bool,
     shared_tier: bool,
 ) {
@@ -173,32 +196,46 @@ fn apply_style_entries_gated(
                 .filter(|entry| entry_matches_scene(entry, node_id, node, scene))
                 .collect();
             // Entries that select the textfield's implicit text-format child
-            // through a `Parent(...)` wrapper (see `entry_matches_text_format`)
-            // — they apply only their text-format modifiers. The route runs
-            // ONLY for manufacturer BRAND containers (`s_*` identifiers):
-            // - embedded containers are name-invoked state/override sheets
-            //   (the target screen's `Bright Elements` and the medical bed's
-            //   `Textfield_BrightColor_Override` are Bright overrides the
-            //   at-rest references do NOT show);
-            // - shared generic sheets don't restyle the text format either
-            //   (mfd_g_emissions' `Header Text` FillColor=Accent1 — the
-            //   in-game emitted values keep the brand H1 deep orange).
-            // Brand-tier evidence: the M_Eng_MFDContent drak `FontSizeSmall`
-            // table + `Bright Orange Objects`, the power card's
-            // `Battery Powered/Depleted Text` sizes and the medical mainmenu
-            // banner's `New Style` (Bright + FontSize 40), all verified
-            // against in-game captures.
-            let text_format_matches: Vec<&serde_json::Value> = if text_format_route {
-                entries
-                    .iter()
-                    .filter(|entry| {
-                        !entry_matches_scene(entry, node_id, node, scene)
-                            && entry_matches_text_format(entry, node_id, node, scene)
-                    })
-                    .collect()
-            } else {
-                Vec::new()
+            // through a `Parent(...)` wrapper or a bare `Type(Text)` (see
+            // `entry_matches_text_format`) — they apply only their text-format
+            // modifiers. The route is tier-scoped (`TextFormatRoute`):
+            // - `Full` (BRAND tier, `s_*` containers): every routing entry.
+            //   Brand-tier evidence — the M_Eng_MFDContent drak `FontSizeSmall`
+            //   table + `Bright Orange Objects`, the power card's
+            //   `Battery Powered/Depleted Text` sizes, the medical mainmenu
+            //   banner's `New Style` (Bright + FontSize 40), and the
+            //   velocity-num/master-mode readouts, all verified in-game.
+            // - `BareTextOnly` (EMBEDDED tier): ONLY an unconditional bare
+            //   `Type(Text)` declaration — a canvas-wide "all text is size N"
+            //   rule (the DRAK LR-indicator's `embeddedStyles` "Font Size" ->
+            //   FontSize 100, verified vs `lrind_master`). CONDITIONAL embedded
+            //   entries stay excluded: they are name-invoked state/override
+            //   sheets the at-rest references do NOT show (the target screen's
+            //   `Bright Elements` `Parent[Tag]` Bright override, the medical
+            //   bed's `Textfield_BrightColor_Override`).
+            // - `Off` (shared/inline/…): shared generic sheets don't restyle
+            //   the text format (mfd_g_emissions' `Header Text` FillColor=Accent1
+            //   — the in-game emitted values keep the brand H1 deep orange).
+            let route_entry = |entry: &&serde_json::Value| -> bool {
+                if entry_matches_scene(entry, node_id, node, scene)
+                    || !entry_matches_text_format(entry, node_id, node, scene)
+                {
+                    return false;
+                }
+                match text_format_route {
+                    TextFormatRoute::Off => false,
+                    TextFormatRoute::Full => true,
+                    TextFormatRoute::BareTextOnly => {
+                        entry_is_unconditional_bare_text_selector(entry)
+                    }
+                }
             };
+            let text_format_matches: Vec<&serde_json::Value> =
+                if text_format_route == TextFormatRoute::Off {
+                    Vec::new()
+                } else {
+                    entries.iter().filter(route_entry).collect()
+                };
             if style_probe {
                 // Show what each matched entry SETS, not just its name (the
                 // cascade-colour debugging shortcut, ledger item 41): e.g.

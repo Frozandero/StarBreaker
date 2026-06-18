@@ -319,6 +319,54 @@ fn condition_tree_contains_ancestor(condition: &serde_json::Value) -> bool {
     false
 }
 
+/// True iff every leaf of this condition tree is `Type(Text)` and the tree
+/// contains at least one such leaf — only `Type(Text)`, optionally nested in
+/// `AllOf`/`AnyOf`, with no other selector kind. Any `Tag`/`NotTag`/`Parent`/
+/// `Ancestor`/`Not`/interaction condition or a non-`Text` `Type(...)` makes it
+/// non-bare.
+fn condition_is_only_text(condition: &serde_json::Value) -> bool {
+    let cond_type = condition
+        .get("_Type_")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if cond_type.ends_with("ConditionType") {
+        return condition.get("type").and_then(|v| v.as_str()) == Some("Text");
+    }
+    if cond_type.ends_with("ConditionAllOfCondition") || cond_type.ends_with("ConditionAnyOfCondition")
+    {
+        return condition
+            .get("conditions")
+            .and_then(|v| v.as_array())
+            .is_some_and(|conds| !conds.is_empty() && conds.iter().all(condition_is_only_text));
+    }
+    false
+}
+
+/// True when an entry's selector is an UNCONDITIONAL bare `Type(Text)`
+/// declaration — every condition (across every conditions block) is
+/// `Type(Text)`, optionally wrapped in `AllOf`/`AnyOf`, with NO `Tag`/`NotTag`/
+/// `Parent`/`Ancestor`/`Not`/interaction qualifier. This is the engine's
+/// canvas-wide "all text is size N / colour C" style declaration — the DRAK
+/// LR-indicator's `embeddedStyles` "Font Size" (-> FontSize 100, verified
+/// against `lrind_master`). It is the gate for the text-format route OUTSIDE
+/// the brand tier: a CONDITIONAL embedded entry (the target screen's
+/// `Bright Elements` `Parent[Tag]` Bright override, the medical bed's
+/// `Textfield_BrightColor_Override`) is a state/selection override the at-rest
+/// capture does not show, so it must keep to the brand tier only (where the
+/// full route already runs).
+pub(crate) fn entry_is_unconditional_bare_text_selector(entry: &serde_json::Value) -> bool {
+    let Some(list) = entry.get("conditionsList").and_then(|v| v.as_array()) else {
+        return false;
+    };
+    !list.is_empty()
+        && list.iter().all(|block| {
+            block
+                .get("conditions")
+                .and_then(|v| v.as_array())
+                .is_some_and(|conds| !conds.is_empty() && conds.iter().all(condition_is_only_text))
+        })
+}
+
 fn condition_matches_text_format(
     condition: &serde_json::Value,
     node_id: BbNodeId,

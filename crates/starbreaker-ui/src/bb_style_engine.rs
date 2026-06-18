@@ -101,6 +101,17 @@ fn apply_sheet(scene: &mut BbScene, sheet: &StyleSheet<'_>, loc_fetcher: Option<
         SheetScope::Marker(marker) => Some(marker.as_str()),
         _ => None,
     };
+    // The text-format route is tier-scoped: the BRAND tier runs the full route
+    // (every Parent-wrapped / bare `Type(Text)` entry); the EMBEDDED tier runs
+    // it ONLY for unconditional bare `Type(Text)` declarations (the DRAK
+    // LR-indicator's `embeddedStyles` FontSize 100 — a canvas-wide text size),
+    // so conditional embedded state/overrides stay brand-tier-only. The
+    // `__BrandIdentifier` stamp is brand-tier-only.
+    let text_format_route = match sheet.tier {
+        Tier::Brand => crate::bb_brand_apply::TextFormatRoute::Full,
+        Tier::Embedded => crate::bb_brand_apply::TextFormatRoute::BareTextOnly,
+        _ => crate::bb_brand_apply::TextFormatRoute::Off,
+    };
     crate::bb_brand_apply::apply_style_entries_for_engine(
         scene,
         sheet.entries,
@@ -110,8 +121,7 @@ fn apply_sheet(scene: &mut BbScene, sheet: &StyleSheet<'_>, loc_fetcher: Option<
         loc_fetcher,
         scope_marker,
         allowed.as_ref(),
-        // The text-format route and the `__BrandIdentifier` stamp are
-        // brand-TIER semantics, not identifier-prefix semantics.
+        text_format_route,
         sheet.tier == Tier::Brand,
         // A shared/generic sheet (mfd_g_*) is not the styling authority for a
         // custom shape's intrinsic authored fill — suppresses the emissions
@@ -298,5 +308,92 @@ mod tests {
         apply(&mut scene, &sheets, None);
         let root = scene.nodes.values().find(|n| n.name == "root").unwrap();
         assert!(root.raw.get("__BrandIdentifier").is_none());
+    }
+
+    // --- Embedded-tier text-format route (LR-indicator labels) ---------------
+    //
+    // The DRAK LR-indicator (`drak_hc_hud_cutlass_lind`/`_rind`) authors its
+    // canvas-root `embeddedStyles` "Font Size" as an UNCONDITIONAL bare
+    // `Type(Text)` -> FontSize 100; the in-game `lrind_master` reference shows
+    // the labels far larger than the `Heading1` (60) fallback, so that
+    // canvas-wide text declaration must reach the field's text format. The
+    // Brand-tier route alone missed it: that FontSize lives at `Tier::Embedded`
+    // (pass 7) and the LR-ind `defaultStyles` is empty, so there is no
+    // no-brand-match defaultStyles fallback like velocity-num/master-mode had.
+    // The embedded route is SCOPED to unconditional bare `Type(Text)` so the
+    // documented embedded state/overrides stay excluded (the target screen's
+    // `Bright Elements` = `Parent[Tag]` -> Bright FillColor and the medical
+    // bed's `Textfield_BrightColor_Override` are at-rest-absent CONDITIONAL
+    // overrides; the brand tier still routes them, the embedded tier must not).
+
+    fn textfield_canvas() -> serde_json::Value {
+        serde_json::json!({
+            "_RecordValue_": {
+                "_Type_": "BuildingBlocks_Canvas",
+                "size": {"x": 100.0, "y": 100.0},
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_WidgetTextField",
+                     "name": "label", "isActive": true,
+                     "styleTags": [{"_RecordId_": "tagT"}]}
+                ]
+            }
+        })
+    }
+
+    fn bare_text_fontsize(value: f64) -> serde_json::Value {
+        serde_json::json!({
+            "name": "Font Size",
+            "conditionsList": [{"conditions": [
+                {"_Type_": "BuildingBlocks_StyleSelectorConditionAllOfCondition",
+                 "conditions": [{"_Type_": "BuildingBlocks_StyleSelectorConditionType", "type": "Text"}]}
+            ]}],
+            "modifiers": [{"_Type_": "BuildingBlocks_FieldModifierNumber", "field": "FontSize", "value": value}]
+        })
+    }
+
+    // AllOf[Type(Text), Tag(tagT)] — a CONDITIONAL text declaration standing in
+    // for the target/medbed Bright overrides. The field carries `tagT`, so the
+    // brand tier routes it; the embedded tier must not (it is not unconditional).
+    fn conditional_text_fontsize(value: f64) -> serde_json::Value {
+        serde_json::json!({
+            "name": "Conditional Text",
+            "conditionsList": [{"conditions": [
+                {"_Type_": "BuildingBlocks_StyleSelectorConditionAllOfCondition",
+                 "conditions": [
+                    {"_Type_": "BuildingBlocks_StyleSelectorConditionType", "type": "Text"},
+                    {"_Type_": "BuildingBlocks_StyleSelectorConditionTag", "tag": {"_RecordId_": "tagT"}}
+                 ]}
+            ]}],
+            "modifiers": [{"_Type_": "BuildingBlocks_FieldModifierNumber", "field": "FontSize", "value": value}]
+        })
+    }
+
+    fn label_fontsize(scene: &BbScene) -> Option<f64> {
+        scene.nodes.values().find(|n| n.name == "label")?.raw.get("FontSize").and_then(|v| v.as_f64())
+    }
+
+    #[test]
+    fn embedded_tier_routes_unconditional_bare_text_fontsize() {
+        let palette = serde_json::json!({});
+        let mut scene = parse_bb_canvas(&textfield_canvas()).expect("parses");
+        let size = [bare_text_fontsize(100.0)];
+        apply(&mut scene, &[StyleSheet::uniform(Tier::Embedded, "embeddedStyles", &palette, &size)], None);
+        assert_eq!(label_fontsize(&scene), Some(100.0),
+            "embedded bare Type(Text) FontSize must reach the field's text format (LR-indicator labels)");
+    }
+
+    #[test]
+    fn embedded_tier_excludes_conditional_text_override_but_brand_keeps_it() {
+        let palette = serde_json::json!({});
+        let cond = [conditional_text_fontsize(99.0)];
+        let mut emb = parse_bb_canvas(&textfield_canvas()).expect("parses");
+        apply(&mut emb, &[StyleSheet::uniform(Tier::Embedded, "embeddedStyles", &palette, &cond)], None);
+        assert_eq!(label_fontsize(&emb), None,
+            "a CONDITIONAL embedded text entry must NOT take the embedded text-format route \
+             (target `Bright Elements` / medbed override stay excluded)");
+        let mut brand = parse_bb_canvas(&textfield_canvas()).expect("parses");
+        apply(&mut brand, &[StyleSheet::uniform(Tier::Brand, "s_drak_hud", &palette, &cond)], None);
+        assert_eq!(label_fontsize(&brand), Some(99.0),
+            "the brand tier still routes a conditional Type(Text) entry (unchanged)");
     }
 }
