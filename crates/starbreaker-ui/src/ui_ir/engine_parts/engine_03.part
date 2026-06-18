@@ -2056,6 +2056,33 @@ mod tests_c {
 
     use super::*;
 
+    #[test]
+    fn portrait_font_screen_scale_scales_only_portrait_fill_screens() {
+        // SQUARE gauge mesh (g-force/velocity ball, countermeasures): a 1920×1080
+        // canvas filled to a square 1.0 target -> NOT portrait -> 1.0 (unchanged).
+        assert!(
+            (portrait_font_screen_scale((1920.0, 1080.0), (1920, 1920), true, true) - 1.0).abs()
+                < 1e-4,
+            "square-mesh gauge keeps font scale 1.0"
+        );
+        // PORTRAIT LR-indicator mesh (0.64): 1920×1080 canvas filled to a 1920×3000
+        // target -> scale by the vertical fill axis sy = 3000/1080.
+        assert!(
+            (portrait_font_screen_scale((1920.0, 1080.0), (1920, 3000), true, true)
+                - (3000.0 / 1080.0))
+                .abs()
+                < 1e-3,
+            "portrait-mesh screen scales font by the vertical fill axis"
+        );
+        // NON-fill screen (e.g. an MFD / non-cockpit) stays 1.0 even on a portrait
+        // target — the scale is scoped to the cockpit mesh-aspect fill branch.
+        assert!(
+            (portrait_font_screen_scale((1920.0, 1080.0), (1080, 1920), false, false) - 1.0).abs()
+                < 1e-4,
+            "non-fill screen keeps font scale 1.0"
+        );
+    }
+
     struct TestCanvasFetcher {
         by_guid: std::collections::HashMap<String, serde_json::Value>,
         by_path: std::collections::HashMap<String, serde_json::Value>,

@@ -578,6 +578,13 @@ pub fn compile_ui_ir_from_scene_with_animation_sample(
     let style_font_sizes = collect_style_font_sizes(scene);
     let standard_text_styles =
         collect_standard_text_styles(canvas_fetcher, selected_style_source.as_deref(), canvas_name);
+    // Portrait cockpit-screen font scale (the LR-indicator) — 1.0 for every other
+    // screen (see `portrait_font_screen_scale`). It must apply to BOTH the
+    // layout-time intrinsic text measurement (so a content-fit text field GROWS
+    // to the enlarged glyphs instead of clipping them) and the final IR font size
+    // (the post-pass below) so measure == draw.
+    let font_screen_scale =
+        portrait_font_screen_scale(scene.canvas_size, target_size, cover_fit, mesh_aspect_fill);
     // Layout-time intrinsic text measurement must use the EFFECTIVE (styled)
     // font size, not the authored editor size — annotate before layout.
     annotate_effective_font_px(
@@ -588,6 +595,7 @@ pub fn compile_ui_ir_from_scene_with_animation_sample(
         &style_font_sizes,
         &standard_text_styles,
         design_text_scale,
+        font_screen_scale,
         canvas_fetcher,
         text_measure,
     );
@@ -646,7 +654,7 @@ pub fn compile_ui_ir_from_scene_with_animation_sample(
         .map(|name| name.strip_prefix("BuildingBlocks_Canvas.").unwrap_or(name))
         .map(crate::bb_brand_style::is_cockpit_hud_canvas)
         .unwrap_or(false);
-    let nodes: Vec<UiIrNode> = build_ui_ir_nodes(
+    let mut nodes: Vec<UiIrNode> = build_ui_ir_nodes(
         ordered_ids,
         scene,
         &layout,
@@ -691,6 +699,13 @@ pub fn compile_ui_ir_from_scene_with_animation_sample(
         .saturating_sub(unresolved_count.saturating_mul(10))
         .min(100);
 
+    // Apply the portrait cockpit-screen font scale (computed above, 1.0 for every
+    // non-portrait screen) to the final IR font sizes — the layout already grew the
+    // content-fit fields to match (`annotate_effective_font_px`), so measure == draw.
+    if (font_screen_scale - 1.0).abs() > f32::EPSILON {
+        scale_text_node_fonts(&mut nodes, font_screen_scale);
+    }
+
     UiIrDocument {
         schema_version: UI_IR_SCHEMA_VERSION,
         canvas_guid: canvas_guid.to_string(),
@@ -706,6 +721,58 @@ pub fn compile_ui_ir_from_scene_with_animation_sample(
         resolved_asset_refs,
         missing_asset_refs,
         nodes,
+    }
+}
+
+/// The render-time font scale for a cockpit fill-branch screen (called from the
+/// IR compile). A `useRaw` cockpit screen that FILLS its mesh-aspect target
+/// (`cover_fit && mesh_aspect_fill`) stretches the authored 1920×1080 landscape
+/// canvas to the mesh. Geometry fills non-uniformly, but a Fixed font authored
+/// for the canvas is drawn at design px — fine on a square/landscape mesh (the
+/// ball gauges, countermeasures), but far too SMALL on a PORTRAIT mesh
+/// (`target_h > target_w`, e.g. the LR-indicator's 0.64 screen, whose cells fill
+/// vertically by ~2.78×). There the font scales by the vertical fill axis
+/// (`max(sx, sy)`, which is `sy` for a landscape canvas on a portrait mesh).
+/// Returns 1.0 for every non-portrait / non-fill screen, so only the portrait
+/// LR-indicator is affected today (frozen baselines untouched).
+pub(crate) fn portrait_font_screen_scale(
+    canvas_size: (f32, f32),
+    target_size: (u32, u32),
+    cover_fit: bool,
+    mesh_aspect_fill: bool,
+) -> f32 {
+    let (tw, th) = (target_size.0 as f32, target_size.1 as f32);
+    if cover_fit && mesh_aspect_fill && th > tw && canvas_size.0 > 0.0 && canvas_size.1 > 0.0 {
+        let sx = tw / canvas_size.0;
+        let sy = th / canvas_size.1;
+        sx.max(sy)
+    } else {
+        1.0
+    }
+}
+
+/// Multiply every text node's Fixed font size and target-px text spacings by
+/// `scale` (the portrait font screen scale). Called only when `scale != 1.0`, so
+/// it is a strict no-op for every non-portrait screen.
+fn scale_text_node_fonts(nodes: &mut [UiIrNode], scale: f32) {
+    fn scale_style(style: &mut UiIrTextStyle, scale: f32) {
+        if let UiIrValue::Fixed { value } = &mut style.font_size {
+            *value *= scale;
+        }
+        if let Some(ls) = style.line_spacing.as_mut() {
+            *ls *= scale;
+        }
+        if let Some(letter) = style.letter_spacing.as_mut() {
+            *letter *= scale;
+        }
+    }
+    for node in nodes.iter_mut() {
+        if let Some(style) = node.text_style.as_mut() {
+            scale_style(style, scale);
+        }
+        if let Some(style) = node.secondary_text_style.as_mut() {
+            scale_style(style, scale);
+        }
     }
 }
 
@@ -788,6 +855,7 @@ fn annotate_effective_font_px(
     style_font_sizes: &HashMap<String, f32>,
     standard_text_styles: &HashMap<String, StandardTextStyle>,
     design_text_scale: f32,
+    font_screen_scale: f32,
     canvas_fetcher: Option<&dyn CanvasFetcher>,
     text_measure: Option<&dyn DrawTextMeasure>,
 ) {
@@ -824,6 +892,9 @@ fn annotate_effective_font_px(
         if font_px <= 0.0 {
             continue;
         }
+        // Portrait cockpit-screen font scale (LR-indicator): grow the measured text
+        // so a content-fit field fits the enlarged glyphs. 1.0 (no-op) elsewhere.
+        let font_px = font_px * font_screen_scale;
         let draw_metrics = text_measure.and_then(|measure| {
             let resolved_text = node.raw.get("_ResolvedText_").and_then(|v| v.as_str())?;
             let font_record = effective_font_record(node, standard_text_styles);
