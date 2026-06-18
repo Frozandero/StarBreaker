@@ -815,3 +815,58 @@
             "overlay shows while bursting (3 > 1 = true)"
         );
     }
+
+    /// Two sub-full TILING WidgetCanvas slots (the LR-indicator master's
+    /// left/right half-width columns, `width = 0.5 Percent`) form a co-rendered
+    /// panel group: the screen is ONE display split by cockpit geometry. When one
+    /// column is deactivated by its at-rest `Instantiated` gate (the left column's
+    /// dashboard-power gate resolving false), it is KEPT instantiated alongside
+    /// its always-on tiling sibling. Full-size overlay slots (MC_S_Self_Master's
+    /// view modes, `Percent >= 1.0`) are NOT a tiling group and keep their
+    /// exclusivity — the gated slot deactivates.
+    #[test]
+    fn subfull_tiling_canvas_sibling_keeps_gated_slot_instantiated() {
+        // ptr:2 left column gated `Instantiated = dashboardpowered` (false at
+        // rest); ptr:4 right column has no gate (always on).
+        let ops = vec![
+            variable_op(3, "seatdashboard/dashboardpowered"),
+            boolean_field_op(2, 3),
+        ];
+        // Two columns anchored to opposite edges → disjoint horizontal spans.
+        let slot = |ptr: u32, width: f64, anchor_x: f64| {
+            json!({
+                "_Pointer_": format!("ptr:{ptr}"),
+                "_Type_": "BuildingBlocks_WidgetCanvas",
+                "name": format!("canvas_col_{ptr}"),
+                "instantiated": true,
+                "parent": null,
+                "anchor": {"_Type_": "Vec3", "x": anchor_x, "y": 0.0, "z": 0.0},
+                "sizing": {"_Type_": "BuildingBlocks_Size",
+                    "width": {"_Type_": "BuildingBlocks_FixedOrRelativeValue", "value": width, "behavior": "Percent"},
+                    "height": {"_Type_": "BuildingBlocks_FixedOrRelativeValue", "value": 1.0, "behavior": "Percent"}}
+            })
+        };
+        let make_rv = |width: f64| {
+            json!({
+                "_Type_": "BuildingBlocks_Canvas",
+                "staticVariables": [static_var("seatdashboard/dashboardpowered", false)],
+                "operations": ops.clone(),
+                "scene": [slot(2, width, 0.0), slot(4, width, 1.0)]
+            })
+        };
+        // TILING (half-width, opposite edges → disjoint): the gated left column
+        // is kept beside its always-on sibling.
+        let tiling = instantiated_false_widgets(&make_rv(0.5));
+        assert!(
+            !tiling.contains(&2),
+            "gated tiling column must stay instantiated beside its always-on sibling"
+        );
+        assert!(!tiling.contains(&4), "always-on tiling column stays");
+        // FULL-WIDTH (overlapping, e.g. mutually-exclusive state screens): no
+        // disjoint tiling group → the gated slot deactivates.
+        let overlay = instantiated_false_widgets(&make_rv(1.0));
+        assert!(
+            overlay.contains(&2),
+            "full-width overlapping slot deactivates on a false gate (mutual exclusivity preserved)"
+        );
+    }

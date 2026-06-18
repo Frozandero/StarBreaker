@@ -1713,21 +1713,24 @@ fn run_pass1_canvas_references(
             .get("matchTo")
             .and_then(|v| v.as_str())
             .unwrap_or("");
-        if let Some(host) = host_node_for_match_to(scene, selected_match_to)
-            .or_else(|| host_canvas_node_for_entry(scene, selection.entry))
-        {
+        let leading_host = host_node_for_match_to(scene, selected_match_to)
+            .or_else(|| host_canvas_node_for_entry(scene, selection.entry));
+        if let Some(host) = leading_host {
             seen_hosts.insert(host);
         }
         follow_entries.push(selection.entry);
-        // Additional hosts are followed within MATERIALISED instances only:
-        // the power item's OffPanel + heat-bar slots are independent fills,
-        // while un-namespaced masters (MC_S_Self_Master's five mode slots)
-        // stay mutually exclusive under the at-rest single pick.
-        let follow_additional_hosts = instance_namespace.is_some();
-        for entry in pick_active_entries(record_value, root_json, manufacturer_id)
-            .into_iter()
-            .filter(|_| follow_additional_hosts)
-        {
+        // Additional canvas-ref hosts are followed in two cases:
+        //   * MATERIALISED instances — the power item's OffPanel + heat-bar
+        //     slots are independent fills (always followed); and
+        //   * un-namespaced masters whose slots TILE — each a sub-full panel
+        //     laid out alongside its sibling (the LR-indicator master's
+        //     left/right half-width columns, both visible at once).
+        // MC_S_Self_Master's five mode slots are FULL-size centred overlays
+        // (`Percent >= 1.0`), so they are NOT sub-full tiling slots and stay
+        // mutually exclusive under the at-rest single pick.
+        let leading_is_tiling =
+            leading_host.is_some_and(|host| host_is_subfull_tiling_slot(scene, host));
+        for entry in pick_active_entries(record_value, root_json, manufacturer_id) {
             if std::ptr::eq(entry, selection.entry) {
                 continue;
             }
@@ -1751,6 +1754,14 @@ fn run_pass1_canvas_references(
             else {
                 continue;
             };
+            // Materialised instances follow every distinct host; un-namespaced
+            // masters follow only when BOTH the leading and this host are
+            // sub-full tiling panels — excludes the self-master overlay modes.
+            let follow_this = instance_namespace.is_some()
+                || (leading_is_tiling && host_is_subfull_tiling_slot(scene, host));
+            if !follow_this {
+                continue;
+            }
             if seen_hosts.insert(host) {
                 follow_entries.push(entry);
             }
@@ -2686,4 +2697,24 @@ fn host_canvas_node_for_entry(scene: &BbScene, entry: &serde_json::Value) -> Opt
             .get(&id)
             .is_some_and(|node| crate::bb_brand_apply::entry_matches_scene(entry, id, node, scene))
     })
+}
+
+/// A WidgetCanvas slot is a sub-full TILING panel when it does NOT fill its
+/// parent on at least one axis (`Percent < 1.0`). Such slots are laid out
+/// alongside their siblings rather than overlaid: the LR-indicator master
+/// (`HC_HUD_Ship_LRInd_Master`) tiles a left and a right `width = 0.5 Percent`
+/// column, both visible at once, so every matching `Set Canvas` entry must fill
+/// its own slot. A slot sized to fill or over-fill the canvas (`Percent >= 1.0`,
+/// or a non-`Percent` behaviour such as `PercentOfY`) is instead a centred
+/// OVERLAY mode — `MC_S_Self_Master`'s five mutually-exclusive view modes — which
+/// stay mutually exclusive under the at-rest single pick (the counterexample
+/// scoping this rule).
+fn host_is_subfull_tiling_slot(scene: &BbScene, id: BbNodeId) -> bool {
+    let Some(node) = scene.nodes.get(&id) else {
+        return false;
+    };
+    let subfull = |v: &crate::bb_scene::BbValue| {
+        matches!(v, crate::bb_scene::BbValue::Percent(p) if *p < 1.0 - 1e-3)
+    };
+    subfull(&node.sizing.width) || subfull(&node.sizing.height)
 }

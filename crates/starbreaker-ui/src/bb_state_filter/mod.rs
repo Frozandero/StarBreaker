@@ -212,6 +212,13 @@ pub fn instantiated_false_widgets_with_param_inputs_inherited_bindings_and_defau
     }
     // Scene nodes by pointer — lets the mutually-exclusive-toggle check confirm a
     // gated widget is a sub-canvas variant (`WidgetCanvas` + `canvas` URL).
+    // `scene_nodes` is the raw array (some interchangeable slots carry no
+    // `_Pointer_`, so the tiling-sibling scan reads the array, not the map).
+    let scene_nodes: &[serde_json::Value] = record_value
+        .get("scene")
+        .and_then(|v| v.as_array())
+        .map(|a| a.as_slice())
+        .unwrap_or(&[]);
     let mut scene_by_ptr: HashMap<BbNodeId, &serde_json::Value> = HashMap::new();
     if let Some(scene) = record_value.get("scene").and_then(|v| v.as_array()) {
         for item in scene {
@@ -374,6 +381,18 @@ pub fn instantiated_false_widgets_with_param_inputs_inherited_bindings_and_defau
         {
             val = true;
         }
+        // Sub-full TILING canvas slots render as one co-displayed panel group
+        // (the LR-indicator master's left/right half-width columns). A gated
+        // column whose at-rest `Instantiated` resolves false is kept alongside
+        // its always-on tiling sibling so the static export doesn't blank half
+        // the display. Full-size overlay modes are NOT tiling slots, so their
+        // exclusivity is unchanged.
+        if !val
+            && field == "Instantiated"
+            && is_tiling_sibling_canvas_slot(widget, &scene_by_ptr, scene_nodes)
+        {
+            val = true;
+        }
         if state_probe {
             let widget_name = ptr_to_name.get(&widget).cloned().unwrap_or_default();
             let input_ty = input_ref
@@ -473,6 +492,80 @@ fn is_subcanvas_variant(
                 .get("canvas")
                 .and_then(|v| v.as_str())
                 .is_some_and(|c| !c.is_empty())
+    })
+}
+
+/// Horizontal span `[x0, x1]` (fractions of the parent) of a sub-full-WIDTH
+/// WidgetCanvas slot, from its `anchor.x` + `width` (`Percent` behaviour with
+/// `value < 1.0`); `None` for a full-width / fixed / non-`Percent` slot (which
+/// is not a horizontal tile column). `x0 = anchor.x * (1 - width)` places the
+/// slot against its anchored edge (left-anchored 0 → `[0, w]`, right-anchored
+/// 1 → `[1-w, 1]`).
+fn subfull_width_span(node: &serde_json::Value) -> Option<(f64, f64)> {
+    if node.get("_Type_").and_then(|v| v.as_str()) != Some("BuildingBlocks_WidgetCanvas") {
+        return None;
+    }
+    let width = node.get("sizing").and_then(|s| s.get("width"))?;
+    if width.get("behavior").and_then(|b| b.as_str()) != Some("Percent") {
+        return None;
+    }
+    let w = width.get("value").and_then(|x| x.as_f64())?;
+    if !(w < 1.0 - 1e-3) {
+        return None;
+    }
+    let anchor_x = node
+        .get("anchor")
+        .and_then(|a| a.get("x"))
+        .and_then(|x| x.as_f64())
+        .unwrap_or(0.0);
+    let x0 = anchor_x * (1.0 - w);
+    Some((x0, x0 + w))
+}
+
+/// True when `widget` is a sub-full-WIDTH WidgetCanvas column that shares its
+/// parent with another sub-full-width WidgetCanvas occupying a DISJOINT
+/// horizontal span — i.e. genuine side-by-side TILING columns that render
+/// together. Motivating case: the LR-indicator master
+/// (`HC_HUD_Ship_LRInd_Master`) — "one large tall image" split into apparent
+/// indicators by cockpit geometry — tiles a left column (`anchor.x = 0`,
+/// `width = 0.5`, gated `Instantiated = (powerstate==1) AND seatdashboard/isactive`)
+/// and a right column (`anchor.x = 1`, `width = 0.5`, ungated). When the left
+/// column's at-rest gate resolves false the static export would blank half the
+/// display, so a gated tiling column is kept instantiated alongside its sibling.
+///
+/// Scoped to DISJOINT HORIZONTAL columns by counterexample so the mutual
+/// exclusivity of stacked / overlaid sub-canvases is untouched:
+/// - the medical bed (`ui_target_a`) stacks mutually-exclusive FULL-WIDTH state
+///   screens (MainMenu/HealMe/…) in a sub-full-HEIGHT content band — not
+///   sub-full-WIDTH, so excluded;
+/// - MC_S_Self_Master's view modes are full-size centred overlays; and
+/// - the radar's host-plane `X` / `NOT X` variants OVERLAP (no disjoint span).
+///
+/// The sibling scan reads the raw scene array (not `scene_by_ptr`) because an
+/// interchangeable slot may carry no `_Pointer_`. No node-name / ship / screen
+/// gating.
+fn is_tiling_sibling_canvas_slot(
+    widget: BbNodeId,
+    scene_by_ptr: &HashMap<BbNodeId, &serde_json::Value>,
+    scene: &[serde_json::Value],
+) -> bool {
+    let Some(node) = scene_by_ptr.get(&widget) else {
+        return false;
+    };
+    let Some((x0, x1)) = subfull_width_span(node) else {
+        return false;
+    };
+    let parent = node.get("parent");
+    let name = node.get("name").and_then(|v| v.as_str());
+    scene.iter().any(|other| {
+        if other.get("name").and_then(|v| v.as_str()) == name || other.get("parent") != parent {
+            return false;
+        }
+        match subfull_width_span(other) {
+            // Disjoint horizontal spans (touching allowed) → genuine tiling.
+            Some((ox0, ox1)) => x1 <= ox0 + 1e-3 || ox1 <= x0 + 1e-3,
+            None => false,
+        }
     })
 }
 

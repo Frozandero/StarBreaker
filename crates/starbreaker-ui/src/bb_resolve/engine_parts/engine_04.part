@@ -955,6 +955,121 @@ mod tests_param_relay {
             "non-active AEGS authored-default placeholder must NOT overlay the active variant"
         );
     }
+
+    /// A child canvas with a single uniquely-named node, so a test can assert
+    /// whether that child's content merged into the parent.
+    fn named_leaf_child(record: &str, node_name: &str) -> serde_json::Value {
+        serde_json::json!({
+            "_RecordName_": format!("BuildingBlocks_Canvas.{record}"),
+            "_RecordId_": format!("00000000-0000-0000-0000-{:0>12}", node_name.len()),
+            "_RecordValue_": {
+                "_Type_": "BuildingBlocks_Canvas",
+                "size": {"_Type_": "Vec3", "x": 100.0, "y": 100.0, "z": 0.0},
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                     "name": node_name, "isActive": true}
+                ]
+            }
+        })
+    }
+
+    /// The LR-indicator master pattern: an UN-NAMESPACED master with TWO
+    /// interchangeable WidgetCanvas slots, each selected by its own `Set Canvas
+    /// Left/Right` style entry via a distinct tag. `slot_width` controls whether
+    /// the slots TILE (sub-full, e.g. `0.5` half-width laid out side-by-side —
+    /// both visible) or OVERLAY (full-size `1.0` — mutually exclusive modes,
+    /// like MC_S_Self_Master's five view modes).
+    fn interchangeable_two_slot_master(slot_width: f64) -> serde_json::Value {
+        let left_tag = "aaaaaaaa-0000-0000-0000-0000000000l1";
+        let right_tag = "bbbbbbbb-0000-0000-0000-0000000000r1";
+        let entry = |name: &str, tag: &str, child: &str| {
+            serde_json::json!({
+                "_Type_": "BuildingBlocks_StyleEntry", "name": name,
+                "conditionsList": [{"_Type_": "BuildingBlocks_StyleConditionList", "name": "cl",
+                    "conditions": [
+                        {"_Type_": "BuildingBlocks_StyleSelectorConditionType", "type": "Canvas"},
+                        {"_Type_": "BuildingBlocks_StyleSelectorConditionTag", "tag": {"_RecordId_": tag}}
+                    ]}],
+                "modifiers": [{"_Type_": "BuildingBlocks_FieldModifierRecordRef",
+                    "field": {"_Type_": "BuildingBlocks_FieldModifierRecordRefTypeCanvasReferenceRecord",
+                              "value": child}}],
+                "transitions": []
+            })
+        };
+        let slot = |ptr: &str, name: &str, anchor_x: f64, tag: &str| {
+            serde_json::json!({
+                "_Pointer_": ptr, "_Type_": "BuildingBlocks_WidgetCanvas",
+                "name": name, "parent": "_PointsTo_:ptr:1", "isActive": true,
+                "instantiated": true, "canvas": "",
+                "anchor": {"_Type_": "Vec3", "x": anchor_x, "y": 0.0, "z": 0.0},
+                "sizing": {"_Type_": "BuildingBlocks_Size",
+                    "width": {"_Type_": "BuildingBlocks_FixedOrRelativeValue", "value": slot_width, "behavior": "Percent"},
+                    "height": {"_Type_": "BuildingBlocks_FixedOrRelativeValue", "value": 1.0, "behavior": "Percent"}},
+                "styleTags": [{"_RecordId_": tag}]
+            })
+        };
+        serde_json::json!({
+            "_RecordName_": "BuildingBlocks_Canvas.Test_TwoSlotMaster",
+            "_RecordId_": "00000000-0000-0000-0000-00000000aa01",
+            "_RecordValue_": {
+                "_Type_": "BuildingBlocks_Canvas",
+                "size": {"_Type_": "Vec3", "x": 100.0, "y": 100.0, "z": 0.0},
+                "defaultStyles": {
+                    "_Type_": "BuildingBlocks_CanvasStyles",
+                    "entries": [
+                        entry("Set Canvas Left", left_tag, "file://./test_left_child.json"),
+                        entry("Set Canvas Right", right_tag, "file://./test_right_child.json")
+                    ]
+                },
+                "scene": [
+                    {"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget", "name": "root", "isActive": true},
+                    slot("ptr:2", "canvas_left", 0.0, left_tag),
+                    slot("ptr:3", "canvas_right", 1.0, right_tag)
+                ]
+            }
+        })
+    }
+
+    fn fetcher_two_slot(path: &str) -> Result<serde_json::Value, String> {
+        let p = path.to_ascii_lowercase();
+        if p.contains("test_left_child") {
+            Ok(named_leaf_child("Test_LeftChild", "leaf_left"))
+        } else if p.contains("test_right_child") {
+            Ok(named_leaf_child("Test_RightChild", "leaf_right"))
+        } else {
+            Err(format!("no record for '{path}'"))
+        }
+    }
+
+    /// Two HALF-WIDTH tiling slots (the LR-indicator master): BOTH columns'
+    /// content must merge — they are laid out side-by-side and both visible.
+    #[test]
+    fn tiling_canvas_slots_both_merge_for_unnamespaced_master() {
+        let scene =
+            resolve_canvas_graph(&interchangeable_two_slot_master(0.5), Some("drak"), &fetcher_two_slot)
+                .expect("resolve");
+        let names: std::collections::HashSet<&str> =
+            scene.nodes.values().map(|n| n.name.as_str()).collect();
+        assert!(names.contains("leaf_left"), "left tiling slot content must merge; nodes={names:?}");
+        assert!(names.contains("leaf_right"), "right tiling slot content must merge; nodes={names:?}");
+    }
+
+    /// Two FULL-SIZE overlay slots (MC_S_Self_Master's view-mode pattern): only
+    /// the single at-rest pick merges — they stay mutually exclusive, guarding
+    /// the sub-full discriminator from over-merging overlay modes.
+    #[test]
+    fn full_size_overlay_slots_stay_mutually_exclusive() {
+        let scene =
+            resolve_canvas_graph(&interchangeable_two_slot_master(1.0), Some("drak"), &fetcher_two_slot)
+                .expect("resolve");
+        let names: std::collections::HashSet<&str> =
+            scene.nodes.values().map(|n| n.name.as_str()).collect();
+        let merged = [names.contains("leaf_left"), names.contains("leaf_right")]
+            .iter()
+            .filter(|&&b| b)
+            .count();
+        assert_eq!(merged, 1, "full-size overlay modes stay mutually exclusive; nodes={names:?}");
+    }
 }
 
 // Tests for parent param wiring target selection vs merged descendant defs

@@ -9,6 +9,7 @@
     "/ship/hp/current": "MAX",
     "/ship/hp/max": "MAX",
     "/seatdashboard/powerstate": 1,
+    "/seatdashboard/isactive": true,
     "/AnnunciatorProvider/Issues/[0000]/Severity": 0,
     "/AnnunciatorProvider/Issues/[0001]/Severity": 1,
     "/AnnunciatorProvider/Issues/[0002]/Severity": 0,
