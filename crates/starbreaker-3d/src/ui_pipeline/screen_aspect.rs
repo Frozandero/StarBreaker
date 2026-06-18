@@ -9,13 +9,15 @@
 //! shape exists is the geometry.
 //!
 //! [`ui_screen_aspect`] finds the UI-render-target faces on a named mesh node and
-//! returns their in-plane aspect (long / short extent, ≥ 1.0) via principal-axis
-//! analysis ([`planar_aspect`]). The aspect is invariant to the rigid placement
-//! transform (the cockpit screen nodes carry uniform scale — verified), so it is
-//! computed directly from the exported model-space vertices. Curved screens
-//! (e.g. radar) yield the chord aspect, a close lower bound on the true arc
-//! aspect. Validated against the in-game references: g-force/velocity 1.0,
-//! compass 3.27, annunciator 5.58, the curved 4:3 MFDs 1.333.
+//! returns their ORIENTED in-plane aspect width / height via principal-axis
+//! analysis ([`planar_aspect_w_over_h`]): the two in-plane axes are classified
+//! against world-up (`+Z`), so a landscape screen reports `> 1.0` and a PORTRAIT
+//! screen (the LR-indicator's tall column display) reports `< 1.0` instead of the
+//! orientation-blind long/short ratio. Computed from the exported world-space
+//! vertices, so it survives the cockpit screen's tilt. Curved screens (e.g.
+//! radar) yield the chord aspect, a close lower bound on the true arc aspect.
+//! Validated against the in-game references: g-force/velocity 1.0, compass 3.27,
+//! annunciator 5.58, the curved 4:3 MFDs 1.333, the LR-indicator 0.64 (portrait).
 
 use crate::mtl::MtlFile;
 use crate::nmc::NodeMeshCombo;
@@ -45,13 +47,23 @@ fn is_render_target_name(name: &str) -> bool {
         .any(|marker| lower.contains(marker))
 }
 
-/// Aspect (long / short in-plane extent, ≥ 1.0) of the UI-render-target faces on
-/// the mesh node named `node_name`, or `None` when the screen quad cannot be
-/// located (no matching material/node) or is degenerate.
+/// World-space "up" in the cockpit (CryEngine is Z-up): the axis used to
+/// classify a screen quad's in-plane principal axes into horizontal (width) and
+/// vertical (height) for the oriented aspect.
+const COCKPIT_WORLD_UP: [f64; 3] = [0.0, 0.0, 1.0];
+
+/// ORIENTED aspect width / height of the UI-render-target faces on the mesh node
+/// named `node_name` — `> 1.0` landscape, `< 1.0` PORTRAIT (the LR-indicator's
+/// tall column display) — or `None` when the screen quad cannot be located (no
+/// matching material/node) or is degenerate.
 ///
-/// `node_name` is the binding's `helper_name` (the cockpit screen hardpoint).
-/// When `nmc` is absent the node cannot be disambiguated, so this returns `None`
-/// rather than risk measuring an unrelated screen on the same mesh.
+/// The screen quad is tilted in the cockpit; its in-plane principal axes are
+/// classified against [`COCKPIT_WORLD_UP`] so a portrait screen reports `< 1.0`
+/// rather than the long/short ratio (the engine sizes the render target to the
+/// real physical orientation). `node_name` is the binding's `helper_name` (the
+/// cockpit screen hardpoint). When `nmc` is absent the node cannot be
+/// disambiguated, so this returns `None` rather than risk measuring an unrelated
+/// screen on the same mesh.
 pub(crate) fn ui_screen_aspect(
     mesh: &Mesh,
     nmc: Option<&NodeMeshCombo>,
@@ -59,7 +71,18 @@ pub(crate) fn ui_screen_aspect(
     node_name: &str,
 ) -> Option<f32> {
     let points = collect_render_target_vertices(mesh, nmc, materials, node_name);
-    planar_aspect(&points)
+    if std::env::var_os("SB_SCREEN_ASPECT_ORIENT_PROBE").is_some()
+        && let Some((axes, extents)) = planar_axes_extents(&points)
+    {
+        eprintln!(
+            "SCREEN_ORIENT node={node_name} major_ax={:?} major_ext={:.3} minor_ax={:?} minor_ext={:.3} |major.z|={:.3} |minor.z|={:.3} long/short={:.3} w/h={:?}",
+            axes[0], extents[0], axes[1], extents[1],
+            axes[0][2].abs(), axes[1][2].abs(),
+            extents[0] / extents[1].max(1e-9),
+            planar_aspect_w_over_h(&points, COCKPIT_WORLD_UP),
+        );
+    }
+    planar_aspect_w_over_h(&points, COCKPIT_WORLD_UP)
 }
 
 /// Gather the model-space vertex positions of every UI-render-target submesh that
@@ -106,14 +129,12 @@ fn collect_render_target_vertices(
         .collect()
 }
 
-/// In-plane aspect (largest / second-largest principal extent, ≥ 1.0) of a point
-/// set, or `None` when fewer than 3 points or the set is effectively 1-D.
-///
-/// Principal-axis analysis (eigenvectors of the covariance) aligns the
-/// measurement axes to the quad's own edges, so the aspect is correct regardless
-/// of how the screen is tilted in the cockpit — unlike an axis-aligned bounding
-/// box, which collapses a tilted quad.
-pub(crate) fn planar_aspect(points: &[[f32; 3]]) -> Option<f32> {
+/// Principal in-plane axes (world-space unit vectors) and their extents for a
+/// point set, ranked by extent descending — `[major, minor, normal]`. `None`
+/// when fewer than 3 points. Principal-axis analysis (eigenvectors of the
+/// covariance) aligns the measurement axes to the quad's own edges, so the
+/// result is correct regardless of how the screen is tilted in the cockpit.
+fn planar_axes_extents(points: &[[f32; 3]]) -> Option<([[f64; 3]; 3], [f64; 3])> {
     if points.len() < 3 {
         return None;
     }
@@ -142,32 +163,80 @@ pub(crate) fn planar_aspect(points: &[[f32; 3]]) -> Option<f32> {
         }
     }
 
-    let axes = jacobi_eigenvectors_3x3(cov);
+    let eig = jacobi_eigenvectors_3x3(cov);
     // Measure the spread along each principal axis (max - min projection); the
     // covariance eigenvalue orders by variance, but the extent is what the
     // render target must match, so measure extents directly and rank those.
-    let mut extents = [0.0f64; 3];
-    for (a, axis) in axes.iter().enumerate() {
-        let mut lo = f64::INFINITY;
-        let mut hi = f64::NEG_INFINITY;
-        for p in points {
-            let d = [
-                p[0] as f64 - centroid[0],
-                p[1] as f64 - centroid[1],
-                p[2] as f64 - centroid[2],
-            ];
-            let proj = d[0] * axis[0] + d[1] * axis[1] + d[2] * axis[2];
-            lo = lo.min(proj);
-            hi = hi.max(proj);
-        }
-        extents[a] = hi - lo;
-    }
-    extents.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
+    let mut pairs: Vec<([f64; 3], f64)> = eig
+        .iter()
+        .map(|&axis| {
+            let mut lo = f64::INFINITY;
+            let mut hi = f64::NEG_INFINITY;
+            for p in points {
+                let d = [
+                    p[0] as f64 - centroid[0],
+                    p[1] as f64 - centroid[1],
+                    p[2] as f64 - centroid[2],
+                ];
+                let proj = d[0] * axis[0] + d[1] * axis[1] + d[2] * axis[2];
+                lo = lo.min(proj);
+                hi = hi.max(proj);
+            }
+            (axis, hi - lo)
+        })
+        .collect();
+    pairs.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    let axes = [pairs[0].0, pairs[1].0, pairs[2].0];
+    let extents = [pairs[0].1, pairs[1].1, pairs[2].1];
+    Some((axes, extents))
+}
+
+/// In-plane aspect (largest / second-largest principal extent, ≥ 1.0) of a point
+/// set, or `None` when fewer than 3 points or the set is effectively 1-D.
+/// Orientation-AGNOSTIC: always the long/short ratio. Production sizing uses the
+/// oriented [`planar_aspect_w_over_h`]; this remains as the long/short reference
+/// the PCA-extent tests assert against.
+#[cfg(test)]
+fn planar_aspect(points: &[[f32; 3]]) -> Option<f32> {
+    let (_, extents) = planar_axes_extents(points)?;
     let (major, minor) = (extents[0], extents[1]);
     if minor <= 1e-9 || !major.is_finite() {
         return None;
     }
     Some((major / minor) as f32)
+}
+
+/// ORIENTED in-plane aspect width / height (can be < 1.0 for a PORTRAIT screen),
+/// where "up" in the cockpit is `world_up`. The two in-plane principal axes are
+/// classified by their alignment with `world_up`: the axis more parallel to it
+/// is the VERTICAL (height) axis, the other is HORIZONTAL (width); aspect =
+/// horizontal_extent / vertical_extent.
+///
+/// A landscape screen (the annunciator, compass, MFDs) has its long axis
+/// horizontal, so width = major, height = minor and the result matches
+/// [`planar_aspect`]. A PORTRAIT screen (the LR-indicator's tall column display)
+/// has its long axis vertical, so width = minor, height = major and the result
+/// is < 1.0. `None` when degenerate or the plane is parallel to `world_up`
+/// (no resolvable horizontal/vertical split).
+pub(crate) fn planar_aspect_w_over_h(points: &[[f32; 3]], world_up: [f64; 3]) -> Option<f32> {
+    let (axes, extents) = planar_axes_extents(points)?;
+    // The two in-plane axes are the two largest extents (the third is the
+    // near-zero plane normal).
+    let up_align = |axis: &[f64; 3]| {
+        (axis[0] * world_up[0] + axis[1] * world_up[1] + axis[2] * world_up[2]).abs()
+    };
+    let (a0, e0) = (axes[0], extents[0]);
+    let (a1, e1) = (axes[1], extents[1]);
+    // Classify the more up-aligned in-plane axis as vertical.
+    let (width_extent, height_extent) = if up_align(&a0) >= up_align(&a1) {
+        (e1, e0) // axis 0 is vertical (height), axis 1 horizontal (width)
+    } else {
+        (e0, e1) // axis 0 is horizontal (width), axis 1 vertical (height)
+    };
+    if height_extent <= 1e-9 || !width_extent.is_finite() {
+        return None;
+    }
+    Some((width_extent / height_extent) as f32)
 }
 
 /// Eigenvectors (as `[x, y, z]` rows) of a symmetric 3×3 matrix via cyclic
@@ -269,6 +338,37 @@ mod tests {
         assert!((sq - 1.0).abs() < 1e-3, "tilted square was {sq}");
     }
 
+    /// Upright quad in the X-Z plane: width along X, height along world-up +Z.
+    fn upright_rect_points(w: f32, h: f32, ax: f32, ay: f32) -> Vec<[f32; 3]> {
+        [[0.0, 0.0, 0.0], [w, 0.0, 0.0], [w, 0.0, h], [0.0, 0.0, h]]
+            .into_iter()
+            .map(|p| tilt(p, ax, ay))
+            .collect()
+    }
+
+    #[test]
+    fn planar_aspect_w_over_h_orients_landscape_and_portrait() {
+        let up = [0.0, 0.0, 1.0];
+        // Landscape: width 2 (X) > height 1 (Z) → w/h = 2.0.
+        let land = planar_aspect_w_over_h(&upright_rect_points(2.0, 1.0, 0.0, 0.0), up).unwrap();
+        assert!((land - 2.0).abs() < 1e-4, "landscape w/h was {land}");
+        // Portrait: width 1 (X) < height 2 (Z) → w/h = 0.5 (the LR-indicator case
+        // long/short would report 2.0, hiding the portrait orientation).
+        let port = planar_aspect_w_over_h(&upright_rect_points(1.0, 2.0, 0.0, 0.0), up).unwrap();
+        assert!((port - 0.5).abs() < 1e-4, "portrait w/h was {port}");
+        // long/short is orientation-agnostic (always >= 1) for both.
+        assert!((planar_aspect(&upright_rect_points(1.0, 2.0, 0.0, 0.0)).unwrap() - 2.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn planar_aspect_w_over_h_portrait_survives_tilt() {
+        // A portrait screen tilted back in the cockpit must still read < 1.0: the
+        // vertical edge (height, +Z-ward) stays the more up-aligned axis.
+        let up = [0.0, 0.0, 1.0];
+        let port = planar_aspect_w_over_h(&upright_rect_points(1.0, 1.56, 0.5, 0.0), up).unwrap();
+        assert!((port - 1.0 / 1.56).abs() < 1e-2, "tilted portrait w/h was {port}");
+    }
+
     #[test]
     fn planar_aspect_rejects_degenerate() {
         assert_eq!(planar_aspect(&[]), None);
@@ -322,21 +422,24 @@ mod tests {
         }
     }
 
-    /// A 2:1 quad on node index 1, material `RTT_Screen`, plus a decoy 1:1 quad
-    /// on node index 2 with a non-UI material to prove selection is specific.
+    /// An UPRIGHT 2:1 (wide) quad on node index 1, material `RTT_Screen`, plus a
+    /// decoy 1:1 quad on node index 2 with a non-UI material to prove selection
+    /// is specific. The quad stands in the X-Z plane (width along X, height along
+    /// world-up +Z) like a real cockpit screen, so the oriented w/h aspect is
+    /// well-defined.
     fn screen_mesh() -> (Mesh, NodeMeshCombo) {
         let mut mesh = empty_mesh();
-        // node-1 quad: 2.0 x 1.0
+        // node-1 quad: width X=2.0, height Z=1.0 (landscape, upright in X-Z).
         mesh.positions = vec![
             [0.0, 0.0, 0.0],
             [2.0, 0.0, 0.0],
-            [2.0, 1.0, 0.0],
-            [0.0, 1.0, 0.0],
-            // node-2 decoy quad: 1.0 x 1.0
-            [0.0, 0.0, 5.0],
-            [1.0, 0.0, 5.0],
-            [1.0, 1.0, 5.0],
-            [0.0, 1.0, 5.0],
+            [2.0, 0.0, 1.0],
+            [0.0, 0.0, 1.0],
+            // node-2 decoy quad: 1.0 x 1.0, offset in Y.
+            [0.0, 5.0, 0.0],
+            [1.0, 5.0, 0.0],
+            [1.0, 5.0, 1.0],
+            [0.0, 5.0, 1.0],
         ];
         mesh.indices = vec![0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7];
         let mut ui = submesh("drak_int_master_01_mtl_RTT_Screen_02", 1, 6);
