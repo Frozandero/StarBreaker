@@ -45,13 +45,13 @@ if [[ -z "$HELPER" ]]; then
 fi
 # Scene: explicit --scene wins; else pick the LOD0/LOD1 Clipper scene. The LOD
 # defaults from the helper — the cockpit dashboard screens are all on the LOD0
-# CGA (the small HUD screens g-force/velocity/countermeasures/compass are CULLED
-# in LOD1, ledger 47); the interior usables (door, medical) are LOD1 (dossier
-# §3). Override with --lod 0|1.
+# CGA (the small HUD screens g-force/velocity/countermeasures/compass/annunciator
+# AND the `*_RTT_Small` LR-indicator are CULLED in LOD1, ledger 47); the interior
+# usables (door, medical) are LOD1 (dossier §3). Override with --lod 0|1.
 if [[ -z "$SCENE" ]]; then
     if [[ -z "$LOD" ]]; then
         case "$HELPER" in
-            *_RTT|Screen_Small_Radar*|Screen_Central_Compass|Countermeasures_Screen|screen_flight_hud*|Screen_Annunciator_*)
+            *_RTT|*_RTT_Small|Screen_Small_Radar*|Screen_Central_Compass|Countermeasures_Screen|screen_flight_hud*|Screen_Annunciator_*)
                 LOD=0 ;;
             *) LOD=1 ;;
         esac
