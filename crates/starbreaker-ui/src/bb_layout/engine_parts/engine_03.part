@@ -39,4 +39,25 @@ mod materialised_entry_tests {
         let overlap = (e0.y.max(e1.y)) < (e0.y + e0.h).min(e1.y + e1.h);
         assert!(!overlap, "materialised entries must not overlap: {e0:?} vs {e1:?}");
     }
+
+    /// A 16:9 `useRaw` canvas on a SQUARE target with `cover_fit` FILLS the target
+    /// non-uniformly (`sx`/`sy`): a full-width/height `Percent` panel spans the
+    /// whole square — NOT cover-overflowed (w>target, the old uniform-max path) nor
+    /// contain-letterboxed (w<target). This is the cockpit countermeasure/ball
+    /// screen fit (the 16:9 UI is stretched onto the square physical screen).
+    #[test]
+    fn useraw_cover_fit_fills_square_target_non_uniformly() {
+        let pct = serde_json::json!({"value": 1.0, "behavior": "Percent"});
+        let canvas = serde_json::json!({"_RecordValue_": {"_Type_": "BuildingBlocks_Canvas",
+            "size": {"x": 1920.0, "y": 1080.0}, "coordinateMethod": "useRaw", "operations": [],
+            "scene": [serde_json::json!({"_Pointer_": "ptr:1", "_Type_": "BuildingBlocks_DisplayWidget",
+                "name": "panel", "isActive": true, "sizing": {"width": pct, "height": pct}})]}});
+        let parsed = parse_bb_canvas(&canvas).expect("fixture parses");
+        let result = layout_with_animation_sample(&parsed, 1920, 1920, None, true, true);
+        let panel = result.rects[&1];
+        assert!(
+            (panel.w - 1920.0).abs() < 1.0 && (panel.h - 1920.0).abs() < 1.0,
+            "fill: full-bleed panel must span the whole square target (no overflow / no letterbox), got {panel:?}"
+        );
+    }
 }

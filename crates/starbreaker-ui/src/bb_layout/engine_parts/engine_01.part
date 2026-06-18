@@ -142,7 +142,7 @@ pub struct LayoutResult {
 /// Never panics on well-formed input.  Unknown `BbValue` behaviors produce
 /// warnings and fall back to filling the parent dimension.
 pub fn layout(scene: &BbScene, target_w: u32, target_h: u32) -> LayoutResult {
-    layout_with_animation_sample(scene, target_w, target_h, None, false)
+    layout_with_animation_sample(scene, target_w, target_h, None, false, false)
 }
 
 /// Compute pixel-space rects while applying sampled animated SizeX/SizeY
@@ -164,6 +164,7 @@ pub fn layout_with_animation_sample(
     target_h: u32,
     animation_sample_percent: Option<f32>,
     cover_fit: bool,
+    mesh_aspect_fill: bool,
 ) -> LayoutResult {
     let (canvas_rect, csx, csy, canvas_scale) = if scene.canvas_size.0 > 0.0 && scene.canvas_size.1 > 0.0 {
         let sx = target_w as f32 / scene.canvas_size.0;
@@ -183,14 +184,25 @@ pub fn layout_with_animation_sample(
                 sy,
                 sx.min(sy),
             ),
+            BbCoordinateMethod::UseRaw if cover_fit && mesh_aspect_fill => {
+                // A 2D `useRaw` cockpit screen (ball gauges, countermeasure panels)
+                // FILLS its square MESH-aspect target non-uniformly (`sx`/`sy`), like
+                // `auto`: `PercentOfX/Y` content (the ball) stays proportional, full-
+                // width `Percent` content (panels) stretches; Fixed/text use the smaller
+                // axis (true screen size, not ×max). Radar's RTT scope keeps COVER below.
+                (
+                    Rect { x: 0.0, y: 0.0, w: target_w as f32, h: target_h as f32 },
+                    sx,
+                    sy,
+                    sx.min(sy),
+                )
+            }
             BbCoordinateMethod::UseRaw => {
+                // COVER (uniform max, origin-anchored, recentred below) for a mesh-
+                // aspect RTT scope (radar); CONTAIN (uniform min, letterboxed) otherwise.
                 let canvas_scale = if cover_fit { sx.max(sy) } else { sx.min(sy) };
                 let scaled_w = scene.canvas_size.0 * canvas_scale;
                 let scaled_h = scene.canvas_size.1 * canvas_scale;
-                // Contain centres the scaled canvas (letterbox); cover anchors it at
-                // the origin so the scaled canvas (≥ target) overflows the trailing
-                // edge and crops there, keeping the origin-authored primary widget
-                // (the gauge ball) in frame.
                 let (offset_x, offset_y) = if cover_fit {
                     (0.0, 0.0)
                 } else {
@@ -251,9 +263,11 @@ pub fn layout_with_animation_sample(
     // Scrollbar thumbs reflect the laid-out scroll model (see part_13.part).
     apply_scroll_thumb_rects(scene, &mut rects);
 
-    // Cover-fit centring (see `cover_fit_recentre`): re-anchor the origin-anchored
-    // covered canvas so the gauge ball-area is centred on the screen.
-    if cover_fit {
+    // Cover-fit centring (`cover_fit_recentre`): centre the gauge ball-area, but only
+    // when the canvas OVERFLOWS the target (cover/radar path; FILL has no overflow).
+    let canvas_overflows =
+        canvas_rect.w > target_w as f32 + 0.5 || canvas_rect.h > target_h as f32 + 0.5;
+    if cover_fit && canvas_overflows {
         cover_fit_recentre(
             &mut rects,
             |id| scene.nodes.get(&id).is_some_and(|n| n.is_active),
@@ -1414,16 +1428,12 @@ fn layout_flex_no_grow_children(
                 && let Some(intrinsic) = auto_text_intrinsic_main(child_id, scene, csy, false)
             {
                 // A materialised LIST ENTRY (cloned per array element, flagged
-                // `_MaterialisedEntry_` by `apply_array_variable_lists`) authored
-                // Auto height fits its content so the list's flex justification
-                // can DISTRIBUTE the entries down the column instead of overlaying
-                // every clone at one anchor (Auto's fill fallback). The
-                // countermeasure list (ColumnReverse / SpaceEvenly) shows one
-                // launcher panel per entry; without this both launchers' counts
-                // pile onto one spot. Scoped to materialised entries, so authored
-                // (non-list) column children — the medical/power fill pins — are
-                // untouched, and to Auto height (the power pip entries are
-                // Fixed/Percent and keep their explicit slot size).
+                // `_MaterialisedEntry_` by `apply_array_variable_lists`) with Auto
+                // height fits its content so the list's flex justification can
+                // DISTRIBUTE entries down the column instead of overlaying every clone
+                // at one anchor (the countermeasure list shows one launcher panel per
+                // entry). Scoped to materialised + Auto height, so authored column
+                // children (medical/power fill pins, Fixed/Percent pips) are untouched.
                 h = intrinsic;
                 auto_main = false;
             } else if is_row {
@@ -1459,6 +1469,22 @@ fn layout_flex_no_grow_children(
                     w = intrinsic;
                 }
             }
+        }
+        // A RIGHT-anchored materialised LIST ENTRY in a COLUMN content-fits its
+        // CROSS width so the placement below right-aligns it per `anchor.x=1.0` —
+        // count card at the panel's RIGHT (ref), dot overlay (entry-left, pivot.x=22)
+        // at the left. Scoped to materialised rows + right anchor + Auto width.
+        if !is_row
+            && node
+                .raw
+                .get("_MaterialisedEntry_")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+            && (node.anchor.x >= 0.99 || node.pivot.x >= 0.99)
+            && matches!(node.sizing.width, BbValue::Other { ref behavior, .. } if behavior == "Auto")
+            && let Some(intrinsic) = auto_text_intrinsic_main(child_id, scene, csx, true)
+        {
+            w = intrinsic;
         }
         if (node.anchor.x >= 0.99 && node.pivot.x >= 0.99) || right_edge_auto_hint {
             right_aligned_flow_items += 1;
@@ -2682,7 +2708,7 @@ mod tests {
         let scene = BbScene { coordinate_method: crate::bb_scene::BbCoordinateMethod::UseRaw, canvas_size: (400.0, 300.0), roots: vec![1], nodes, operations: vec![] };
 
         let static_result = layout(&scene, 400, 300);
-        let sampled_result = layout_with_animation_sample(&scene, 400, 300, Some(50.0), false);
+        let sampled_result = layout_with_animation_sample(&scene, 400, 300, Some(50.0), false, false);
         assert!((static_result.rects[&2].w - 340.0).abs() < 0.5);
         assert!((sampled_result.rects[&2].w - 334.0).abs() < 0.5);
         assert!((sampled_result.rects[&2].h - 250.5).abs() < 0.5);
@@ -2740,7 +2766,7 @@ mod tests {
         nodes.insert(1, node);
         let scene = BbScene { coordinate_method: crate::bb_scene::BbCoordinateMethod::UseRaw, canvas_size: (200.0, 100.0), roots: vec![1], nodes, operations: vec![] };
 
-        let result = layout_with_animation_sample(&scene, 200, 100, Some(50.0), false);
+        let result = layout_with_animation_sample(&scene, 200, 100, Some(50.0), false, false);
         let rect = result.rects[&1];
         assert!((rect.x - 25.0).abs() < 0.5, "expected sampled PosXOffset x 25, got {}", rect.x);
     }
@@ -2800,7 +2826,7 @@ mod tests {
         nodes.insert(1, node);
         let scene = BbScene { coordinate_method: crate::bb_scene::BbCoordinateMethod::UseRaw, canvas_size: (200.0, 100.0), roots: vec![1], nodes, operations: vec![] };
 
-        let result = layout_with_animation_sample(&scene, 200, 100, Some(50.0), false);
+        let result = layout_with_animation_sample(&scene, 200, 100, Some(50.0), false, false);
         let rect = result.rects[&1];
         // The hand-tuned 2/3 phase ratio was deleted (remediation plan
         // Phase 4 audit: no frozen pin referenced it) — additive

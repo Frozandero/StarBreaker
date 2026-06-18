@@ -513,6 +513,11 @@ pub fn compile_ir_for_binding(inputs: &PipelineInputs<'_>) -> Result<UiIrDocumen
         timed("swf_load_measure", || load_first_swf(&measure_swf_paths, inputs.swf_fetcher));
     let text_measure = Some(text_measure::SwfDrawTextMeasure::new(&measure_assets));
 
+    // A 2D `physical` mesh-aspect screen (ball gauges, countermeasure panels) FILLS
+    // its square screen non-uniformly; the `radar` 3D-RTT scope keeps the uniform
+    // COVER its disc projection + chrome were tuned for. Both are `cover_fit_mesh_aspect`.
+    let mesh_aspect_fill = cover_fit_mesh_aspect && b.binding_kind == Some("physical");
+
     let mut ir = timed("ir_compile", || crate::ui_ir::compile_ui_ir_from_scene_with_animation_sample(
         &scene,
         Some(inputs.canvas_fetcher),
@@ -530,6 +535,7 @@ pub fn compile_ir_for_binding(inputs: &PipelineInputs<'_>) -> Result<UiIrDocumen
         design_text_scale,
         text_measure.as_ref().map(|m| m as &dyn crate::ui_ir::DrawTextMeasure),
         cover_fit_mesh_aspect,
+        mesh_aspect_fill,
     ));
     ir.warnings.extend(fallback_counter_warnings(
         style_manifest
