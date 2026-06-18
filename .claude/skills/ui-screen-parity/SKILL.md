@@ -41,7 +41,12 @@ guess for an ask or a measurement. Default behaviour by category:
   earlier answer.
 - **Technical judgments → MEASURE.** Blast radius, "is this a blocker?", root
   cause, colour/position: prove it with the probes, `ui_check.sh --full` (after a
-  fresh export), and the disable→adjudicate audit. Never estimate-then-defer. Visual findings must
+  fresh export), and the disable→adjudicate audit. Never estimate-then-defer. Read
+  a validation script's RESULT MARKER, never its piped or notified exit code:
+  `ui_check.sh` prints `ui_check: ALL GREEN` on success and `ui_check: FAILED
+  (exit N)` on failure, but a `… 2>&1 | tail`/`| grep` or a backgrounded run
+  reports the PIPE's/notifier's status (0), so a real guard failure can read
+  "green" until you grep the marker or read the output unpiped (ledger 89). Visual findings must
   survive a SECOND look (guard square-vs-circle misreads, miscounts, wrong offset
   direction) and must include the background/backplate layer (stretch,
   alignment), not just foreground widgets. Verify a STRUCTURED-DATA claim

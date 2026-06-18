@@ -314,6 +314,30 @@ under **Open recommendations** above.
   red-flag row. Cleared both Open recs. META-lesson: be wary of codifying "X is a
   proven blocker" from one arc — these blockers keep dissolving on a deeper read of
   the authored variant; the skill should bias toward RE-READING, not toward accepting.
+- **2026-06-18 (trust `ui_check`'s result MARKER, not a piped/notified exit code;
+  countermeasures arc continuation, ledger 89; `writing-skills` review session).**
+  The countermeasures arc closed out (GOLD `clipper_countermeasures_master`), adding
+  ledger 88–90. RED: a run piped `ui_check.sh 2>&1 | tail` (and backgrounded it),
+  which reported "exit 0" on a run where the live-IR guard actually FAILED — the
+  pipe/notifier exit status masks the script's. The skill leans on `ui_check`'s
+  result in 7 places (MEASURE posture, per-cycle check, commit gate, closing
+  re-review) but never told the agent how to READ that result, so a masked failure
+  would silently corrupt the fix-vs-defer / clean / commit decisions. Fix: a factual
+  caveat in the Operating-posture MEASURE bullet — read the `ui_check: ALL GREEN` /
+  `ui_check: FAILED (exit N)` marker, never the piped/notified exit code (the script
+  now prints the FAILED marker via an EXIT trap). Factual caveat, not a red-flag (the
+  failure is being MISLED by tooling, not a discipline rationalization). The other
+  two new findings are NOT skill changes: 88 (scope `bb_state_filter` numeric
+  resolution to bare component-local bindings) is a domain code detail whose "run the
+  live-IR guard before assuming a shared-filter change is local" lesson is already
+  embodied by "run `ui_check` every cycle"; 90 (a multi-digit data value breaks
+  single-digit layout; one region's catalog items can be causally linked through a
+  shared value) the retro itself routed to the DOSSIER, and the skill's "fix the
+  upstream cause, not the symptom" + "shared-root-cause items together" already
+  orient it. OUT OF SKILL SCOPE, flagged for the owner / next retro: ledger 89's
+  "read the marker, not the piped exit code" caveat has NO home in the authoritative
+  `ui-reference.md` §1/§2 (where it belongs canonically) — the script fix landed but
+  the workflow caveat was only noted in the ledger.
 - **2026-06-18 (SHIP question crashed with `options too_small`; owner-reported
   bug).** RED: every run failed at the very first `AskUserQuestion` with
   `InputValidationError: options too_small, expected >=2`. Root cause: step 1
