@@ -428,3 +428,17 @@ Flows (commands in the reference doc §2/§7):
   trait method default-`None` → `PipelineInputs`→`ComposeContext`→`ir_compose`, impl in
   `P4kHologramFetcher`); a new `UiIrNode` field for it should be `#[serde(skip)]` (IR-snapshot-safe)
   and expect ~12 literal sites to update (ledger 80).
+- **"Font too small" can be a per-screen RENDER scale (PORTRAIT stretch), not an authored size NOR an
+  "undecoded engine" wall — and bb_layout `canvas_scale` is INERT for the IR glyph render (ledger 97).**
+  The LR-indicator labels stayed ~3× small after the authored FontSize was applied: it is the only
+  PORTRAIT cockpit screen (a 1920×1080 landscape `useRaw` canvas filling a 0.64 mesh → geometry stretches
+  ~2.78× but a Fixed font is drawn at design px). TWO traps: (1) the obvious lever, the `bb_layout`
+  fill-branch `canvas_scale` (commented "the Fixed/text scale"), does NOT reach the live render —
+  `ir_compose::draw_text_node` sizes glyphs from the IR `font_size` directly, so a one-line change there
+  renders BYTE-IDENTICAL (the printed `png md5` is how you catch it). The lever is `ui_ir`. (2) Scaling only
+  the IR draw font CLIPS — a content-fit text field is sized for the unscaled font and cuts the enlarged
+  glyphs, so the scale must ALSO apply to the layout text measurement (`annotate_effective_font_px`) so the
+  field grows; measure == draw. The fix (`ui_ir::portrait_font_screen_scale`, vertical fill axis for a
+  fill-branch screen with `target_h>target_w`, 1.0 elsewhere) is self-scoping — only the portrait screen
+  changes, every frozen baseline byte-identical, no re-freeze. Keep `--full` to confirm the no-op on the
+  square-mesh gauges (same canvas, aspect-1.0 target).
