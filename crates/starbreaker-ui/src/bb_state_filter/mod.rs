@@ -197,8 +197,9 @@ pub fn instantiated_false_widgets_with_param_inputs_inherited_bindings_and_defau
     };
 
     apply_idle_defaults(ops, &mut static_vals);
+    let static_nums = numeric_variable_defaults(ops, defaults);
 
-    let ptr_vals = evaluate_bool_ops(ops, &static_vals, &param_overrides);
+    let ptr_vals = evaluate_bool_ops(ops, &static_vals, &static_nums, &param_overrides);
     let mut ptr_to_op: HashMap<BbNodeId, &serde_json::Value> = HashMap::new();
     for op in ops {
         if let Some(p) = op
@@ -292,6 +293,7 @@ pub fn instantiated_false_widgets_with_param_inputs_inherited_bindings_and_defau
             &ptr_vals,
             &ptr_to_op,
             &static_vals,
+            &static_nums,
             &param_overrides,
             &mut visiting,
         );
@@ -318,6 +320,7 @@ pub fn instantiated_false_widgets_with_param_inputs_inherited_bindings_and_defau
                 input_ref,
                 &ptr_to_op,
                 &static_vals,
+                &static_nums,
                 &mut HashSet::new(),
             );
             if has_unset_non_state {
@@ -575,7 +578,8 @@ pub fn forced_active_widgets_with_defaults(
         None => return HashSet::new(),
     };
     apply_idle_defaults(ops, &mut static_vals);
-    let ptr_vals = evaluate_bool_ops(ops, &static_vals, &param_overrides);
+    let static_nums = numeric_variable_defaults(ops, defaults);
+    let ptr_vals = evaluate_bool_ops(ops, &static_vals, &static_nums, &param_overrides);
     let mut ptr_to_op: HashMap<BbNodeId, &serde_json::Value> = HashMap::new();
     for op in ops {
         if let Some(p) = op
@@ -628,6 +632,7 @@ pub fn forced_active_widgets_with_defaults(
             &ptr_vals,
             &ptr_to_op,
             &static_vals,
+            &static_nums,
             &param_overrides,
             &mut visiting,
         );
@@ -693,7 +698,10 @@ pub fn resolved_boolean_variable_bindings_with_param_inputs_and_inherited(
     };
 
     apply_idle_defaults(ops, &mut static_vals);
-    let ptr_vals = evaluate_bool_ops(ops, &static_vals, &param_overrides);
+    // No registry here, so runtime numeric variables stay unresolved (the
+    // heuristic path) — this entry point only reports boolean-variable values.
+    let static_nums: HashMap<String, f64> = HashMap::new();
+    let ptr_vals = evaluate_bool_ops(ops, &static_vals, &static_nums, &param_overrides);
 
     for op in ops {
         if op.get("_Type_").and_then(|v| v.as_str())
@@ -716,6 +724,64 @@ pub fn resolved_boolean_variable_bindings_with_param_inputs_and_inherited(
         }
     }
 
+    out
+}
+
+/// Resolve the at-rest cold defaults for the COMPONENT-LOCAL runtime numeric
+/// variables (`IntegerVariable` / `NumberVariable`, bare binding = `path []` +
+/// `inheritsNamespace`) referenced by the canvas operations, keyed by binding
+/// name. Mirrors the boolean `static_vals` defaults consultation above: it lets
+/// `BooleanFromInteger` / `BooleanFromNumber` gates resolve statically when the
+/// engine pushes a known at-rest value. The motivating case is the cockpit
+/// countermeasure firing overlay, gated `IsActive = Or(CurrentBurstSize > 1,
+/// BurstSizeHoldRatio > 0)` — both are 0 when not firing (registered as
+/// well-known cold defaults), so the gate resolves `false` and the stray "0"
+/// hides.
+///
+/// SCOPE: bare bindings only (no `/`). A bare binding is a component-relative
+/// runtime variable resolved against the instance namespace; resolving its
+/// at-rest cold default is local and safe. ABSOLUTE engine-state paths (slash-
+/// prefixed — `/seatdashboard/powerstate`, `/AnnunciatorProvider/.../Severity`,
+/// …) are deliberately EXCLUDED: many frozen-screen gates reference them and
+/// their established at-rest visibility is encoded by the unset→override /
+/// heuristic path (the gold baselines were calibrated against it). Newly
+/// resolving them in the state filter would flip those gates (it regressed the
+/// `clipper_self_master` gold baseline). Today only the firing-state vars are
+/// bare numeric registry keys, so this is byte-identical for every frozen
+/// screen. A variable with no registry entry is omitted (stays on the
+/// heuristic).
+fn numeric_variable_defaults(
+    ops: &[serde_json::Value],
+    defaults: Option<&crate::defaults::DefaultValueRegistry>,
+) -> HashMap<String, f64> {
+    let mut out: HashMap<String, f64> = HashMap::new();
+    let Some(defaults) = defaults else {
+        return out;
+    };
+    for op in ops {
+        let ty = op.get("_Type_").and_then(|v| v.as_str()).unwrap_or("");
+        if ty != "BuildingBlocks_BindingsIntegerVariable"
+            && ty != "BuildingBlocks_BindingsNumberVariable"
+        {
+            continue;
+        }
+        let Some(binding) = op.get("binding").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        // Component-local bare bindings only — see SCOPE in the doc comment.
+        if binding.is_empty() || binding.contains('/') || out.contains_key(binding) {
+            continue;
+        }
+        match defaults.lookup_path(binding) {
+            Some(crate::canvas::Value::Int(v)) => {
+                out.insert(binding.to_owned(), *v as f64);
+            }
+            Some(crate::canvas::Value::Float(v)) => {
+                out.insert(binding.to_owned(), *v);
+            }
+            _ => {}
+        }
+    }
     out
 }
 

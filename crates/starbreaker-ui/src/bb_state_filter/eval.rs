@@ -5,6 +5,7 @@ use crate::bb_scene::BbNodeId;
 pub(super) fn evaluate_bool_ops(
     ops: &[serde_json::Value],
     static_vals: &HashMap<String, bool>,
+    static_nums: &HashMap<String, f64>,
     _param_overrides: &HashMap<String, bool>,
 ) -> HashMap<BbNodeId, bool> {
     let mut ptr_val: HashMap<BbNodeId, bool> = HashMap::new();
@@ -84,7 +85,10 @@ pub(super) fn evaluate_bool_ops(
                         op.get("defaultValue").and_then(|v| v.as_bool()).or(Some(false))
                     }
                     "BuildingBlocks_BindingsBooleanFromInteger" => {
-                        super::integer::eval_bool_from_integer(op, &ptr_to_op)
+                        super::integer::eval_bool_from_integer(op, &ptr_to_op, static_nums)
+                    }
+                    "BuildingBlocks_BindingsBooleanFromNumber" => {
+                        super::integer::eval_bool_from_number(op, &ptr_to_op, static_nums)
                     }
                     _ => None,
                 }
@@ -148,6 +152,7 @@ pub(super) fn eval_bool_ref(
     ptr_vals: &HashMap<BbNodeId, bool>,
     ptr_to_op: &HashMap<BbNodeId, &serde_json::Value>,
     static_vals: &HashMap<String, bool>,
+    static_nums: &HashMap<String, f64>,
     param_overrides: &HashMap<String, bool>,
     visiting: &mut HashSet<BbNodeId>,
 ) -> Option<bool> {
@@ -161,7 +166,7 @@ pub(super) fn eval_bool_ref(
                 return None;
             }
             let op = ptr_to_op.get(&ptr)?;
-            eval_bool_ref(op, ptr_vals, ptr_to_op, static_vals, param_overrides, visiting)
+            eval_bool_ref(op, ptr_vals, ptr_to_op, static_vals, static_nums, param_overrides, visiting)
         }
         serde_json::Value::Object(obj) => {
             let ty = obj.get("_Type_").and_then(|v| v.as_str()).unwrap_or("");
@@ -202,7 +207,7 @@ pub(super) fn eval_bool_ref(
                 }
                 "BuildingBlocks_BindingsBooleanInvert" => {
                     let inner = obj.get("input")?;
-                    eval_bool_ref(inner, ptr_vals, ptr_to_op, static_vals, param_overrides, visiting)
+                    eval_bool_ref(inner, ptr_vals, ptr_to_op, static_vals, static_nums, param_overrides, visiting)
                         .map(|v| !v)
                 }
                 "BuildingBlocks_BindingsBooleanEvaluateOr" => {
@@ -213,7 +218,7 @@ pub(super) fn eval_bool_ref(
                     let inputs = obj.get("inputs").and_then(|v| v.as_array())?;
                     let mut any_unresolved = false;
                     for inp in inputs {
-                        match eval_bool_ref(inp, ptr_vals, ptr_to_op, static_vals, param_overrides, visiting) {
+                        match eval_bool_ref(inp, ptr_vals, ptr_to_op, static_vals, static_nums, param_overrides, visiting) {
                             Some(true) => return Some(true),
                             Some(false) => {}
                             None => any_unresolved = true,
@@ -228,7 +233,7 @@ pub(super) fn eval_bool_ref(
                     let inputs = obj.get("inputs").and_then(|v| v.as_array())?;
                     let mut any_unresolved = false;
                     for inp in inputs {
-                        match eval_bool_ref(inp, ptr_vals, ptr_to_op, static_vals, param_overrides, visiting) {
+                        match eval_bool_ref(inp, ptr_vals, ptr_to_op, static_vals, static_nums, param_overrides, visiting) {
                             Some(false) => return Some(false),
                             Some(true) => {}
                             None => any_unresolved = true,
@@ -247,13 +252,22 @@ pub(super) fn eval_bool_ref(
                 "BuildingBlocks_BindingsBooleanFromInteger" => {
                     // A comparison `inputL <type> {inputR | value}`. When the
                     // operands resolve statically (an `IntegerComponentParameter`
-                    // default) the real comparison is computed; otherwise the
-                    // at-rest heuristic applies. This keeps the engine pattern
-                    // working — content gated by `Invert(Equal off_state)` stays
-                    // shown, event overlays gated by `Equal event_state` stay
-                    // hidden — and the frame's runtime `IntegerVariable` gates
-                    // (e.g. `Invert(powerstate == 0)`) stay on the heuristic.
-                    super::integer::eval_bool_from_integer(input, ptr_to_op)
+                    // default, or a runtime `IntegerVariable` whose at-rest cold
+                    // default is in `static_nums`) the real comparison is
+                    // computed; otherwise the at-rest heuristic applies. This
+                    // keeps the engine pattern working — content gated by
+                    // `Invert(Equal off_state)` stays shown, event overlays gated
+                    // by `Equal event_state` stay hidden — and the frame's
+                    // unpinned runtime `IntegerVariable` gates (e.g.
+                    // `Invert(powerstate == 0)`) stay on the heuristic.
+                    super::integer::eval_bool_from_integer(input, ptr_to_op, static_nums)
+                }
+                "BuildingBlocks_BindingsBooleanFromNumber" => {
+                    // Float analogue: `input <type> {inputB | number}`. Resolves a
+                    // runtime `NumberVariable` from its `static_nums` cold default
+                    // (e.g. the countermeasure `BurstSizeHoldRatio` = 0 at rest)
+                    // so the firing-state overlay gate evaluates `false`.
+                    super::integer::eval_bool_from_number(input, ptr_to_op, static_nums)
                 }
                 _ => None,
             }
@@ -274,6 +288,7 @@ pub(super) fn contains_unset_non_state_variable(
     input: &serde_json::Value,
     ptr_to_op: &HashMap<BbNodeId, &serde_json::Value>,
     static_vals: &HashMap<String, bool>,
+    static_nums: &HashMap<String, f64>,
     visited: &mut HashSet<BbNodeId>,
 ) -> bool {
     match input {
@@ -287,7 +302,7 @@ pub(super) fn contains_unset_non_state_variable(
             let Some(op) = ptr_to_op.get(&ptr) else {
                 return false;
             };
-            contains_unset_non_state_variable(op, ptr_to_op, static_vals, visited)
+            contains_unset_non_state_variable(op, ptr_to_op, static_vals, static_nums, visited)
         }
         serde_json::Value::Object(obj) => {
             let ty = obj.get("_Type_").and_then(|v| v.as_str()).unwrap_or("");
@@ -297,10 +312,13 @@ pub(super) fn contains_unset_non_state_variable(
                         if !static_vals.contains_key(binding) {
                             return true;
                         }
-                    } else {
+                    } else if !static_nums.contains_key(binding) {
                         // Non-boolean runtime binding families (for example
-                        // IntegerVariable used by BooleanFromInteger gates)
-                        // do not have authored static defaults in staticVariables.
+                        // IntegerVariable used by BooleanFromInteger gates) are
+                        // "unset" only when no at-rest cold default resolves them.
+                        // A binding present in `static_nums` (e.g. the firing
+                        // state CurrentBurstSize/BurstSizeHoldRatio = 0) IS
+                        // resolved, so the gate's computed value must stand.
                         return true;
                     }
                 }
@@ -309,7 +327,7 @@ pub(super) fn contains_unset_non_state_variable(
             for key in ["input", "inputL", "inputR", "inputTrue", "inputFalse"] {
                 if obj
                     .get(key)
-                    .is_some_and(|inner| contains_unset_non_state_variable(inner, ptr_to_op, static_vals, visited))
+                    .is_some_and(|inner| contains_unset_non_state_variable(inner, ptr_to_op, static_vals, static_nums, visited))
                 {
                     return true;
                 }
@@ -320,7 +338,7 @@ pub(super) fn contains_unset_non_state_variable(
                 .is_some_and(|inputs| {
                     inputs
                         .iter()
-                        .any(|inp| contains_unset_non_state_variable(inp, ptr_to_op, static_vals, visited))
+                        .any(|inp| contains_unset_non_state_variable(inp, ptr_to_op, static_vals, static_nums, visited))
                 })
         }
         _ => false,

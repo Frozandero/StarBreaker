@@ -18,6 +18,8 @@
     "/seatdashboard/powermax": 16,
     "backgroundenabled": true,
     "/vehicle/gungroup": "(ALL)",
+    "CurrentBurstSize": 0,
+    "BurstSizeHoldRatio": 0.0,
     "CloneLocationInfo/MedicalTier": 2,
     "Bed/MedBed/MedBedStatus/MedicalTier": 2,
     "CloneLocationInfo/CurrentLocation/LocationName": "Drake Clipper",

@@ -752,3 +752,66 @@
         );
         assert!(!result.contains(&6), "grouped-state cold-default MainMenuCanvas shown");
     }
+
+    /// The cockpit countermeasure firing overlay (`text_CountermeasureFireAmount`,
+    /// the stray "0") is gated `IsActive = Or(CurrentBurstSize > 1,
+    /// BurstSizeHoldRatio > 0)` — a transient firing state. At static rest both
+    /// are 0 (not firing), so the overlay must hide. These are runtime
+    /// `IntegerVariable` / `NumberVariable` bindings; their at-rest cold default
+    /// (0) is resolved from the registry, so the `BooleanFromInteger` /
+    /// `BooleanFromNumber` ordered comparisons evaluate statically and the gate
+    /// resolves `false`.
+    #[test]
+    fn firing_overlay_hidden_when_burst_state_pinned_zero() {
+        let rv = make_record_value(
+            vec![],
+            vec![
+                json!({"_Pointer_":"ptr:13","_Type_":"BuildingBlocks_BindingsIntegerVariable","binding":"CurrentBurstSize"}),
+                json!({"_Pointer_":"ptr:12","_Type_":"BuildingBlocks_BindingsNumberVariable","binding":"BurstSizeHoldRatio"}),
+                json!({"_Pointer_":"ptr:19","_Type_":"BuildingBlocks_BindingsBooleanFromInteger","type":"Greater","inputL":"_PointsTo_:ptr:13","value":1}),
+                json!({"_Pointer_":"ptr:20","_Type_":"BuildingBlocks_BindingsBooleanFromNumber","type":"Greater","number":0.0,"input":"_PointsTo_:ptr:12"}),
+                json!({"_Pointer_":"ptr:18","_Type_":"BuildingBlocks_BindingsBooleanEvaluateOr","inputs":["_PointsTo_:ptr:19","_PointsTo_:ptr:20"]}),
+                json!({"_Type_":"BuildingBlocks_BindingsBooleanField","widget":"_PointsTo_:ptr:5","field":"IsActive","input":"_PointsTo_:ptr:18"}),
+            ],
+        );
+        let mut defaults = crate::defaults::DefaultValueRegistry::new();
+        defaults.insert_path("CurrentBurstSize", crate::canvas::Value::Int(0));
+        defaults.insert_path("BurstSizeHoldRatio", crate::canvas::Value::Float(0.0));
+        let false_set = instantiated_false_widgets_with_param_inputs_inherited_bindings_and_defaults(
+            &rv,
+            &[],
+            &std::collections::HashMap::new(),
+            Some(&defaults),
+        );
+        assert!(
+            false_set.contains(&5),
+            "firing overlay must hide at rest (CurrentBurstSize=0 → 0>1 false, BurstSizeHoldRatio=0 → 0>0 false)"
+        );
+    }
+
+    /// Inverse guard: while actively bursting (`CurrentBurstSize` = 3) the overlay
+    /// shows. Confirms the resolver computes the REAL comparison from the pinned
+    /// value, not a blanket hide of every ordered-comparison gate.
+    #[test]
+    fn firing_overlay_shown_when_bursting() {
+        let rv = make_record_value(
+            vec![],
+            vec![
+                json!({"_Pointer_":"ptr:13","_Type_":"BuildingBlocks_BindingsIntegerVariable","binding":"CurrentBurstSize"}),
+                json!({"_Pointer_":"ptr:19","_Type_":"BuildingBlocks_BindingsBooleanFromInteger","type":"Greater","inputL":"_PointsTo_:ptr:13","value":1}),
+                json!({"_Type_":"BuildingBlocks_BindingsBooleanField","widget":"_PointsTo_:ptr:5","field":"IsActive","input":"_PointsTo_:ptr:19"}),
+            ],
+        );
+        let mut defaults = crate::defaults::DefaultValueRegistry::new();
+        defaults.insert_path("CurrentBurstSize", crate::canvas::Value::Int(3));
+        let false_set = instantiated_false_widgets_with_param_inputs_inherited_bindings_and_defaults(
+            &rv,
+            &[],
+            &std::collections::HashMap::new(),
+            Some(&defaults),
+        );
+        assert!(
+            !false_set.contains(&5),
+            "overlay shows while bursting (3 > 1 = true)"
+        );
+    }
