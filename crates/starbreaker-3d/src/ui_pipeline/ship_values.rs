@@ -377,20 +377,22 @@ fn derive_countermeasure_launchers(
     record: &starbreaker_datacore::types::Record,
 ) -> HashMap<String, UiValue> {
     let tree = resolve_loadout_indexed(idx, record);
-    let ammo: Vec<i64> = tree
+    let counts: Vec<i64> = tree
         .root
         .children
         .iter()
         // Generic discriminator: the item port category, never a ship/item name.
         .filter(|child| child.item_port_name.to_ascii_lowercase().contains("countermeasure"))
         .map(|child| {
-            record_json(db, &child.record)
-                .as_ref()
-                .and_then(countermeasure_initial_ammo)
-                .unwrap_or(0)
+            let json = record_json(db, &child.record);
+            let Some(j) = json.as_ref() else {
+                return 0;
+            };
+            let ammo = countermeasure_initial_ammo(j).unwrap_or(0);
+            countermeasure_display_count(ammo, countermeasure_is_burst(j))
         })
         .collect();
-    derive_countermeasure_paths(&ammo)
+    derive_countermeasure_paths(&counts)
 }
 
 /// A countermeasure launcher's full at-rest load:
@@ -399,6 +401,53 @@ fn countermeasure_initial_ammo(item_json: &Json) -> Option<i64> {
     component(item_json, "SAmmoContainerComponentParams")?
         .get("initialAmmoCount")?
         .as_i64()
+}
+
+/// Engine-runtime countermeasure CHARGE SIZE (flares deployed per full burst).
+///
+/// REFERENCE-DERIVED IOU (ui-workflow §8). The Clipper's 48-flare BEHR decoy
+/// launcher reads "4" in-game (48 / 12), and firing a full batch decrements the
+/// count by one (owner-observed). This divisor is NOT in any decodable record —
+/// the launcher weapon component / fire-action (`shotCount` = 1) / the
+/// `behr_flare` ammo params / the resource type / the vehicle weapon controller /
+/// P4K all lack it, and a cross-ship survey (decoy `maxAmmoCount` 48/25/30) fits
+/// no stored divisor — so the engine's countermeasure manager computes "batches
+/// remaining" in C++. Pinned as a SINGLE UNIVERSAL constant (NOT per-ship: the
+/// Single-vs-Burst fire-action type is the data discriminator; per-ship variation
+/// comes from the differing ammo counts). TODO: replace with the decoded engine
+/// charge/burst size once found.
+const COUNTERMEASURE_CHARGE_SIZE: i64 = 12;
+
+/// The at-rest count shown on a countermeasure launcher panel. A SINGLE-fire
+/// launcher (noise) deploys one round per trigger, so the panel shows the raw
+/// ammo. A BURST-fire launcher (decoy) deploys a charge of
+/// [`COUNTERMEASURE_CHARGE_SIZE`] per full burst, so the panel shows the BATCHES
+/// remaining = `ceil(ammo / charge)` (firing a partial batch leaves the ceil
+/// unchanged; a full batch decrements it — matching the in-game behaviour).
+fn countermeasure_display_count(initial_ammo: i64, is_burst: bool) -> i64 {
+    if initial_ammo <= 0 {
+        return 0;
+    }
+    if is_burst {
+        (initial_ammo + COUNTERMEASURE_CHARGE_SIZE - 1) / COUNTERMEASURE_CHARGE_SIZE
+    } else {
+        initial_ammo
+    }
+}
+
+/// True when the launcher's weapon component fires in BURST mode (decoy), false
+/// for SINGLE mode (noise). The fire-action `_Type_`
+/// (`SWeaponActionFireBurstParams` vs `SWeaponActionFireSingleParams`) is the
+/// generic discriminator — never a ship/item name.
+fn countermeasure_is_burst(item_json: &Json) -> bool {
+    component(item_json, "SCItemWeaponComponentParams")
+        .and_then(|w| w.get("fireActions"))
+        .and_then(|v| v.as_array())
+        .is_some_and(|actions| {
+            actions.iter().any(|a| {
+                a.get("_Type_").and_then(|v| v.as_str()) == Some("SWeaponActionFireBurstParams")
+            })
+        })
 }
 
 /// Build the countermeasure-list binding paths from each fitted launcher's

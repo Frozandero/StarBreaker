@@ -372,6 +372,37 @@ fn countermeasure_paths_one_entry_per_launcher_in_loadout_order() {
 }
 
 #[test]
+fn countermeasure_display_count_single_is_raw_burst_is_batches() {
+    // SINGLE-fire launchers (noise) show the raw at-rest ammo.
+    assert_eq!(countermeasure_display_count(5, false), 5);
+    assert_eq!(countermeasure_display_count(48, false), 48);
+    assert_eq!(countermeasure_display_count(0, false), 0);
+    // BURST-fire launchers (decoy) show batches remaining = ceil(ammo / 12).
+    // The Clipper's 48-flare BEHR decoy reads "4" in-game (reference-derived).
+    assert_eq!(countermeasure_display_count(48, true), 4);
+    assert_eq!(countermeasure_display_count(12, true), 1);
+    assert_eq!(countermeasure_display_count(13, true), 2); // partial 2nd batch ceils up
+    assert_eq!(countermeasure_display_count(0, true), 0); // empty → none left
+    // Capital-grade decoys (ammo not a multiple of the charge) ceil to the next batch.
+    assert_eq!(countermeasure_display_count(25, true), 3);
+    assert_eq!(countermeasure_display_count(30, true), 3);
+}
+
+#[test]
+fn countermeasure_is_burst_reads_fire_action_type() {
+    let with_action = |ty: &str| {
+        serde_json::json!({"_RecordValue_": {"Components": [
+            {"_Type_": "SCItemWeaponComponentParams",
+             "fireActions": [{"_Type_": ty, "name": "x"}]}]}})
+    };
+    assert!(countermeasure_is_burst(&with_action("SWeaponActionFireBurstParams")));
+    assert!(!countermeasure_is_burst(&with_action("SWeaponActionFireSingleParams")));
+    // No weapon component → not a burst launcher.
+    let no_weapon = serde_json::json!({"_RecordValue_": {"Components": []}});
+    assert!(!countermeasure_is_burst(&no_weapon));
+}
+
+#[test]
 fn countermeasure_paths_empty_without_launchers() {
     assert!(derive_countermeasure_paths(&[]).is_empty());
 }
