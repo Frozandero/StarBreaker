@@ -618,6 +618,32 @@ pub fn render_for_binding_ir(inputs: &PipelineInputs<'_>) -> Result<Vec<u8>, UiE
             a: 255,
         };
     }
+    // A COCKPIT HUD screen (`HC_HUD_*` / `H_HUD_*` / `H_Eng_*`) renders against
+    // the cockpit's BLACK screen bezel — the in-game captures' dark surround is
+    // that bezel plus the front geometry, not the screen's own fill. Its
+    // authored full-screen background ELEMENTS (the g-force/velocity/compass
+    // gauges' `Screen Background` textures) cover the clear where present; where
+    // none is authored (the LR-indicator) the surround must read black, not the
+    // brand "Background" brown. Interior/door (`I_Door_*`) and MFD frame
+    // (`MC_S_*`) screens keep the brand background clear — the door's panel and
+    // the MFD frame body genuinely composite over it (the brand colour stays a
+    // palette entry for those). Scoped by the cockpit-HUD canvas class
+    // (`is_cockpit_hud_canvas`, the compass-arc classifier), not a name.
+    if ir
+        .canvas_name
+        .as_deref()
+        // canvas_name is `BuildingBlocks_Canvas.<RecordName>`; the classifier
+        // expects the bare record name.
+        .map(|name| name.rsplit('.').next().unwrap_or(name))
+        .is_some_and(crate::bb_brand_style::is_cockpit_hud_canvas)
+    {
+        style.background = crate::canvas::RgbaColor {
+            r: 0,
+            g: 0,
+            b: 0,
+            a: 255,
+        };
+    }
     let defaults = DefaultValueRegistry::with_pipeline_defaults_and_derived_values(
         inputs.localization_map.clone(),
         inputs.derived_values.as_ref(),
