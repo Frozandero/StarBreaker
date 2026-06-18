@@ -60,6 +60,17 @@ findings land here in two states, with a lifecycle:
   skill (or arc start) skims the open items first.
 - **Multi-ship generalization unverified** (see Known assumptions) — exercise
   when a second `reference/in-game/` folder exists.
+- **"Font too small" can be UNDECODED engine scaling, not an unapplied authored
+  size** (LR-indicator arc, 2026-06-18; ledger 94). The skill's red-flags cover
+  "don't hard-code a value," and the velocity-num/compass playbook (read the
+  instantiated variant's authored FontSize) is in workflow §10 — but that playbook
+  assumes the bigger size IS authored. When a HUD label authors only a NAMED style
+  (`labelProperties.style=Heading1`), is `Auto`-sized (so the engine keeps the
+  named size), has NO FontSize/autoFontSize/fitToParent/padding/scale, AND the
+  in-game gap exceeds canvas→target scaling, it is an undecoded engine HUD-label
+  scale — bounded parity, document-and-defer (no magic scalar), don't re-spend a
+  whole dig. Consider a workflow §10 / red-flag line so the next arc recognizes it
+  after one round, not four.
 
 ## Known assumptions & risks
 
