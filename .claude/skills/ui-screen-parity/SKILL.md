@@ -75,23 +75,39 @@ screen instead of the screen the user just picked. Wait for each answer before
 building the next question. Only SCOPE & MODE (independent of each other) may
 share one prompt.
 
+**`AskUserQuestion` requires 2–4 explicit `options`, and the automatic "Other"
+the harness appends does NOT count toward that minimum** — a one-option call
+fails immediately with `InputValidationError: options too_small, expected >=2`.
+When a list you build from discovered files/folders has fewer than two entries,
+you MUST add an explicit extra option so there are always ≥2 (e.g. "A different
+ship — I'll name it"); the user still gets the free-text "Other" on top. This
+bites the SHIP question every run today: `reference/in-game/` holds only one
+ship folder (`Clipper`), so a naive "one option per folder" call is invalid.
+Never skip the question to dodge this — PAD the options.
+
 1. **SHIP — always confirm via `AskUserQuestion`; never presume.** List the
-   folders under `~/projects/scorg_tools/reference/in-game/` (each is one ship's
+   *folders* (not files — e.g. `ASOP.png` is a stray file, skip it) under
+   `~/projects/scorg_tools/reference/in-game/` (each folder is one ship's
    reference set, e.g. `Clipper` = Drake Clipper) and present them as the
-   options; the tool's automatic "Other" choice lets the user free-text a ship
-   whose folder doesn't exist yet. Ask **even when only one folder exists** — a
-   single populated folder (today only `Clipper`) is NOT a licence to
-   auto-select, no matter what ship the session was previously working on. The
-   chosen ship resolves to `reference/in-game/<folder>/`.
+   options. Because `AskUserQuestion` needs ≥2 explicit options and the auto
+   "Other" does NOT count (see the lead-in), and today only ONE folder exists
+   (`Clipper`), you MUST add an explicit second option — e.g. "A different ship —
+   I'll name it" — or the call fails with `options too_small`. The automatic
+   "Other" still lets the user free-text a ship whose folder doesn't exist yet.
+   Ask **even when only one folder exists** — a single populated folder is NOT a
+   licence to auto-select, no matter what ship the session was previously working
+   on. The chosen ship resolves to `reference/in-game/<folder>/`.
 2. **SCREEN — always ask via `AskUserQuestion`; never reuse a prior choice.**
    Ask fresh even if a screen was confirmed earlier in the session or a previous
    arc — that is NOT a licence to skip the question. List the screens available
    in the confirmed ship's reference folder (distinct file stems, e.g.
    `Screen_Right_Upper_RTT`, `self_master`, `compass_master`) so the user can
-   re-select or switch, and rely on the automatic "Other" choice for a screen
-   not listed (no capture yet → adding its dossier row is part of the work). If
-   the folder holds more screens than the tool's 4-option limit, show the full
-   list in the message and offer the most relevant candidates + "Other". The
+   re-select or switch; the automatic "Other" choice covers a screen not listed
+   (no capture yet → adding its dossier row is part of the work). Same ≥2
+   explicit-options rule as SHIP: if a folder somehow lists fewer than two
+   screens, pad with an explicit extra option (the auto "Other" doesn't count).
+   If the folder holds more screens than the tool's 4-option limit, show the full
+   list in the message and offer the most relevant candidates. The
    chosen SCREEN is the reference file stem and the dossier row; the render
    `--helper` comes from the dossier's **Helper/scene column**, which is usually
    — but NOT always — the same name (e.g. velocity-num: stem
@@ -346,7 +362,13 @@ presumed "yes"; never perform the action before the answer comes back.
 - **Freeze is ALWAYS gated, in both modes** — §6/§7 are APPROVAL-GATED. Show the
   per-identity delta, then ask via `AskUserQuestion` ("Freeze these N
   identities?" → "Freeze" / "Don't freeze"). Never auto-approve, never freeze a
-  value you can't explain.
+  value you can't explain. **First MEASURE that a re-freeze is even needed** — a
+  change you *assume* "drifts a baseline" may sit within the captured metric
+  tolerance. Run `ui_check.sh --full` (after a fresh export) and a dry freeze; if
+  `--full` is green AND the artifact hashes are unchanged, the re-freeze is a
+  metadata-only no-op that just overwrites the prior `reason`/`frozen_at` → revert
+  the churn, don't bring it to the gate. Re-freeze only when a guard actually
+  FAILS or to deliberately pin an improvement the owner wants (ledger 85).
 - **Major-item blocker — ALWAYS gated, both modes.** Before accepting that a
   MAJOR/dominant item (one that bounds achievable parity — a whole region
   empty/wrong, a dominant element) is a PROVEN blocker, present the evidence trail
@@ -494,6 +516,7 @@ needed is a doc bug — fix it before closing.
 | "Large blast radius / deserves its own change / undecoded this arc — defer it" | Size/risk/"undecoded" is not a blocker — research then fix. MEASURE impact with disable→adjudicate + `ui_check.sh --full`; for "missing data" search the whole decodable surface (DataCore/P4K/localization) and check it isn't derivable from a decoded mechanism (fan across subagents); frozen-family risk = find the §5 discriminator. Defer only on an exhausted-search PROVEN blocker. |
 | "Spin up parallel agents to build/render faster" | Builds share the cargo target and race. Only READ-ONLY research parallelizes; builds/renders/tests/fixes/freezes stay sequential in the main agent. |
 | "Freeze it to pass the guard / I'll freeze without asking / fully-auto so auto-freeze" | Freezing a baseline is ALWAYS gated in BOTH modes (show the per-identity delta, ask via `AskUserQuestion`). Never auto-approve, and never freeze a wrong value to silence a guard — fix the cause or register a §6 outlier. |
+| "My change surely drifts that baseline — I'll re-freeze it" | MEASURE before assuming. Run `--full` (fresh export) + a dry freeze first; if `--full` is green and the artifact hashes are unchanged, the re-freeze is a metadata-only no-op (it only overwrites the prior `reason`) → revert the churn, don't gate it. Re-freeze only when a guard actually FAILS or to pin an improvement the owner wants (ledger 85). |
 | "They'll obviously say yes, I'll just do it" | Ask anyway via `AskUserQuestion` at an active checkpoint. A presumed approval is not an approval. |
 | "Catalog's resolved / found more issues — run the retro" | The retro is the LAST step, never a substitute for fixing. Fix fixable diffs in the loop first, then the Closing re-review (re-render + re-compare like the start; fully-auto keeps fixing until clean or proven-blocked), THEN the retro. Not complete until the re-review is clean/proven-deferred AND the retro runs (track as a TodoWrite item from arc start). |
 | "It's engine C++ only / I exhausted the data — blocked" | Show the trail or it isn't proven: exact records/greps/probes + their empty results, not an assertion. Search the record FAMILIES (`*Params`/`*HudParams`), not just the feature keyword (the compass ticks were in `SVehicleHudParams`). "Engine C++ only" is unfalsifiable — never a valid basis. Run a find-it-or-prove-absence subagent; a MAJOR-item blocker is confirmed by the user (both modes), never self-certified. |

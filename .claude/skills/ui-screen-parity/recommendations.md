@@ -314,6 +314,47 @@ under **Open recommendations** above.
   red-flag row. Cleared both Open recs. META-lesson: be wary of codifying "X is a
   proven blocker" from one arc — these blockers keep dissolving on a deeper read of
   the authored variant; the skill should bias toward RE-READING, not toward accepting.
+- **2026-06-18 (SHIP question crashed with `options too_small`; owner-reported
+  bug).** RED: every run failed at the very first `AskUserQuestion` with
+  `InputValidationError: options too_small, expected >=2`. Root cause: step 1
+  built the SHIP options as one-per-folder, and `reference/in-game/` currently
+  holds exactly ONE ship folder (`Clipper`), so the call had a single option —
+  but `AskUserQuestion` requires 2–4 explicit options and the harness's automatic
+  "Other" does NOT count toward that minimum. The skill explicitly told the agent
+  to "rely on the automatic 'Other'", which is the trap. Fix: added a lead-in rule
+  to *Gather inputs* (the ≥2-explicit-options requirement + auto-"Other" doesn't
+  count + PAD the list when a discovered set has <2 entries), and patched step 1
+  (SHIP — add an explicit "A different ship — I'll name it" option; also skip
+  stray files like `ASOP.png`, folders only) and step 2 (SCREEN — same pad rule
+  if a folder lists <2 screens). Structural fix (the right form for a wrong-shape
+  failure), no red-flag row. The bug reproduced on EVERY run because there is only
+  one reference folder today, so it blocked the skill entirely until now.
+- **2026-06-18 (verify a re-freeze is actually needed before gating it;
+  countermeasures arc, ledger 85; surfaced + applied in a `writing-skills`
+  review session).** The countermeasures retro routed all of ledger 84–87 to the
+  process ledger and nothing here, so its skill-relevant finding never reached
+  this file — the review session that skims open items (the standing "nothing
+  consumes this file" trigger) caught it. RED: the agent ASSUMED the non-uniform
+  FILL fit change drifted the g-force/velocity platinum baselines and pursued a
+  gated re-freeze; `ui_check.sh --full` was already green and the dry freeze
+  produced ZERO artifact-hash changes (only `reason`/`frozen_at` churn) — a no-op
+  re-freeze, reverted. The skill's freeze gate started from "you've decided to
+  re-freeze" and never told the agent to MEASURE whether one was needed, so a
+  fresh agent could repeat the wasted motion. Applied: the Checkpoints freeze
+  bullet now requires confirming a re-freeze is necessary FIRST (`--full` after a
+  fresh export + a dry freeze; green + unchanged hashes ⇒ metadata-only no-op ⇒
+  revert, don't gate), and a new red-flag row counters the "my change surely
+  drifts the baseline → re-freeze" assumption — the MEASURE-don't-estimate posture
+  applied to the re-freeze decision itself. The other three countermeasures
+  findings are NOT skill changes: 84 (cockpit-RTT fit-first diagnostic) is domain
+  knowledge now in the dossier; 86 (split `engine_01.part`, at the 3000-line cap)
+  is a code task, flagged; 87 (derived int/number values don't reach
+  `bb_state_filter` IsActive) is a deferred engine residual. OUT OF SKILL SCOPE,
+  flagged for the owner / next retro: ledger 85 has the same gap in the
+  authoritative `ui-workflow.md` §7 freeze flow (it carries the "unexplained delta
+  is rejected" AUDIT RULE but not "verify a re-freeze is needed first") — §7
+  should gain it as the canonical home so the skill's restated clause has a
+  backing rule.
 - **2026-06-17 (reproduce from decoded data, never invent geometry; radar arc,
   ledger 78–83).** When a draw path can't natively produce an element (3D-RTT
   `WidgetWindow`/`Primitive`/live render), the skill's "Default to fixing" + the
