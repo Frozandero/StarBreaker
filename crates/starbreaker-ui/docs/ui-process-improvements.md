@@ -2162,3 +2162,29 @@ GREEN, every frozen baseline byte-identical → no re-freeze.
 **Action:** DONE (`2bbf9b214`). LESSON: "font too small" can be a per-screen RENDER scale (portrait stretch),
 not an authored size NOR an "undecoded engine" wall — and the IR glyph size is set in `ui_ir`/consumed by
 `ir_compose`, so a bb_layout-only scale won't move it; trace the lever to where the glyph px is actually read.
+
+### 98. forced_active by binding NAMESPACE, not widget type; an inherited "regresses X" blocker may be a re-freezable OFF-SCREEN delta; consult ALL THREE suites
+**Observed:** the LR-indicator CPLD/ESP indicators (authored-false `DisplayWidget`s, `IsActive ←
+flightcontroller.isdecoupled`/`isesp`, genuine-true at rest) stayed unlit. `forced_active_widgets_with_defaults`
+activates genuine-true authored-false nodes but was `WidgetImage`-scoped: the inherited blocker said broadening
+to DisplayWidgets "regresses `clipper_velocity_ball_master` +2 — flight-mode indicators on the same bools" and
+"regresses medical (`ui_target_a`)". The disable→adjudicate audit (broaden to ALL DisplayWidgets, then run all
+three suites) showed: the SNAPSHOT + WHOLE-IMAGE guards PASSED, only the LIVE-IR guard caught `ui_target_a` —
+proving (a) the medical hazard is real but ONLY medical, and (b) the snapshot/visual suites alone would have
+mis-cleared it (the skill's "consult all three suites"). Medical binds `Bed/state.*`; the LR-ind binds
+`flightcontroller.*` — a clean binding-NAMESPACE discriminator (not widget type, not node/canvas name). The
+"+2 velocity ball" was REAL but the velocity-ball canvas's own `base_CPLD`/`base_ESP` (nodes 25/27) are laid out
+**0×0/off-screen** → they activate (correct, consistent flight state) but render NOTHING (whole-image guard
+green); the "regression" is a re-freezable IR-snapshot delta (+2 active + 4 draw-order reindexes), exactly the
+deferred note's predicted "gated ball re-freeze".
+**Improvement:** scope force-activation of a `DisplayWidget` to an `IsActive` grounded (walk the boolean
+op-graph) in a `flightcontroller.*` state variable — `isactive_grounded_in_flight_controller`. Keep the
+WidgetImage scope (radar bg). Generic; excludes medical (`Bed/state.*`). An inherited "+N regresses a frozen
+target" blocker is not automatically a true blocker: MEASURE whether the +N is OFF-SCREEN (0×0, no visual
+change) — if so it is a gated re-freeze of a correct improvement, not a regression to avoid.
+**Action:** DONE (`64020f7cc`). Re-froze PLATINUM `clipper_velocity_ball_master`, onboarded GOLD
+`clipper_lrind_master` (image category, the portrait bound render). LESSONS: (1) discriminate genuine-vs-spurious
+at-rest activation by the engine-STATE NAMESPACE driving it (flightcontroller vs Bed/state), not widget type;
+(2) a per-canvas guard reads the WORKSPACE `ships/` (CARGO_MANIFEST_DIR/../.. then workspace parent), NOT the
+stale `StarBreaker/ships/` copy — when a Generated PNG looks blank/stale, check the workspace path before
+concluding the artifact is wrong (cost a detour here).
