@@ -2090,6 +2090,15 @@ before assuming — it overturned the assumption here and unblocked a clean fix.
 (here WidgetImage-scoped force-active) can make a shared pin a no-op on the other screen.
 
 ### 94. HUD indicator label font: a named-style Auto-sized label keeps its named size — an in-game size with no authored source is undecoded engine scaling, NOT a magic-scalar fix
+**⚠️ OVERTURNED 2026-06-18 (ledger 96 + 97) — BOTH premises were wrong.** (1) There WAS an authored
+size: the Clipper instantiates the per-manufacturer sub-canvas `DRAK_HC_HUD_Cutlass_LInd`/`_RInd` (via
+`CanvasReferenceRecord`, NOT `generic_*`), whose canvas-root `embeddedStyles` authors a bare `Type(Text)`
+→ FontSize 100 — dropped because the text-format route was Brand-tier-only (ledger 96). The prior arc read
+the generic master / `labelProperties` only and missed the brand sub-canvas's `embeddedStyles` — the exact
+trap workflow §10 now warns against. (2) The remaining ~3× was NOT "undecoded engine scaling with no data
+source": the LR-indicator is the only PORTRAIT cockpit screen, and the font was simply not scaled for the
+vertically-stretched portrait mesh (ledger 97). Both fixed; the labels now match the reference. The
+"correct-but-insufficient named-style" framing below is the FALSIFIED reasoning, kept for the lesson.
 **Observed:** the LR-indicator labels render ~5–7× smaller than the reference. They author
 `labelProperties.style="Heading1"` (60px), `Auto`/`Auto` sizing, NO FontSize / autoFontSize / fitToParent /
 padding / scale. The engine model (`text_field_sizes_font_to_relative_height`) only height-drives a label when
@@ -2114,3 +2123,42 @@ as LOD1 while the code put it in LOD0.
 auto-picks LOD0 for the LR-indicator (verified).
 **Action:** DONE. LESSON: glob LOD heuristics need every cockpit-HUD stem variant; a silent wrong-LOD render
 looks like a content bug.
+
+### 96. The text-format route must also run at the EMBEDDED tier for an unconditional bare `Type(Text)` (overturns ledger 94 premise 1)
+**Observed:** the LR-indicator labels fell back to `Heading1` 60 although the instantiated DRAK sub-canvas
+`DRAK_HC_HUD_Cutlass_LInd`/`_RInd` authors `embeddedStyles` "Font Size" = bare `AllOf[Type(Text)]` → FontSize
+100. The text-format route (which lets a `Type(Text)` selector style a WidgetTextField's implicit text-format
+child) was gated `Tier::Brand` only (`bb_style_engine.rs`), but this FontSize lives at `Tier::Embedded` (pass 7)
+and the LR-ind `defaultStyles` is empty, so there was no no-brand-match `defaultStyles` fallback like
+velocity-num/master-mode had. This is the 4th time a "too small / undecoded" font dissolved on reading the
+INSTANTIATED brand sub-canvas's authored styles (velocity-num, compass, master-mode, LR-indicator) — and the
+first where the authored size lived in `embeddedStyles`, not `defaultStyles`.
+**Improvement:** add `TextFormatRoute::{Off, Full, BareTextOnly}`; the BRAND tier runs the full route, the
+EMBEDDED tier runs it ONLY for an UNCONDITIONAL bare `Type(Text)` selector (`entry_is_unconditional_bare_text_
+selector`) — a canvas-wide "all text is size N" declaration. CONDITIONAL embedded entries stay brand-tier-only,
+so the documented state/overrides (target `Bright Elements` `Parent[Tag]`, medbed `Textfield_BrightColor_
+Override`) are excluded. Generic; no name-gating. `ui_check --full` GREEN, zero frozen drift.
+**Action:** DONE (`6cb31a350`). LESSON: when a master TILES per-manufacturer sub-canvases via
+`CanvasReferenceRecord`, the authored size lives in the BRAND sub-canvas's `embeddedStyles` `Type(Text)`
+selector — read it (parse the JSON), not the generic master or `labelProperties`. "No authored size" is the
+under-research the workflow §10 trap warns about.
+
+### 97. Portrait cockpit screens need a font screen scale; bb_layout `canvas_scale` does NOT reach the IR glyph render (overturns ledger 94 premise 2)
+**Observed:** with FontSize 100 applied the LR-indicator labels were still ~3× small. The LR-indicator is the
+only PORTRAIT cockpit screen: its 1920×1080 landscape `useRaw` canvas fills a portrait mesh (aspect 0.64 →
+target 1920×3000), so geometry stretches vertically ~2.78× (cells fill to squares) but a Fixed font drawn at
+design px is far too small against the filled cells. The square-mesh gauges (same canvas, aspect-1.0 target)
+are correct at design px → portrait-specific. **TRAP:** the obvious lever — the `bb_layout` fill-branch
+`canvas_scale` (which the comment calls the "Fixed/text scale") — is INERT for the live render: the IR renderer
+(`ir_compose::draw_text_node`) sizes glyphs from the IR `font_size` directly, NOT from the LayoutResult
+`canvas_scale` (a one-line change there produced a byte-identical render — confirm via the printed `png md5`).
+**Improvement:** `ui_ir::portrait_font_screen_scale` (vertical fill axis `max(sx,sy)` for a cockpit fill-branch
+screen with `target_h > target_w`, else 1.0), applied BOTH to the layout text measurement
+(`annotate_effective_font_px`, so the content-fit field GROWS to the glyphs instead of clipping them — scaling
+only the IR draw font clips at the unscaled field height) AND the final IR font sizes. Keyed on render-target
+orientation (a structural screen-aspect property); 1.0 for every non-portrait screen → strict no-op.
+LR-ind cap 1.2%→5.5% of screen (ref ~6.6%, residual within capture bloom — no magic scalar). `ui_check --full`
+GREEN, every frozen baseline byte-identical → no re-freeze.
+**Action:** DONE (`2bbf9b214`). LESSON: "font too small" can be a per-screen RENDER scale (portrait stretch),
+not an authored size NOR an "undecoded engine" wall — and the IR glyph size is set in `ui_ir`/consumed by
+`ir_compose`, so a bb_layout-only scale won't move it; trace the lever to where the glyph px is actually read.
