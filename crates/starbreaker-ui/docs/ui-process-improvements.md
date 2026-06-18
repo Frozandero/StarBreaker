@@ -1949,3 +1949,59 @@ the hard-code the owner rejects. Compute geometry FROM decoded assets (texture/a
 atlas grid) rather than measuring-by-eye-and-hardcoding.
 **Action:** documented the camera/preset evidence trail in the commit + memory; sizes/positions
 tied to the atlas grid + node geometry.
+
+### 84. A cockpit RTT screen "over-sized / over-zoomed / panels full-bleed" → check the canvas FIT first; a STRETCHED reference glyph means non-uniform FILL, not cover
+**Observed:** the countermeasures arc spent many iterations chasing per-node layout (entry width,
+pivots, recentre) before finding the real cause: the square cockpit screen rendered its 16:9
+`useRaw` canvas via uniform COVER (`cover_fit_mesh_aspect`, ×max), which over-zoomed all content
+~1.78× (the count "5" rendered 35% tall vs the reference 22%) and over-flowed the full-width panels
+off-screen. The engine actually FILLS non-uniformly (csx=sx, csy=sy). The decisive evidence was
+MEASURING A REFERENCE GLYPH'S ASPECT: the ref "5" is 1.67 tall:wide vs a normal digit's ~1.4 — a
+vertically-stretched glyph is the fingerprint of non-uniform fill (uniform cover/contain never
+distorts). Under fill, `PercentOfX/Y` content (the ball gauge) stays proportional while `Percent`
+content (panels, digits) stretches — so ONE fit serves the balls AND the panels.
+**Improvement:** for any cockpit RTT screen whose content is the wrong SIZE / position / full-bleed,
+inspect the FIT at `pipeline/mod.rs` `cover_fit_mesh_aspect` (cover vs fill vs contain) BEFORE
+per-node layout work; measure a settled reference glyph's width:height — stretched ⇒ fill. The
+fit is per-`binding_kind`: `physical` 2D screens FILL, the `radar` 3D-RTT scope keeps COVER (its
+disc projection + chrome are tuned for it; byte-identical either way since it's aspect-matched).
+**Action:** added the fit-first diagnostic to the dossier (countermeasures row) + this ledger; the
+`bb_layout` UseRaw branch now splits fill (mesh_aspect_fill) vs cover (radar) vs contain.
+
+### 85. A "frozen baseline will drift" assumption can be FALSE — run `--full` (+ a dry freeze) BEFORE re-freezing; the metric tolerance may already cover the change
+**Observed:** I flagged the FILL change as drifting the g-force/velocity platinum baselines and
+sought a gated re-freeze. But `--full` PASSED (the layout shift is within the whole-image budget),
+and the freeze cycle produced ZERO artifact-hash changes (only `reason`/`frozen_at` metadata) — the
+re-freeze was a NO-OP. The visual centering improvement is real but below the freeze's captured
+metric precision, so the existing baselines already validate the new render.
+**Improvement:** before telling the owner a change "needs a re-freeze", run `--full` first; if it's
+green, the baselines are still valid and a re-freeze only churns metadata (and overwrites the prior
+freeze `reason`). Re-freeze only when a guard actually FAILS or to deliberately capture an
+improvement the owner wants pinned. The freeze lock has a GLOBAL `reason`/`frozen_at` (per-target
+hashes in `artifacts`); a metadata-only delta = nothing actually re-froze → revert it.
+**Action:** reverted the metadata-only freeze churn; reported the no-op honestly to the owner.
+
+### 86. `bb_layout/engine_parts/engine_01.part` is AT the 3000-line cap — split it; comment-trimming to land a change is recurring friction
+**Observed:** landing the fill fit required trimming load-bearing comments ~6 times to keep
+engine_01.part ≤3000 (it now sits at exactly 3000 — zero headroom). Every future change to this
+file will hit the same wall.
+**Improvement:** split engine_01.part by responsibility (the fit/scale entry `layout_with_animation_sample`
++ `cover_fit_recentre` are one cohesive unit; the flex `layout_flex_no_grow_children` another) into
+a new `engine_NN.part`, target ≤2500 each. Tests already live in engine_02/03.
+**Action:** FLAGGED (not done this arc — out of scope); the fit + recentre logic is the natural
+first extraction.
+
+### 87. Derived integer/number at-rest values don't reach the `bb_state_filter` IsActive eval — event-overlay gates on `IntegerVariable`/`Number` comparisons stay conservatively active
+**Observed:** the countermeasure firing-amount "0" overlay should be HIDDEN at rest
+(`base_FiringIndicator` IsActive = Or(CurrentBurstSize>1, BurstSizeHoldRatio>0)). The derived values
+set both to 0, but the eval only reads BOOLEAN registry values into `static_vals` and
+`IntegerComponentParameter` defaults — a runtime `IntegerVariable` (CurrentBurstSize) takes the
+at-rest heuristic (ordered comparison → None), and `BooleanFromNumber` (BurstSizeHoldRatio>0) is
+unhandled (`_ => None`) — so the Or stays unresolved → the node stays active.
+**Improvement:** bridge the derived/registry INTEGER + NUMBER values into the eval (parallel to the
+boolean `static_vals`): `resolve_static_integer` reads an integer map for `IntegerVariable`
+bindings, plus a new `BooleanFromNumber` handler reading a number map. Then a derived
+CurrentBurstSize=0 / BurstSizeHoldRatio=0 resolves the Or false and the firing overlay hides — the
+generic mechanism for any event overlay gated on a derived integer/number comparison.
+**Action:** DEFERRED (documented residual in the countermeasures dossier row + memory); the fix is a
+shared bb_state_filter capability, scoped for a deliberate follow-up.
