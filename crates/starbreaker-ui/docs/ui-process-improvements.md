@@ -2003,5 +2003,49 @@ boolean `static_vals`): `resolve_static_integer` reads an integer map for `Integ
 bindings, plus a new `BooleanFromNumber` handler reading a number map. Then a derived
 CurrentBurstSize=0 / BurstSizeHoldRatio=0 resolves the Or false and the firing overlay hides — the
 generic mechanism for any event overlay gated on a derived integer/number comparison.
-**Action:** DEFERRED (documented residual in the countermeasures dossier row + memory); the fix is a
-shared bb_state_filter capability, scoped for a deliberate follow-up.
+**Action:** DONE 2026-06-18 (`2538c8743`). Bridged the at-rest numeric cold defaults into the eval:
+`resolve_static_number` + `eval_bool_from_number` in `bb_state_filter::integer`; a `static_nums` map
+threaded through `evaluate_bool_ops`/`eval_bool_ref` (built by `numeric_variable_defaults` from the
+registry); `contains_unset_non_state_variable` no longer treats a resolved numeric binding as unset.
+Registered `CurrentBurstSize`=0 / `BurstSizeHoldRatio`=0.0 as universal cold defaults. ui_check ALL
+GREEN; the firing "0" hides. SCOPING caveat → item 88.
+
+### 88. Resolving runtime numeric variables in `bb_state_filter` must be scoped to COMPONENT-LOCAL (bare) bindings — global engine-state slash-paths regress frozen baselines
+**Observed:** the first cut of item 87's bridge built `static_nums` from EVERY registry numeric path,
+then `contains_unset_non_state_variable` stopped treating those as "unset". That flipped frozen-screen
+gates calibrated on the unset→override path — `clipper_self_master` gold gained +12 visible elements
+(the live-IR guard caught it). The global engine-state numerics (`/seatdashboard/powerstate`, annunciator
+`Severity`, …) had been deliberately left to the conservative at-rest override that the gold baselines
+encode; newly *resolving* them changed their visibility.
+**Improvement:** scope numeric cold-default resolution to BARE bindings (`!binding.contains('/')`) —
+a bare binding (`path []` + `inheritsNamespace`) is a component-relative runtime variable, safe to
+resolve at rest; absolute slash-paths stay on the established path. Today only the firing-state vars are
+bare numeric registry keys, so it's byte-identical for every frozen screen (guard 4/4).
+**Action:** DONE (`2538c8743`). LESSON: a change to the shared state filter / cascade is whole-tree;
+the live-IR guard is the discriminator — run it (`ui_check`) before assuming a "local" fix is local.
+
+### 89. `ui_check.sh 2>&1 | tail` masks the real exit code — trust the "ALL GREEN" marker, not the piped/notified exit code
+**Observed:** running `bash scripts/ui_check.sh 2>&1 | tail -30` (and as a background task) reported
+"exit code 0" on a run where the live-IR guard FAILED — the pipeline's exit status is `tail`'s, not
+`ui_check.sh`'s (no `pipefail` on the interactive pipe), so a real failure looked green until the output
+was read. `ui_check.sh` itself is correct (`set -euo pipefail`, prints "ui_check: ALL GREEN" only on
+success) but emitted NO summary line on failure, so `| tail` ended on a bare cargo error.
+**Improvement:** add an `EXIT` trap to `ui_check.sh` that prints a distinct `ui_check: FAILED (exit N)`
+line on any non-zero exit — it survives a `| tail`/`| grep`, so the pass/fail signal is unambiguous in
+either the last line or the exit code.
+**Action:** DONE. Also a workflow caveat: never trust a piped/notified exit code for a validation
+script — grep its result marker, or run it without a masking pipe and read the output file.
+
+### 90. A multi-digit data VALUE can break layout authored for a single digit — fix the value, not the layout symptom (#1/#3 were downstream of #4)
+**Observed:** the countermeasures decoy panel had THREE catalog issues — dot off-canvas (#1), numerals
+misaligned (#3), count "48" not "4" (#4). #1 and #3 looked like independent layout bugs, but the
+authored dot pivot (`pivot.x=22` ≈ 1100px from a content-fit entry) and the right-anchored Auto-width
+entry are calibrated for a SINGLE-digit count: the 2-digit "48" widened the entry, shoving the dot to
+x≈−170 (off-canvas) and pulling the right edge in. Fixing #4 (decoy → "4") made both panels identical
+and resolved #1 and #3 for free — no layout change.
+**Improvement:** when several layout symptoms share a region whose content is a wrong DATA value, check
+whether the authored geometry assumes the correct value's shape (digit count, string length) before
+"fixing" the layout — a render-side nudge would have been a non-generic hack undone once the value
+landed. Surface the dependency to the owner and sequence the data fix first (done here via AskUserQuestion).
+**Action:** DONE (`e946eb73a`). LESSON for the dossier: catalog items in one region can be CAUSALLY
+linked through a shared data value; don't assume independence.

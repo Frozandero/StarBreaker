@@ -21,6 +21,14 @@
 #                    medical/door/annunciator bindings the font baseline
 #                    covers; the LOD0 cockpit scene does NOT).
 set -euo pipefail
+# Emit a DISTINCT final failure marker on any non-zero exit, mirroring the
+# "ui_check: ALL GREEN" success line. Without it, a failure ends on a bare
+# `cargo test` error, so piping the run through `| tail`/`| grep` (which is
+# common) reports the FILTER's exit code (0) and a real failure looks green —
+# a background-task notification then says "exit code 0" on a failing run
+# (ledger item: ui-process-improvements). The marker survives the pipe, so the
+# pass/fail signal is unambiguous in either the exit code or the last line.
+trap 'rc=$?; if [[ $rc -ne 0 ]]; then echo; echo "ui_check: FAILED (exit $rc) — see output above"; fi' EXIT
 cd "$(dirname "$0")/.."
 
 FULL=0
