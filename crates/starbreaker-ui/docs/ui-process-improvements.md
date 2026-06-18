@@ -2049,3 +2049,68 @@ whether the authored geometry assumes the correct value's shape (digit count, st
 landed. Surface the dependency to the owner and sequence the data fix first (done here via AskUserQuestion).
 **Action:** DONE (`e946eb73a`). LESSON for the dossier: catalog items in one region can be CAUSALLY
 linked through a shared data value; don't assume independence.
+
+### 91. Per-screen render aspect was orientation-blind (always long/short ≥ 1) — PORTRAIT screens rendered landscape
+**Observed:** the LR-indicator (`HC_HUD_Ship_LRInd_Master`) is a TALL portrait screen, but `ui_screen_aspect`
+returned `planar_aspect` = major/minor extent (always ≥ 1), so it sized landscape (1.56) — the inverse of the
+true ~0.64 portrait. The dossier row even recorded "aspect 1.56 fixed 2026-06-14"; that prior pass had set the
+WRONG value because the derivation could not express portrait. The render came out 1920×3002 wide-laid-out
+instead of tall.
+**Improvement:** `planar_aspect_w_over_h(points, world_up)` classifies the two in-plane PCA axes against
+world-up (CryEngine +Z): the axis more parallel to up is the height axis → aspect = width/height (`< 1` portrait).
+Empirically verified via a new `SB_SCREEN_ASPECT_ORIENT_PROBE` (registered in reference §6): LR-ind 0.64,
+landscape screens unchanged (width IS the major axis), velocity/afterburner bars correctly 0.33.
+**Action:** DONE (`7f1edd52f`). LESSON: a dossier "aspect N fixed" note is a prior JUDGMENT that can be wrong —
+re-derive from the reference orientation; an always-≥1 aspect helper silently cannot represent portrait.
+
+### 92. The screen background CLEAR is brand slot-9 for MFD/interior, BLACK for COCKPIT-HUD canvases — `binding_kind` is the wrong discriminator
+**Observed:** the full-screen render clear is `style.background` = brand "Background" palette slot 9 (drak
+(38,27,10) brown). The LR-indicator showed it raw (owner: should be black like the annunciator). First cut
+scoped the black clear by `binding_kind != "mfd"` (physical→black) — that regressed `clipper_small_door` by
+27%: the door is `physical` but RELIES on the brown clear (its panel + the slot-9 composite). The MFD frames
+(power/target/self) likewise composite their semi-transparent body over slot-9; the HUD gauges cover the clear
+with their own `Screen Background` texture nodes; only the LR-indicator (cockpit-HUD, no background node)
+shows it raw.
+**Improvement:** scope the black clear to the COCKPIT-HUD canvas class (`is_cockpit_hud_canvas`:
+`HC_HUD_*`/`H_HUD_*`/`H_Eng_*` — the compass-arc classifier), not `binding_kind`. The brand "Background" colour
+stays the clear for interior/door/MFD that composite over it.
+**Action:** DONE (`53b29b137`). LESSON: `binding_kind` (mfd/physical/radar) does NOT separate "screen-bezel
+black" from "brand-background composite" — the door is physical-but-brand; use the cockpit-HUD canvas class.
+
+### 93. MEASURE blast radius with the disable→adjudicate audit — a "surely it regresses the frozen X" assumption was wrong
+**Observed:** pinning the at-rest flight-controller bools (`isvtol=false`, …) to fix the LR-indicator's
+right-column lit-state LOOKED certain to regress the frozen g-force / velocity ball platinum — those screens
+gate `IsActive` on the SAME bools. The empirical live-IR audit (temporarily add the pins, run
+`manifest_live_ir_guard`) proved them BYTE-IDENTICAL: the balls' flight-mode indicators are display-widgets
+that `forced_active`'s WidgetImage scope leaves deactivated regardless of the bool value, so resolving the
+bools doesn't activate them.
+**Improvement:** when a registry pin "obviously" touches a frozen screen sharing the binding, run the audit
+before assuming — it overturned the assumption here and unblocked a clean fix. (Reinforces ledger 22/56.)
+**Action:** DONE (pins landed `53b29b137`). LESSON: shared-binding ≠ shared-effect; the gate STRUCTURE
+(here WidgetImage-scoped force-active) can make a shared pin a no-op on the other screen.
+
+### 94. HUD indicator label font: a named-style Auto-sized label keeps its named size — an in-game size with no authored source is undecoded engine scaling, NOT a magic-scalar fix
+**Observed:** the LR-indicator labels render ~5–7× smaller than the reference. They author
+`labelProperties.style="Heading1"` (60px), `Auto`/`Auto` sizing, NO FontSize / autoFontSize / fitToParent /
+padding / scale. The engine model (`text_field_sizes_font_to_relative_height`) only height-drives a label when
+it is `height: Percent` + `width: PercentOfY` (the compass-tick case); an Auto/Auto label correctly keeps the
+named-style 60px. The in-game label (~26% of the box / ~7% of screen) is ~2× bigger than Heading1 even at the
+native canvas and the gap exceeds canvas→target scaling — an undecoded engine HUD-label scaling with no
+data source. The velocity-num/master-mode playbook (read the instantiated variant's authored FontSize) does
+NOT apply: there is no authored size, the named style IS reaching the node.
+**Improvement:** when "font too small" survives the read-the-authored-size check AND there is no
+FontSize/autoFontSize/fit/padding/scale to source the bigger size AND the gap exceeds canvas→target scaling,
+it is an undecoded engine mechanism — do NOT bake a reverse-engineered scalar (owner directive: no
+heuristics/hardcoding/hacks). Document it as blocked with the code path, leave it unfixed.
+**Action:** DEFERRED (documented in dossier). LESSON: not every "too small" is an unapplied authored size;
+the named-style model can be correct-but-insufficient vs an undecoded engine scale.
+
+### 95. `ui_render.sh` LOD heuristic missed `*_RTT_Small` — the LR-indicator silently rendered at LOD1 (culled)
+**Observed:** `ui_render.sh --helper Screen_Left_Upper_RTT_Small` (no `--lod`) picked LOD1 because the glob
+`*_RTT` requires the name to END with `_RTT`; the `_Small` suffix dodged it. The small HUD screen is culled in
+LOD1, so the first render was a different (wrong-LOD) image. The doc comment also wrongly listed the annunciator
+as LOD1 while the code put it in LOD0.
+**Improvement:** add `*_RTT_Small` to the LOD0 glob in `ui_render.sh` and fix the stale comment. The wrapper now
+auto-picks LOD0 for the LR-indicator (verified).
+**Action:** DONE. LESSON: glob LOD heuristics need every cockpit-HUD stem variant; a silent wrong-LOD render
+looks like a content bug.
