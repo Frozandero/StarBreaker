@@ -1704,6 +1704,30 @@ pub(crate) fn write_decomposed_export(
             }
         }
 
+        // Component animation tracks (doors, ladders, beds, …) live in a shared
+        // .dba; the root-skeleton sweep stamps the blocks whose nodes are not in
+        // the hull NMC with the exterior CGA and no source_node_name. Resolve
+        // those against the entity's own interior + child rigs so each track is
+        // stamped with the geometry that actually owns its node.
+        let rig_paths: Vec<&str> = input
+            .interiors
+            .unique_cgfs
+            .iter()
+            .map(|entry| entry.cgf_path.as_str())
+            .chain(
+                input
+                    .children
+                    .iter()
+                    .filter_map(|child| child.skeleton_source_path.as_deref()),
+            )
+            .collect();
+        let restamped = restamp_unresolved_animation_channels(&mut clips, p4k, rig_paths);
+        if restamped > 0 {
+            log::info!(
+                "[anim] re-stamped {restamped} unresolved animation channel(s) from interior/child rigs"
+            );
+        }
+
         if clips.is_empty() {
             None
         } else {
@@ -3862,6 +3886,225 @@ fn merge_animation_channel_values(
     *existing_value = serde_json::Value::Array(vec![previous_value, incoming_value]);
 }
 
+/// Parse an animation channel bone-key (e.g. `"0x6B65934C"` or a decimal
+/// string) into its raw CRC32 hash.
+fn parse_animation_channel_hash(key: &str) -> Option<u32> {
+    let trimmed = key.trim();
+    if let Some(hex) = trimmed.strip_prefix("0x").or_else(|| trimmed.strip_prefix("0X")) {
+        return u32::from_str_radix(hex, 16).ok();
+    }
+    trimmed.parse::<u32>().ok()
+}
+
+/// Walk every channel variant in a `bones` map, invoking `f(bone_key, channel_obj)`.
+fn for_each_animation_channel(
+    clips: &mut [serde_json::Value],
+    mut f: impl FnMut(&str, &mut serde_json::Map<String, serde_json::Value>),
+) {
+    for clip in clips {
+        let Some(bones) = clip.get_mut("bones").and_then(|b| b.as_object_mut()) else {
+            continue;
+        };
+        for (bone_key, channel_value) in bones.iter_mut() {
+            if let Some(obj) = channel_value.as_object_mut() {
+                f(bone_key, obj);
+            } else if let Some(variants) = channel_value.as_array_mut() {
+                for variant in variants {
+                    if let Some(obj) = variant.as_object_mut() {
+                        f(bone_key, obj);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Collect the bone-key hashes of every channel that still lacks a
+/// `source_node_name` (i.e. the rig it was stamped with could not name it).
+fn collect_unresolved_channel_hashes(
+    clips: &[serde_json::Value],
+) -> std::collections::HashSet<u32> {
+    let mut unresolved = std::collections::HashSet::new();
+    for clip in clips {
+        let Some(bones) = clip.get("bones").and_then(|b| b.as_object()) else {
+            continue;
+        };
+        for (bone_key, channel_value) in bones {
+            let variants: Vec<&serde_json::Value> = match channel_value {
+                serde_json::Value::Array(items) => items.iter().collect(),
+                other => vec![other],
+            };
+            for variant in variants {
+                let resolved = variant
+                    .get("source_node_name")
+                    .and_then(|v| v.as_str())
+                    .is_some_and(|s| !s.is_empty());
+                if !resolved {
+                    if let Some(hash) = parse_animation_channel_hash(bone_key) {
+                        unresolved.insert(hash);
+                    }
+                }
+            }
+        }
+    }
+    unresolved
+}
+
+/// Owner of a channel hash among the entity's own rigs.
+///
+/// Because the hash is `crc32(node_name)`, a hash present in several rigs means
+/// those rigs share a node with the *same name* — so the name is unambiguous
+/// even when the owning CGA is not.
+enum ChannelOwner {
+    /// Exactly one rig owns the node: both `source_node_name` and
+    /// `source_skeleton_path` are safe to rewrite.
+    Unique { node_name: String, source_path: String },
+    /// Several rigs contain a node with the same name (e.g. a generic `shutter_*`
+    /// node shared by multiple door CGAs). The name is certain; the owning CGA
+    /// is not, so only `source_node_name` is stamped.
+    SharedName { node_name: String },
+    /// A genuine hash collision between two *different* names — never guessed.
+    Conflicting,
+}
+
+impl ChannelOwner {
+    fn merge_candidate(&mut self, name: String, source_path: String) {
+        match self {
+            ChannelOwner::Unique { node_name, source_path: existing_path } => {
+                if *node_name != name {
+                    *self = ChannelOwner::Conflicting;
+                } else if *existing_path != source_path {
+                    // Same node name, different rig → name is certain, path is not.
+                    *self = ChannelOwner::SharedName { node_name: name };
+                }
+                // else: exact same (name, rig) → no change.
+            }
+            ChannelOwner::SharedName { node_name } => {
+                if *node_name != name {
+                    *self = ChannelOwner::Conflicting;
+                }
+            }
+            ChannelOwner::Conflicting => {}
+        }
+    }
+}
+
+/// Re-stamp animation channels that the root rig could not name with the
+/// correct owning rig, chosen from the entity's *own* interior/child geometry.
+///
+/// Star Citizen ships keep their per-component animation tracks (doors, ladders,
+/// beds, …) in a shared `.dba`. The root-skeleton extraction sweeps every block
+/// (`include_unmatched`), so component blocks whose nodes are not in the root
+/// NMC end up stamped with the exterior hull CGA and no `source_node_name`. This
+/// pass resolves each such channel's CRC32 hash against the NMC/rig node names of
+/// the interior + child CGAs we are already exporting, and rewrites
+/// `source_node_name` + `source_skeleton_path` to the rig that actually owns the
+/// node. It only fills genuinely-unresolved channels and never overrides a hash
+/// owned by more than one rig, so it cannot mis-bind an already-correct track.
+///
+/// Returns the number of channels re-stamped.
+fn restamp_unresolved_animation_channels<'a>(
+    clips: &mut [serde_json::Value],
+    p4k: &starbreaker_p4k::MappedP4k,
+    rig_source_paths: impl IntoIterator<Item = &'a str>,
+) -> usize {
+    let unresolved = collect_unresolved_channel_hashes(clips);
+    if unresolved.is_empty() {
+        return 0;
+    }
+
+    // Build hash -> owner from the entity's own rigs, restricted to the hashes
+    // that are actually unresolved so we never parse more than necessary.
+    let mut owner_by_hash: std::collections::HashMap<u32, ChannelOwner> =
+        std::collections::HashMap::new();
+    let mut seen_paths: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    for rig_path in rig_source_paths {
+        if rig_path.is_empty() || !seen_paths.insert(rig_path.to_string()) {
+            continue;
+        }
+        let p4k_path = crate::pipeline::datacore_path_to_p4k(rig_path);
+        let Some(names) = p4k
+            .entry_case_insensitive(&p4k_path)
+            .and_then(|e| p4k.read(e).ok())
+            .and_then(|data| crate::skeleton::parse_rig_node_names(&data))
+        else {
+            continue;
+        };
+        let normalized_source = normalize_source_path(p4k, rig_path);
+        for name in names {
+            let hash = crate::animation::bone_name_hash(&name);
+            if !unresolved.contains(&hash) {
+                continue;
+            }
+            match owner_by_hash.get_mut(&hash) {
+                None => {
+                    owner_by_hash.insert(
+                        hash,
+                        ChannelOwner::Unique {
+                            node_name: name,
+                            source_path: normalized_source.clone(),
+                        },
+                    );
+                }
+                Some(owner) => owner.merge_candidate(name, normalized_source.clone()),
+            }
+        }
+    }
+
+    if owner_by_hash.is_empty() {
+        return 0;
+    }
+
+    apply_channel_owner_restamp(clips, &owner_by_hash)
+}
+
+/// Apply a hash→owner map to every still-unresolved channel. Pure (no I/O) so
+/// it can be unit-tested. Only fills channels that lack a `source_node_name`
+/// and whose hash has a unique owner.
+fn apply_channel_owner_restamp(
+    clips: &mut [serde_json::Value],
+    owner_by_hash: &std::collections::HashMap<u32, ChannelOwner>,
+) -> usize {
+    let mut restamped = 0usize;
+    for_each_animation_channel(clips, |bone_key, channel_obj| {
+        let already_named = channel_obj
+            .get("source_node_name")
+            .and_then(|v| v.as_str())
+            .is_some_and(|s| !s.is_empty());
+        if already_named {
+            return;
+        }
+        let Some(hash) = parse_animation_channel_hash(bone_key) else {
+            return;
+        };
+        match owner_by_hash.get(&hash) {
+            Some(ChannelOwner::Unique { node_name, source_path }) => {
+                channel_obj.insert(
+                    "source_node_name".to_string(),
+                    serde_json::Value::String(node_name.clone()),
+                );
+                channel_obj.insert(
+                    "source_skeleton_path".to_string(),
+                    serde_json::Value::String(source_path.clone()),
+                );
+                restamped += 1;
+            }
+            Some(ChannelOwner::SharedName { node_name }) => {
+                // Name is certain across rigs; the owning CGA is not, so leave
+                // the existing source_skeleton_path in place.
+                channel_obj.insert(
+                    "source_node_name".to_string(),
+                    serde_json::Value::String(node_name.clone()),
+                );
+                restamped += 1;
+            }
+            Some(ChannelOwner::Conflicting) | None => {}
+        }
+    });
+    restamped
+}
+
 fn hash_vec3(hasher: &mut std::collections::hash_map::DefaultHasher, values: &[f32; 3]) {
     values[0].to_bits().hash(hasher);
     values[1].to_bits().hash(hasher);
@@ -3886,6 +4129,78 @@ fn hash_finish_entry(
 mod tests {
     use super::*;
     use crate::mtl;
+
+    #[test]
+    fn collect_unresolved_channel_hashes_collects_only_unnamed() {
+        let clips = vec![serde_json::json!({
+            "name": "door_open",
+            "bones": {
+                "0x00000001": { "has_rotation": true, "source_node_name": "shutter_15" },
+                "0x00000002": { "has_rotation": true, "source_skeleton_path": "Exterior/Hull.cga" },
+            }
+        })];
+        let unresolved = collect_unresolved_channel_hashes(&clips);
+        assert!(!unresolved.contains(&1), "named channel must not be unresolved");
+        assert!(unresolved.contains(&2), "channel without source_node_name is unresolved");
+    }
+
+    #[test]
+    fn apply_channel_owner_restamp_handles_unique_shared_and_conflicting() {
+        let mut clips = vec![serde_json::json!({
+            "name": "door_open",
+            "bones": {
+                "0x00000002": { "has_rotation": true, "source_skeleton_path": "Exterior/Hull.cga" },
+                "0x00000003": { "has_rotation": true, "source_skeleton_path": "Exterior/Hull.cga" },
+                "0x00000005": { "has_rotation": true, "source_skeleton_path": "Exterior/Hull.cga" },
+                "0x00000004": { "has_rotation": true, "source_node_name": "already" },
+            }
+        })];
+        let mut owner = std::collections::HashMap::new();
+        // Unique: one rig owns it → both fields rewritten.
+        owner.insert(
+            2u32,
+            ChannelOwner::Unique {
+                node_name: "lever_01".to_string(),
+                source_path: "Interior/Bridge/Avionics_door.cga".to_string(),
+            },
+        );
+        // SharedName: same node name in several door CGAs → name only, path kept.
+        owner.insert(3u32, ChannelOwner::SharedName { node_name: "shutter_15".to_string() });
+        // Conflicting: a genuine cross-name hash collision → never guessed.
+        owner.insert(5u32, ChannelOwner::Conflicting);
+
+        let restamped = apply_channel_owner_restamp(&mut clips, &owner);
+        assert_eq!(restamped, 2);
+
+        let bones = clips[0]["bones"].as_object().unwrap();
+        // Unique owner: both fields rewritten to the owning interior CGA.
+        assert_eq!(bones["0x00000002"]["source_node_name"], "lever_01");
+        assert_eq!(
+            bones["0x00000002"]["source_skeleton_path"],
+            "Interior/Bridge/Avionics_door.cga"
+        );
+        // Shared name: name set, original skeleton path left untouched.
+        assert_eq!(bones["0x00000003"]["source_node_name"], "shutter_15");
+        assert_eq!(bones["0x00000003"]["source_skeleton_path"], "Exterior/Hull.cga");
+        // Conflicting: left unresolved.
+        assert!(bones["0x00000005"].get("source_node_name").is_none());
+        // Already-named channel: untouched.
+        assert_eq!(bones["0x00000004"]["source_node_name"], "already");
+    }
+
+    #[test]
+    fn channel_owner_merge_demotes_to_shared_then_conflicting() {
+        // Same name from a second rig → SharedName.
+        let mut owner = ChannelOwner::Unique {
+            node_name: "shutter_15".to_string(),
+            source_path: "a.cga".to_string(),
+        };
+        owner.merge_candidate("shutter_15".to_string(), "b.cga".to_string());
+        assert!(matches!(owner, ChannelOwner::SharedName { .. }));
+        // A different name colliding on the same hash → Conflicting.
+        owner.merge_candidate("totally_other".to_string(), "c.cga".to_string());
+        assert!(matches!(owner, ChannelOwner::Conflicting));
+    }
 
     #[test]
     fn merge_animation_channel_values_promotes_duplicates_to_variant_array() {
