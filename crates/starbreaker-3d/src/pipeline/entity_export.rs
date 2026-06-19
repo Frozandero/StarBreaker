@@ -698,9 +698,7 @@ pub(crate) fn load_nmc_and_material(
     material_path: &str,
 ) -> (Option<nmc::NodeMeshCombo>, Option<mtl::MtlFile>) {
     let p4k_geom_path = datacore_path_to_p4k(geometry_path);
-    let metadata_bytes = p4k
-        .entry_case_insensitive(&p4k_geom_path)
-        .and_then(|entry| p4k.read(entry).ok());
+    let metadata_bytes = crate::socpak::read_geometry_file(p4k, &p4k_geom_path);
 
     let mtl_file = resolve_material(p4k, material_path, &p4k_geom_path, metadata_bytes.as_deref());
 
@@ -734,19 +732,16 @@ fn load_single_mesh(
     let p4k_geom_path = datacore_path_to_p4k(geometry_path);
     let companion_path = resolve_companion_path(p4k, &p4k_geom_path, opts.lod_level);
 
-    let entry = p4k
-        .entry_case_insensitive(&companion_path)
-        .ok_or_else(|| Error::FileNotFoundInP4k {
+    let mesh_bytes = crate::socpak::read_geometry_file(p4k, &companion_path).ok_or_else(|| {
+        Error::FileNotFoundInP4k {
             path: companion_path.clone(),
-        })?;
-    let mesh_bytes = p4k.read(entry).map_err(Error::P4k)?;
+        }
+    })?;
 
     let (nmc, mut mtl_file) = load_nmc_and_material(p4k, geometry_path, material_path);
     let mesh = crate::parse_skin_with_options(&mesh_bytes, use_model_bbox)?;
     if material_path_is_incompatible_with_mesh(&mesh, mtl_file.as_ref()) {
-        let metadata_bytes = p4k
-            .entry_case_insensitive(&p4k_geom_path)
-            .and_then(|entry| p4k.read(entry).ok());
+        let metadata_bytes = crate::socpak::read_geometry_file(p4k, &p4k_geom_path);
         if let Some(fallback_mtl) = resolve_material(p4k, "", &p4k_geom_path, metadata_bytes.as_deref()) {
             if !material_path_is_incompatible_with_mesh(&mesh, Some(&fallback_mtl)) {
                 log::debug!(
