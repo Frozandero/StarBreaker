@@ -158,8 +158,11 @@ pub(crate) fn load_interiors(
 
     let mut loaded =
         build_interiors_from_payloads(db, p4k, &payloads, opts.include_lights, opts.lod_level);
-    let removed =
-        remove_root_geometry_duplicate_interior_placements(&mut loaded, &root_geometry_path);
+    let removed = remove_root_geometry_duplicate_interior_placements(
+        &mut loaded,
+        &root_entity_name,
+        &root_geometry_path,
+    );
     if removed > 0 {
         log::info!(
             "Skipped {removed} root-geometry duplicate interior placement(s) for '{}'",
@@ -190,6 +193,7 @@ fn normalize_geometry_path_key(path: &str) -> String {
 
 fn remove_root_geometry_duplicate_interior_placements(
     interiors: &mut LoadedInteriors,
+    root_entity_name: &str,
     root_geometry_path: &str,
 ) -> usize {
     let root_key = normalize_geometry_path_key(root_geometry_path);
@@ -199,7 +203,18 @@ fn remove_root_geometry_duplicate_interior_placements(
 
     let mut removed = 0usize;
     for container in &mut interiors.containers {
-        if container.parent_entity_name.is_some() {
+        // Only skip containers attached to a *child* entity, whose placements
+        // live in the child's frame. A container parented to the root entity
+        // itself — the ship's own interior attached at a hull helper bone such
+        // as `hardpoint_interior_oc` (e.g. the RSI Aurora Mk2 cabin) — must
+        // still have the root exterior hull stripped: that hull is a baked
+        // occluder/visarea shell, never real interior geometry, and is already
+        // rendered as the exterior.
+        if container
+            .parent_entity_name
+            .as_deref()
+            .is_some_and(|parent| parent != root_entity_name)
+        {
             continue;
         }
         container.placements.retain(|placement| {
@@ -1643,8 +1658,15 @@ mod tests {
     }
 
     #[test]
-    fn root_geometry_duplicate_filter_only_removes_root_container_matches() {
+    fn root_geometry_duplicate_filter_removes_root_and_root_helper_matches() {
         let identity = glam::Mat4::IDENTITY.to_cols_array_2d();
+        let root_entity_name = "EntityClassDefinition.Test_Ship";
+        let root_placement = |mesh_index| InteriorPlacement {
+            mesh_index,
+            transform: identity,
+            palette: None,
+            ui_bindings: Vec::new(),
+        };
         let mut interiors = LoadedInteriors {
             unique_cgfs: vec![
                 InteriorCgfEntry {
@@ -1659,39 +1681,36 @@ mod tests {
                 },
             ],
             containers: vec![
+                // Root-level container with no parent: root-hull dup removed.
                 InteriorContainerData {
                     name: "root_container".to_string(),
                     parent_entity_name: None,
                     parent_node_name: None,
                     container_transform: identity,
-                    placements: vec![
-                        InteriorPlacement {
-                            mesh_index: 0,
-                            transform: identity,
-                            palette: None,
-                            ui_bindings: Vec::new(),
-                        },
-                        InteriorPlacement {
-                            mesh_index: 1,
-                            transform: identity,
-                            palette: None,
-                            ui_bindings: Vec::new(),
-                        },
-                    ],
+                    placements: vec![root_placement(0), root_placement(1)],
                     lights: Vec::new(),
                     palette: None,
                 },
+                // The root entity's own interior attached at a hull helper bone
+                // (the RSI Aurora Mk2 `hardpoint_interior_oc` cabin case):
+                // root-hull dup must STILL be removed.
+                InteriorContainerData {
+                    name: "root_helper_container".to_string(),
+                    parent_entity_name: Some(root_entity_name.to_string()),
+                    parent_node_name: Some("hardpoint_interior_oc".to_string()),
+                    container_transform: identity,
+                    placements: vec![root_placement(0), root_placement(1)],
+                    lights: Vec::new(),
+                    palette: None,
+                },
+                // A genuine child-entity container: its placements are in the
+                // child's frame and must be left untouched.
                 InteriorContainerData {
                     name: "child_container".to_string(),
-                    parent_entity_name: Some("child".to_string()),
+                    parent_entity_name: Some("Test_Child_Module".to_string()),
                     parent_node_name: Some("helper".to_string()),
                     container_transform: identity,
-                    placements: vec![InteriorPlacement {
-                        mesh_index: 0,
-                        transform: identity,
-                        palette: None,
-                        ui_bindings: Vec::new(),
-                    }],
+                    placements: vec![root_placement(0)],
                     lights: Vec::new(),
                     palette: None,
                 },
@@ -1700,12 +1719,16 @@ mod tests {
 
         let removed = remove_root_geometry_duplicate_interior_placements(
             &mut interiors,
+            root_entity_name,
             "Data/Objects/Ships/Test/root.cga",
         );
 
-        assert_eq!(removed, 1);
+        // Both the no-parent root container and the root-helper container drop
+        // their root.cga placement; the genuine child container keeps its own.
+        assert_eq!(removed, 2);
         assert_eq!(interiors.containers[0].placements.len(), 1);
         assert_eq!(interiors.containers[1].placements.len(), 1);
+        assert_eq!(interiors.containers[2].placements.len(), 1);
     }
 
     #[test]
