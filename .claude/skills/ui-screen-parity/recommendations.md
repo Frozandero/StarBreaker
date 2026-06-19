@@ -60,17 +60,11 @@ findings land here in two states, with a lifecycle:
   skill (or arc start) skims the open items first.
 - **Multi-ship generalization unverified** (see Known assumptions) — exercise
   when a second `reference/in-game/` folder exists.
-- **"Font too small" can be UNDECODED engine scaling, not an unapplied authored
-  size** (LR-indicator arc, 2026-06-18; ledger 94). The skill's red-flags cover
-  "don't hard-code a value," and the velocity-num/compass playbook (read the
-  instantiated variant's authored FontSize) is in workflow §10 — but that playbook
-  assumes the bigger size IS authored. When a HUD label authors only a NAMED style
-  (`labelProperties.style=Heading1`), is `Auto`-sized (so the engine keeps the
-  named size), has NO FontSize/autoFontSize/fitToParent/padding/scale, AND the
-  in-game gap exceeds canvas→target scaling, it is an undecoded engine HUD-label
-  scale — bounded parity, document-and-defer (no magic scalar), don't re-spend a
-  whole dig. Consider a workflow §10 / red-flag line so the next arc recognizes it
-  after one round, not four.
+- **"Font too small" → the LR-indicator case was PREMISE-OVERTURNED by a data
+  probe (2026-06-18) — it was an unapplied authored size, not undecoded engine
+  scaling; applied to `SKILL.md`, see Change log.** (The drafted worry that a
+  named-style/`Auto`-sized HUD label with no authored FontSize is an undecoded
+  engine scale to document-and-defer was checked against the data and falsified.)
 
 ## Known assumptions & risks
 
@@ -325,6 +319,60 @@ under **Open recommendations** above.
   red-flag row. Cleared both Open recs. META-lesson: be wary of codifying "X is a
   proven blocker" from one arc — these blockers keep dissolving on a deeper read of
   the authored variant; the skill should bias toward RE-READING, not toward accepting.
+- **2026-06-19 (LR-indicator fix arc CLOSED — validated the 2026-06-18 overturn +
+  found a SECOND cause; ledger 96–98; `writing-skills` review session).** The hand-off
+  arc ran (onboarded GOLD `clipper_lrind_master`). It confirmed BOTH of ledger 94's
+  premises were wrong: (96) the authored FontSize 100 in the DRAK sub-canvas's
+  `embeddedStyles` `Type(Text)` selector was real but the text-format route ran only at
+  the BRAND tier, not the EMBEDDED tier (fixed `6cb31a350`) — exactly the overturn +
+  embeddedStyles read I applied on 2026-06-18, so that skill edit is VALIDATED, no
+  further change there; (97) a SECOND root cause I did NOT catch — even with the size
+  applied the portrait screen was ~3× small and needed a `ui_ir` font screen scale
+  (`2bbf9b214`), and the obvious `bb_layout` `canvas_scale` knob was INERT (the IR
+  renderer reads `font_size` directly; a byte-identical `png md5` proved a dead-stage
+  edit). So "font too small" has TWO non-blocker causes (unapplied authored size OR a
+  per-screen render scale), not one — my 2026-06-18 red-flag row covered only the first,
+  leaving the residual deferrable as "undecoded." Applied: extended the font red-flag row
+  to name BOTH causes + the "trace the lever to where the glyph px is read; an inert knob
+  = wrong stage, confirm via `png md5`" point. Also applied (98): an inherited "+N
+  regresses frozen X" verdict can be an OFF-SCREEN (0×0) re-freezable delta, not a real
+  regression — added a MEASURE-it clause to *Default to fixing* (frozen-family). NOT skill
+  changes: 96's text-format-tier fix + 97's `ui_ir`-vs-`bb_layout` lever + 98's
+  forced_active binding-namespace scope and stale-`ships/`-path detour are domain/tooling
+  (ledger + dossier homes). Net: the owner's "the agent gave up" instinct was right twice
+  over — BOTH deferred premises were do-able fixes.
+- **2026-06-18 (LR-indicator font "undecoded engine scaling" defer was PREMATURE —
+  4th font-blocker to dissolve on reading the instantiated variant; owner-prompted
+  "the agent gave up").** The owner asked to check the LR-indicator retro's font
+  give-up (ledger 94: labels ~5–7× too small, declared "undecoded engine HUD-label
+  scaling, document-and-defer"). RED: the defer's load-bearing claim was "labels
+  author `labelProperties.style=Heading1` (60px), NO authored FontSize, the named
+  style IS reaching the node." A data probe (the skill's own mandate) FALSIFIED it:
+  the Clipper instantiates the per-manufacturer `DRAK_HC_HUD_Cutlass_LInd`/`RInd`
+  sub-canvas (the master tiles brand sub-canvases via `CanvasReferenceRecord`; the
+  agent read the GENERIC master / only `labelProperties`), and that variant's
+  canvas-root `embeddedStyles` authors a bare `Type(Text)` selector → `FontSize 100`
+  (the generic variant has none). 100 vs Heading1 60 ≈ 1.67× = exactly the "~2×
+  bigger than Heading1 at native canvas" residual the agent attributed to an undecoded
+  engine scale. This is the velocity-num/master-mode/compass bug a FOURTH time — an
+  authored size present but not APPLIED. The authored value lived in `embeddedStyles`,
+  a THIRD location the skill's re-read mandate didn't name (it listed only
+  `defaultStyles`/`brandStyles`), so an agent following the mandate literally would
+  still miss it. Applied to `SKILL.md`: (1) the *Default to fixing* re-read mandate
+  now includes canvas-root `embeddedStyles` (CSS-like `Type(Text)`/selector entries
+  auto-apply and are easy to miss) + the "instantiated = the brand sub-canvas
+  `drak_*_cutlass_*`, NOT `generic_*`" point, bumped THREE→FOUR dissolved arcs; (2)
+  the matching red-flag row updated to four arcs + `embeddedStyles`; (3) a NEW
+  red-flag row for the exact "no authored FontSize → undecoded → defer" rationalization.
+  This is the OPPOSITE of the drafted Open rec (which proposed a "recognize-and-defer
+  -faster" line) — the empirical record is that these font "blockers" keep dissolving
+  on a deeper read, so the skill must bias toward RE-READING (ledger 76 meta-lesson),
+  never toward easier deferral. OUT OF SKILL SCOPE, flagged for the owner / next arc:
+  ledger 94 + the LR-indicator dossier row carry the now-falsified "undecoded engine
+  scaling, deferred" conclusion — they should be corrected and the item re-opened; the
+  actual parity fix (apply the `embeddedStyles` `Type(Text)` FontSize to the labels —
+  likely the velocity-num text-format routing path) is a separate gated UI arc, not
+  done here.
 - **2026-06-18 (trust `ui_check`'s result MARKER, not a piped/notified exit code;
   countermeasures arc continuation, ledger 89; `writing-skills` review session).**
   The countermeasures arc closed out (GOLD `clipper_countermeasures_master`), adding

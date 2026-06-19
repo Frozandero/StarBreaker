@@ -281,19 +281,30 @@ dispatch a dedicated "find-it-or-prove-absence" research subagent, then surface
 the blocker + trail to the user for confirmation (Checkpoints) — major-item
 blockers are never self-certified. A "frozen-family risk" is
 likewise a §5 task: find the structural discriminator separating this screen from
-the frozen family and scope the fix by it — but beware the INVERSE trap. When
+the frozen family and scope the fix by it. An inherited "+N regresses frozen X"
+verdict is itself an ESTIMATE — MEASURE it: if those +N elements lay out OFF-SCREEN
+(0×0, no visual change), it's a gated re-freeze of a CORRECT improvement, not a
+regression to dodge (the velocity-ball's `base_CPLD`/`base_ESP` are 0×0 — ledger 98).
+But beware the INVERSE trap. When
 scoping render-side to dodge a frozen regression just regresses the NEXT frozen
 sibling (each narrower scope `auto` → `HC_HUD+auto` → tag-match reveals another),
 that is NOT a proven blocker — it is the signal you are at the WRONG STAGE,
-symptom-scoping a fix that belongs UPSTREAM. THREE arcs (velocity-num, compass,
-master-mode) looked like a size/colour blocker and each DISSOLVED once the
-INSTANTIATED variant's authored entries were read: the value was authored in
-`defaultStyles`/`brandStyles` (e.g. master-mode's FontSize 350 + white) and simply
-was not being APPLIED. So before surfacing ANY size/colour blocker, re-read the
-instantiated variant's `defaultStyles`/`brandStyles` (PARSE the JSON) and verify via
-`ui_ir_query --fields text_style` / `BB_TEXT_FORMAT_PROBE` whether the authored
-value reaches the node; only a genuinely-absent authored value AND an exhausted
-upstream search is a real blocker (ledger 76). (Still judge such auto-canvas
+symptom-scoping a fix that belongs UPSTREAM. FOUR arcs (velocity-num, compass,
+master-mode, LR-indicator) looked like a size/colour blocker and each DISSOLVED
+once the INSTANTIATED variant's authored entries were read: the value was authored
+in `defaultStyles`/`brandStyles`/`embeddedStyles` (master-mode's FontSize 350 +
+white; the LR-indicator's FontSize **100** as a bare `Type(Text)` selector in the
+DRAK cutlass sub-canvas's canvas-root `embeddedStyles` — initially mis-deferred as
+"undecoded engine HUD scaling", ledger 94) and simply was not being APPLIED. So
+before surfacing ANY size/colour blocker, re-read the instantiated variant's
+`defaultStyles`/`brandStyles` AND its canvas-root `embeddedStyles` (the CSS-like
+`Type(Text)`/selector entries auto-apply to every matching node and are the easiest
+to miss — the LR-indicator's authored size lived ONLY there; and when a master
+TILES per-manufacturer sub-canvases via `CanvasReferenceRecord`, the instantiated
+variant is the brand one, e.g. `drak_*_cutlass_*`, NOT `generic_*`). PARSE the JSON
+and verify via `ui_ir_query --fields text_style` / `BB_TEXT_FORMAT_PROBE` whether
+the authored value reaches the node; only a genuinely-absent authored value AND an
+exhausted upstream search is a real blocker (ledger 76/94). (Still judge such auto-canvas
 (`coordinateMethod=auto`) / HC_HUD experiments with `--full` after a fresh export —
 that drift is WHOLE-IMAGE-only, invisible to `ui_check` live-IR, so a live-IR
 "green" is not proof a sibling `auto` baseline survived.) Record the exhausted-search
@@ -531,5 +542,6 @@ needed is a doc bug — fix it before closing.
 | "graphify shows nothing / `No path` there — so that code doesn't exist" | graphify does NOT index the `engine_*.part` UI-engine core (~31k lines) — a miss there is the blind spot, not proof. Grep `crates/starbreaker-ui/src/*/engine_parts/` WITHOUT `--include="*.rs"` (it hides `.part`); and `.map(foo)` won't match `foo(`. |
 | "My quick check refutes the subagent — move on" | Refuting a careful subagent finding needs the SAME rigour as the claim. If your refutation is the weaker read, IT'S the unreliable one — verify with parse/probe before acting (ledger 68). |
 | "This render looks identical to the last — my change did nothing" | The wrapper writes a FIXED path; the user's viewer caches by name and shows the OLD image. Copy each iteration the user sees to a unique filename; confirm via the printed `png md5:` before concluding no-op (ledger 69). |
-| "Each narrower scope regresses the next frozen sibling — no-discriminator blocker proven" | NO — that's the signal you're at the WRONG STAGE, symptom-scoping render-side a fix that belongs UPSTREAM. Three arcs (velocity-num/compass/master-mode) "blocked" on size/colour, all dissolved on reading the INSTANTIATED variant's authored `defaultStyles`/`brandStyles` (value authored but NOT applied). Re-read the variant (parse JSON) + verify it reaches the node before ANY blocker claim; keep `--full` for auto-canvas drift (ledger 76). |
+| "Each narrower scope regresses the next frozen sibling — no-discriminator blocker proven" | NO — that's the signal you're at the WRONG STAGE, symptom-scoping render-side a fix that belongs UPSTREAM. Four arcs (velocity-num/compass/master-mode/LR-indicator) "blocked" on size/colour, all dissolved on reading the INSTANTIATED variant's authored `defaultStyles`/`brandStyles`/`embeddedStyles` (value authored but NOT applied). Re-read the variant (parse JSON) + verify it reaches the node before ANY blocker claim; keep `--full` for auto-canvas drift (ledger 76). |
+| "Font's too small but there's no authored FontSize — undecoded engine scaling, defer it" | TWO non-blocker causes before any "undecoded" defer, not one. (1) **Unapplied authored size:** you probably read the GENERIC master or only `labelProperties` — re-read the INSTANTIATED brand sub-canvas (`drak_*_cutlass_*`, not `generic_*`) incl. its canvas-root `embeddedStyles` `Type(Text)` selectors (the LR-indicator's FontSize 100 lived ONLY there; velocity-num/master-mode bug a 4th time). (2) **Per-screen RENDER scale:** even with the size applied, a portrait cockpit screen needs a `ui_ir` font screen scale — and the obvious `bb_layout` `canvas_scale` knob is INERT (the IR renderer reads `font_size` directly; a byte-identical render via the printed `png md5` proves you edited a dead stage). Apply BOTH, trace the lever to where the glyph px is actually read, THEN judge any residual (ledger 94/96/97). |
 | "`--full` is green, so nothing regressed" | `--full`'s ~1% whole-image budget misses a few-px element drop (e.g. footer nav arrows) on SIBLING screens. After an asset/icon/binding change, EYEBALL every screen sharing the mechanism, not just the arc's (ledger 77). |
