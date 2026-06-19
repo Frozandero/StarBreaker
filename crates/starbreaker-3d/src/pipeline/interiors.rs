@@ -21,7 +21,9 @@ use super::*;
 pub(crate) struct LoadedInteriors {
     /// Unique CGF entries (deduplicated by path).
     pub unique_cgfs: Vec<InteriorCgfEntry>,
-    /// Per-container data (one per socpak).
+    /// Per-container data (one per container in the loaded socpak tree; a
+    /// socpak with child socpak references expands to its root container plus
+    /// one entry per recursively-discovered child socpak).
     pub containers: Vec<InteriorContainerData>,
 }
 
@@ -146,15 +148,12 @@ pub(crate) fn load_interiors(
             &mut |_| {},
         ) {
             Ok(mut tree_payloads) => {
-                for payload in &mut tree_payloads {
-                    payload.container_transform = normalize_root_light_only_container_transform(
-                        payload.container_transform,
-                        parent_entity_name.is_some(),
-                        payload,
-                    );
-                    payload.parent_entity_name = parent_entity_name.clone();
-                    payload.parent_node_name = parent_node_name.clone();
-                }
+                apply_root_container_parenting(
+                    &mut tree_payloads,
+                    parent_entity_name.clone(),
+                    parent_node_name.clone(),
+                    true,
+                );
                 payloads.append(&mut tree_payloads);
             }
             Err(e) => log::warn!("failed to load {}: {e}", container.file_name),
@@ -364,6 +363,36 @@ fn normalize_root_light_only_container_transform(
     }
 }
 
+/// Apply the parent container's parenting metadata to a freshly loaded socpak tree.
+///
+/// Only the first payload is the container instance authored on the parent
+/// entity; the remaining payloads are recursively-discovered child socpaks whose
+/// transforms are already composed into world/container space by
+/// [`load_interior_tree_from_socpak_filtered_with_progress`]. Those children must
+/// NOT inherit the root's helper-bone parenting (which would re-parent them under
+/// the wrong scene node) or its light-only transform normalisation (which would
+/// zero a light-only child's composed transform), so the post-processing is
+/// applied to the root payload alone.
+fn apply_root_container_parenting(
+    tree_payloads: &mut [crate::types::InteriorPayload],
+    parent_entity_name: Option<String>,
+    parent_node_name: Option<String>,
+    normalize_light_only_root: bool,
+) {
+    let Some(root) = tree_payloads.first_mut() else {
+        return;
+    };
+    if normalize_light_only_root {
+        root.container_transform = normalize_root_light_only_container_transform(
+            root.container_transform,
+            parent_entity_name.is_some(),
+            root,
+        );
+    }
+    root.parent_entity_name = parent_entity_name;
+    root.parent_node_name = parent_node_name;
+}
+
 /// Discovery pass for object containers authored on child loadout entities.
 pub(crate) fn load_child_interiors(
     db: &Database,
@@ -430,10 +459,12 @@ pub(crate) fn load_child_interiors(
                             override_attachment,
                             container.bone_name.as_deref(),
                         );
-                        for payload in &mut tree_payloads {
-                            payload.parent_entity_name = parent_entity_name.clone();
-                            payload.parent_node_name = parent_node_name.clone();
-                        }
+                        apply_root_container_parenting(
+                            &mut tree_payloads,
+                            parent_entity_name,
+                            parent_node_name,
+                            false,
+                        );
                         payloads.append(&mut tree_payloads);
                     }
                     Err(e) => log::warn!("failed to load {}: {e}", container.file_name),
@@ -1196,7 +1227,8 @@ pub(crate) fn preload_interior_textures(
 #[cfg(test)]
 mod tests {
     use super::{
-        child_interior_parent_target, compose_helper_relative_container_transform,
+        apply_root_container_parenting, child_interior_parent_target,
+        compose_helper_relative_container_transform,
         normalize_root_light_only_container_transform,
         compose_root_container_transform, entity_class_name_matches_record_short_name,
         helper_node_name_matches, helper_transform_duplicates_offset,
@@ -1561,5 +1593,74 @@ mod tests {
         assert!(scale.abs_diff_eq(glam::Vec3::ONE, 1e-5));
         assert!(rotation.angle_between(glam::Quat::IDENTITY) < 1e-5);
         assert!(translation.abs_diff_eq(glam::Vec3::ZERO, 1e-5));
+    }
+
+    fn light_only_payload(name: &str, pos: [f32; 3]) -> crate::types::InteriorPayload {
+        crate::types::InteriorPayload {
+            name: name.to_string(),
+            parent_entity_name: None,
+            parent_node_name: None,
+            meshes: Vec::new(),
+            lights: vec![crate::types::LightInfo {
+                name: "Light".to_string(),
+                position: [0.0, 0.0, 0.0],
+                transform_basis: "cryengine_z_up".to_string(),
+                rotation: [1.0, 0.0, 0.0, 0.0],
+                direction_sc: [1.0, 0.0, 0.0],
+                color: [1.0, 1.0, 1.0],
+                light_type: "Omni".to_string(),
+                semantic_light_kind: "point".to_string(),
+                intensity_raw: 1.0,
+                intensity_unit: "cryengine_authored_intensity".to_string(),
+                intensity_candela_proxy: 1.0,
+                intensity: 1.0,
+                radius: 1.0,
+                radius_m: 1.0,
+                inner_angle: None,
+                outer_angle: None,
+                projector_texture: None,
+                active_state: String::new(),
+                states: std::collections::BTreeMap::new(),
+            }],
+            container_transform: crate::socpak::build_container_transform(pos, [0.0, 0.0, 0.0]),
+            tint_palette_names: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn root_container_parenting_does_not_touch_child_socpak_payloads() {
+        // payload[0] is the root container instance authored on a parent helper
+        // bone; payload[1] is a recursively-discovered child socpak that already
+        // carries its own world-composed transform.
+        let root = light_only_payload("root", [0.0, -35.0, 0.0]);
+        let child = light_only_payload("child", [12.0, 3.0, -7.0]);
+        let mut tree = vec![root, child];
+
+        apply_root_container_parenting(
+            &mut tree,
+            Some("EntityClassDefinition.Ship".to_string()),
+            Some("bone".to_string()),
+            true,
+        );
+
+        // Root inherits the parent metadata; being light-only under a helper it is
+        // normalised to identity.
+        assert_eq!(
+            tree[0].parent_entity_name.as_deref(),
+            Some("EntityClassDefinition.Ship")
+        );
+        assert_eq!(tree[0].parent_node_name.as_deref(), Some("bone"));
+        assert!(mat4_from_array(&tree[0].container_transform)
+            .abs_diff_eq(glam::Mat4::IDENTITY, 1e-5));
+
+        // The child socpak keeps its own composed transform and is NOT re-parented
+        // to the root's helper bone, nor normalised to identity.
+        assert_eq!(tree[1].parent_entity_name, None);
+        assert_eq!(tree[1].parent_node_name, None);
+        let expected_child = mat4_from_array(&crate::socpak::build_container_transform(
+            [12.0, 3.0, -7.0],
+            [0.0, 0.0, 0.0],
+        ));
+        assert!(mat4_from_array(&tree[1].container_transform).abs_diff_eq(expected_child, 1e-5));
     }
 }

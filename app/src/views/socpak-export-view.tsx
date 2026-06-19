@@ -194,7 +194,20 @@ export function SocpakExportView() {
     setError(null);
     inspectSocpakHierarchy({ socpak_paths: rootPaths })
       .then((nodes) => {
-        if (nodes.length === 0) {
+        // `inspect_socpak_hierarchy` skips socpaks it cannot inspect, so a
+        // partial result means some selected socpaks have no hierarchy. The
+        // sub-container path filter is only meaningful for a fully-inspected
+        // tree; applying it while some roots are missing would silently drop
+        // those roots from the export. When the result is incomplete, fall back
+        // to exporting the full selection unfiltered, and surface why so the
+        // skip is never silent.
+        if (nodes.length < rootPaths.length) {
+          if (nodes.length > 0) {
+            setError(
+              `Could not inspect ${rootPaths.length - nodes.length} of ${rootPaths.length} ` +
+                `selected socpak(s); exporting the full selection without sub-container filtering.`,
+            );
+          }
           startSocpakExport(buildExportRequest());
           return;
         }
