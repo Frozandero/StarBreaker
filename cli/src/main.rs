@@ -1,3 +1,4 @@
+mod animation;
 mod blend;
 mod chf;
 mod common;
@@ -149,6 +150,11 @@ enum Command {
         #[command(subcommand)]
         command: ui::UiCommand,
     },
+    /// Animation binding diagnostics (report-only)
+    Animation {
+        #[command(subcommand)]
+        command: animation::AnimationCommand,
+    },
 }
 
 fn main() {
@@ -199,6 +205,7 @@ fn main() {
         Command::Wwise { command } => command.run(),
         Command::Nmc { command } => command.run(),
         Command::Ui { command } => command.run(),
+        Command::Animation { command } => command.run(),
     };
 
     if let Err(e) = result {
