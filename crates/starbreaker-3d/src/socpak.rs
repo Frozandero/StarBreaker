@@ -1,6 +1,10 @@
 //! Socpak reader: opens ship interior containers from P4k, extracts geometry and lights.
 //!
 //! Flow: P4k → socpak (ZIP) → main .soc (CrCh) → IncludedObjects + CryXMLB → InteriorPayload
+//!
+//! Also resolves CryEngine pak-mounted geometry (`read_geometry_file` /
+//! `read_socpak_internal_geometry`): designer "brush" meshes baked inside a
+//! `.socpak` are absent from the main P4k tree and must be read from the archive.
 
 use std::collections::{HashMap, HashSet};
 
@@ -484,6 +488,53 @@ pub(crate) fn normalize_socpak_path(path: &str) -> String {
 
 pub(crate) fn normalize_socpak_filter_key(path: &str) -> String {
     normalize_socpak_path(path).to_ascii_lowercase()
+}
+
+/// Split a CryEngine pak-mounted geometry path into its owning `.socpak` and the
+/// entry inside that archive.
+///
+/// CIG authors pak-internal geometry with a doubled path separator at the mount
+/// point, e.g. `…\hangar_xltop_001\\Brush\designer_40.cgf`: the part before the
+/// `\\` is the container (a `.socpak` mounted at its own directory) and the part
+/// after is the file inside it, stored under the socpak's `<name>\` root. Returns
+/// `None` when the path carries no pak-mount marker.
+fn split_socpak_internal_path(p4k_path: &str) -> Option<(String, String)> {
+    let idx = p4k_path.find("\\\\")?;
+    let container = &p4k_path[..idx];
+    let inner_rel = &p4k_path[idx + 2..];
+    let socpak_name = container.rsplit('\\').next().unwrap_or(container);
+    Some((
+        format!("{container}.socpak"),
+        format!("{socpak_name}\\{inner_rel}"),
+    ))
+}
+
+/// Read a geometry file that lives inside a `.socpak` archive (CryEngine
+/// pak-mounted geometry — e.g. designer "brush" meshes baked into a container).
+/// These entries are absent from the main P4k tree, so they are read from the
+/// owning archive identified by [`split_socpak_internal_path`].
+pub(crate) fn read_socpak_internal_geometry(p4k: &MappedP4k, p4k_path: &str) -> Option<Vec<u8>> {
+    let (socpak_path, inner_entry) = split_socpak_internal_path(p4k_path)?;
+    let entry = p4k.entry_case_insensitive(&socpak_path)?;
+    let socpak_data = p4k.read(entry).ok()?;
+    let inner = P4kArchive::from_bytes(&socpak_data).ok()?;
+    let want = inner_entry.replace('/', "\\").to_ascii_lowercase();
+    let inner_ref = inner
+        .entries()
+        .iter()
+        .find(|e| e.name.replace('/', "\\").to_ascii_lowercase() == want)?;
+    inner.read(inner_ref).ok()
+}
+
+/// Read a geometry file by P4k path, falling back to the owning `.socpak` archive
+/// when the path points at pak-mounted geometry that is absent from the main P4k.
+pub(crate) fn read_geometry_file(p4k: &MappedP4k, p4k_path: &str) -> Option<Vec<u8>> {
+    if let Some(entry) = p4k.entry_case_insensitive(p4k_path) {
+        if let Ok(bytes) = p4k.read(entry) {
+            return Some(bytes);
+        }
+    }
+    read_socpak_internal_geometry(p4k, p4k_path)
 }
 
 /// Parse a .soc file's CrCh chunks. Returns meshes/lights + tint palette names.
@@ -1872,8 +1923,26 @@ mod tests {
         build_container_transform, collect_object_container_refs,
         extract_item_port_meshes_from_text_xml, filter_item_port_meshes_to_editor_bounds,
         normalize_item_port_entity_name, parse_child_socpak_refs_from_text_xml, parse_container_ref,
-        quat_mul, quat_rotate_vec, semantic_light_kind_for_light,
+        quat_mul, quat_rotate_vec, semantic_light_kind_for_light, split_socpak_internal_path,
     };
+
+    #[test]
+    fn split_socpak_internal_path_isolates_archive_and_inner_entry() {
+        // CIG authors pak-internal brush geometry with a doubled separator at the
+        // `.socpak` mount point.
+        let p4k_path = crate::pipeline::datacore_path_to_p4k(
+            "ObjectContainers/PU/loc/mod/common/hangar/hightech_a/hangar_xltop_001//Brush/designer_40.cgfm",
+        );
+        let (socpak, inner) = split_socpak_internal_path(&p4k_path).expect("should detect pak mount");
+        assert_eq!(
+            socpak,
+            "Data\\ObjectContainers\\PU\\loc\\mod\\common\\hangar\\hightech_a\\hangar_xltop_001.socpak"
+        );
+        assert_eq!(inner, "hangar_xltop_001\\Brush\\designer_40.cgfm");
+
+        // A normal (non-pak-mounted) path has no doubled separator.
+        assert!(split_socpak_internal_path("Data\\objects\\buildingsets\\foo.cgf").is_none());
+    }
 
     fn approx_eq3(left: [f64; 3], right: [f64; 3]) {
         for index in 0..3 {
