@@ -238,6 +238,56 @@ pub struct MannequinDumpRequest {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct AnimationBindingReportRequest {
+    #[schemars(description = "Local filesystem folder of exported animation JSON sidecars (e.g. '<package>/animations'), scanned recursively for *.json.")]
+    pub animation_folder: Option<String>,
+    #[schemars(description = "Individual local animation JSON sidecar files to include, in addition to (or instead of) animation_folder.")]
+    pub animation_json: Option<Vec<String>>,
+    #[schemars(description = "Source .cga rig to resolve track hashes to node names. P4k path (Data\\ prefix optional) or absolute filesystem path. This is the highest-value source for resolving door/component tracks.")]
+    pub cga: Option<String>,
+    #[schemars(description = "Source .cgam rig file. P4k or filesystem path.")]
+    pub cgam: Option<String>,
+    #[schemars(description = "Source .meshsetup file (Joint names). P4k or filesystem path; CryXMLB is auto-decoded.")]
+    pub meshsetup: Option<String>,
+    #[schemars(description = "Source .chrparams file (animation references). P4k or filesystem path; CryXMLB is auto-decoded.")]
+    pub chrparams: Option<String>,
+    #[schemars(description = "Converted .glb file (exported node names). Filesystem path or P4k path.")]
+    pub glb: Option<String>,
+    #[schemars(description = "If true, return the human-readable Markdown summary instead of the full JSON report. Default false.")]
+    pub markdown: Option<bool>,
+}
+
+/// Decode CryXMLB bytes to XML text; fall back to lossy UTF-8 for plain-text
+/// sources (some `.meshsetup`/`.chrparams` are already textual).
+fn decode_text_or_cryxml(data: &[u8]) -> String {
+    if let Ok(xml) = starbreaker_cryxml::from_bytes(data) {
+        return format!("{xml}");
+    }
+    String::from_utf8_lossy(data).into_owned()
+}
+
+/// Recursively collect `*.json` files under `dir` into `files`.
+fn collect_json_files_recursive(
+    dir: &std::path::Path,
+    files: &mut Vec<std::path::PathBuf>,
+) -> std::io::Result<()> {
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if entry.file_type()?.is_dir() {
+            collect_json_files_recursive(&path, files)?;
+        } else if path
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| e.eq_ignore_ascii_case("json"))
+        {
+            files.push(path);
+        }
+    }
+    Ok(())
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct BlendSdnaRequest {
     #[schemars(description = "Absolute filesystem path to a .blend file (can be zstd-compressed Blender 5.x or uncompressed).")]
     pub path: String,
@@ -2360,6 +2410,107 @@ impl StarBreakerMcp {
             req.all_keyframes.unwrap_or(false),
         );
         match serde_json::to_string_pretty(&value) {
+            Ok(s) => s,
+            Err(e) => format!("serialize failed: {e}"),
+        }
+    }
+
+    #[tool(description = "Report-only animation binding diagnostic for debugging why exported animation clips fail to bind in Blender. Scans a local folder of exported animation JSON sidecars (animation_folder, e.g. '<package>/animations') and cross-references every CAF/DBA track hash against node names recovered from source rigs: .cga/.cgam NMC nodes, .meshsetup joints, .chrparams references, and an optional .glb. Source files accept P4k paths (Data\\ prefix optional) OR absolute filesystem paths; CryXMLB .meshsetup/.chrparams are auto-decoded. Returns JSON: per-clip source_node_name coverage, the list of unresolved track hashes, and per-hash candidate name matches so you can see which rig owns each hash. Never mutates sidecars or guesses bindings. Set markdown=true for a readable summary. Typical use: set cga to a component .cga (e.g. a door) to discover which rig owns an unresolved track, or to the exterior hull .cga to confirm which tracks the hull does NOT own.")]
+    fn animation_binding_report(
+        &self,
+        Parameters(req): Parameters<AnimationBindingReportRequest>,
+    ) -> String {
+        use starbreaker_3d::animation::binding_report as report;
+
+        let mut names = report::NameSources::default();
+        let mut source_reports = Vec::<serde_json::Value>::new();
+
+        // .cga / .cgam: raw bytes parsed directly for NMC/rig node names.
+        for (path, label) in [(req.cga.as_deref(), "cga"), (req.cgam.as_deref(), "cgam")] {
+            if let Some(path) = path {
+                match self.read_p4k_or_disk(path) {
+                    Ok(data) => {
+                        source_reports.push(report::rig_source_report(&data, label, path, &mut names))
+                    }
+                    Err(e) => return format!("Failed to read {label} '{path}': {e}"),
+                }
+            }
+        }
+        // .meshsetup / .chrparams: CryXMLB-decoded to text where needed.
+        if let Some(path) = req.meshsetup.as_deref() {
+            match self.read_p4k_or_disk(path) {
+                Ok(data) => source_reports.push(report::meshsetup_source_report(
+                    &decode_text_or_cryxml(&data),
+                    path,
+                    &mut names,
+                )),
+                Err(e) => return format!("Failed to read meshsetup '{path}': {e}"),
+            }
+        }
+        if let Some(path) = req.chrparams.as_deref() {
+            match self.read_p4k_or_disk(path) {
+                Ok(data) => source_reports.push(report::chrparams_source_report(
+                    &decode_text_or_cryxml(&data),
+                    path,
+                    &mut names,
+                )),
+                Err(e) => return format!("Failed to read chrparams '{path}': {e}"),
+            }
+        }
+        if let Some(path) = req.glb.as_deref() {
+            match self.read_p4k_or_disk(path) {
+                Ok(data) => match report::glb_source_report(&data, path, &mut names) {
+                    Some(r) => source_reports.push(r),
+                    None => return format!("Failed to parse GLB JSON chunk: {path}"),
+                },
+                Err(e) => return format!("Failed to read glb '{path}': {e}"),
+            }
+        }
+
+        // Animation sidecars live on disk (exported package).
+        let mut files: Vec<std::path::PathBuf> = Vec::new();
+        if let Some(explicit) = &req.animation_json {
+            for p in explicit {
+                let path = std::path::PathBuf::from(p);
+                if !path.is_file() {
+                    return format!("animation JSON file not found: {p}");
+                }
+                files.push(path);
+            }
+        }
+        if let Some(folder) = req.animation_folder.as_deref() {
+            let dir = std::path::Path::new(folder);
+            if !dir.is_dir() {
+                return format!("animation folder not found: {folder}");
+            }
+            if let Err(e) = collect_json_files_recursive(dir, &mut files) {
+                return format!("Failed to scan '{folder}': {e}");
+            }
+        }
+        files.sort();
+        files.dedup();
+        if files.is_empty() {
+            return "no animation JSON files were supplied/found (set animation_folder and/or animation_json)".to_string();
+        }
+
+        let mut clip_stats = Vec::new();
+        for file in &files {
+            let data = match std::fs::read(file) {
+                Ok(d) => d,
+                Err(e) => return format!("Failed to read {}: {e}", file.display()),
+            };
+            let value: serde_json::Value = match serde_json::from_slice(&data) {
+                Ok(v) => v,
+                Err(e) => return format!("Failed to parse JSON {}: {e}", file.display()),
+            };
+            clip_stats.extend(report::clips_from_value(&file.display().to_string(), &value));
+        }
+
+        let report_value = report::build_report(&names, source_reports, files.len(), &clip_stats);
+        if req.markdown.unwrap_or(false) {
+            return report::build_markdown_report(&report_value);
+        }
+        match serde_json::to_string_pretty(&report_value) {
             Ok(s) => s,
             Err(e) => format!("serialize failed: {e}"),
         }

@@ -31,6 +31,7 @@ pub use pose::{
 };
 pub use caf::parse_caf;
 pub use dba::parse_dba;
+pub mod binding_report;
 pub mod serialise;
 pub mod mannequin;
 pub mod matching;
