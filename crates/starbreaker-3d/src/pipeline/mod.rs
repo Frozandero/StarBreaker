@@ -22,6 +22,7 @@ pub(crate) use self::textures::{cached_load, load_diffuse_texture, load_normal_t
 use self::textures::*;
 mod interiors;
 pub(crate) use self::interiors::*;
+pub use crate::socpak::SocpakHierarchyNode;
 mod nmc_bridge;
 pub(crate) use self::nmc_bridge::*;
 mod child_payload;
@@ -42,7 +43,12 @@ pub(crate) use self::glb_assembly::path_is_shield_related;
 mod blend_assembly;
 pub use self::blend_assembly::write_decomposed_export_blend;
 
-
+pub fn inspect_socpak_hierarchy(
+    p4k: &MappedP4k,
+    socpak_path: &str,
+) -> Result<crate::socpak::SocpakHierarchyNode, Error> {
+    crate::socpak::inspect_interior_tree_from_socpak(p4k, socpak_path)
+}
 
 type InteriorMeshAsset = (
     crate::Mesh,
@@ -134,6 +140,9 @@ pub struct ExportOptions {
     pub decomposed_package_subdir: Option<String>,
     /// Decomposed fast path: emit only UI-generated images and required scene manifests.
     pub ui_only_files: bool,
+    /// Optional normalized lowercase socpak paths to include during inherited
+    /// interior discovery. `None` exports every discovered container.
+    pub socpak_path_filter: Option<HashSet<String>>,
 }
 
 impl Default for ExportOptions {
@@ -155,6 +164,7 @@ impl Default for ExportOptions {
             default_animation_tags: vec!["landing_gear_extend".to_string()],
             decomposed_package_subdir: None,
             ui_only_files: false,
+            socpak_path_filter: None,
         }
     }
 }
@@ -313,14 +323,23 @@ pub fn socpaks_to_glb(
 
     let mut payloads = Vec::new();
     for socpak_path in socpak_paths {
-        match socpak::load_interior_from_socpak(
+        if opts
+            .socpak_path_filter
+            .as_ref()
+            .is_some_and(|filter| !filter.contains(&socpak::normalize_socpak_filter_key(socpak_path)))
+        {
+            continue;
+        }
+        match socpak::load_interior_tree_from_socpak_filtered_with_progress(
             p4k,
             socpak_path,
             identity,
             identity,
             std::slice::from_ref(&identity),
+            opts.socpak_path_filter.as_ref(),
+            &mut |_| {},
         ) {
-            Ok(p) => payloads.push(p),
+            Ok(mut tree_payloads) => payloads.append(&mut tree_payloads),
             Err(e) => log::warn!("failed to load {socpak_path}: {e}"),
         }
     }
@@ -401,6 +420,135 @@ pub fn socpaks_to_glb(
             fallback_palette: None,
         },
     )
+}
+
+/// Export explicit socpak roots as a decomposed native Blender package.
+///
+/// Socpaks do not have a ship/entity root mesh, so the package uses an empty
+/// generated root asset and carries the real visual content through `interiors`.
+pub fn socpaks_to_decomposed_blend(
+    db: &Database,
+    p4k: &MappedP4k,
+    socpak_paths: &[String],
+    export_name: &str,
+    opts: &ExportOptions,
+) -> Result<DecomposedExport, Error> {
+    let mut ignore_progress = |_progress: SocpakExportProgress| {};
+    socpaks_to_decomposed_blend_with_progress(
+        db,
+        p4k,
+        socpak_paths,
+        export_name,
+        opts,
+        &mut ignore_progress,
+    )
+}
+
+#[derive(Debug, Clone)]
+pub struct SocpakExportProgress {
+    pub socpak_path: String,
+    pub depth: usize,
+    pub containers_loaded: usize,
+    pub child_count: usize,
+    pub mesh_count: usize,
+    pub light_count: usize,
+    pub stage: String,
+}
+
+/// Export explicit socpak roots as a decomposed native Blender package, reporting
+/// cheap progress from the recursive socpak tree walk.
+pub fn socpaks_to_decomposed_blend_with_progress<F>(
+    db: &Database,
+    p4k: &MappedP4k,
+    socpak_paths: &[String],
+    export_name: &str,
+    opts: &ExportOptions,
+    progress: &mut F,
+) -> Result<DecomposedExport, Error>
+where
+    F: FnMut(SocpakExportProgress),
+{
+    use crate::decomposed::DecomposedInput;
+    use crate::socpak;
+
+    ensure_supported_export_options(opts)?;
+    if opts.kind != ExportKind::Decomposed || opts.format != ExportFormat::Blend {
+        return Err(Error::UnsupportedExportFormat(
+            "socpak decomposed blend export requires kind=Decomposed and format=Blend".to_string(),
+        ));
+    }
+
+    let identity = glam::Mat4::IDENTITY.to_cols_array_2d();
+    let mut payloads = Vec::new();
+    for socpak_path in socpak_paths {
+        if opts
+            .socpak_path_filter
+            .as_ref()
+            .is_some_and(|filter| !filter.contains(&socpak::normalize_socpak_filter_key(socpak_path)))
+        {
+            continue;
+        }
+        match socpak::load_interior_tree_from_socpak_filtered_with_progress(
+            p4k,
+            socpak_path,
+            identity,
+            identity,
+            std::slice::from_ref(&identity),
+            opts.socpak_path_filter.as_ref(),
+            &mut |tree_progress| {
+                progress(SocpakExportProgress {
+                    socpak_path: tree_progress.socpak_path,
+                    depth: tree_progress.depth,
+                    containers_loaded: tree_progress.containers_loaded,
+                    child_count: tree_progress.child_count,
+                    mesh_count: tree_progress.mesh_count,
+                    light_count: tree_progress.light_count,
+                    stage: tree_progress.stage,
+                });
+            },
+        ) {
+            Ok(mut tree_payloads) => payloads.append(&mut tree_payloads),
+            Err(e) => log::warn!("failed to load {socpak_path}: {e}"),
+        }
+    }
+
+    let interiors =
+        build_interiors_from_payloads(db, p4k, &payloads, opts.include_lights, opts.lod_level);
+    let input = DecomposedInput {
+        entity_name: export_name.to_string(),
+        geometry_path: String::new(),
+        material_path: String::new(),
+        root_mesh: empty_socpak_scene_root_mesh(),
+        root_materials: None,
+        root_nmc: None,
+        root_palette: None,
+        available_palettes: Vec::new(),
+        root_bones: Vec::new(),
+        root_skeleton_source_path: None,
+        root_animation_controller: None,
+        children: Vec::new(),
+        interiors,
+        paint_variants: Vec::new(),
+    };
+
+    write_decomposed_export_blend(db, p4k, input, opts, None, None, None, None)
+}
+
+fn empty_socpak_scene_root_mesh() -> crate::types::Mesh {
+    crate::types::Mesh {
+        positions: Vec::new(),
+        indices: Vec::new(),
+        uvs: None,
+        secondary_uvs: None,
+        normals: None,
+        tangents: None,
+        colors: None,
+        submeshes: Vec::new(),
+        model_min: [0.0; 3],
+        model_max: [0.0; 3],
+        scaling_min: [0.0; 3],
+        scaling_max: [0.0; 3],
+    }
 }
 
 /// Write NMC node properties for a geometry path into the JSON output.

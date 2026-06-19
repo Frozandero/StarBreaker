@@ -110,6 +110,7 @@ impl From<&ExportOpts> for starbreaker_3d::ExportOptions {
             default_animation_tags: vec!["landing_gear_extend".to_string()],
             decomposed_package_subdir: None,
             ui_only_files: opts.ui_only_files,
+            socpak_path_filter: None,
         }
     }
 }

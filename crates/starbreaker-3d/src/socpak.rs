@@ -2,7 +2,7 @@
 //!
 //! Flow: P4k → socpak (ZIP) → main .soc (CrCh) → IncludedObjects + CryXMLB → InteriorPayload
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::included_objects::IncludedObjects;
 use quick_xml::Reader;
@@ -258,13 +258,232 @@ pub fn load_interior_from_socpak(
     })
 }
 
-fn normalize_socpak_path(path: &str) -> String {
+/// Load a socpak plus every manifest-declared child socpak instance.
+///
+/// Child manifests carry local quaternion transforms. Those transforms are
+/// composed into world/container space here so downstream interior export can
+/// flatten the recursive tree without losing repeated instances.
+pub(crate) fn load_interior_tree_from_socpak_filtered_with_progress<F>(
+    p4k: &MappedP4k,
+    socpak_path: &str,
+    container_transform: [[f32; 4]; 4],
+    non_item_port_transform_delta: [[f32; 4]; 4],
+    root_item_port_reference_candidates: &[[[f32; 4]; 4]],
+    path_filter: Option<&HashSet<String>>,
+    progress: &mut F,
+) -> Result<Vec<InteriorPayload>, Error>
+where
+    F: FnMut(SocpakTreeProgress),
+{
+    let mut payloads = Vec::new();
+    let mut ancestors = HashSet::new();
+    let mut containers_loaded = 0usize;
+    collect_interior_tree_from_socpak(
+        p4k,
+        socpak_path,
+        container_transform,
+        non_item_port_transform_delta,
+        root_item_port_reference_candidates,
+        0,
+        &mut ancestors,
+        &mut payloads,
+        &mut containers_loaded,
+        path_filter,
+        progress,
+    )?;
+    Ok(payloads)
+}
+
+#[derive(Debug, Clone)]
+pub struct SocpakHierarchyNode {
+    pub path: String,
+    pub name: String,
+    pub entity_name: Option<String>,
+    pub class_name: Option<String>,
+    pub depth: usize,
+    pub mesh_count: usize,
+    pub light_count: usize,
+    pub children: Vec<SocpakHierarchyNode>,
+}
+
+pub(crate) fn inspect_interior_tree_from_socpak(
+    p4k: &MappedP4k,
+    socpak_path: &str,
+) -> Result<SocpakHierarchyNode, Error> {
+    let mut ancestors = HashSet::new();
+    inspect_interior_tree_from_socpak_inner(p4k, socpak_path, None, None, 0, &mut ancestors)
+}
+
+fn inspect_interior_tree_from_socpak_inner(
+    p4k: &MappedP4k,
+    socpak_path: &str,
+    entity_name: Option<String>,
+    class_name: Option<String>,
+    depth: usize,
+    ancestors: &mut HashSet<String>,
+) -> Result<SocpakHierarchyNode, Error> {
+    let normalized_path = normalize_socpak_filter_key(socpak_path);
+    if !ancestors.insert(normalized_path) {
+        log::warn!("skipping cyclic socpak child reference: {socpak_path}");
+        return Ok(SocpakHierarchyNode {
+            path: normalize_socpak_path(socpak_path),
+            name: socpak_display_name(socpak_path),
+            entity_name,
+            class_name,
+            depth,
+            mesh_count: 0,
+            light_count: 0,
+            children: Vec::new(),
+        });
+    }
+
+    let identity = glam::Mat4::IDENTITY.to_cols_array_2d();
+    let payload = load_interior_from_socpak(
+        p4k,
+        socpak_path,
+        identity,
+        identity,
+        std::slice::from_ref(&identity),
+    )?;
+    let child_refs = read_child_socpak_refs(p4k, socpak_path)?;
+    let mut children = Vec::with_capacity(child_refs.len());
+    for child in child_refs {
+        children.push(inspect_interior_tree_from_socpak_inner(
+            p4k,
+            &child.socpak_path,
+            Some(child.entity_name),
+            Some(child.class_name),
+            depth + 1,
+            ancestors,
+        )?);
+    }
+    ancestors.remove(&normalize_socpak_filter_key(socpak_path));
+
+    Ok(SocpakHierarchyNode {
+        path: normalize_socpak_path(socpak_path),
+        name: socpak_display_name(socpak_path),
+        entity_name,
+        class_name,
+        depth,
+        mesh_count: payload.meshes.len(),
+        light_count: payload.lights.len(),
+        children,
+    })
+}
+
+fn socpak_display_name(path: &str) -> String {
+    path.rsplit(&['/', '\\'])
+        .next()
+        .unwrap_or(path)
+        .strip_suffix(".socpak")
+        .unwrap_or(path)
+        .to_string()
+}
+
+fn collect_interior_tree_from_socpak<F>(
+    p4k: &MappedP4k,
+    socpak_path: &str,
+    container_transform: [[f32; 4]; 4],
+    non_item_port_transform_delta: [[f32; 4]; 4],
+    root_item_port_reference_candidates: &[[[f32; 4]; 4]],
+    depth: usize,
+    ancestors: &mut HashSet<String>,
+    payloads: &mut Vec<InteriorPayload>,
+    containers_loaded: &mut usize,
+    path_filter: Option<&HashSet<String>>,
+    progress: &mut F,
+) -> Result<(), Error>
+where
+    F: FnMut(SocpakTreeProgress),
+{
+    let normalized_path = normalize_socpak_path(socpak_path).to_ascii_lowercase();
+    if !ancestors.insert(normalized_path.clone()) {
+        log::warn!("skipping cyclic socpak child reference: {socpak_path}");
+        return Ok(());
+    }
+
+    progress(SocpakTreeProgress {
+        socpak_path: socpak_path.to_string(),
+        depth,
+        containers_loaded: *containers_loaded,
+        child_count: 0,
+        mesh_count: 0,
+        light_count: 0,
+        stage: "Opening socpak archive".to_string(),
+    });
+
+    let payload = load_interior_from_socpak(
+        p4k,
+        socpak_path,
+        container_transform,
+        non_item_port_transform_delta,
+        root_item_port_reference_candidates,
+    )?;
+    *containers_loaded += 1;
+    let mesh_count = payload.meshes.len();
+    let light_count = payload.lights.len();
+    payloads.push(payload);
+
+    let child_refs = read_child_socpak_refs(p4k, socpak_path)?;
+    progress(SocpakTreeProgress {
+        socpak_path: socpak_path.to_string(),
+        depth,
+        containers_loaded: *containers_loaded,
+        child_count: child_refs.len(),
+        mesh_count,
+        light_count,
+        stage: if child_refs.is_empty() {
+            "Loaded container payload".to_string()
+        } else {
+            format!("Discovered {} child container(s)", child_refs.len())
+        },
+    });
+
+    for child in child_refs {
+        if path_filter
+            .is_some_and(|filter| !filter.contains(&normalize_socpak_filter_key(&child.socpak_path)))
+        {
+            continue;
+        }
+        log::debug!(
+            "descending socpak child '{}' ({}) -> {}",
+            child.entity_name,
+            child.class_name,
+            child.socpak_path
+        );
+        let parent = glam::Mat4::from_cols_array_2d(&container_transform);
+        let local = glam::Mat4::from_cols_array_2d(&child.local_transform);
+        let child_transform = (parent * local).to_cols_array_2d();
+        collect_interior_tree_from_socpak(
+            p4k,
+            &child.socpak_path,
+            child_transform,
+            non_item_port_transform_delta,
+            std::slice::from_ref(&child_transform),
+            depth + 1,
+            ancestors,
+            payloads,
+            containers_loaded,
+            path_filter,
+            progress,
+        )?;
+    }
+
+    ancestors.remove(&normalized_path);
+    Ok(())
+}
+
+pub(crate) fn normalize_socpak_path(path: &str) -> String {
     let normalized = path.replace('/', "\\");
     if normalized.to_lowercase().starts_with("data\\") {
         normalized
     } else {
         format!("Data\\{normalized}")
     }
+}
+
+pub(crate) fn normalize_socpak_filter_key(path: &str) -> String {
+    normalize_socpak_path(path).to_ascii_lowercase()
 }
 
 /// Parse a .soc file's CrCh chunks. Returns meshes/lights + tint palette names.
@@ -1651,9 +1870,9 @@ mod tests {
 
     use super::{
         build_container_transform, collect_object_container_refs,
-        extract_item_port_meshes_from_text_xml, normalize_item_port_entity_name, parse_container_ref,
-        filter_item_port_meshes_to_editor_bounds, quat_mul, quat_rotate_vec,
-        semantic_light_kind_for_light,
+        extract_item_port_meshes_from_text_xml, filter_item_port_meshes_to_editor_bounds,
+        normalize_item_port_entity_name, parse_child_socpak_refs_from_text_xml, parse_container_ref,
+        quat_mul, quat_rotate_vec, semantic_light_kind_for_light,
     };
 
     fn approx_eq3(left: [f64; 3], right: [f64; 3]) {
@@ -1954,4 +2173,148 @@ mod tests {
         assert_eq!(filtered[0].entity_class_name.as_deref(), Some("InsideControl"));
     }
 
+    #[test]
+    fn parse_child_socpak_refs_from_text_xml_reads_manifest_refs_and_quaternion_transforms() {
+        let xml = r#"
+            <ObjectContainer>
+              <ChildObjectContainers>
+                <Child
+                  external="1"
+                  name="Data/objectcontainers/pu/loc/mod/common/hangar/hightech_a/hangar_component_module_cargo_elevator_xl.socpak"
+                  entityName="ObjectContainer_FreightElevator_XLTop-000"
+                  class="ObjectContainer"
+                  pos="-120,152,-112"
+                  rot="-0.70710678,0,0,0.70710678" />
+              </ChildObjectContainers>
+            </ObjectContainer>
+        "#;
+
+        let refs = parse_child_socpak_refs_from_text_xml(xml);
+
+        assert_eq!(refs.len(), 1);
+        assert_eq!(
+            refs[0].socpak_path,
+            "Data/objectcontainers/pu/loc/mod/common/hangar/hightech_a/hangar_component_module_cargo_elevator_xl.socpak"
+        );
+        assert_eq!(refs[0].entity_name, "ObjectContainer_FreightElevator_XLTop-000");
+        assert_eq!(refs[0].class_name, "ObjectContainer");
+        assert_eq!(refs[0].local_transform[3], [-120.0, 152.0, -112.0, 1.0]);
+        assert!((refs[0].local_transform[0][0]).abs() < 1e-5);
+        assert!((refs[0].local_transform[1][1]).abs() < 1e-5);
+        assert!((refs[0].local_transform[0][1] + 1.0).abs() < 1e-5);
+        assert!((refs[0].local_transform[1][0] - 1.0).abs() < 1e-5);
+    }
+}
+
+fn read_child_socpak_refs(
+    p4k: &MappedP4k,
+    socpak_path: &str,
+) -> Result<Vec<ChildSocpakRef>, Error> {
+    let p4k_path = normalize_socpak_path(socpak_path);
+    let entry = p4k
+        .entry_case_insensitive(&p4k_path)
+        .ok_or_else(|| Error::MissingSocpak(p4k_path.clone()))?;
+    let socpak_data = p4k
+        .read(entry)
+        .map_err(|e| Error::P4kRead(format!("{p4k_path}: {e}")))?;
+    let inner = P4kArchive::from_bytes(&socpak_data)
+        .map_err(|e| Error::P4kRead(format!("ZIP parse {p4k_path}: {e}")))?;
+
+    let root_name = socpak_path
+        .rsplit(&['/', '\\'])
+        .next()
+        .unwrap_or(socpak_path)
+        .strip_suffix(".socpak")
+        .unwrap_or(socpak_path)
+        .to_ascii_lowercase();
+    let root_xml_name = format!("{root_name}.xml");
+    let Some(entry) = inner.entries().iter().find(|entry| {
+        entry.name.replace('/', "\\").to_ascii_lowercase() == root_xml_name
+    }) else {
+        return Ok(Vec::new());
+    };
+
+    let data = inner
+        .read(entry)
+        .map_err(|e| Error::P4kRead(format!("{}: {e}", entry.name)))?;
+    let Ok(text) = std::str::from_utf8(&data) else {
+        return Ok(Vec::new());
+    };
+    Ok(parse_child_socpak_refs_from_text_xml(text))
+}
+
+fn parse_child_socpak_refs_from_text_xml(text: &str) -> Vec<ChildSocpakRef> {
+    let mut reader = Reader::from_str(text);
+    reader.config_mut().trim_text(true);
+    let mut buf = Vec::new();
+    let mut refs = Vec::new();
+    let mut inside_children = false;
+
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(e)) if e.name().as_ref() == b"ChildObjectContainers" => {
+                inside_children = true;
+            }
+            Ok(Event::End(e)) if e.name().as_ref() == b"ChildObjectContainers" => {
+                inside_children = false;
+            }
+            Ok(Event::Start(e)) | Ok(Event::Empty(e))
+                if inside_children && e.name().as_ref() == b"Child" =>
+            {
+                let mut attrs = HashMap::new();
+                for attr in e.attributes().flatten() {
+                    let key = String::from_utf8_lossy(attr.key.as_ref()).into_owned();
+                    if let Ok(value) = attr.decode_and_unescape_value(reader.decoder()) {
+                        attrs.insert(key, value.into_owned());
+                    }
+                }
+                if attrs.get("external").map(String::as_str) != Some("1") {
+                    buf.clear();
+                    continue;
+                }
+                let Some(socpak_path) = attrs.get("name").cloned() else {
+                    buf.clear();
+                    continue;
+                };
+                let entity_name = attrs.get("entityName").cloned().unwrap_or_default();
+                let class_name = attrs.get("class").cloned().unwrap_or_default();
+                let pos = parse_csv_f64(attrs.get("pos").map(String::as_str).unwrap_or("0,0,0"));
+                let rot = parse_csv_f64(attrs.get("rot").map(String::as_str).unwrap_or("1,0,0,0"));
+                refs.push(ChildSocpakRef {
+                    socpak_path,
+                    entity_name,
+                    class_name,
+                    local_transform: pos_rot_scale_to_4x4(&pos, &rot, &[1.0, 1.0, 1.0]),
+                });
+            }
+            Ok(Event::Eof) => break,
+            Ok(_) => {}
+            Err(e) => {
+                log::warn!("failed to parse socpak child manifest XML: {e}");
+                break;
+            }
+        }
+        buf.clear();
+    }
+
+    refs
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ChildSocpakRef {
+    pub socpak_path: String,
+    pub entity_name: String,
+    pub class_name: String,
+    pub local_transform: [[f32; 4]; 4],
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct SocpakTreeProgress {
+    pub socpak_path: String,
+    pub depth: usize,
+    pub containers_loaded: usize,
+    pub child_count: usize,
+    pub mesh_count: usize,
+    pub light_count: usize,
+    pub stage: String,
 }

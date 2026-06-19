@@ -29,7 +29,7 @@ fn export_entity_name(name: &str) -> String {
         .to_string()
 }
 
-fn sanitize_export_name(name: &str) -> String {
+pub(crate) fn sanitize_export_name(name: &str) -> String {
     let mut cleaned = String::new();
     let mut last_was_space = false;
 
@@ -53,7 +53,7 @@ fn sanitize_export_name(name: &str) -> String {
     }
 }
 
-fn prepare_decomposed_output_root(output_root: &PathBuf, package_name: &str) -> Result<()> {
+pub(crate) fn prepare_decomposed_output_root(output_root: &PathBuf, package_name: &str) -> Result<()> {
     if output_root.exists() {
         if output_root.is_file() {
             return Err(CliError::InvalidInput(format!(
@@ -77,7 +77,7 @@ fn should_skip_existing_decomposed_asset(
     skip_existing_assets && file.kind.is_reusable_asset()
 }
 
-fn write_decomposed_file(
+pub(crate) fn write_decomposed_file(
     file: &starbreaker_3d::ExportedFile,
     output_path: &PathBuf,
     skip_existing_assets: bool,

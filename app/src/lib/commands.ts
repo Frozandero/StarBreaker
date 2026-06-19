@@ -180,6 +180,54 @@ export interface ExportDone {
   succeeded_ids: string[];
 }
 
+export interface SocpakDto {
+  path: string;
+}
+
+export interface SocpakHierarchyRequest {
+  socpak_paths: string[];
+}
+
+export interface SocpakHierarchyNode {
+  path: string;
+  name: string;
+  entity_name: string | null;
+  class_name: string | null;
+  depth: number;
+  mesh_count: number;
+  light_count: number;
+  children: SocpakHierarchyNode[];
+}
+
+export interface SocpakExportRequest {
+  socpak_paths: string[];
+  output_dir: string;
+  lod: number;
+  mip: number;
+  material_mode: string;
+  include_lights: boolean;
+  overwrite_existing_assets: boolean;
+  include_nodraw: boolean;
+  socpak_path_filter?: string[] | null;
+}
+
+export interface SocpakExportDone {
+  file_count: number;
+  package_names: string[];
+}
+
+export interface SocpakExportProgress {
+  current: number;
+  total: number;
+  fraction: number;
+  socpak_path: string;
+  package_name: string;
+  stage: string;
+  files_written: number;
+  files_total: number;
+  error: string | null;
+}
+
 // ── Export commands ──
 
 /** Scan DataCore for entity categories. Requires P4k to be loaded. */
@@ -195,6 +243,34 @@ export async function startExport(request: ExportRequest): Promise<void> {
 /** Cancel an in-progress export. */
 export async function cancelExport(): Promise<void> {
   return invoke<void>("cancel_export");
+}
+
+/** List socpak archive paths, optionally filtered by substring. */
+export async function scanSocpaks(query = ""): Promise<SocpakDto[]> {
+  return invoke<SocpakDto[]>("scan_socpaks", { query: query || null });
+}
+
+/** Crawl selected socpaks and their inherited child containers. */
+export async function inspectSocpakHierarchy(
+  request: SocpakHierarchyRequest,
+): Promise<SocpakHierarchyNode[]> {
+  return invoke<SocpakHierarchyNode[]>("inspect_socpak_hierarchy", { request });
+}
+
+/** Export selected socpaks as a decomposed Blender package. */
+export async function exportSocpaks(
+  request: SocpakExportRequest,
+): Promise<SocpakExportDone> {
+  return invoke<SocpakExportDone>("export_socpaks", { request });
+}
+
+/** Listen for socpak export progress. */
+export function onSocpakExportProgress(
+  callback: (progress: SocpakExportProgress) => void,
+): Promise<UnlistenFn> {
+  return listen<SocpakExportProgress>("socpak-export-progress", (event) => {
+    callback(event.payload);
+  });
 }
 
 /** Listen for export progress events. */
