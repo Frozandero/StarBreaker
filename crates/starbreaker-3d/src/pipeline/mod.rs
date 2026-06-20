@@ -520,11 +520,17 @@ where
     // `.chrparams`) become decomposed children so their skeletal `.caf` clips are
     // extracted by the existing animation pipeline; this also removes them from
     // the static interior placements to avoid duplicate geometry.
+    let anim_children_start = std::time::Instant::now();
     let children = if opts.include_animations {
         extract_animated_interior_children(db, p4k, &mut interiors, opts)
     } else {
         Vec::new()
     };
+    log::info!(
+        "[timing][socpak] animated_interior_children ({} children): {:.2}s",
+        children.len(),
+        anim_children_start.elapsed().as_secs_f32()
+    );
     let input = DecomposedInput {
         entity_name: export_name.to_string(),
         geometry_path: String::new(),

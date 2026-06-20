@@ -16,7 +16,8 @@ use starbreaker_p4k::MappedP4k;
 use crate::types::{EntityPayload, ResolvedNode};
 
 use super::{
-    datacore_path_to_p4k, load_child_payload_asset, ExportOptions, LoadedInteriors,
+    datacore_path_to_p4k, load_child_payload_asset, ExportOptions, LoadedChildPayload,
+    LoadedInteriors,
 };
 
 /// The sibling `.chrparams` path for an animated `.cga` geometry, or `None` for
@@ -62,6 +63,8 @@ pub(crate) fn extract_animated_interior_children(
     interiors: &mut LoadedInteriors,
     opts: &ExportOptions,
 ) -> Vec<EntityPayload> {
+    use rayon::prelude::*;
+
     // Snapshot per-CGF info so the container loop can mutate placements while
     // still reading the shared unique-CGF table.
     let cgf_info: Vec<(String, Option<String>)> = interiors
@@ -70,7 +73,24 @@ pub(crate) fn extract_animated_interior_children(
         .map(|e| (e.cgf_path.clone(), e.material_path.clone()))
         .collect();
 
-    let mut children = Vec::new();
+    // Phase 1: detect animated placements and remove them from the static
+    // interior placements (de-dup geometry). Records each placement's world
+    // transform + per-object palette and an index into `unique_keys`; geometry,
+    // materials and textures are loaded once per unique (geometry, material) pair
+    // in phase 2 rather than once per placement (a hangar repeats the same door /
+    // elevator dozens of times, and TEX0 texture decode dominates the load).
+    struct AnimPlacement {
+        unique_index: usize,
+        offset_position: [f32; 3],
+        offset_rotation: [f32; 3],
+        palette: Option<crate::mtl::TintPalette>,
+        entity_name: String,
+    }
+    let mut unique_keys: Vec<(String, Option<String>)> = Vec::new();
+    let mut key_index: std::collections::HashMap<(String, Option<String>), usize> =
+        std::collections::HashMap::new();
+    let mut anim_placements: Vec<AnimPlacement> = Vec::new();
+
     for container in &mut interiors.containers {
         let container_mat = glam::Mat4::from_cols_array_2d(&container.container_transform);
         let mut kept = Vec::with_capacity(container.placements.len());
@@ -96,58 +116,85 @@ pub(crate) fn extract_animated_interior_children(
             let world = container_mat * glam::Mat4::from_cols_array_2d(&placement.transform);
             let (_scale, rot, trans) = world.to_scale_rotation_translation();
             let (rx, ry, rz) = rot.to_euler(glam::EulerRot::XYZ);
-            let offset_position = [trans.x, trans.y, trans.z];
-            let offset_rotation = [rx.to_degrees(), ry.to_degrees(), rz.to_degrees()];
-            let entity_name = cga_entity_name(&cgf_path);
 
+            let key = (cgf_path.clone(), material_path.clone());
+            let unique_index = *key_index.entry(key.clone()).or_insert_with(|| {
+                let i = unique_keys.len();
+                unique_keys.push(key);
+                i
+            });
+
+            anim_placements.push(AnimPlacement {
+                unique_index,
+                offset_position: [trans.x, trans.y, trans.z],
+                offset_rotation: [rx.to_degrees(), ry.to_degrees(), rz.to_degrees()],
+                palette: placement.palette.clone(),
+                entity_name: cga_entity_name(&cgf_path),
+            });
+        }
+        container.placements = kept;
+    }
+
+    if anim_placements.is_empty() {
+        return Vec::new();
+    }
+
+    // Phase 2: load each unique geometry once, in parallel (palette-independent —
+    // the per-object tint palette is applied downstream from the EntityPayload's
+    // `palette` field, so the same loaded asset is shared across placements).
+    let loaded: Vec<Option<LoadedChildPayload>> = unique_keys
+        .par_iter()
+        .map(|(geometry_path, material_path)| {
             let node = ResolvedNode {
-                entity_name: entity_name.clone(),
+                entity_name: cga_entity_name(geometry_path),
                 attachment_name: String::new(),
                 no_rotation: false,
-                offset_position,
-                offset_rotation,
+                offset_position: [0.0; 3],
+                offset_rotation: [0.0; 3],
                 detach_direction: [0.0; 3],
                 port_flags: String::new(),
                 nmc: None,
                 bones: Vec::new(),
                 has_geometry: true,
                 record: placeholder_record(),
-                geometry_path: Some(cgf_path.clone()),
+                geometry_path: Some(geometry_path.clone()),
                 material_path: material_path.clone(),
                 allows_child_object_containers: false,
                 children: Vec::new(),
             };
+            load_child_payload_asset(&node, db, p4k, opts, opts.material_mode, None)
+        })
+        .collect();
 
-            match load_child_payload_asset(&node, db, p4k, opts, opts.material_mode, None) {
-                Some(loaded) => {
-                    children.push(EntityPayload {
-                        mesh: loaded.mesh,
-                        materials: loaded.materials,
-                        textures: loaded.textures,
-                        nmc: loaded.nmc,
-                        // Keep the placement's per-object tint palette if it had one.
-                        palette: placement.palette.clone().or(loaded.palette),
-                        geometry_path: loaded.geometry_path,
-                        material_path: loaded.material_path,
-                        bones: loaded.bones,
-                        skeleton_source_path: loaded.skeleton_source_path,
-                        entity_name,
-                        entity_category: None,
-                        attach_def_type: None,
-                        parent_node_name: String::new(),
-                        parent_entity_name: String::new(),
-                        no_rotation: false,
-                        offset_position,
-                        offset_rotation,
-                        detach_direction: [0.0; 3],
-                        port_flags: String::new(),
-                        ui_bindings: Vec::new(),
-                    });
-                }
-                None => kept.push(placement),
-            }
-        }
-        container.placements = kept;
+    // Phase 3: build one EntityPayload per placement, sharing the loaded geometry.
+    let mut children = Vec::with_capacity(anim_placements.len());
+    for ap in anim_placements {
+        let Some(loaded_payload) = loaded[ap.unique_index].as_ref() else {
+            continue;
+        };
+        children.push(EntityPayload {
+            mesh: loaded_payload.mesh.clone(),
+            materials: loaded_payload.materials.clone(),
+            textures: loaded_payload.textures.clone(),
+            nmc: loaded_payload.nmc.clone(),
+            // Keep the placement's per-object tint palette if it had one.
+            palette: ap.palette.or_else(|| loaded_payload.palette.clone()),
+            geometry_path: loaded_payload.geometry_path.clone(),
+            material_path: loaded_payload.material_path.clone(),
+            bones: loaded_payload.bones.clone(),
+            skeleton_source_path: loaded_payload.skeleton_source_path.clone(),
+            entity_name: ap.entity_name,
+            entity_category: None,
+            attach_def_type: None,
+            parent_node_name: String::new(),
+            parent_entity_name: String::new(),
+            no_rotation: false,
+            offset_position: ap.offset_position,
+            offset_rotation: ap.offset_rotation,
+            detach_direction: [0.0; 3],
+            port_flags: String::new(),
+            ui_bindings: Vec::new(),
+        });
     }
     children
 }
