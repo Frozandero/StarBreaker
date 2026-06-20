@@ -2986,6 +2986,33 @@ fn derive_manufacturer_id(root_entity_name: &str) -> Option<String> {
 }
 
 #[cfg(test)]
+mod interior_animation_naming_tests {
+    use super::{humanize_animation_label, interior_clip_key};
+
+    #[test]
+    fn interior_clip_key_and_label() {
+        assert_eq!(
+            interior_clip_key("ht_hangar_door_top_xl_a", "door_open"),
+            "ht_hangar_door_top_xl_a__door_open"
+        );
+        // different entities never collide → their same-named clips don't merge
+        assert_ne!(
+            interior_clip_key("ht_hangar_door_top_xl_a", "door_open"),
+            interior_clip_key("elev_ht_cargo_pad_xl", "door_open")
+        );
+        // same entity-type + action → identical key → instances still merge
+        assert_eq!(
+            interior_clip_key("elevator_door_double_a", "door_open"),
+            interior_clip_key("elevator_door_double_a", "door_open")
+        );
+        assert_eq!(
+            humanize_animation_label("ht_hangar_door_top_xl_a", "door_open"),
+            "Ht Hangar Door Top Xl A — Door Open"
+        );
+    }
+}
+
+#[cfg(test)]
 mod manufacturer_id_tests {
     use super::{
         derive_manufacturer_id, generated_ui_asset_name, generated_ui_binding_path,
@@ -3853,6 +3880,36 @@ fn string_value_to_json(value: &str) -> serde_json::Value {
         return serde_json::json!(float);
     }
     serde_json::json!(value)
+}
+
+/// Per-entity-type clip key for socpak interior animations. Different entity
+/// types never collide (so their identically-named clips — e.g. every door's
+/// `door_open` — no longer merge into one), while instances of the same
+/// entity-type share a key (so they still merge into a single clip). The double
+/// underscore separates the entity stem from the action unambiguously.
+fn interior_clip_key(entity_stem: &str, clip_name: &str) -> String {
+    format!("{entity_stem}__{clip_name}")
+}
+
+/// Human-readable panel label for a socpak interior animation: the title-cased
+/// entity stem plus the title-cased clip action. Purely generic (split on `_`,
+/// capitalise each token) — no asset-specific token stripping.
+fn humanize_animation_label(entity_stem: &str, clip_name: &str) -> String {
+    fn titlecase(value: &str) -> String {
+        value
+            .split('_')
+            .filter(|token| !token.is_empty())
+            .map(|token| {
+                let mut chars = token.chars();
+                match chars.next() {
+                    Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                    None => String::new(),
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+    format!("{} — {}", titlecase(entity_stem), titlecase(clip_name))
 }
 
 fn merge_animation_channel_values(
