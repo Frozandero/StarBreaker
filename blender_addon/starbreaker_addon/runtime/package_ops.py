@@ -52,6 +52,7 @@ from .constants import (
 from .animation_fps import (
     FPS_POLICY_ADAPT_SCENE,
     describe_reconciliation,
+    extend_frame_end,
     reconcile_animation_fps,
 )
 from .validators import (
@@ -2792,6 +2793,24 @@ def apply_animation_mode_to_package_root(
 
     mode_map[animation_name] = normalized_mode
     package_root[_ANIMATION_MODES_PROP] = json.dumps(mode_map, separators=(",", ":"), sort_keys=True)
+
+    # Extend the scene frame range to cover the applied NLA strips. Socpak
+    # door/elevator clips run hundreds of frames (e.g. 648, 1200) past Blender's
+    # default 250-frame range, so without this the big mechanisms look frozen at
+    # default playback. Best-effort: never shrinks the range (see
+    # extend_frame_end) and is skipped when the scene exposes no frame_end.
+    scene = getattr(context, "scene", None)
+    current_end = getattr(scene, "frame_end", None)
+    if isinstance(current_end, (int, float)):
+        strip_ends = [
+            strip.frame_end
+            for obj in _iter_package_objects(package_root)
+            if getattr(obj, "animation_data", None) is not None
+            for track in obj.animation_data.nla_tracks
+            for strip in track.strips
+        ]
+        scene.frame_end = extend_frame_end(current_end, strip_ends)
+
     return updated
 
 
