@@ -688,7 +688,7 @@ pub fn build_motion_blur_shutter_curve_points() -> Vec<u8> {
 pub fn build_cycles_render_settings_system_properties(
     _root_ptr: u64,
     cycles_group_ptr: u64,
-    child_ptrs: &[u64; 6],
+    child_ptrs: &[u64; 8],
 ) -> (Vec<u8>, Vec<u8>, Vec<(u64, Vec<u8>)>) {
     let root = build_idproperty(
         IDP_GROUP, "", 0, 0, 0, cycles_group_ptr, cycles_group_ptr, 0, 0.0, 1, 1,
@@ -700,7 +700,7 @@ pub fn build_cycles_render_settings_system_properties(
         0,
         0,
         child_ptrs[0],
-        child_ptrs[5],
+        child_ptrs[child_ptrs.len() - 1],
         0,
         0.0,
         child_ptrs.len() as i32,
@@ -713,6 +713,13 @@ pub fn build_cycles_render_settings_system_properties(
         ("use_preview_denoising", 1),
         ("samples", 512),
         ("use_denoising", 1),
+        // Cycles DenoiserType::DENOISER_OPTIX = 2, for both the final-render
+        // (`denoiser`) and viewport (`preview_denoiser`) denoisers. The Cycles
+        // defaults (final OpenImageDenoise, viewport "Automatic" -> OIDN) crash
+        // the interactive viewport render on these large linked scenes; OptiX is
+        // stable on the target NVIDIA/OptiX GPUs.
+        ("denoiser", 2),
+        ("preview_denoiser", 2),
     ];
     let children = values
         .iter()

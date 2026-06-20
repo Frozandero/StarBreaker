@@ -103,6 +103,8 @@ fn allocate_cycles_scene_props(ptrs: &mut PtrAlloc) -> CyclesSceneProps {
         ptrs.alloc(),
         ptrs.alloc(),
         ptrs.alloc(),
+        ptrs.alloc(),
+        ptrs.alloc(),
     ];
     let (root, cycles_group, children) =
         build_cycles_render_settings_system_properties(root_ptr, cycles_group_ptr, &child_ptrs);
