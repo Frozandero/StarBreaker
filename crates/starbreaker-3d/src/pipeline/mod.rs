@@ -35,6 +35,8 @@ pub(crate) use self::entity_export::*;
 
 mod palette;
 pub use self::palette::*;
+mod interior_animation;
+pub(crate) use self::interior_animation::*;
 mod vehicle;
 pub use self::vehicle::*;
 mod glb_assembly;
@@ -512,8 +514,17 @@ where
         }
     }
 
-    let interiors =
+    let mut interiors =
         build_interiors_from_payloads(db, p4k, &payloads, opts.include_lights, opts.lod_level);
+    // Animated interior entities (`.cga` doors/elevators with a sibling
+    // `.chrparams`) become decomposed children so their skeletal `.caf` clips are
+    // extracted by the existing animation pipeline; this also removes them from
+    // the static interior placements to avoid duplicate geometry.
+    let children = if opts.include_animations {
+        extract_animated_interior_children(db, p4k, &mut interiors, opts)
+    } else {
+        Vec::new()
+    };
     let input = DecomposedInput {
         entity_name: export_name.to_string(),
         geometry_path: String::new(),
@@ -526,7 +537,7 @@ where
         root_bones: Vec::new(),
         root_skeleton_source_path: None,
         root_animation_controller: None,
-        children: Vec::new(),
+        children,
         interiors,
         paint_variants: Vec::new(),
     };
