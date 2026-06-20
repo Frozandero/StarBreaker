@@ -915,6 +915,7 @@ fn push_item_port_mesh(
         transform,
         entity_class_guid: None,
         entity_class_name: Some(entity_class_name),
+        tint_palette_name: None,
     });
 }
 
@@ -1138,6 +1139,9 @@ fn included_objects_to_meshes(io: &IncludedObjects) -> Vec<InteriorMesh> {
                 transform,
                 entity_class_guid: None,
                 entity_class_name: None,
+                tint_palette_name: obj
+                    .tint_palette_index
+                    .and_then(|i| io.tint_palette_paths.get(i as usize).cloned()),
             })
         })
         .collect()
@@ -1280,6 +1284,7 @@ fn process_entity_children(
                 transform,
                 entity_class_guid: None,
                 entity_class_name: None,
+                tint_palette_name: None,
             });
         } else if let Some(guid) = attrs.get("EntityClassGUID") {
             // No inline geometry — resolve via DataCore using EntityClassGUID
@@ -1289,6 +1294,7 @@ fn process_entity_children(
                 transform,
                 entity_class_guid: Some(guid.to_string()),
                 entity_class_name: None,
+                tint_palette_name: None,
             });
         }
     }
@@ -2046,6 +2052,7 @@ mod tests {
                 transform: [[0.0; 3]; 4],
                 vector1: [0.0; 3],
                 vector2: [0.0; 3],
+                tint_palette_index: None,
             }],
         };
 
@@ -2223,6 +2230,7 @@ mod tests {
                 .to_cols_array_2d(),
             entity_class_guid: None,
             entity_class_name: Some("InsideControl".to_string()),
+            tint_palette_name: None,
         };
         let outside = InteriorMesh {
             cgf_path: String::new(),
@@ -2231,6 +2239,7 @@ mod tests {
                 .to_cols_array_2d(),
             entity_class_guid: None,
             entity_class_name: Some("OutsideControl".to_string()),
+            tint_palette_name: None,
         };
 
         let filtered = filter_item_port_meshes_to_editor_bounds(

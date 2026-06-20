@@ -571,6 +571,24 @@ pub(crate) fn merge_interiors(target: &mut LoadedInteriors, source: LoadedInteri
     }
 }
 
+/// Resolve a socpak per-object tint-palette record path (e.g.
+/// `Libs/Foundry/Records/TintPalettes/brand/microtech/microtech_default`) to its
+/// colours. Matches the `TintPaletteTree` record by EXACT short name — the
+/// previous `ends_with` match could resolve `default` to any `*_default` record.
+fn resolve_interior_palette(db: &Database, palette_path: &str) -> Option<mtl::TintPalette> {
+    let short = palette_path
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(palette_path)
+        .to_lowercase();
+    let tpt_si = db.struct_id("TintPaletteTree")?;
+    let record = db.records_of_type(tpt_si).find(|r| {
+        let name = db.resolve_string2(r.name_offset).to_lowercase();
+        name.rsplit('.').next().unwrap_or(&name) == short
+    })?;
+    query_tint_from_record(db, record, Some(short))
+}
+
 /// Shared interior building: dedup CGFs, resolve GUIDs, collect placements and lights.
 /// Used by both `load_interiors` (from DataCore) and `socpaks_to_glb` (from explicit paths).
 pub(crate) fn build_interiors_from_payloads(
@@ -610,6 +628,8 @@ pub(crate) fn build_interiors_from_payloads(
 
         let mut placements = Vec::new();
         let mut placement_keys: HashSet<(String, [u32; 16])> = HashSet::new();
+        // Resolve each distinct per-object tint palette once per payload.
+        let mut palette_cache: HashMap<String, Option<mtl::TintPalette>> = HashMap::new();
 
         for im in &payload.meshes {
             let (cgf_path, mtl_path) = if !im.cgf_path.is_empty() {
@@ -682,10 +702,16 @@ pub(crate) fn build_interiors_from_payloads(
                     continue;
                 }
                 let ui_bindings = interior_ui_bindings_for_mesh(db, im);
+                let palette = im.tint_palette_name.as_ref().and_then(|name| {
+                    palette_cache
+                        .entry(name.clone())
+                        .or_insert_with(|| resolve_interior_palette(db, name))
+                        .clone()
+                });
                 placements.push(InteriorPlacement {
                     mesh_index: idx,
                     transform: im.transform,
-                    palette: None,
+                    palette,
                     ui_bindings,
                 });
 
@@ -726,30 +752,6 @@ pub(crate) fn build_interiors_from_payloads(
         prune_colocated_standard_canvas_overlays(&mut placements);
         inherit_colocated_ui_rotations(&mut placements);
 
-        // Resolve tint palette from the socpak's IncludedObjects palette names.
-        // These are DataCore TintPaletteTree record paths — extract the short name
-        // (last path component) and look up the record.
-        let palette = payload.tint_palette_names.first().and_then(|path| {
-            let short_name = path.rsplit('/').next().unwrap_or(path).to_lowercase();
-            let tpt_si = db.struct_id("TintPaletteTree")?;
-            let record = db.records_of_type(tpt_si).find(|r| {
-                db.resolve_string2(r.name_offset).to_lowercase().ends_with(&short_name)
-            })?;
-            query_tint_from_record(
-                db,
-                record,
-                Some(short_name),
-            )
-        });
-
-        if let Some(ref p) = palette {
-            log::debug!(
-                "  {} palette: primary=[{:.2},{:.2},{:.2}] secondary=[{:.2},{:.2},{:.2}]",
-                payload.name, p.primary[0], p.primary[1], p.primary[2],
-                p.secondary[0], p.secondary[1], p.secondary[2],
-            );
-        }
-
         container_data.push(InteriorContainerData {
             name: payload.name.clone(),
             parent_entity_name: payload.parent_entity_name.clone(),
@@ -757,7 +759,12 @@ pub(crate) fn build_interiors_from_payloads(
             container_transform: payload.container_transform,
             placements,
             lights: if include_lights { payload.lights.clone() } else { Vec::new() },
-            palette,
+            // Tint palettes are resolved per object placement above (each socpak
+            // object indexes its own palette); there is no single container-wide
+            // palette. The previous `tint_palette_names.first()` fallback wrongly
+            // applied the generic `default` palette (a placeholder carrying a
+            // Gemini weapon decal + near-black tints) to the whole interior.
+            palette: None,
         });
     }
 

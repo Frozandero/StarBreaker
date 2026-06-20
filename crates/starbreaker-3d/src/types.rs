@@ -684,6 +684,11 @@ pub struct InteriorMesh {
     /// Entity class short name from socpak root item-port XML when no GUID is
     /// authored but the room setup still names a visual entity to spawn.
     pub entity_class_name: Option<String>,
+    /// Per-object tint-palette record path, resolved at parse time from the
+    /// object's palette index into its own `.soc`
+    /// `IncludedObjects.tint_palette_paths`. `None` means the object carries no
+    /// palette override (index 0xFFFF).
+    pub tint_palette_name: Option<String>,
 }
 
 /// A resolved mesh placement from a .soc interior container.
