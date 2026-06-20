@@ -1648,15 +1648,39 @@ pub(crate) fn write_decomposed_export(
         // from different child skeletons (e.g. landing_gear_extend from front/left/right CHRs).
         let mut name_to_index = std::collections::HashMap::<String, usize>::new();
 
-        let mut append_from_skeleton = |skeleton_path: &str, include_unmatched: bool, allow_bone_subset_fallback: bool| {
+        let mut append_from_skeleton = |skeleton_path: &str, include_unmatched: bool, allow_bone_subset_fallback: bool, namespace: Option<&str>| {
             match crate::animation::extract_animations_for_skeleton_json(p4k, skeleton_path, include_unmatched, allow_bone_subset_fallback) {
                 Ok(Some(serde_json::Value::Array(values))) => {
                     for mut clip in values {
-                        let name = clip
+                        let original = clip
                             .get("name")
                             .and_then(|value| value.as_str())
                             .unwrap_or("")
                             .to_string();
+                        // Socpak interior children (`namespace = Some(entity stem)`):
+                        // key each clip by entity-type so different entities'
+                        // identically-named clips (every door's `door_open`) don't
+                        // merge, and attach a human-readable panel label. Instances of
+                        // the same entity-type share the key and still merge.
+                        let name = match namespace {
+                            Some(stem) if !original.is_empty() => {
+                                let key = interior_clip_key(stem, &original);
+                                if let Some(object) = clip.as_object_mut() {
+                                    object.insert(
+                                        "name".to_string(),
+                                        serde_json::Value::String(key.clone()),
+                                    );
+                                    object.insert(
+                                        "display_name".to_string(),
+                                        serde_json::Value::String(humanize_animation_label(
+                                            stem, &original,
+                                        )),
+                                    );
+                                }
+                                key
+                            }
+                            _ => original,
+                        };
                         if name.is_empty() {
                             clips.push(clip);
                         } else if let Some(&existing_idx) = name_to_index.get(&name) {
@@ -1696,11 +1720,16 @@ pub(crate) fn write_decomposed_export(
         };
 
         if let Some(skeleton_path) = input.root_skeleton_source_path.as_deref() {
-            append_from_skeleton(skeleton_path, true, false);
+            append_from_skeleton(skeleton_path, true, false, None);
         }
+        // With no root skeleton (the socpak interior case — ships always have a
+        // root rig), children are independent interior entities; namespace their
+        // clips per entity-type so distinct mechanisms stay separate.
+        let namespace_children = input.root_skeleton_source_path.is_none();
         for child in &input.children {
             if let Some(skeleton_path) = child.skeleton_source_path.as_deref() {
-                append_from_skeleton(skeleton_path, false, true);
+                let namespace = namespace_children.then_some(child.entity_name.as_str());
+                append_from_skeleton(skeleton_path, false, true, namespace);
             }
         }
 
