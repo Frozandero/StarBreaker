@@ -1347,33 +1347,71 @@ pub(crate) fn write_decomposed_export(
         .map(|container| container.placements.len())
         .sum::<usize>();
     let mut processed_interior_placements = 0usize;
+
+    // Render every interior placement's UI bindings up front in one parallel
+    // pass spanning ALL containers, indexed `[container][placement]`.  Binding
+    // work clusters in a few containers (cockpit, control rooms) while most hold
+    // none, so a per-container `par_iter` (the previous structure) leaves cores
+    // idle between containers.  Flattening across containers lets the pool
+    // balance individual renders; the serial loop below consumes each
+    // container's slice in order, keeping the merged `files` map byte-identical.
+    let ui_binding_start = Instant::now();
+    let mut precomputed_interior_ui: Vec<Vec<(Vec<UiBinding>, Vec<(String, Vec<u8>)>)>> = input
+        .interiors
+        .containers
+        .iter()
+        .map(|container| vec![(Vec::new(), Vec::new()); container.placements.len()])
+        .collect();
+    let interior_ui_jobs: Vec<(usize, usize)> = input
+        .interiors
+        .containers
+        .iter()
+        .enumerate()
+        .flat_map(|(container_index, container)| {
+            container
+                .placements
+                .iter()
+                .enumerate()
+                .filter(|(_, placement)| !placement.ui_bindings.is_empty())
+                .map(move |(placement_index, _)| (container_index, placement_index))
+        })
+        .collect();
+    if !interior_ui_jobs.is_empty() {
+        let rendered: Vec<((usize, usize), (Vec<UiBinding>, Vec<(String, Vec<u8>)>))> =
+            interior_ui_jobs
+                .par_iter()
+                .map(|&(container_index, placement_index)| {
+                    let placement = &input.interiors.containers[container_index].placements
+                        [placement_index];
+                    let records = generate_ui_binding_records_detached(
+                        &placement.ui_bindings,
+                        db,
+                        p4k,
+                        opts.texture_mip,
+                        &input.entity_name,
+                        &input.geometry_path,
+                        &scene_manifest_path,
+                        root_manufacturer_id.as_deref(),
+                        ui_loc_data.as_ref(),
+                        ui_defaults_registry.as_ref(),
+                        &ui_ship_data,
+                    );
+                    ((container_index, placement_index), records)
+                })
+                .collect();
+        for ((container_index, placement_index), records) in rendered {
+            precomputed_interior_ui[container_index][placement_index] = records;
+        }
+    }
+    interior_ui_binding_elapsed += ui_binding_start.elapsed();
+
     for (index, container) in input.interiors.containers.iter().enumerate() {
         let palette_id = container
             .palette
             .as_ref()
             .map(|palette| register_palette(&mut palette_records, palette));
         let mut placements = Vec::with_capacity(container.placements.len());
-        let ui_binding_start = Instant::now();
-        let precomputed_placement_ui = container
-            .placements
-            .par_iter()
-            .map(|placement| {
-                generate_ui_binding_records_detached(
-                    &placement.ui_bindings,
-                    db,
-                    p4k,
-                    opts.texture_mip,
-                    &input.entity_name,
-                    &input.geometry_path,
-                    &scene_manifest_path,
-                    root_manufacturer_id.as_deref(),
-                    ui_loc_data.as_ref(),
-                    ui_defaults_registry.as_ref(),
-                    &ui_ship_data,
-                )
-            })
-            .collect::<Vec<_>>();
-        interior_ui_binding_elapsed += ui_binding_start.elapsed();
+        let precomputed_placement_ui = std::mem::take(&mut precomputed_interior_ui[index]);
         let placement_start = Instant::now();
         for (placement, (ui_bindings, file_records)) in container
             .placements
