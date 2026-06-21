@@ -3079,17 +3079,22 @@ mod ui_regression_registry_tests {
             serde_json::from_str(&response).expect("registry response should be valid JSON");
 
         assert_eq!(json.get("schema_version").and_then(|v| v.as_u64()), Some(1));
+        // The default manifest + freeze fixtures carry the full set of onboarded
+        // UI parity targets (15 as of the compass/countermeasures/self/g-force/
+        // velocity/master-mode/annunciator/... arcs), and every one is matched
+        // (present in both manifest and freeze). Bump this guard when a target is
+        // onboarded or retired.
         assert_eq!(
             json.get("summary")
                 .and_then(|v| v.get("total_targets"))
                 .and_then(|v| v.as_u64()),
-            Some(5)
+            Some(15)
         );
         assert_eq!(
             json.get("summary")
                 .and_then(|v| v.get("matched"))
                 .and_then(|v| v.as_u64()),
-            Some(5)
+            Some(15)
         );
     }
 

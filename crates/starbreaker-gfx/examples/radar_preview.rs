@@ -16,7 +16,7 @@ fn main() {
     }
     let tex = image::open(tex_path).expect("load texture").to_rgba8();
     let (w, h) = (1024u32, 834u32);
-    let disc = project_radar_disc(w, h, &tex, None, &p);
+    let disc = project_radar_disc(w, h, &tex, None, None, &p);
     // Composite over a dark DRAK-vignette-ish background to mimic the screen.
     let mut img = image::RgbaImage::from_pixel(w, h, image::Rgba([34, 22, 10, 255]));
     for (x, y, px) in disc.enumerate_pixels() {
