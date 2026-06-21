@@ -944,7 +944,7 @@ pub(crate) fn write_decomposed_export(
     const CHILD_ASSETS_END: f32 = 0.38;
     const INTERIOR_ASSETS_END: f32 = 0.99;
 
-    let mut files = BTreeMap::new();
+    let mut files = OutputFiles::new();
     let root_manufacturer_id: Option<String> =
         derive_manufacturer_id(export_entity_basename(&input.entity_name));
     // Per-ship UI values derived once from the root vehicle's DataCore
@@ -2021,6 +2021,7 @@ pub(crate) fn write_decomposed_export(
 
     Ok(DecomposedExport {
         files: files
+            .into_files()
             .into_iter()
             .map(|(relative_path, bytes)| ExportedFile {
                 kind: classify_exported_file_kind(&relative_path),
@@ -2300,7 +2301,7 @@ fn ui_binding_json(binding: &UiBinding) -> serde_json::Value {
 }
 
 fn write_mesh_asset(
-    files: &mut BTreeMap<String, Vec<u8>>,
+    files: &mut OutputFiles,
     p4k: &MappedP4k,
     fallback_name: &str,
     geometry_path: &str,
@@ -2322,7 +2323,7 @@ fn write_mesh_asset(
 }
 
 fn write_material_sidecar(
-    files: &mut BTreeMap<String, Vec<u8>>,
+    files: &mut OutputFiles,
     p4k: &MappedP4k,
     png_cache: &mut PngCache,
     texture_cache: &mut HashMap<(String, TextureFlavor), String>,
@@ -2428,7 +2429,7 @@ fn load_mtl_cached(
 }
 
 fn extract_material_entry(
-    files: &mut BTreeMap<String, Vec<u8>>,
+    files: &mut OutputFiles,
     p4k: &MappedP4k,
     png_cache: &mut PngCache,
     texture_cache: &mut HashMap<(String, TextureFlavor), String>,
@@ -2764,7 +2765,7 @@ fn build_submaterial_json(
 }
 
 fn build_slot_export_value(
-    files: &mut BTreeMap<String, Vec<u8>>,
+    files: &mut OutputFiles,
     p4k: &MappedP4k,
     png_cache: &mut PngCache,
     texture_cache: &mut HashMap<(String, TextureFlavor), String>,
@@ -2861,7 +2862,7 @@ struct GeneratedUiTexture {
 }
 
 fn generated_ui_texture_for_binding(
-    _files: &mut BTreeMap<String, Vec<u8>>,
+    _files: &mut OutputFiles,
     _p4k: &MappedP4k,
     _png_cache: &mut PngCache,
     _texture_cache: &mut HashMap<(String, TextureFlavor), String>,
@@ -3290,7 +3291,7 @@ fn slot_source_path(p4k: Option<&MappedP4k>, binding: &SemanticTextureBinding) -
 }
 
 fn export_texture_asset(
-    files: &mut BTreeMap<String, Vec<u8>>,
+    files: &mut OutputFiles,
     p4k: &MappedP4k,
     png_cache: &mut PngCache,
     texture_cache: &mut HashMap<(String, TextureFlavor), String>,
@@ -3367,7 +3368,7 @@ fn register_paint_variant_palette(
 
 fn finalize_palette_records(
     records: &mut BTreeMap<String, PaletteRecord>,
-    files: &mut BTreeMap<String, Vec<u8>>,
+    files: &mut OutputFiles,
     p4k: &MappedP4k,
     png_cache: &mut PngCache,
     texture_cache: &mut HashMap<(String, TextureFlavor), String>,
@@ -3760,10 +3761,10 @@ const UI_EXPORT_STAMP_PATH: &str = "Data/UI/Generated/.export_stamp.json";
 /// file. Skipped otherwise so an export without UI screens cannot pass off
 /// another ship's stale PNGs as fresh. Never fails: every field degrades to a
 /// sentinel ("unknown" / 0) rather than erroring the export.
-fn insert_ui_export_stamp(files: &mut BTreeMap<String, Vec<u8>>) {
+fn insert_ui_export_stamp(files: &mut OutputFiles) {
     let has_generated_ui = files
-        .keys()
-        .any(|path| path.starts_with("Data/UI/Generated/"));
+        .iter()
+        .any(|(path, _)| path.starts_with("Data/UI/Generated/"));
     if !has_generated_ui {
         return;
     }
@@ -3798,73 +3799,107 @@ fn insert_ui_export_stamp(files: &mut BTreeMap<String, Vec<u8>>) {
     );
 }
 
+/// The export's output file map plus an index that makes per-segment case
+/// canonicalization O(path depth) instead of O(files) (the old code scanned
+/// every key for every inserted segment — quadratic over an export). `case_index`
+/// maps a lowercase path prefix to the canonical-cased final segment of the
+/// FIRST key that introduced it, exactly matching the previous "first key wins"
+/// behaviour.
+pub(crate) struct OutputFiles {
+    files: BTreeMap<String, Vec<u8>>,
+    case_index: HashMap<String, String>,
+}
+
+impl OutputFiles {
+    pub(crate) fn new() -> Self {
+        Self {
+            files: BTreeMap::new(),
+            case_index: HashMap::new(),
+        }
+    }
+    pub(crate) fn contains_key(&self, key: &str) -> bool {
+        self.files.contains_key(key)
+    }
+    #[allow(dead_code)] // used by tests and the Phase-2 merge/logging
+    pub(crate) fn get(&self, key: &str) -> Option<&Vec<u8>> {
+        self.files.get(key)
+    }
+    #[allow(dead_code)] // used by tests and the Phase-2 merge/logging
+    pub(crate) fn len(&self) -> usize {
+        self.files.len()
+    }
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (&String, &Vec<u8>)> {
+        self.files.iter()
+    }
+    /// Consume the wrapper, yielding the underlying path→bytes map (no copy).
+    pub(crate) fn into_files(self) -> BTreeMap<String, Vec<u8>> {
+        self.files
+    }
+    /// Canonicalize `requested_path`'s segment case against prior inserts, then
+    /// insert `bytes` (deduping identical content, hashing genuine collisions).
+    /// Returns the stored path.
+    pub(crate) fn insert_canonical(&mut self, requested_path: String, bytes: Vec<u8>) -> String {
+        let requested_path = self.canonicalize_case(&requested_path);
+        if let Some(existing) = self.files.get(&requested_path) {
+            if existing == &bytes {
+                return requested_path;
+            }
+        }
+        let mut candidate = requested_path.clone();
+        while let Some(existing) = self.files.get(&candidate) {
+            if existing == &bytes {
+                return candidate;
+            }
+            candidate = hashed_variant_path(&requested_path, &bytes);
+        }
+        self.record_case(&candidate);
+        self.files.insert(candidate.clone(), bytes);
+        candidate
+    }
+    /// O(depth) replacement for the old `canonicalize_output_path_case` scan.
+    fn canonicalize_case(&self, requested_path: &str) -> String {
+        let mut lower_prefix = String::new();
+        let mut parts = Vec::new();
+        for (depth, part) in requested_path.split('/').enumerate() {
+            if depth > 0 {
+                lower_prefix.push('/');
+            }
+            lower_prefix.push_str(&part.to_ascii_lowercase());
+            let canonical = self
+                .case_index
+                .get(&lower_prefix)
+                .cloned()
+                .unwrap_or_else(|| part.to_string());
+            parts.push(canonical);
+        }
+        parts.join("/")
+    }
+    /// Record each prefix of a freshly stored path so later paths adopt its case.
+    fn record_case(&mut self, stored_path: &str) {
+        let mut lower_prefix = String::new();
+        for (depth, part) in stored_path.split('/').enumerate() {
+            if depth > 0 {
+                lower_prefix.push('/');
+            }
+            lower_prefix.push_str(&part.to_ascii_lowercase());
+            self.case_index
+                .entry(lower_prefix.clone())
+                .or_insert_with(|| part.to_string());
+        }
+    }
+}
+
 fn insert_json_file(
-    files: &mut BTreeMap<String, Vec<u8>>,
+    files: &mut OutputFiles,
     requested_path: String,
     value: serde_json::Value,
 ) -> String {
     let bytes = serde_json::to_vec_pretty(&value).unwrap_or_else(|_| b"{}".to_vec());
-    insert_binary_file(files, requested_path, bytes)
+    files.insert_canonical(requested_path, bytes)
 }
 
-fn insert_binary_file(
-    files: &mut BTreeMap<String, Vec<u8>>,
-    requested_path: String,
-    bytes: Vec<u8>,
-) -> String {
-    let requested_path = canonicalize_output_path_case(files, &requested_path);
-    if let Some(existing) = files.get(&requested_path) {
-        if existing == &bytes {
-            return requested_path;
-        }
-    }
-
-    let mut candidate = requested_path.clone();
-    while let Some(existing) = files.get(&candidate) {
-        if existing == &bytes {
-            return candidate;
-        }
-        candidate = hashed_variant_path(&requested_path, &bytes);
-    }
-    files.insert(candidate.clone(), bytes);
-    candidate
-}
-
-fn canonicalize_output_path_case(files: &BTreeMap<String, Vec<u8>>, requested_path: &str) -> String {
-    let mut prefixes = String::new();
-    let mut canonical_parts = Vec::new();
-
-    for (depth, part) in requested_path.split('/').enumerate() {
-        if depth > 0 {
-            prefixes.push('/');
-        }
-        prefixes.push_str(&part.to_ascii_lowercase());
-
-        let canonical_part = files
-            .keys()
-            .find_map(|existing| existing_segment_case(existing, depth, &prefixes))
-            .unwrap_or_else(|| part.to_string());
-        canonical_parts.push(canonical_part);
-    }
-
-    canonical_parts.join("/")
-}
-
-fn existing_segment_case(path: &str, depth: usize, lowercase_prefix: &str) -> Option<String> {
-    let parts = path.split('/').collect::<Vec<_>>();
-    if parts.len() <= depth {
-        return None;
-    }
-    let existing_prefix = parts[..=depth]
-        .iter()
-        .map(|part| part.to_ascii_lowercase())
-        .collect::<Vec<_>>()
-        .join("/");
-    if existing_prefix == lowercase_prefix {
-        Some(parts[depth].to_string())
-    } else {
-        None
-    }
+fn insert_binary_file(files: &mut OutputFiles, requested_path: String, bytes: Vec<u8>) -> String {
+    files.insert_canonical(requested_path, bytes)
 }
 
 fn hashed_variant_path(path: &str, bytes: &[u8]) -> String {
@@ -5804,7 +5839,7 @@ mod tests {
 
     #[test]
     fn ui_export_stamp_written_when_generated_ui_files_exist() {
-        let mut files = BTreeMap::new();
+        let mut files = OutputFiles::new();
         insert_binary_file(
             &mut files,
             "Data/UI/Generated/ship/test/Test/screen.png".to_string(),
@@ -5822,7 +5857,7 @@ mod tests {
 
     #[test]
     fn ui_export_stamp_skipped_without_generated_ui_files() {
-        let mut files = BTreeMap::new();
+        let mut files = OutputFiles::new();
         insert_binary_file(
             &mut files,
             "Packages/Test/scene.json".to_string(),
@@ -5833,8 +5868,22 @@ mod tests {
     }
 
     #[test]
+    fn output_files_canonicalizes_segment_case_from_first_insert() {
+        let mut of = OutputFiles::new();
+        // First insert establishes "Data/Foo" casing.
+        of.insert_canonical("Data/Foo/a.bin".to_string(), vec![1]);
+        // A later path with different case on existing segments adopts the first casing.
+        let p = of.insert_canonical("data/foo/b.bin".to_string(), vec![2]);
+        assert_eq!(p, "Data/Foo/b.bin");
+        // Identical bytes at an existing path dedupe to that path.
+        let p2 = of.insert_canonical("Data/Foo/a.bin".to_string(), vec![1]);
+        assert_eq!(p2, "Data/Foo/a.bin");
+        assert_eq!(of.len(), 2);
+    }
+
+    #[test]
     fn insert_binary_file_reuses_identical_content_and_hashes_collisions() {
-        let mut files = BTreeMap::new();
+        let mut files = OutputFiles::new();
         let first = insert_binary_file(&mut files, "scene.json".to_string(), b"a".to_vec());
         let second = insert_binary_file(&mut files, "scene.json".to_string(), b"a".to_vec());
         let third = insert_binary_file(&mut files, "scene.json".to_string(), b"b".to_vec());
