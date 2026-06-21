@@ -182,6 +182,8 @@ export interface ExportDone {
 
 export interface SocpakDto {
   path: string;
+  category: string;
+  subcategory: string;
 }
 
 export interface SocpakHierarchyRequest {

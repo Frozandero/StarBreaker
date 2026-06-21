@@ -5,6 +5,7 @@ mod audio_commands;
 mod commands;
 mod datacore_commands;
 mod error;
+mod socpak_category;
 mod state;
 mod ui_sink;
 

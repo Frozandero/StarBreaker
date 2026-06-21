@@ -23,10 +23,12 @@ interface SocpakExportState {
   setOutputDir: (v: string | null) => void;
 }
 
+// `search` is intentionally excluded: persisting it silently re-applies a
+// stale filter on launch (which also hides most containers and breaks the
+// default-collapsed grouping). It stays runtime-only, defaulting to "".
 type PersistedSocpakExportState = Pick<
   SocpakExportState,
   | "optionsWidth"
-  | "search"
   | "lod"
   | "mip"
   | "materialMode"
@@ -61,9 +63,16 @@ export const useSocpakExportStore = create<SocpakExportState>()(
     {
       name: "socpak-export",
       storage: tauriStorage,
+      // Bump forces `migrate` to run so any previously-persisted `search`
+      // value (e.g. "hangar") is dropped from existing stores.
+      version: 1,
+      migrate: (persisted) => {
+        const state = { ...(persisted as Record<string, unknown>) };
+        delete state.search;
+        return state as unknown as PersistedSocpakExportState;
+      },
       partialize: (s) => ({
         optionsWidth: s.optionsWidth,
-        search: s.search,
         lod: s.lod,
         mip: s.mip,
         materialMode: s.materialMode,

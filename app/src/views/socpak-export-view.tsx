@@ -15,6 +15,39 @@ import {
   type SocpakHierarchyNode,
 } from "../lib/commands";
 
+// Display order for the top-level groups produced by the Rust categoriser
+// (`socpak_category::categorize_socpak`). Categories not listed here (should
+// only be future additions) sort to the end, alphabetically.
+const CATEGORY_ORDER = [
+  "Cities & Landing Zones",
+  "Space Stations",
+  "Outposts & Surface Bases",
+  "Underground & Caves",
+  "Derelicts & Wrecks",
+  "Planet & System Set-Dressing",
+  "Hangars",
+  "Shops & Interiors",
+  "Ships",
+  "Ground Vehicles",
+  "Gameplay Setup",
+  "Shared Modules & Lighting",
+  "Props, Flair & Decor",
+  "Game Modes & Test Maps",
+  "Locations — Other",
+  "Other",
+];
+
+interface SocpakSubGroup {
+  name: string;
+  entries: SocpakDto[];
+}
+
+interface SocpakGroup {
+  name: string;
+  count: number;
+  subs: SocpakSubGroup[];
+}
+
 export function SocpakExportView() {
   const optionsWidth = useSocpakExportStore((s) => s.optionsWidth);
   const search = useSocpakExportStore((s) => s.search);
@@ -46,6 +79,8 @@ export function SocpakExportView() {
   const [hierarchyOpen, setHierarchyOpen] = useState(false);
   const [hierarchyNodes, setHierarchyNodes] = useState<SocpakHierarchyNode[]>([]);
   const [selectedHierarchyPaths, setSelectedHierarchyPaths] = useState<Set<string>>(new Set());
+  const [openCats, setOpenCats] = useState<Set<string>>(new Set());
+  const [openSubs, setOpenSubs] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     let cancelled = false;
@@ -93,6 +128,84 @@ export function SocpakExportView() {
 
   const visiblePaths = useMemo(() => socpaks.map((entry) => entry.path), [socpaks]);
   const selectedVisibleCount = visiblePaths.filter((path) => selected.has(path)).length;
+
+  // Two-tier grouping (category -> subcategory -> entries) driven entirely by
+  // the category fields the backend derives from each socpak's path.
+  const groups = useMemo<SocpakGroup[]>(() => {
+    const byCategory = new Map<string, Map<string, SocpakDto[]>>();
+    for (const entry of socpaks) {
+      let subs = byCategory.get(entry.category);
+      if (!subs) {
+        subs = new Map();
+        byCategory.set(entry.category, subs);
+      }
+      const subName = entry.subcategory || "General";
+      const bucket = subs.get(subName);
+      if (bucket) bucket.push(entry);
+      else subs.set(subName, [entry]);
+    }
+    const orderIndex = (name: string) => {
+      const i = CATEGORY_ORDER.indexOf(name);
+      return i === -1 ? CATEGORY_ORDER.length : i;
+    };
+    return Array.from(byCategory.entries())
+      .map(([name, subsMap]) => {
+        const subs = Array.from(subsMap.entries())
+          .map(([subName, entries]) => ({ name: subName, entries }))
+          .sort((a, b) => a.name.localeCompare(b.name));
+        const count = subs.reduce((total, sub) => total + sub.entries.length, 0);
+        return { name, count, subs };
+      })
+      .sort((a, b) => orderIndex(a.name) - orderIndex(b.name) || a.name.localeCompare(b.name));
+  }, [socpaks]);
+
+  // Groups are collapsed by default. A live search auto-expands the matching
+  // groups (the backend has already filtered `socpaks` to matches); clearing
+  // the search collapses everything again. Between those transitions, manual
+  // toggles are the sole source of truth, so collapsing always works.
+  useEffect(() => {
+    if (search.trim().length === 0) {
+      setOpenCats(new Set());
+      setOpenSubs(new Set());
+      return;
+    }
+    setOpenCats(new Set(groups.map((group) => group.name)));
+    setOpenSubs(
+      new Set(groups.flatMap((group) => group.subs.map((sub) => `${group.name}||${sub.name}`))),
+    );
+  }, [search, groups]);
+
+  const countSelected = (entries: SocpakDto[]) =>
+    entries.reduce((total, entry) => total + (selected.has(entry.path) ? 1 : 0), 0);
+
+  const toggleCat = (name: string) => {
+    setOpenCats((current) => {
+      const next = new Set(current);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  };
+
+  const toggleSub = (key: string) => {
+    setOpenSubs((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const setGroupSelected = (entries: SocpakDto[], select: boolean) => {
+    setSelected((current) => {
+      const next = new Set(current);
+      for (const entry of entries) {
+        if (select) next.add(entry.path);
+        else next.delete(entry.path);
+      }
+      return next;
+    });
+  };
   const canExport = selected.size > 0 && outputDir !== null && !exporting && !inspecting;
   const allDone = progress !== null && progress.total > 0 && progress.current >= progress.total;
   const progressPercent = allDone ? 100 : Math.min(Math.round((progress?.fraction ?? 0) * 100), 99);
@@ -345,24 +458,77 @@ export function SocpakExportView() {
           {!loading && socpaks.length === 0 && (
             <p className="px-3 py-3 text-xs text-text-dim">No socpaks match this filter.</p>
           )}
-          {!loading && socpaks.map((entry) => {
-            const isSelected = selected.has(entry.path);
+          {!loading && groups.map((group) => {
+            const catOpen = openCats.has(group.name);
+            const catSelected = group.subs.reduce((total, sub) => total + countSelected(sub.entries), 0);
             return (
-              <label
-                key={entry.path}
-                className={`flex items-center gap-2.5 px-3 py-[5px] rounded-md cursor-pointer text-xs transition-colors select-none ${
-                  isSelected ? "bg-primary/8 text-text" : "text-text-sub hover:bg-surface/40"
-                }`}
-                title={entry.path}
-              >
-                <input
-                  type="checkbox"
-                  checked={isSelected}
-                  onChange={() => toggleSocpak(entry.path)}
-                  className="accent-accent w-3.5 h-3.5 rounded shrink-0"
-                />
-                <span className="truncate">{entry.path}</span>
-              </label>
+              <div key={group.name} className="mb-px">
+                <div className="flex items-center gap-1 group/cat">
+                  <button
+                    onClick={() => toggleCat(group.name)}
+                    className="flex-1 min-w-0 flex items-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-medium text-text hover:bg-surface/50 transition-colors cursor-pointer"
+                  >
+                    <span className="text-text-faint w-3 shrink-0 text-center">{catOpen ? "▾" : "▸"}</span>
+                    <span className="truncate">{group.name}</span>
+                    {catSelected > 0 && (
+                      <span className="text-[10px] text-accent tabular-nums shrink-0">{catSelected}</span>
+                    )}
+                    <span className="ml-auto text-[10px] text-text-faint tabular-nums shrink-0">{group.count}</span>
+                  </button>
+                  {catOpen && (
+                    <button
+                      onClick={() => setGroupSelected(group.subs.flatMap((sub) => sub.entries), catSelected < group.count)}
+                      className="text-[10px] text-text-faint hover:text-text px-1.5 py-1 rounded opacity-0 group-hover/cat:opacity-100 transition-opacity cursor-pointer shrink-0"
+                      title={catSelected < group.count ? "Select all in category" : "Clear category"}
+                    >
+                      {catSelected < group.count ? "All" : "None"}
+                    </button>
+                  )}
+                </div>
+
+                {catOpen && group.subs.map((sub) => {
+                  const subKey = `${group.name}||${sub.name}`;
+                  const subOpen = openSubs.has(subKey);
+                  const subSelected = countSelected(sub.entries);
+                  return (
+                    <div key={subKey} className="ml-3">
+                      <button
+                        onClick={() => toggleSub(subKey)}
+                        className="w-full flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] text-text-sub hover:bg-surface/40 transition-colors cursor-pointer"
+                      >
+                        <span className="text-text-faint w-3 shrink-0 text-center">{subOpen ? "▾" : "▸"}</span>
+                        <span className="truncate">{sub.name}</span>
+                        {subSelected > 0 && (
+                          <span className="text-[10px] text-accent tabular-nums shrink-0">{subSelected}</span>
+                        )}
+                        <span className="ml-auto text-[10px] text-text-faint tabular-nums shrink-0">{sub.entries.length}</span>
+                      </button>
+
+                      {subOpen && sub.entries.map((entry) => {
+                        const isSelected = selected.has(entry.path);
+                        const base = entry.path.split(/[\\/]/).pop() ?? entry.path;
+                        return (
+                          <label
+                            key={entry.path}
+                            className={`flex items-center gap-2.5 pl-7 pr-3 py-[4px] rounded-md cursor-pointer text-xs transition-colors select-none ${
+                              isSelected ? "bg-primary/8 text-text" : "text-text-sub hover:bg-surface/40"
+                            }`}
+                            title={entry.path}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => toggleSocpak(entry.path)}
+                              className="accent-accent w-3.5 h-3.5 rounded shrink-0"
+                            />
+                            <span className="truncate">{base}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
             );
           })}
         </div>

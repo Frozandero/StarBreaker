@@ -1066,6 +1066,11 @@ pub struct ExportRequest {
 #[derive(Clone, Serialize)]
 pub struct SocpakDto {
     pub path: String,
+    /// Top-level group derived from the container's path (see
+    /// `socpak_category`). Lets the export view present collapsible sections.
+    pub category: String,
+    /// Second-tier label within the category (manufacturer, city, set kind…).
+    pub subcategory: String,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -1552,7 +1557,12 @@ pub async fn scan_socpaks(
             if !query.is_empty() && !normalized.contains(&query) {
                 return None;
             }
-            Some(SocpakDto { path })
+            let classified = crate::socpak_category::categorize_socpak(&path);
+            Some(SocpakDto {
+                path,
+                category: classified.category.to_string(),
+                subcategory: classified.subcategory,
+            })
         })
         .collect::<Vec<_>>();
     matches.sort_by(|left, right| left.path.cmp(&right.path));
