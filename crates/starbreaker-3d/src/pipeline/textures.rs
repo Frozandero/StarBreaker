@@ -947,7 +947,23 @@ pub(crate) fn cached_load(
     cache: &mut PngCache,
     loader: fn(&MappedP4k, &str, u32) -> Option<Vec<u8>>,
 ) -> Option<Vec<u8>> {
-    let key = format!("{path}@mip{mip}");
+    cached_load_keyed(p4k, path, mip, "", cache, loader)
+}
+
+/// Like [`cached_load`] but appends `key_discriminator` to the cache key so the
+/// same texture path decoded with different loaders (e.g. a Generic albedo vs a
+/// Normal-gloss map) occupies distinct cache slots instead of aliasing to one
+/// "first decode wins" entry. The discriminator is `""` for the legacy/Generic
+/// key and a short tag (e.g. `"@n"`) for other flavors.
+pub(crate) fn cached_load_keyed(
+    p4k: &MappedP4k,
+    path: &str,
+    mip: u32,
+    key_discriminator: &str,
+    cache: &mut PngCache,
+    loader: fn(&MappedP4k, &str, u32) -> Option<Vec<u8>>,
+) -> Option<Vec<u8>> {
+    let key = format!("{path}@mip{mip}{key_discriminator}");
     if let Some(cached) = cache.get(&key) {
         return cached.clone();
     }

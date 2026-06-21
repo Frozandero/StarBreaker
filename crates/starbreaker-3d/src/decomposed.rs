@@ -3262,17 +3262,19 @@ fn export_texture_asset(
     }
 
     let bytes = match flavor {
-        TextureFlavor::Generic => crate::pipeline::cached_load(
+        TextureFlavor::Generic => crate::pipeline::cached_load_keyed(
             p4k,
             source_path,
             texture_mip,
+            "",
             png_cache,
             crate::pipeline::load_diffuse_texture,
         ),
-        TextureFlavor::Normal => crate::pipeline::cached_load(
+        TextureFlavor::Normal => crate::pipeline::cached_load_keyed(
             p4k,
             source_path,
             texture_mip,
+            "@n",
             png_cache,
             crate::pipeline::load_normal_texture,
         ),

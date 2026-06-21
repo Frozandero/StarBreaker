@@ -18,7 +18,7 @@ use crate::nmc;
 use crate::types::MaterialTextures;
 
 mod textures;
-pub(crate) use self::textures::{cached_load, load_diffuse_texture, load_normal_texture, PngCache};
+pub(crate) use self::textures::{cached_load_keyed, load_diffuse_texture, load_normal_texture, PngCache};
 use self::textures::*;
 mod interiors;
 pub(crate) use self::interiors::*;
