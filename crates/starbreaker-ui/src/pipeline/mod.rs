@@ -276,6 +276,24 @@ pub struct UiRenderOutput {
 
 /// Compile canonical UI IR for a binding.
 pub fn compile_ir_for_binding(inputs: &PipelineInputs<'_>) -> Result<UiIrDocument, UiError> {
+    let defaults = DefaultValueRegistry::with_pipeline_defaults_and_derived_values(
+        inputs.localization_map.clone(),
+        inputs.derived_values.as_ref(),
+    );
+    compile_ir_for_binding_with(inputs, &defaults)
+}
+
+/// Like [`compile_ir_for_binding`], but reuses a caller-supplied default
+/// registry instead of constructing one. The registry is a pure function of the
+/// localization map + derived values — both constant across a whole export — so
+/// a caller rendering many bindings (a ship export with hundreds of screens)
+/// builds it once and shares it here. Constructing it per binding (cloning and
+/// re-merging the multi-MB localization map every time) dominated capital-ship
+/// export time. See [`render_for_binding_with_registry`].
+pub fn compile_ir_for_binding_with(
+    inputs: &PipelineInputs<'_>,
+    defaults: &DefaultValueRegistry,
+) -> Result<UiIrDocument, UiError> {
     let b = inputs.binding;
 
     // Phase 6: for mfd bindings with a distinct frame canvas, compile the frame
@@ -356,10 +374,6 @@ pub fn compile_ir_for_binding(inputs: &PipelineInputs<'_>) -> Result<UiIrDocumen
         None
     };
 
-    let defaults = DefaultValueRegistry::with_pipeline_defaults_and_derived_values(
-        inputs.localization_map.clone(),
-        inputs.derived_values.as_ref(),
-    );
     // The host movie's stage size (from its header) drives both the MFD
     // content-view slot fractions (mfd_view, plan P5.4) and the host-path
     // text scale below; read it once.
@@ -586,7 +600,23 @@ pub fn compile_ir_for_binding(inputs: &PipelineInputs<'_>) -> Result<UiIrDocumen
 
 /// Render via IR compilation and IR-only rendering.
 pub fn render_for_binding_ir(inputs: &PipelineInputs<'_>) -> Result<Vec<u8>, UiError> {
-    let ir = timed("compile", || compile_ir_for_binding(inputs))?;
+    // Build the default registry once and share it with the IR-compile pass
+    // below, instead of letting each pass build its own (the previous code built
+    // it twice per render — once here, once inside `compile_ir_for_binding`).
+    let defaults = DefaultValueRegistry::with_pipeline_defaults_and_derived_values(
+        inputs.localization_map.clone(),
+        inputs.derived_values.as_ref(),
+    );
+    render_for_binding_ir_with(inputs, &defaults)
+}
+
+/// Like [`render_for_binding_ir`], but reuses a caller-supplied default registry
+/// (see [`compile_ir_for_binding_with`] / [`render_for_binding_with_registry`]).
+pub fn render_for_binding_ir_with(
+    inputs: &PipelineInputs<'_>,
+    defaults: &DefaultValueRegistry,
+) -> Result<Vec<u8>, UiError> {
+    let ir = timed("compile", || compile_ir_for_binding_with(inputs, defaults))?;
 
     let mut style = timed("style_load", || load_style_for_ir(&ir, inputs))?;
     // A SWF-hosted screen whose authored screen-name background image is
@@ -644,11 +674,6 @@ pub fn render_for_binding_ir(inputs: &PipelineInputs<'_>) -> Result<Vec<u8>, UiE
             a: 255,
         };
     }
-    let defaults = DefaultValueRegistry::with_pipeline_defaults_and_derived_values(
-        inputs.localization_map.clone(),
-        inputs.derived_values.as_ref(),
-    );
-
     let swf_paths = ir
         .selected_swf_source
         .iter()
@@ -685,6 +710,21 @@ pub fn render_for_binding_ir(inputs: &PipelineInputs<'_>) -> Result<Vec<u8>, UiE
 /// Main entrypoint for rendering a UI binding to PNG bytes.
 pub fn render_for_binding(inputs: &PipelineInputs<'_>) -> Result<Vec<u8>, UiError> {
     render_for_binding_ir(inputs)
+}
+
+/// Render a binding to PNG bytes reusing a caller-built [`DefaultValueRegistry`].
+///
+/// The registry depends only on the localization map and derived values, which
+/// are identical for every binding in one export. Building it once and passing
+/// it here (instead of per binding via [`render_for_binding`]) removes the
+/// dominant per-render cost on UI-dense ships — cloning and re-merging the
+/// multi-MB localization map for each of hundreds of screens. Output is
+/// identical to [`render_for_binding`] given an equivalently-built registry.
+pub fn render_for_binding_with_registry(
+    inputs: &PipelineInputs<'_>,
+    defaults: &DefaultValueRegistry,
+) -> Result<Vec<u8>, UiError> {
+    render_for_binding_ir_with(inputs, defaults)
 }
 
 /// Apply the engine's data-driven MFD "Content Canvas Scaling" to the content

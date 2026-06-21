@@ -152,7 +152,7 @@ fn run_render(
             continue;
         }
 
-        match starbreaker_3d::ui_pipeline::render_ui_binding_png(&binding, &db, &p4k, texture_mip, manufacturer_id.as_deref(), &loc_data, &ship_data, root_entity_name.as_deref()) {
+        match starbreaker_3d::ui_pipeline::render_ui_binding_png(&binding, &db, &p4k, texture_mip, manufacturer_id.as_deref(), &loc_data, &ship_data, None, root_entity_name.as_deref()) {
             Ok(png_bytes) => {
                 let file_name = png_name_for_binding(binding, texture_mip);
                 let dest = out_dir.join(&file_name);

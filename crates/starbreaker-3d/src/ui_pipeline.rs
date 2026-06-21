@@ -68,6 +68,23 @@ impl UiLocData {
     }
 }
 
+/// Build the shared default-value registry once for an export.
+///
+/// The registry is a pure function of the localization map and the per-ship
+/// derived values — both constant across an entire export — so constructing it
+/// once here and passing it to every [`render_ui_binding_png`] call avoids
+/// cloning and re-merging the multi-MB localization map for each of a ship's
+/// hundreds of screen renders, which dominated capital-ship export time.
+pub fn build_default_registry(
+    loc_data: &UiLocData,
+    ship_data: &UiShipData,
+) -> starbreaker_ui::DefaultValueRegistry {
+    starbreaker_ui::DefaultValueRegistry::with_pipeline_defaults_and_derived_values(
+        Some(loc_data.map.clone()),
+        ship_data.derived_values.as_ref(),
+    )
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Public entry points
 // ──────────────────────────────────────────────────────────────────────────────
@@ -88,6 +105,7 @@ pub fn render_ui_binding_png(
     root_manufacturer_id: Option<&str>,
     loc_data: &UiLocData,
     ship_data: &UiShipData,
+    defaults_registry: Option<&starbreaker_ui::DefaultValueRegistry>,
     root_entity_name: Option<&str>,
 ) -> Result<Vec<u8>, String> {
     let t_ui = std::env::var("SB_UI_TIMING").ok().map(|_| std::time::Instant::now());
@@ -138,13 +156,31 @@ pub fn render_ui_binding_png(
         // once the paint engine produces real content.
         apply_postprocess: false,
         animation_sample_percent,
-        localization_map: Some(loc_data.map.clone()),
+        // When the caller supplies a pre-built default registry, the
+        // localization map and derived values are only needed to construct that
+        // registry — so skip cloning them into every render's inputs (the clone
+        // + per-render registry merge dominated UI-dense ship exports).
+        localization_map: if defaults_registry.is_some() {
+            None
+        } else {
+            Some(loc_data.map.clone())
+        },
         loc_fetcher: Some(&loc_data.ini),
-        derived_values: ship_data.derived_values.clone(),
+        derived_values: if defaults_registry.is_some() {
+            None
+        } else {
+            ship_data.derived_values.clone()
+        },
         hologram_fetcher: Some(&hologram_fetcher),
     };
     let _ = texture_mip; // size is fixed per binding_kind; mip is applied at texture level
-    let result = starbreaker_ui::pipeline::render_for_binding(&inputs).map_err(|e| e.to_string());
+    let result = match defaults_registry {
+        Some(registry) => {
+            starbreaker_ui::pipeline::render_for_binding_with_registry(&inputs, registry)
+        }
+        None => starbreaker_ui::pipeline::render_for_binding(&inputs),
+    }
+    .map_err(|e| e.to_string());
     if let Some(t) = t_ui {
         log::info!(
             "[timing][ui] binding={} kind={} total={:.3}s",

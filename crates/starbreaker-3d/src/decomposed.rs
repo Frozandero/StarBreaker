@@ -950,6 +950,31 @@ pub(crate) fn write_decomposed_export(
     // records (power pools → pip stacks, temps); every binding render below
     // receives them so screens show this ship's data, not static defaults.
     let ui_ship_data = crate::ui_pipeline::UiShipData::derive(db, &input.entity_name);
+    // Localization (`global.ini`) is multi-MB and expensive to parse.  Load it
+    // exactly once per export and share a reference with every UI binding render
+    // — this is the documented contract of `UiLocData::load`.  Previously it was
+    // reloaded inside every child / interior-placement binding group, which on a
+    // capital ship (hundreds of UI-bearing entities) dominated export time.
+    // Skip the load entirely when no binding needs it, preserving the fast path
+    // for UI-free exports.
+    let any_ui_bindings = input
+        .children
+        .iter()
+        .any(|child| !child.ui_bindings.is_empty())
+        || input.interiors.containers.iter().any(|container| {
+            container
+                .placements
+                .iter()
+                .any(|placement| !placement.ui_bindings.is_empty())
+        });
+    let ui_loc_data = any_ui_bindings.then(|| crate::ui_pipeline::UiLocData::load(p4k));
+    // The default-value registry feeding every UI binding render is a pure
+    // function of the localization map and the ship's derived values, both
+    // constant across the export — build it once and share it by reference,
+    // instead of rebuilding (clone + re-merge the localization map) per render.
+    let ui_defaults_registry = ui_loc_data
+        .as_ref()
+        .map(|loc_data| crate::ui_pipeline::build_default_registry(loc_data, &ui_ship_data));
     let mut texture_cache: HashMap<(String, TextureFlavor), String> = HashMap::new();
     let mut mtl_cache: HashMap<String, Option<MtlFile>> = HashMap::new();
     let mut png_cache = PngCache::new();
@@ -1105,6 +1130,69 @@ pub(crate) fn write_decomposed_export(
     let resolved_child_transforms = resolve_child_instance_transforms(&input);
     let mut child_instances = Vec::with_capacity(input.children.len());
     let child_count = input.children.len();
+    // Render every child's UI bindings up front in one parallel pass.  The bulk
+    // of child-export time on a UI-heavy capital ship is MFD/screen rendering,
+    // and each render is single-threaded, so the unit of parallel work is one
+    // *binding*, not one child.  A handful of children (cockpit, consoles) own
+    // most bindings while the rest own none, so parallelising per child leaves
+    // most cores idle.  Flatten all bindings into one work list and render them
+    // in a single balanced `par_iter`, then regroup the results per child in
+    // their original order — the serial loop below consumes them at the same
+    // point and in the same order as before, so the merged `files` map stays
+    // byte-identical to serial production.
+    let ui_render_start = Instant::now();
+    let child_ui_jobs: Vec<(usize, &UiBinding)> = input
+        .children
+        .iter()
+        .enumerate()
+        .flat_map(|(child_index, child)| {
+            child
+                .ui_bindings
+                .iter()
+                .map(move |binding| (child_index, binding))
+        })
+        .collect();
+    let mut precomputed_child_ui: Vec<(Vec<UiBinding>, Vec<(String, Vec<u8>)>)> =
+        vec![(Vec::new(), Vec::new()); input.children.len()];
+    if !child_ui_jobs.is_empty() {
+        // Localization is shared by reference; the caller loaded it because at
+        // least one binding (these) exists, so it is always `Some` here.
+        let loc_data = ui_loc_data
+            .as_ref()
+            .expect("UiLocData must be loaded when UI bindings are present");
+        let defaults_registry = ui_defaults_registry
+            .as_ref()
+            .expect("default registry must be built when UI bindings are present");
+        let rendered: Vec<(usize, UiBinding, Option<(String, Vec<u8>)>)> = child_ui_jobs
+            .par_iter()
+            .map(|(child_index, binding)| {
+                let (binding, file_record) = generated_ui_binding_record(
+                    binding,
+                    db,
+                    p4k,
+                    opts.texture_mip,
+                    &input.entity_name,
+                    &input.geometry_path,
+                    &scene_manifest_path,
+                    root_manufacturer_id.as_deref(),
+                    loc_data,
+                    defaults_registry,
+                    &ui_ship_data,
+                );
+                (*child_index, binding, file_record)
+            })
+            .collect();
+        // `par_iter().collect()` preserves job order, so pushing here regroups
+        // each child's bindings (and Some(file_record)s) in their original order.
+        for (child_index, binding, file_record) in rendered {
+            let entry = &mut precomputed_child_ui[child_index];
+            if let Some(file_record) = file_record {
+                entry.1.push(file_record);
+            }
+            entry.0.push(binding);
+        }
+    }
+    let t_ui = ui_render_start.elapsed();
     for (index, child) in input.children.iter().enumerate() {
         let child_material_view = build_decomposed_material_view(
             &child.mesh,
@@ -1177,18 +1265,16 @@ pub(crate) fn write_decomposed_export(
             &child.entity_name,
             material_sidecar.as_deref(),
         );
-        let ui_bindings = generate_ui_binding_records(
-            &mut files,
-            &child.ui_bindings,
-            db,
-            p4k,
-            opts.texture_mip,
-            &input.entity_name,
-            &input.geometry_path,
-            &scene_manifest_path,
-            root_manufacturer_id.as_deref(),
-            &ui_ship_data,
-        );
+        // Consume this child's pre-rendered UI bindings (computed in parallel
+        // above) and merge their generated PNG records into `files` at the same
+        // point — and in the same child order — the serial path used, keeping
+        // output byte-identical.
+        let (ui_bindings, ui_file_records) = std::mem::take(&mut precomputed_child_ui[index]);
+        for (export_path, png_bytes) in ui_file_records {
+            if !files.contains_key(&export_path) {
+                insert_binary_file(&mut files, export_path, png_bytes);
+            }
+        }
 
         let resolved_transform = resolved_child_transforms[index];
         child_instances.push(SceneInstanceRecord {
@@ -1238,7 +1324,12 @@ pub(crate) fn write_decomposed_export(
     if child_count == 0 {
         report_progress(progress, CHILD_ASSETS_END, "Writing interior assets");
     }
-    log::info!("[timing][decomposed] child_assets: {:.2}s", phase_start.elapsed().as_secs_f32());
+    log::info!(
+        "[timing][decomposed] child_assets: {:.2}s ({} children, parallel ui render {:.2}s)",
+        phase_start.elapsed().as_secs_f32(),
+        child_count,
+        t_ui.as_secs_f32(),
+    );
     phase_start = Instant::now();
 
     let mut interior_asset_cache: HashMap<String, (String, Option<String>)> = HashMap::new();
@@ -1276,6 +1367,8 @@ pub(crate) fn write_decomposed_export(
                     &input.geometry_path,
                     &scene_manifest_path,
                     root_manufacturer_id.as_deref(),
+                    ui_loc_data.as_ref(),
+                    ui_defaults_registry.as_ref(),
                     &ui_ship_data,
                 )
             })
@@ -2721,6 +2814,7 @@ fn generated_ui_binding_record(
     scene_manifest_path: &str,
     root_manufacturer_id: Option<&str>,
     loc_data: &crate::ui_pipeline::UiLocData,
+    defaults_registry: &starbreaker_ui::DefaultValueRegistry,
     ship_data: &crate::ui_pipeline::UiShipData,
 ) -> (UiBinding, Option<(String, Vec<u8>)>) {
     let mut binding = binding.clone();
@@ -2732,6 +2826,7 @@ fn generated_ui_binding_record(
         root_manufacturer_id,
         loc_data,
         ship_data,
+        Some(defaults_registry),
         Some(root_entity_name),
     ) {
         Ok(png_bytes) => {
@@ -2844,15 +2939,23 @@ fn generate_ui_binding_records_detached(
     root_geometry_path: &str,
     scene_manifest_path: &str,
     root_manufacturer_id: Option<&str>,
+    loc_data: Option<&crate::ui_pipeline::UiLocData>,
+    defaults_registry: Option<&starbreaker_ui::DefaultValueRegistry>,
     ship_data: &crate::ui_pipeline::UiShipData,
 ) -> (Vec<UiBinding>, Vec<(String, Vec<u8>)>) {
-    // Most interior placements carry no UI bindings; skip the (expensive)
-    // localization load entirely for them rather than parsing global.ini once
-    // per placement across the whole interior.
+    // Most interior placements carry no UI bindings; skip all binding work for
+    // them entirely.
     if bindings.is_empty() {
         return (Vec::new(), Vec::new());
     }
-    let loc_data = crate::ui_pipeline::UiLocData::load(p4k);
+    // Localization (multi-MB `global.ini`) is parsed once per export and the
+    // default registry derived from it once too; both are shared by reference
+    // across every binding render here.  The caller builds them whenever any
+    // binding exists, so they are always `Some` here.
+    let loc_data = loc_data
+        .expect("UiLocData must be loaded by the caller when UI bindings are present");
+    let defaults_registry = defaults_registry
+        .expect("default registry must be built by the caller when UI bindings are present");
     let mut generated = bindings
         .par_iter()
         .enumerate()
@@ -2866,7 +2969,8 @@ fn generate_ui_binding_records_detached(
                 root_geometry_path,
                 scene_manifest_path,
                 root_manufacturer_id,
-                &loc_data,
+                loc_data,
+                defaults_registry,
                 ship_data,
             );
             (idx, binding, file_record)
@@ -2884,38 +2988,6 @@ fn generate_ui_binding_records_detached(
         ui_bindings.push(binding);
     }
     (ui_bindings, file_records)
-}
-
-fn generate_ui_binding_records(
-    files: &mut BTreeMap<String, Vec<u8>>,
-    bindings: &[UiBinding],
-    db: &Database<'_>,
-    p4k: &MappedP4k,
-    texture_mip: u32,
-    root_entity_name: &str,
-    root_geometry_path: &str,
-    scene_manifest_path: &str,
-    root_manufacturer_id: Option<&str>,
-    ship_data: &crate::ui_pipeline::UiShipData,
-) -> Vec<UiBinding> {
-    let (ui_bindings, file_records) = generate_ui_binding_records_detached(
-        bindings,
-        db,
-        p4k,
-        texture_mip,
-        root_entity_name,
-        root_geometry_path,
-        scene_manifest_path,
-        root_manufacturer_id,
-        ship_data,
-    );
-
-    for (export_path, png_bytes) in file_records {
-        if !files.contains_key(&export_path) {
-            insert_binary_file(files, export_path, png_bytes);
-        }
-    }
-    ui_bindings
 }
 
 fn generated_ui_binding_path(
