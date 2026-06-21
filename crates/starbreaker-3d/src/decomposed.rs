@@ -934,6 +934,7 @@ pub(crate) fn write_decomposed_export(
     progress: Option<&Progress>,
     existing_asset_paths: Option<&HashSet<String>>,
     existing_interior_assets: Option<&ExistingInteriorAssetMap>,
+    png_cache: PngCache,
     load_interior_mesh: &mut dyn FnMut(
         &InteriorCgfEntry,
     ) -> Option<(Mesh, Option<MtlFile>, Option<NodeMeshCombo>)>,
@@ -977,7 +978,9 @@ pub(crate) fn write_decomposed_export(
         .map(|loc_data| crate::ui_pipeline::build_default_registry(loc_data, &ui_ship_data));
     let mut texture_cache: HashMap<(String, TextureFlavor), String> = HashMap::new();
     let mut mtl_cache: HashMap<String, Option<MtlFile>> = HashMap::new();
-    let mut png_cache = PngCache::new();
+    // Caller may pre-fill this with parallel-decoded textures (see
+    // `prewarm_decomposed_textures`); otherwise it starts empty.
+    let mut png_cache = png_cache;
     let mut palette_records = BTreeMap::new();
     let mut livery_usage = BTreeMap::new();
     let package_leaf = package_directory_name(&input.entity_name, opts.lod_level, opts.texture_mip);
@@ -4000,6 +4003,84 @@ fn slot_texture_flavor(role: TextureSemanticRole) -> TextureFlavor {
     }
 }
 
+/// List every `(raw texture path, flavor)` pair that `export_texture_asset`
+/// would decode for `materials`, covering each submaterial's non-virtual
+/// semantic slots plus direct diffuse (Generic) and normal-gloss (Normal)
+/// textures. Pure and P4K-free: paths are the verbatim slot paths, matching the
+/// keys `export_texture_asset` passes to `cached_load_keyed`. May contain
+/// duplicates; callers dedupe. Layer/decal textures are intentionally omitted —
+/// because the decode cache is flavor-aware, a missing path only forfeits
+/// pre-decode speedup, never correctness (it decodes serially as before).
+fn texture_load_keys_from_materials(materials: &MtlFile) -> Vec<(String, TextureFlavor)> {
+    let mut keys = Vec::new();
+    for material in &materials.materials {
+        for binding in material.semantic_texture_slots() {
+            if binding.is_virtual {
+                continue;
+            }
+            keys.push((binding.path.clone(), slot_texture_flavor(binding.role)));
+        }
+        if let Some(path) = material.diffuse_tex.as_deref() {
+            keys.push((path.to_string(), TextureFlavor::Generic));
+        }
+        if let Some(path) = material.normal_tex.as_deref() {
+            keys.push((path.to_string(), TextureFlavor::Normal));
+        }
+    }
+    keys
+}
+
+/// Decode, in parallel, every source texture the decomposed sidecar writer will
+/// need, returning a pre-filled `png_cache`. `assets` carries one
+/// `(materials, material_path, geometry_path)` per root/child/interior asset.
+///
+/// For each asset we resolve the same canonical source `.mtl` the serial writer
+/// uses (so the slot paths match exactly), collect `(path, flavor)` keys, then
+/// decode the unique set across the rayon pool. Keys are written in the exact
+/// `cached_load_keyed` format (`""` for Generic, `"@n"` for Normal), so the
+/// serial `export_texture_asset` calls hit the cache and skip decoding. Because
+/// the cache is flavor-aware and the values are identical to what the serial
+/// path would compute, this never changes output; an unenumerated path simply
+/// decodes serially as before.
+pub(crate) fn prewarm_decomposed_textures(
+    p4k: &MappedP4k,
+    assets: &[(MtlFile, String, String)],
+    texture_mip: u32,
+) -> PngCache {
+    // Resolve source materials + collect keys serially (cheap .mtl parses,
+    // deduped via a local mtl cache). Texture DECODE is the expensive part and
+    // is parallelized below.
+    let mut mtl_cache: HashMap<String, Option<MtlFile>> = HashMap::new();
+    let mut requests: HashSet<(String, TextureFlavor)> = HashSet::new();
+    for (materials, material_path, geometry_path) in assets {
+        let source_material_path =
+            canonical_material_source_path(p4k, materials, material_path, geometry_path, &mut mtl_cache);
+        let (sidecar_materials, _indices) = canonical_sidecar_materials_from_source(
+            p4k,
+            &source_material_path,
+            materials,
+            &[],
+            &mut mtl_cache,
+        );
+        for key in texture_load_keys_from_materials(&sidecar_materials) {
+            requests.insert(key);
+        }
+    }
+    let jobs: Vec<(String, TextureFlavor)> = requests.into_iter().collect();
+    jobs.par_iter()
+        .map(|(path, flavor)| match flavor {
+            TextureFlavor::Generic => (
+                format!("{path}@mip{texture_mip}"),
+                crate::pipeline::load_diffuse_texture(p4k, path, texture_mip),
+            ),
+            TextureFlavor::Normal => (
+                format!("{path}@mip{texture_mip}@n"),
+                crate::pipeline::load_normal_texture(p4k, path, texture_mip),
+            ),
+        })
+        .collect()
+}
+
 fn texture_export_kind(flavor: TextureFlavor) -> &'static str {
     match flavor {
         TextureFlavor::Generic => "source",
@@ -4693,6 +4774,25 @@ mod tests {
         assert_eq!(normalize_package_subdir("vehicle/test"), Some("vehicle/test".to_string()));
         assert_eq!(normalize_package_subdir("../ship"), Some("ship".to_string()));
         assert_eq!(normalize_package_subdir(""), None);
+    }
+
+    #[test]
+    fn texture_load_keys_collects_direct_diffuse_and_normal() {
+        let materials = MtlFile {
+            materials: vec![sample_submaterial()],
+            source_path: None,
+            paint_override: None,
+            material_set: Default::default(),
+        };
+        let keys = texture_load_keys_from_materials(&materials);
+        assert!(keys.contains(&(
+            "Objects/Ships/Test/hull_diff.dds".to_string(),
+            TextureFlavor::Generic
+        )));
+        assert!(keys.contains(&(
+            "Objects/Ships/Test/hull_ddna.dds".to_string(),
+            TextureFlavor::Normal
+        )));
     }
 
     #[test]

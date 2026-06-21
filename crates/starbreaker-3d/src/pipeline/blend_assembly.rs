@@ -929,6 +929,61 @@ pub fn write_decomposed_export_blend(
             )
         })
         .collect();
+
+    // Pre-decode all source textures in parallel before the serial decomposed
+    // writer runs. Collect each asset's (materials, material_path, geometry_path)
+    // — root, every child, and every unique interior CGF (materials from the
+    // already-preloaded meshes) — then warm a png_cache the writer consumes.
+    // Must run before `interior_mesh_loader` below borrows the mesh map.
+    let prewarm_start = Instant::now();
+    let mut prewarm_assets: Vec<(crate::mtl::MtlFile, String, String)> = Vec::new();
+    if let Some(root_materials) = input.root_materials.as_ref() {
+        prewarm_assets.push((
+            root_materials.clone(),
+            input.material_path.clone(),
+            input.geometry_path.clone(),
+        ));
+    }
+    for child in &input.children {
+        if let Some(materials) = child.materials.as_ref() {
+            prewarm_assets.push((
+                materials.clone(),
+                child.material_path.clone(),
+                child.geometry_path.clone(),
+            ));
+        }
+    }
+    for entry in &input.interiors.unique_cgfs {
+        let lookup_key = crate::decomposed::interior_asset_lookup_key(
+            &entry.cgf_path,
+            entry.material_path.as_deref(),
+        );
+        if let Some(Some((mesh, materials, nmc))) = preloaded_interior_mesh_map.get(&lookup_key) {
+            let view = crate::decomposed::build_decomposed_material_view(
+                mesh,
+                materials.as_ref(),
+                nmc.as_ref(),
+                opts.include_nodraw,
+                opts.include_shields,
+            );
+            if let Some(sidecar_materials) = view.sidecar_materials {
+                prewarm_assets.push((
+                    sidecar_materials,
+                    entry.material_path.clone().unwrap_or_default(),
+                    entry.cgf_path.clone(),
+                ));
+            }
+        }
+    }
+    let prewarmed_png_cache =
+        crate::decomposed::prewarm_decomposed_textures(p4k, &prewarm_assets, opts.texture_mip);
+    log::info!(
+        "[timing][blend] prewarm_textures: {:.2}s ({} assets, {} cached)",
+        prewarm_start.elapsed().as_secs_f32(),
+        prewarm_assets.len(),
+        prewarmed_png_cache.len(),
+    );
+
     let mut interior_mesh_loader = |entry: &crate::pipeline::InteriorCgfEntry|
         -> Option<(Mesh, Option<crate::mtl::MtlFile>, Option<crate::nmc::NodeMeshCombo>)> {
         let lookup_key = crate::decomposed::interior_asset_lookup_key(&entry.cgf_path, entry.material_path.as_deref());
@@ -978,6 +1033,7 @@ pub fn write_decomposed_export_blend(
         base_progress.as_ref(),
         existing_asset_paths,
         existing_interior_assets,
+        prewarmed_png_cache,
         &mut interior_mesh_loader,
     )?;
     log::info!("[timing][blend] base_decomposed_export: {:.2}s", phase_start.elapsed().as_secs_f32());
