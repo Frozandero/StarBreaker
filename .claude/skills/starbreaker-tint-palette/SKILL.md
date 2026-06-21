@@ -1,5 +1,5 @@
 ---
-name: tint-palette
+name: starbreaker-tint-palette
 description: Use when getting StarBreaker tint palettes / paint to look right on an exported ship or socpak scene — e.g. "the hangar walls should be microTech blue not grey", "change the scene's main palette", "this object has the wrong manufacturer colours or decal/logo". Triggers: tint palette, paint scheme, manufacturer colours, wrong/grey/default palette, per-object tint, palettes.json, apply_palette, stray logo/decal.
 ---
 

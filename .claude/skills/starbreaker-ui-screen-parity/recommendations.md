@@ -1,4 +1,4 @@
-# ui-screen-parity — review & recommendations
+# starbreaker-ui-screen-parity — review & recommendations
 
 Companion to `SKILL.md`. Per the skill's creation decision (2026-06-14), the
 skill is **not** pressure-tested by re-writing it in a RED→GREEN loop; instead,

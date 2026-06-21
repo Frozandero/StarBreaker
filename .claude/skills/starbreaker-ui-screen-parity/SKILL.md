@@ -1,5 +1,5 @@
 ---
-name: ui-screen-parity
+name: starbreaker-ui-screen-parity
 description: Use when getting a StarBreaker ship UI screen's render to match its in-game reference capture — e.g. "make Drake Clipper Screen_Right_Upper_RTT match its reference". Triggers: UI parity arc, screen render vs reference/in-game/<Ship>/<Screen>.png, closing visual gaps on cockpit/MFD/HUD/medical/door screens.
 ---
 

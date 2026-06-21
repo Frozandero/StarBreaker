@@ -2,7 +2,7 @@
 
 How to get StarBreaker **tint palettes / paint** right on an exported scene —
 ships and socpaks — engine-faithfully and generically. This is the authoritative
-how-to the `tint-palette` skill orchestrates. The append target for end-of-arc
+how-to the `starbreaker-tint-palette` skill orchestrates. The append target for end-of-arc
 retrospectives is `docs/tint-palette-process-improvements.md` (the ledger).
 
 ## §1 Strict rules (non-negotiable)

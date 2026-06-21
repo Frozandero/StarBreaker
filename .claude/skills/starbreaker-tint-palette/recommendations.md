@@ -1,6 +1,6 @@
-# tint-palette — review & recommendations
+# starbreaker-tint-palette — review & recommendations
 
-Companion to `SKILL.md`. Following the `ui-screen-parity` precedent, this skill
+Companion to `SKILL.md`. Following the `starbreaker-ui-screen-parity` precedent, this skill
 is **not** pressure-tested by re-writing it in a RED→GREEN subagent loop;
 instead, findings land here in two states, with a lifecycle:
 
@@ -13,8 +13,8 @@ instead, findings land here in two states, with a lifecycle:
 
 ## Validation status
 
-- **Grounded in a real arc, not subagent-tested.** Modeled on `ui-screen-parity`
-  (which is validated by real use, not a formal baseline/green run). `tint-palette`
+- **Grounded in a real arc, not subagent-tested.** Modeled on `starbreaker-ui-screen-parity`
+  (which is validated by real use, not a formal baseline/green run). `starbreaker-tint-palette`
   was authored from the lived New Babbage XL hangar socpak palette arc
   (2026-06-20), whose real failure modes are seeded as ledger items 1–5
   (`docs/tint-palette-process-improvements.md`) and as the **Operating posture** +

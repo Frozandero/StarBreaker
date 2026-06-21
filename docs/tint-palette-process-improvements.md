@@ -2,7 +2,7 @@
 
 > **Append-only retrospective ledger** — the dated record of tint-palette
 > process/tooling/doc improvements and the **append target for end-of-arc
-> retrospectives** (run the closing step of the `tint-palette` skill). Each item:
+> retrospectives** (run the closing step of the `starbreaker-tint-palette` skill). Each item:
 > **Observed** (the incident that exposed it) / **Improvement** / **Action**.
 > Append new items with the next number; never rewrite history. The live how-to is
 > `docs/tint-palette-workflow.md`.
