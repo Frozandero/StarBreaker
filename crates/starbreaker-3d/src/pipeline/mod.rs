@@ -42,6 +42,8 @@ pub use self::vehicle::*;
 mod glb_assembly;
 pub use self::glb_assembly::{assemble_glb_with_loadout, assemble_glb_with_loadout_with_progress};
 pub(crate) use self::glb_assembly::path_is_shield_related;
+mod glb_materials;
+pub(crate) use self::glb_materials::*;
 mod blend_assembly;
 pub use self::blend_assembly::write_decomposed_export_blend;
 
@@ -73,11 +75,11 @@ pub enum MaterialMode {
     /// Material names and full MTL properties preserved in glTF extras.
     /// Deterministic — only acts on unambiguous shader signals.
     Colors,
-    /// Colors + diffuse/normal/roughness textures for materials with direct texture slots.
-    /// Tangents included automatically. Deterministic.
+    /// Portable one-shot materials with all source-backed PBR and UI textures.
+    /// Tangents are included automatically.
     Textures,
-    /// Everything we can extract, correctness not guaranteed.
-    /// Includes layer textures, alpha mode inference, decal classification, roughness defaults.
+    /// Compatibility alias for callers that previously requested experimental reconstruction.
+    /// Currently produces the same source-backed texture set as `Textures`.
     All,
 }
 

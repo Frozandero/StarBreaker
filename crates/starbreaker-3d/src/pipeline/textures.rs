@@ -1,8 +1,8 @@
 //! Texture loading, PNG encode/decode, and material texture assembly.
 //!
 //! Provides `PngCache` for deduplicated DDS→PNG transcoding, texture-transform
-//! helpers (`apply_transform`, `apply_stencil`, etc.), the layered/fallback
-//! texture-tag builders (`build_fallback_texture_tags`), and the top-level
+//! helpers (`apply_transform`, `apply_stencil`, etc.), the source-backed layered
+//! texture builders and diagnostic tags, and the top-level
 //! `load_material_textures` function that drives the full material texture pipeline.
 //! Public exports: `PngCache`, `cached_load`, `load_diffuse_texture`,
 //! `load_normal_texture`, `load_roughness_texture`, `decode_png`.
@@ -39,15 +39,56 @@ pub(super) fn push_fallback_tag(tags: &mut Vec<String>, tag: &str) {
     }
 }
 
-pub(super) fn make_texture_transform(scale: [f32; 2], tex_coord: u32) -> Option<TextureTransformInfo> {
+pub(super) fn make_texture_transform(
+    scale: [f32; 2],
+    offset: [f32; 2],
+    tex_coord: u32,
+) -> Option<TextureTransformInfo> {
     if tex_coord == 0
         && (scale[0] - 1.0).abs() <= 1e-4
         && (scale[1] - 1.0).abs() <= 1e-4
+        && offset[0].abs() <= 1e-4
+        && offset[1].abs() <= 1e-4
     {
         None
     } else {
-        Some(TextureTransformInfo { scale, tex_coord })
+        Some(TextureTransformInfo {
+            scale,
+            offset,
+            tex_coord,
+        })
     }
+}
+
+fn texmod_pair(
+    attributes: &[mtl::AuthoredAttribute],
+    first: &str,
+    second: &str,
+) -> Option<[f32; 2]> {
+    let value = |name: &str| {
+        attributes
+            .iter()
+            .find(|attribute| attribute.name.eq_ignore_ascii_case(name))
+            .and_then(|attribute| attribute.value.parse::<f32>().ok())
+    };
+    Some([value(first)?, value(second)?])
+}
+
+fn authored_texture_transform(
+    material: &mtl::SubMaterial,
+    role: mtl::TextureSemanticRole,
+) -> Option<([f32; 2], [f32; 2])> {
+    let binding = material
+        .semantic_texture_slots()
+        .into_iter()
+        .find(|binding| binding.role == role && !binding.is_virtual)?;
+    let texmod = binding
+        .authored_child_blocks
+        .iter()
+        .find(|block| block.tag.eq_ignore_ascii_case("TexMod"))?;
+    let scale = texmod_pair(&texmod.attributes, "TileU", "TileV").unwrap_or([1.0, 1.0]);
+    let offset = texmod_pair(&texmod.attributes, "OffsetU", "OffsetV").unwrap_or([0.0, 0.0]);
+    Some((scale, offset))
 }
 
 pub(super) fn material_uses_secondary_uv(material: &mtl::SubMaterial) -> bool {
@@ -71,7 +112,8 @@ pub(super) fn simple_texture_transform(
     use mtl::TextureSemanticRole;
 
     let tex_coord = if material_uses_secondary_uv(material) { 1 } else { 0 };
-    let scale = match role {
+    let authored_transform = role.and_then(|role| authored_texture_transform(material, role));
+    let scale = authored_transform.map(|(scale, _)| scale).unwrap_or_else(|| match role {
         Some(TextureSemanticRole::ScreenPixelLayout) => {
             let sx = material
                 .public_param_f32(&["PixelGridTilingX"])
@@ -81,7 +123,7 @@ pub(super) fn simple_texture_transform(
                 .public_param_f32(&["PixelGridTilingY"])
                 .unwrap_or(1.0)
                 .abs();
-            [sx.max(1.0), sy.max(1.0)]
+            [sx, sy]
         }
         Some(TextureSemanticRole::Breakup) => uniform_scale_transform(
             material,
@@ -117,9 +159,12 @@ pub(super) fn simple_texture_transform(
         )
         .or_else(|| material.primary_uv_tiling().map(|value| [value, value]))
         .unwrap_or([1.0, 1.0]),
-    };
+    });
+    let offset = authored_transform
+        .map(|(_, offset)| offset)
+        .unwrap_or([0.0, 0.0]);
 
-    make_texture_transform(scale, tex_coord)
+    make_texture_transform(scale, offset, tex_coord)
 }
 
 pub(super) fn decode_png(bytes: &[u8]) -> Option<image::RgbaImage> {
@@ -252,7 +297,7 @@ pub(super) fn build_layer_source_image(
         return decode_png(&layer_png).map(|image| tint_image(&image, color));
     }
 
-    let (width, height) = canvas_size.unwrap_or((64, 64));
+    let (width, height) = canvas_size?;
     Some(make_solid_image(width, height, color, 255))
 }
 
@@ -292,8 +337,7 @@ pub(super) fn build_layered_base_color_texture(
         .and_then(|png| decode_png(&png));
         let blend_factor = material
             .public_param_f32(&["BlendFactor", "WearBlendBase"])
-            .unwrap_or(0.5)
-            .clamp(0.0, 1.0);
+            .map(|value| value.clamp(0.0, 1.0));
 
         for y in 0..output.height() {
             for x in 0..output.width() {
@@ -302,7 +346,8 @@ pub(super) fn build_layered_base_color_texture(
                 let mask = blend_mask
                     .as_ref()
                     .map(|image| sample_luma(image, x, y, output.width(), output.height()))
-                    .unwrap_or(blend_factor)
+                    .or(blend_factor)
+                    .unwrap_or(0.0)
                     .clamp(0.0, 1.0);
                 let inv = 1.0 - mask;
                 output.put_pixel(
@@ -352,8 +397,7 @@ pub(super) fn build_illum_blend_texture(
     .and_then(|png| decode_png(&png));
     let blend_factor = material
         .public_param_f32(&["BlendFactor"])
-        .unwrap_or(0.5)
-        .clamp(0.0, 1.0);
+        .map(|value| value.clamp(0.0, 1.0));
 
     let mut output = base_image.clone();
     for y in 0..output.height() {
@@ -363,7 +407,8 @@ pub(super) fn build_illum_blend_texture(
             let mask = blend_mask
                 .as_ref()
                 .map(|image| sample_luma(image, x, y, output.width(), output.height()))
-                .unwrap_or(blend_factor)
+                .or(blend_factor)
+                .unwrap_or(0.0)
                 .clamp(0.0, 1.0);
             let inv = 1.0 - mask;
             output.put_pixel(
@@ -426,8 +471,7 @@ pub(super) fn build_stencil_fallback_texture(
         .as_ref()
         .map(|image| (image.width(), image.height()))
         .or_else(|| stencil_image.as_ref().map(|image| (image.width(), image.height())))
-        .or_else(|| breakup_image.as_ref().map(|image| (image.width(), image.height())))
-        .unwrap_or((64, 64));
+        .or_else(|| breakup_image.as_ref().map(|image| (image.width(), image.height())))?;
 
     let mut output = base_image.unwrap_or_else(|| make_solid_image(width, height, [0.0, 0.0, 0.0], 0));
     let stencil_color = material
@@ -441,7 +485,7 @@ pub(super) fn build_stencil_fallback_texture(
         .unwrap_or(material.diffuse);
     let opacity = material
         .public_param_f32(&["StencilOpacity", "DecalDiffuseOpacity", "DecalAlphaMult"])
-        .unwrap_or(if material.is_decal() { 0.85 } else { 0.5 })
+        .unwrap_or(material.opacity)
         .clamp(0.0, 1.0);
     let color = [
         (stencil_color[0].clamp(0.0, 1.0) * 255.0).round() as u8,
@@ -461,7 +505,7 @@ pub(super) fn build_stencil_fallback_texture(
                 .map(|image| sample_luma(image, x, y, width, height))
                 .unwrap_or(1.0)
                 .clamp(0.0, 1.0);
-            let blend = (opacity * mask * (0.35 + 0.65 * breakup)).clamp(0.0, 1.0);
+            let blend = (opacity * mask * breakup).clamp(0.0, 1.0);
             let mut base_pixel = *output.get_pixel(x, y);
 
             if material.is_decal() && base_color_png.is_none() {
@@ -492,140 +536,16 @@ pub(super) fn build_stencil_fallback_texture(
     encode_png(&output)
 }
 
-pub(super) fn build_screen_placeholder_textures(
-    material: &mtl::SubMaterial,
-    support_mask_png: Option<Vec<u8>>,
-    pixel_layout_png: Option<Vec<u8>>,
-) -> Option<(Vec<u8>, Vec<u8>)> {
-    let family = material.shader_family();
-    if !matches!(family, mtl::ShaderFamily::DisplayScreen | mtl::ShaderFamily::UiPlane)
-        && !material.has_virtual_input("$RenderToTexture")
-    {
-        return None;
-    }
-
-    let support_mask = support_mask_png.as_deref().and_then(decode_png);
-    let pixel_layout = pixel_layout_png.as_deref().and_then(decode_png);
-    let (width, height) = support_mask
-        .as_ref()
-        .map(|image| (image.width(), image.height()))
-        .or_else(|| pixel_layout.as_ref().map(|image| (image.width(), image.height())))
-        .unwrap_or((96, 64));
-
-    let back_color = material
-        .public_param_rgb(&["BackColour"])
-        .or_else(|| {
-            let emissive = material.emissive_factor();
-            if emissive == [0.0, 0.0, 0.0] {
-                None
-            } else {
-                Some(emissive)
-            }
-        })
-        .unwrap_or([0.08, 0.22, 0.35]);
-    let accent_color = [
-        (back_color[0] * 1.6 + 0.15).clamp(0.0, 1.0),
-        (back_color[1] * 1.5 + 0.15).clamp(0.0, 1.0),
-        (back_color[2] * 1.8 + 0.20).clamp(0.0, 1.0),
-    ];
-    let grid_x = material
-        .public_param_f32(&["PixelGridTilingX"])
-        .unwrap_or(8.0)
-        .abs()
-        .max(1.0);
-    let grid_y = material
-        .public_param_f32(&["PixelGridTilingY"])
-        .unwrap_or(6.0)
-        .abs()
-        .max(1.0);
-
-    let mut diffuse = image::RgbaImage::new(width, height);
-    let mut emissive = image::RgbaImage::new(width, height);
-    for y in 0..height {
-        for x in 0..width {
-            let u = if width <= 1 {
-                0.0
-            } else {
-                x as f32 / (width - 1) as f32
-            };
-            let v = if height <= 1 {
-                0.0
-            } else {
-                y as f32 / (height - 1) as f32
-            };
-
-            let stripe = if (u * grid_x * 4.0).fract() < 0.08 || (v * grid_y * 4.0).fract() < 0.08 {
-                1.0
-            } else {
-                0.0
-            };
-            let scanline = if ((v * height.max(2) as f32 / 2.0).fract()) < 0.5 {
-                0.92
-            } else {
-                0.74
-            };
-            let support = support_mask
-                .as_ref()
-                .map(|image| sample_luma(image, x, y, width, height))
-                .unwrap_or(1.0)
-                .clamp(0.0, 1.0);
-            let pixel_grid = pixel_layout
-                .as_ref()
-                .map(|image| sample_luma(image, x, y, width, height))
-                .unwrap_or(stripe)
-                .clamp(0.0, 1.0);
-
-            let base_mix = (0.12 + 0.24 * support + 0.10 * pixel_grid).clamp(0.0, 1.0);
-            let emissive_mix = (0.35 + 0.65 * pixel_grid.max(stripe)) * support * scanline;
-            diffuse.put_pixel(
-                x,
-                y,
-                image::Rgba([
-                    (back_color[0] * base_mix * 255.0 + accent_color[0] * stripe * 28.0)
-                        .clamp(0.0, 255.0)
-                        .round() as u8,
-                    (back_color[1] * base_mix * 255.0 + accent_color[1] * stripe * 28.0)
-                        .clamp(0.0, 255.0)
-                        .round() as u8,
-                    (back_color[2] * base_mix * 255.0 + accent_color[2] * stripe * 28.0)
-                        .clamp(0.0, 255.0)
-                        .round() as u8,
-                    255,
-                ]),
-            );
-            emissive.put_pixel(
-                x,
-                y,
-                image::Rgba([
-                    (accent_color[0] * emissive_mix * 255.0).clamp(0.0, 255.0).round() as u8,
-                    (accent_color[1] * emissive_mix * 255.0).clamp(0.0, 255.0).round() as u8,
-                    (accent_color[2] * emissive_mix * 255.0).clamp(0.0, 255.0).round() as u8,
-                    255,
-                ]),
-            );
-        }
-    }
-
-    Some((encode_png(&diffuse)?, encode_png(&emissive)?))
-}
-
 pub(super) fn build_emissive_texture(
     material: &mtl::SubMaterial,
     base_color_png: Option<&Vec<u8>>,
-    screen_emissive_png: Option<Vec<u8>>,
 ) -> Option<Vec<u8>> {
-    if let Some(emissive_png) = screen_emissive_png {
-        return Some(emissive_png);
-    }
-
     let emissive = material.emissive_factor();
     if emissive == [0.0, 0.0, 0.0] {
         return None;
     }
 
-    let mut image = base_color_png
-        .and_then(|png| decode_png(png))
-        .unwrap_or_else(|| make_solid_image(64, 64, material.diffuse, 255));
+    let mut image = base_color_png.and_then(|png| decode_png(png))?;
     let scale = [
         emissive[0].clamp(0.0, 1.0),
         emissive[1].clamp(0.0, 1.0),
@@ -686,31 +606,12 @@ pub(super) fn load_material_textures(
     mip: u32,
     png_cache: &mut PngCache,
     include_normals: bool,
-    experimental_textures: bool,
+    _experimental_textures: bool,
 ) -> MaterialTextures {
     let mut textures = empty_material_textures(mtl.materials.len());
 
     for material in &mtl.materials {
         let mut fallback_tags = Vec::new();
-
-        let screen_mask = load_semantic_texture_png(
-            p4k,
-            material,
-            &[
-                mtl::TextureSemanticRole::ScreenMask,
-                mtl::TextureSemanticRole::PatternMask,
-            ],
-            mip,
-            png_cache,
-        );
-        let pixel_layout = load_semantic_texture_png(
-            p4k,
-            material,
-            &[mtl::TextureSemanticRole::ScreenPixelLayout],
-            mip,
-            png_cache,
-        );
-        let screen_placeholder = build_screen_placeholder_textures(material, screen_mask, pixel_layout);
 
         let direct_diffuse = material
             .diffuse_tex
@@ -751,44 +652,25 @@ pub(super) fn load_material_textures(
             push_fallback_tag(&mut fallback_tags, "stencil_fallback");
         }
 
-        if diffuse.is_none() {
-            if let Some((placeholder_diffuse, _)) = screen_placeholder.as_ref() {
-                diffuse = Some(placeholder_diffuse.clone());
-                push_fallback_tag(&mut fallback_tags, "rtt_placeholder");
-            }
-        }
-
-        let normal_path = if let Some(path) = &material.normal_tex {
-            Some(path.clone())
-        } else {
+        let normal_path = first_role_path(material, &[mtl::TextureSemanticRole::NormalGloss])
+            .or_else(|| material.normal_tex.clone())
+            .or_else(|| {
             material.layers.first().and_then(|layer| {
                 let p4k_path = datacore_path_to_p4k(&layer.path);
                 try_load_mtl(p4k, &p4k_path).and_then(|layer_mtl| {
-                    layer_mtl
-                        .materials
-                        .first()
-                        .and_then(|layer_material| layer_material.normal_tex.clone())
+                    mtl::resolve_layer_submaterial(&layer_mtl, &layer.sub_material)
+                        .and_then(|layer_material| {
+                            first_role_path(layer_material, &[mtl::TextureSemanticRole::NormalGloss])
+                                .or_else(|| layer_material.normal_tex.clone())
+                        })
                 })
             })
-        };
+        });
 
         let normal = if !include_normals {
             None
         } else if let Some(path) = normal_path.as_ref() {
-            if !experimental_textures {
-                if let Some(diffuse_path) = material.diffuse_tex.as_ref() {
-                    if !textures_share_uv_space(diffuse_path, path) {
-                        log::debug!("  skipping mismatched normal: diffuse={diffuse_path}, normal={path}");
-                        None
-                    } else {
-                        cached_load(p4k, path, mip, png_cache, load_normal_texture)
-                    }
-                } else {
-                    cached_load(p4k, path, mip, png_cache, load_normal_texture)
-                }
-            } else {
-                cached_load(p4k, path, mip, png_cache, load_normal_texture)
-            }
+            cached_load_keyed(p4k, path, mip, "@normal", png_cache, load_normal_texture)
         } else {
             None
         };
@@ -796,59 +678,25 @@ pub(super) fn load_material_textures(
         let roughness = if !include_normals {
             None
         } else if let Some(path) = normal_path.as_ref() {
-            if !path.contains("_ddna") {
+            if !path.to_ascii_lowercase().contains("_ddna") {
                 None
             } else {
-                if !experimental_textures {
-                    if let Some(diffuse_path) = material.diffuse_tex.as_ref() {
-                        if !textures_share_uv_space(diffuse_path, path) {
-                            None
-                        } else {
-                            let cache_key = format!("{path}@roughness_mip{mip}");
-                            if let Some(cached) = png_cache.get(&cache_key) {
-                                cached.clone()
-                            } else {
-                                let result = load_roughness_texture(p4k, path, mip);
-                                png_cache.insert(cache_key, result.clone());
-                                result
-                            }
-                        }
-                    } else {
-                        let cache_key = format!("{path}@roughness_mip{mip}");
-                        if let Some(cached) = png_cache.get(&cache_key) {
-                            cached.clone()
-                        } else {
-                            let result = load_roughness_texture(p4k, path, mip);
-                            png_cache.insert(cache_key, result.clone());
-                            result
-                        }
-                    }
+                let cache_key = format!("{path}@roughness_mip{mip}");
+                if let Some(cached) = png_cache.get(&cache_key) {
+                    cached.clone()
                 } else {
-                    let cache_key = format!("{path}@roughness_mip{mip}");
-                    if let Some(cached) = png_cache.get(&cache_key) {
-                        cached.clone()
-                    } else {
-                        let result = load_roughness_texture(p4k, path, mip);
-                        png_cache.insert(cache_key, result.clone());
-                        result
-                    }
+                    let result = load_roughness_texture(p4k, path, mip);
+                    png_cache.insert(cache_key, result.clone());
+                    result
                 }
             }
         } else {
             None
         };
 
-        let emissive = build_emissive_texture(
-            material,
-            diffuse.as_ref(),
-            screen_placeholder.as_ref().map(|(_, emissive)| emissive.clone()),
-        );
+        let emissive = build_emissive_texture(material, diffuse.as_ref());
         if emissive.is_some() {
-            push_fallback_tag(&mut fallback_tags, if material.has_virtual_input("$RenderToTexture") {
-                "screen_emissive_placeholder"
-            } else {
-                "emissive_texture"
-            });
+            push_fallback_tag(&mut fallback_tags, "emissive_texture");
         }
 
         let occlusion = build_occlusion_texture(p4k, material, mip, png_cache).map(|(bytes, source)| {
@@ -881,7 +729,7 @@ pub(super) fn load_material_textures(
         textures.roughness_transform.push(
             roughness
                 .as_ref()
-                .and_then(|_| simple_texture_transform(material, Some(mtl::TextureSemanticRole::Height))),
+                .and_then(|_| simple_texture_transform(material, Some(mtl::TextureSemanticRole::NormalGloss))),
         );
         textures.emissive_transform.push(
             emissive
@@ -913,30 +761,6 @@ pub(super) fn load_material_textures(
     }
 
     textures
-}
-
-/// Check if a diffuse and normal texture are from the same texture set (same UV space).
-///
-/// CryEngine materials can pair atlas diffuse textures (unique UV layout per mesh) with
-/// tileable normal maps (designed to repeat). These use different UV mappings but we only
-/// support one texCoord in glTF. When they don't match, the normal/roughness creates noise.
-///
-/// Heuristic: extract the filename stem (strip path + suffixes like `_diff`, `_ddna`) and
-/// check if they share a common base. E.g., `cockpit_diff.tif` + `cockpit_ddna.tif` → match.
-/// `leather_atlas_a_diff.tif` + `leather_base_tilable_ddna.dds` → no match.
-pub(super) fn textures_share_uv_space(diffuse_path: &str, normal_path: &str) -> bool {
-    fn stem(p: &str) -> &str {
-        let filename = p.rsplit(&['/', '\\']).next().unwrap_or(p);
-        let base = filename.split('.').next().unwrap_or(filename);
-        let base = base.strip_suffix("_diff").unwrap_or(base);
-        let base = base.strip_suffix("_ddna").unwrap_or(base);
-        let base = base.strip_suffix("_ddn").unwrap_or(base);
-        let base = base.strip_suffix("_spec").unwrap_or(base);
-        base
-    }
-    let d = stem(diffuse_path);
-    let n = stem(normal_path);
-    d == n || d.starts_with(n) || n.starts_with(d)
 }
 
 /// Load a texture with caching by path — prevents redundant DDS decode + PNG encode.
@@ -1018,14 +842,6 @@ pub(crate) fn load_diffuse_texture(p4k: &MappedP4k, tif_path: &str, mip_level: u
 /// downstream consumers can derive roughness without Rust-side reinterpretation.
 pub(crate) fn load_normal_texture(p4k: &MappedP4k, tif_path: &str, mip_level: u32) -> Option<Vec<u8>> {
     if tif_path.starts_with('$') {
-        return None;
-    }
-
-    // Only load actual normal maps (_ddna/_ddn), not specular/other textures
-    // that happen to be in TexSlot2.
-    let lower = tif_path.to_lowercase();
-    if !lower.contains("_ddna") && !lower.contains("_ddn.") && !lower.contains("_ddn_") {
-        log::debug!("  skipping non-normal in TexSlot2: {tif_path}");
         return None;
     }
 
@@ -1119,5 +935,94 @@ pub(crate) fn load_roughness_texture(p4k: &MappedP4k, tif_path: &str, mip_level:
     .ok()?;
 
     Some(png_buf)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn material(shader: &str) -> mtl::SubMaterial {
+        mtl::SubMaterial {
+            name: "test".to_string(),
+            shader: shader.to_string(),
+            diffuse: [0.2, 0.3, 0.4],
+            opacity: 1.0,
+            alpha_test: 0.0,
+            string_gen_mask: String::new(),
+            is_nodraw: false,
+            specular: [0.04, 0.04, 0.04],
+            shininess: 128.0,
+            emissive: [0.5, 0.25, 0.125],
+            glow: 1.0,
+            surface_type: String::new(),
+            diffuse_tex: None,
+            normal_tex: None,
+            layers: Vec::new(),
+            palette_tint: 0,
+            texture_slots: Vec::new(),
+            public_params: Vec::new(),
+            authored_attributes: Vec::new(),
+            authored_textures: Vec::new(),
+            authored_child_blocks: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn emissive_without_a_source_image_does_not_fabricate_texture_pixels() {
+        assert!(build_emissive_texture(&material("Illum"), None).is_none());
+    }
+
+    #[test]
+    fn simple_texture_transform_preserves_authored_texmod_scale_and_offset() {
+        let mut material = material("HardSurface");
+        material.texture_slots.push(mtl::TextureSlotBinding {
+            slot: "TexSlot1".to_string(),
+            path: "Data/Textures/panel.tif".to_string(),
+            is_virtual: false,
+        });
+        material.authored_textures.push(mtl::AuthoredTexture {
+            slot: "TexSlot1".to_string(),
+            path: "Data/Textures/panel.tif".to_string(),
+            is_virtual: false,
+            attributes: Vec::new(),
+            child_blocks: vec![mtl::AuthoredBlock {
+                tag: "TexMod".to_string(),
+                attributes: vec![
+                    mtl::AuthoredAttribute { name: "TileU".to_string(), value: "0.5".to_string() },
+                    mtl::AuthoredAttribute { name: "TileV".to_string(), value: "2.0".to_string() },
+                    mtl::AuthoredAttribute { name: "OffsetU".to_string(), value: "0.25".to_string() },
+                    mtl::AuthoredAttribute { name: "OffsetV".to_string(), value: "-0.125".to_string() },
+                ],
+                children: Vec::new(),
+            }],
+        });
+
+        let transform = simple_texture_transform(
+            &material,
+            Some(mtl::TextureSemanticRole::BaseColor),
+        )
+        .expect("authored transform");
+
+        assert_eq!(transform.scale, [0.5, 2.0]);
+        assert_eq!(transform.offset, [0.25, -0.125]);
+        assert_eq!(transform.tex_coord, 0);
+    }
+
+    #[test]
+    fn screen_tiling_keeps_authored_values_below_one() {
+        let mut material = material("DisplayScreen");
+        material.public_params = vec![
+            mtl::PublicParam { name: "PixelGridTilingX".to_string(), value: "0.5".to_string() },
+            mtl::PublicParam { name: "PixelGridTilingY".to_string(), value: "0.25".to_string() },
+        ];
+
+        let transform = simple_texture_transform(
+            &material,
+            Some(mtl::TextureSemanticRole::ScreenPixelLayout),
+        )
+        .expect("authored screen tiling");
+
+        assert_eq!(transform.scale, [0.5, 0.25]);
+    }
 }
 

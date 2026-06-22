@@ -13,7 +13,7 @@ starbreaker-dds = { path = "../starbreaker-dds" }
 starbreaker-gfx = { path = "../starbreaker-gfx" }
 starbreaker-blend = { path = "../starbreaker-blend" }
 starbreaker-ui = { path = "../starbreaker-ui" }
-gltf-json = { version = "1", features = ["names", "extras", "KHR_lights_punctual", "KHR_materials_transmission", "KHR_materials_ior", "KHR_materials_emissive_strength", "KHR_materials_volume", "KHR_texture_transform"] }
+gltf-json = { version = "1", features = ["names", "extras", "extensions", "KHR_lights_punctual", "KHR_materials_transmission", "KHR_materials_ior", "KHR_materials_emissive_strength", "KHR_materials_specular", "KHR_materials_volume", "KHR_texture_transform"] }
 image = { version = "0.25", default-features = false, features = ["png"] }
 exr = "1.74"
 smallvec = "1"

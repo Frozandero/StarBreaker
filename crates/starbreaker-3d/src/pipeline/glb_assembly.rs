@@ -20,6 +20,18 @@ use crate::types::MaterialTextures;
 
 use super::*;
 
+fn load_final_root_textures<T>(
+    opts: &ExportOptions,
+    materials: Option<&mtl::MtlFile>,
+    palette: Option<&mtl::TintPalette>,
+    load: impl FnOnce(&mtl::MtlFile, Option<&mtl::TintPalette>) -> T,
+) -> Option<T> {
+    if opts.kind != ExportKind::Bundled || !opts.material_mode.include_textures() {
+        return None;
+    }
+    materials.map(|materials| load(materials, palette))
+}
+
 pub fn assemble_glb_with_loadout(
     db: &Database,
     p4k: &MappedP4k,
@@ -55,10 +67,9 @@ pub fn assemble_glb_with_loadout_with_progress(
 
     report_progress(progress, LOADOUT_STAGE_START, "Resolving loadout");
     let phase_start = Instant::now();
-    let payload_material_mode = if opts.kind == ExportKind::Decomposed {
-        MaterialMode::Colors
-    } else {
-        opts.material_mode
+    let payload_material_mode = match opts.material_mode {
+        MaterialMode::None => MaterialMode::None,
+        _ => MaterialMode::Colors,
     };
     let payload_opts = ExportOptions {
         material_mode: payload_material_mode,
@@ -77,9 +88,9 @@ pub fn assemble_glb_with_loadout_with_progress(
 
     // Export root entity (mesh + textures).
     let (
-        root_mesh,
+        mut root_mesh,
         root_mtl,
-        root_tex,
+        _,
         _,
         mut root_palette,
         geometry_path,
@@ -98,7 +109,7 @@ pub fn assemble_glb_with_loadout_with_progress(
 
     // Check for equipped paint item and resolve its SubGeometry palette/material override.
     let phase_start = Instant::now();
-    let (mut root_palette, root_mtl) = resolve_paint_override(
+    let (mut root_palette, mut root_mtl) = resolve_paint_override(
         db, p4k, record, &tree.root, root_palette, root_mtl,
     );
     log::info!("[timing] resolve_paint_override: {:.2}s", phase_start.elapsed().as_secs_f32());
@@ -106,6 +117,23 @@ pub fn assemble_glb_with_loadout_with_progress(
     if let Some(palette) = root_palette.as_mut() {
         populate_palette_display_name(palette, &paint_display_names);
     }
+    let mut root_png_cache = PngCache::new();
+    let mut root_tex = load_final_root_textures(
+        opts,
+        root_mtl.as_ref(),
+        root_palette.as_ref(),
+        |materials, palette| {
+            load_material_textures(
+                p4k,
+                materials,
+                palette,
+                opts.texture_mip,
+                &mut root_png_cache,
+                opts.material_mode.include_normals(),
+                opts.material_mode.experimental(),
+            )
+        },
+    );
 
     // Load landing gear as separate child entities attached to NMC nodes.
     // Landing gear CDF geometry attaches to NMC helper bones (e.g. hardpoint_landing_gear_front).
@@ -254,6 +282,31 @@ pub fn assemble_glb_with_loadout_with_progress(
             opts,
         );
         merge_interiors(&mut loaded_interiors, child_interiors);
+    }
+    if opts.kind == ExportKind::Bundled && opts.material_mode.include_textures() {
+        render_bundled_ui_textures(
+            &mut child_payloads,
+            &mut loaded_interiors,
+            db,
+            p4k,
+            opts.texture_mip,
+            &resolved.entity_name,
+        );
+        let root_ui_bindings = child_payloads
+            .iter()
+            .filter(|child| {
+                child.mesh.positions.is_empty()
+                    && child.parent_entity_name.eq_ignore_ascii_case(&resolved.entity_name)
+            })
+            .flat_map(|child| child.ui_bindings.iter().cloned())
+            .collect::<Vec<_>>();
+        apply_bundled_ui_materials(
+            &mut root_mesh,
+            &mut root_mtl,
+            &mut root_tex,
+            resolved.nmc.as_ref(),
+            &root_ui_bindings,
+        );
     }
     log::info!("[timing] load_interiors: {:.2}s", phase_start.elapsed().as_secs_f32());
 
@@ -480,4 +533,71 @@ pub fn assemble_glb_with_loadout_with_progress(
 pub(crate) fn path_is_shield_related(path: Option<&str>) -> bool {
     path.is_some_and(|value| value.to_ascii_lowercase().contains("/shields/"))
         || path.is_some_and(|value| value.to_ascii_lowercase().contains("\\shields\\"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn empty_materials() -> mtl::MtlFile {
+        mtl::MtlFile {
+            materials: Vec::new(),
+            source_path: Some("Data/Materials/final.mtl".to_string()),
+            paint_override: None,
+            material_set: Default::default(),
+        }
+    }
+
+    fn selected_palette() -> mtl::TintPalette {
+        mtl::TintPalette {
+            source_name: Some("selected-paint".to_string()),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn final_root_texture_load_uses_post_override_material_and_palette() {
+        let materials = empty_materials();
+        let palette = selected_palette();
+        let opts = ExportOptions::default();
+
+        let loaded = load_final_root_textures(
+            &opts,
+            Some(&materials),
+            Some(&palette),
+            |loaded_materials, loaded_palette| {
+                assert!(std::ptr::eq(loaded_materials, &materials));
+                assert!(std::ptr::eq(loaded_palette.expect("palette"), &palette));
+                "loaded"
+            },
+        );
+
+        assert_eq!(loaded, Some("loaded"));
+    }
+
+    #[test]
+    fn final_root_texture_load_skips_color_only_exports() {
+        let mut opts = ExportOptions::default();
+        opts.material_mode = MaterialMode::Colors;
+        let materials = empty_materials();
+
+        let loaded = load_final_root_textures(&opts, Some(&materials), None, |_, _| {
+            panic!("color-only export must not decode textures")
+        });
+
+        assert_eq!(loaded, None::<()>);
+    }
+
+    #[test]
+    fn final_root_texture_load_skips_decomposed_exports() {
+        let mut opts = ExportOptions::default();
+        opts.kind = ExportKind::Decomposed;
+        let materials = empty_materials();
+
+        let loaded = load_final_root_textures(&opts, Some(&materials), None, |_, _| {
+            panic!("decomposed export owns canonical texture extraction")
+        });
+
+        assert_eq!(loaded, None::<()>);
+    }
 }

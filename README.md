@@ -102,14 +102,17 @@ Pre-creating directories... 31 directories created.
 
 ### Entity export
 
-Export a ship or vehicle as a GLB file with full loadout assembly — geometry, skeleton, materials, and textures:
+Export a ship or vehicle as one software-agnostic GLB with full loadout assembly,
+portable PBR materials, embedded textures, and generated screen images. See
+[GLB export parity](docs/glb-export-parity.md) for the material contract and the
+animation roadmap.
 
 ```sh
 # Export a Gladius with textures at 1/4 resolution
 starbreaker entity export Gladius gladius.glb
 
-# Lightweight export — no textures, lower LOD
-starbreaker entity export Gladius gladius.glb --no-textures --no-normals --lod 2
+# Lightweight export — colors only, lower LOD
+starbreaker entity export Gladius gladius.glb --materials colors --lod 2
 
 # Just inspect the loadout tree
 starbreaker entity export Gladius --dump-hierarchy

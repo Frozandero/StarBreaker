@@ -553,31 +553,11 @@ impl SubMaterial {
     /// "Gloss/smoothness" and EFTT_SMOOTHNESS maps to the `_ddna` alpha channel.
     /// Roughness = 1.0 - smoothness, where smoothness = shininess / 255.
     ///
-    /// HardSurface, LayerBlend, and Illum shaders typically set Shininess=255 as a
-    /// placeholder because they derive per-pixel smoothness from the `_ddna` alpha
-    /// channel. Without per-pixel smoothness texture data, the literal 0.0 roughness
-    /// creates an unrealistic mirror finish. Use a default of 0.5 for these shaders.
+    /// Per-pixel DDNA smoothness is exported separately when present. When it is
+    /// absent, preserve the authored scalar instead of inventing a fallback finish.
     pub fn roughness(&self) -> f32 {
         let smoothness = (self.shininess / 255.0).clamp(0.0, 1.0);
-        let roughness = 1.0 - smoothness;
-        // Shaders that use per-pixel smoothness set Shininess=255 as a placeholder.
-        // Without the _ddna texture, this produces roughness=0 (mirror). Use a
-        // reasonable default instead.
-        if roughness == 0.0 && self.uses_per_pixel_smoothness() {
-            0.5
-        } else {
-            roughness
-        }
-    }
-
-    /// Whether this material's shader derives smoothness from a texture rather than
-    /// the scalar Shininess value.
-    fn uses_per_pixel_smoothness(&self) -> bool {
-        let s = self.shader.to_lowercase();
-        s.contains("hardsurface")
-            || s.contains("layerblend")
-            || s == "illum"
-            || s == "glasspbr"
+        1.0 - smoothness
     }
 
     /// glTF metallic factor derived from authored response data.
@@ -1393,6 +1373,15 @@ mod tests {
         };
 
         assert_eq!(material.metallic(), 0.0);
+    }
+
+    #[test]
+    fn roughness_preserves_authored_full_smoothness_without_a_texture() {
+        let mut material = dummy_submaterial("HardSurface", "");
+        material.shininess = 255.0;
+        material.normal_tex = None;
+
+        assert_eq!(material.roughness(), 0.0);
     }
 
     #[test]
